@@ -20,9 +20,12 @@ export default function TypewriterActionOverlay({
   loaderStartTime,
   loaderEstimatedMs,
   fastFinish = false,
+  canManuallySkip = false,
 }) {
   const [displayedChars, setDisplayedChars] = useState(0);
   const [phase, setPhase] = useState('typing');
+  const [manualFastFinish, setManualFastFinish] = useState(false);
+  const effectiveFastFinish = fastFinish || manualFastFinish;
   const onCompleteRef = useRef(onComplete);
   onCompleteRef.current = onComplete;
   const onTypingCompleteRef = useRef(onTypingComplete);
@@ -37,10 +40,11 @@ export default function TypewriterActionOverlay({
     onTypingCompleteRef.current?.();
   };
 
-  // fastFinish (set when scene streaming starts): snap text, kill audio, skip
-  // hold, fade out fast. Reduces total dismiss time from ~2100ms to ~250ms.
+  // effectiveFastFinish (auto: first TTS audio playing; manual: user click
+  // after LLM responded): snap text, kill audio, skip hold, fade out fast.
+  // Reduces total dismiss time from ~2100ms to ~250ms.
   useEffect(() => {
-    if (!fastFinish) return;
+    if (!effectiveFastFinish) return;
     setDisplayedChars(text.length);
     if (audioRef.current) {
       audioRef.current.pause();
@@ -48,7 +52,7 @@ export default function TypewriterActionOverlay({
     }
     fireTypingComplete();
     setPhase('fading');
-  }, [fastFinish, text.length]);
+  }, [effectiveFastFinish, text.length]);
   const charHighlightKinds = useMemo(() => {
     const marks = new Uint8Array(text.length); // 0 normal, 1 dialogue, 2 speaker label
     const lines = text.split('\n');
@@ -127,17 +131,17 @@ export default function TypewriterActionOverlay({
   useEffect(() => {
     if (phase === 'holding') {
       if (holdOpen) return undefined;
-      const hold = fastFinish ? 0 : Math.max(0, holdingDurationMs);
+      const hold = effectiveFastFinish ? 0 : Math.max(0, holdingDurationMs);
       const timer = setTimeout(() => setPhase('fading'), hold);
       return () => clearTimeout(timer);
     }
     if (phase === 'fading') {
-      const fadeMs = fastFinish ? 250 : 600;
+      const fadeMs = effectiveFastFinish ? 250 : 600;
       const timer = setTimeout(() => onCompleteRef.current?.(), fadeMs);
       return () => clearTimeout(timer);
     }
     return undefined;
-  }, [phase, holdOpen, holdingDurationMs, fastFinish]);
+  }, [phase, holdOpen, holdingDurationMs, effectiveFastFinish]);
 
   const progress = text.length > 0 ? displayedChars / text.length : 0;
 
@@ -145,14 +149,20 @@ export default function TypewriterActionOverlay({
     <div
       className={`fixed inset-0 z-[70] flex items-center justify-center ${
         phase === 'fading' ? 'animate-typewriter-fade-out' : ''
-      } ${phase === 'holding' ? 'cursor-pointer' : ''}`}
+      } ${(phase === 'holding' || canManuallySkip) ? 'cursor-pointer' : ''}`}
       style={{
         background: 'radial-gradient(ellipse at center, rgba(0,0,0,0.8) 0%, rgba(0,0,0,0.7) 100%)',
         backdropFilter: 'blur(6px)',
         paddingBottom: '160px',
-        ...(fastFinish && phase === 'fading' ? { animationDuration: '250ms' } : null),
+        ...(effectiveFastFinish && phase === 'fading' ? { animationDuration: '250ms' } : null),
       }}
-      onClick={() => { if (phase === 'holding') setPhase('fading'); }}
+      onClick={() => {
+        if (canManuallySkip) {
+          setManualFastFinish(true);
+        } else if (phase === 'holding') {
+          setPhase('fading');
+        }
+      }}
     >
       {/* Decorative glow behind the panel */}
       <div

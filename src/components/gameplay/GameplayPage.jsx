@@ -400,19 +400,33 @@ export default function GameplayPage({ readOnly = false, shareToken = null, onRe
     : 1;
   const overlayHoldOpen = isPlayerActionOverlayActive && isGeneratingScene;
   const overlayHoldingDurationMs = isPlayerActionOverlayActive ? 800 : 1500;
-  const overlayFastFinish = !isPlayerActionOverlayActive && streamingNarrative !== null;
+  // Trigger: first TTS audio file ready to play (canplay → audio.play() in
+  // playAudioWithBuffer flips playbackState to PLAYING). Applies to all
+  // overlay variants (player action / scene navigation / autoPlayer).
+  // Fallback for disabled / unavailable TTS: keep the legacy "stream started"
+  // trigger so the overlay still dismisses when the LLM finishes responding.
+  const ttsReady = narrator.playbackState === narrator.STATES.PLAYING;
+  const llmResponded = streamingNarrative !== null;
+  const overlayFastFinish = ttsReady || (llmResponded && !narrator.isNarratorReady);
+  // Manual click-to-skip is allowed once the LLM has started responding (or
+  // TTS is already preparing/playing) — clicking before that is ignored.
+  const canManuallySkipOverlay = llmResponded
+    || ttsReady
+    || narrator.playbackState === narrator.STATES.LOADING;
   const { diceAfterTypewriter } = overlays;
 
-  // Any active overlay stops narration so voice + overlay don't fight for
-  // the user's attention. Spans both overlays + autoPlayer so it lives in
-  // the page rather than inside a hook that doesn't know about autoPlayer.
+  // Cut leftover narration only when the player starts a new turn (player
+  // action overlay mounts). For typewriterAction / autoPlayer overlays we
+  // intentionally don't stop the narrator: those overlays appear ALONGSIDE a
+  // freshly-queued scene narration that we want to keep playing so the
+  // typewriter can fastFinish as soon as audio reaches PLAYING.
   useEffect(() => {
-    if (overlays.typewriterAction || autoPlayer.overlayAction || overlays.playerActionOverlayText) {
+    if (overlays.playerActionOverlayText) {
       narrator.stop();
       try { window.speechSynthesis?.cancel(); } catch {}
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [!!overlays.typewriterAction, !!autoPlayer.overlayAction, !!overlays.playerActionOverlayText]);
+  }, [!!overlays.playerActionOverlayText]);
 
   useCampaignLoader({ campaign, isMultiplayer, readOnly, urlCampaignId, dispatch, navigate });
 
@@ -620,6 +634,7 @@ export default function GameplayPage({ readOnly = false, shareToken = null, onRe
               loaderStartTime={isMultiplayer ? mpSceneGenStartTime : sceneGenStartTime}
               loaderEstimatedMs={lastSceneGenMs}
               fastFinish={overlayFastFinish}
+              canManuallySkip={canManuallySkipOverlay}
             />
           )}
           {earlyDiceRoll && diceAfterTypewriter && (
@@ -896,6 +911,7 @@ export default function GameplayPage({ readOnly = false, shareToken = null, onRe
           sessionSeconds={sessionSeconds}
           totalPlayTime={totalPlayTime}
           narrationTime={sNarrationTime || 0}
+          chatGate={!!overlayText}
         />
       </aside>
 
