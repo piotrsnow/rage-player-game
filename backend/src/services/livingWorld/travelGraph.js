@@ -15,12 +15,15 @@
 import { prisma } from '../../lib/prisma.js';
 import { childLogger } from '../../lib/logger.js';
 import { euclidean } from './positionCalculator.js';
-import { getMovementRelationTypesArray } from './edgeRelations.js';
 
 const log = childLogger({ module: 'travelGraph' });
 
 /** Movement-only relation types for Dijkstra filtering. */
-const MOVEMENT_TYPES = getMovementRelationTypesArray();
+const MOVEMENT_TYPES = [
+  'road', 'path', 'trail', 'door', 'stairs',
+  'tunnel', 'bridge', 'portal', 'secret_path',
+  'river', 'ferry', 'gate',
+];
 
 export const DETOUR_DIRECT = 1.3;     // path_length / straight_line below this = direct enough
 export const DETOUR_SENSIBLE = 2.0;   // 1.3-2.0 = sensible detour; > 2.0 = long detour (shortcut territory)

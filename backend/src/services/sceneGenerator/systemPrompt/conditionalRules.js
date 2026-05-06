@@ -22,7 +22,7 @@ const SUBLOCATION_HOST_TYPES = new Set([
   'capital', 'city', 'town', 'village', 'hamlet', 'interior', 'dungeon',
 ]);
 
-export function buildConditionalRules({ intent, coreState, scenePhase = null }) {
+export function buildConditionalRules({ intent, coreState, scenePhase = null, livingWorldEnabled = false }) {
   const rules = [];
   const cs = coreState;
   const campaign = cs.campaign || {};
@@ -162,6 +162,36 @@ export function buildConditionalRules({ intent, coreState, scenePhase = null }) 
         : 'Negatywne reakcje: „Słyszałem o twoich wybrykach — trzymaj się z daleka.", „Nie pokazuj się publicznie, szukają cię.". ') +
       `NIE powtarzaj tego co inni NPC już powiedzieli — każdy komentarz inny. Ogranicz do JEDNEGO zdania. ` +
       `W npcs[] entry dla TEGO NPC-a który się wypowiedział ustaw acknowledgedFame:true (nie na innych). To blokuje powtórzenie tej linii w kolejnych scenach.`,
+    );
+  }
+
+  // ── Location graph rules — spatial consistency & graphUpdate protocol ──
+  // Only fires when livingWorld is on. Core rules prevent teleportation,
+  // hidden-info leaks, and teach the model to emit graphUpdates.
+  if (livingWorldEnabled) {
+    rules.push(
+      `GRAPH RULES:\n` +
+      `1. NO TELEPORTING — every movement requires a known path in [LOCATION GRAPH]. ` +
+      `Exceptions: magic (portal/teleport with mana cost), dream, vision, flashback.\n` +
+      `2. DO NOT REVEAL hidden/secret locations or edges from the GM-ONLY section. ` +
+      `Reveal ONLY when the player actively searches (Perception check, examine, search) and succeeds.\n` +
+      `3. "visible_from" ≠ "I am there". Seeing a location from a distance does NOT place the character there. ` +
+      `Distance, obstacles, and travel time still apply.\n` +
+      `4. "heard_about" ≠ "I know the way". Knowing a location exists requires a discovered edge OR NPC directions OR a map to travel there.\n` +
+      `5. RESPECT requirements on edges — locked doors, skill checks, faction standing, keys. ` +
+      `If [NOT MET] in the graph, narrate the obstacle; do not let the player pass freely.`,
+    );
+
+    rules.push(
+      `GRAPH UPDATE PROTOCOL:\n` +
+      `After each scene, if ANYTHING changed spatially, emit stateChanges.graphUpdates[]:\n` +
+      `- Player discovers a path/door → { action:"discover_edge", fromLocation:"X", toLocation:"Y" }\n` +
+      `- NPC mentions a distant place → { action:"discover_location", locationName:"X", discoveryState:"rumored"|"heard_about" }\n` +
+      `- Player sees something from afar → { action:"add_perception", fromLocation:"current", toLocation:"target", relationType:"visible_from" }\n` +
+      `- Door unlocked / bridge repaired → { action:"update_edge", fromLocation:"X", toLocation:"Y", metadata:{...} }\n` +
+      `- Bridge collapsed / tunnel caved in → { action:"remove_edge", fromLocation:"X", toLocation:"Y" }\n` +
+      `- New passage described in narration → { action:"create_edge", fromLocation:"X", toLocation:"Y", relationType:"path"|"door"|"stairs"|... }\n` +
+      `Do NOT emit graphUpdates for: purely decorative details, movement on already-known edges, info already in the graph.`,
     );
   }
 

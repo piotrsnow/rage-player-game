@@ -264,8 +264,8 @@ export function NarrativeWithLoading({ narrator, messageId, segmentIndex, childr
 
 function TtsLoadingOverlay() {
   return (
-    <div className="absolute inset-0 rounded border border-primary/30 bg-surface/40 backdrop-blur-[1px] flex items-center justify-center pointer-events-none z-10">
-      <span className="material-symbols-outlined text-primary/70 text-sm animate-pulse">volume_up</span>
+    <div className="absolute -inset-0.5 rounded-lg border-2 border-pink-200/40 bg-surface/30 backdrop-blur-[1px] flex items-center justify-center pointer-events-none z-10 animate-pulse">
+      <span className="material-symbols-outlined text-pink-200/70 text-base animate-spin">progress_activity</span>
     </div>
   );
 }

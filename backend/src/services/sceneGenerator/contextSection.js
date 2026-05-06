@@ -527,11 +527,6 @@ export function buildContextSection(contextBlocks) {
       }
     }
 
-    // Graph update protocol reminder — always present so AI knows to emit
-    graphLines.push('');
-    graphLines.push('When spatial info changes this scene, emit `stateChanges.graphUpdates` (max 10):');
-    graphLines.push('  discover_location / discover_edge / create_edge / update_edge / remove_edge / add_perception / update_discovery');
-
     if (graphLines.length > 1) {
       parts.push(graphLines.join('\n'));
     }

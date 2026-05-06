@@ -21,7 +21,6 @@ import {
   processWorldImpactEvent,
   processCampaignComplete,
 } from './livingWorld.js';
-import { processGraphUpdates } from './graphUpdates.js';
 
 // Re-exported so existing test file processStateChanges.test.js keeps
 // working via `import { shouldPromoteToGlobal } from './processStateChanges.js'`.
@@ -246,13 +245,6 @@ export async function processStateChanges(campaignId, stateChanges, { prevLoc = 
     await processLocationMentions(campaignId, stateChanges.locationMentioned);
   }
 
-  // Graph system — AI-emitted graph mutations (edge discovery, new campaign
-  // edges, perception links, discovery state changes). Runs AFTER
-  // locationMentions (which may create the locations these edges reference)
-  // and AFTER processLocationChanges (which may create sublocation nodes).
-  if (livingWorldEnabled && Array.isArray(stateChanges.graphUpdates) && stateChanges.graphUpdates.length > 0) {
-    await processGraphUpdates(campaignId, stateChanges.graphUpdates, { userId: ownerUserId });
-  }
 
   // Phase 7 — dungeon room state flags. `prevLoc` is the room the player
   // was IN when premium wrote the flags; currentLocation may already point
