@@ -32,8 +32,7 @@ combat: staccato, 1-2 para | chase: breathless, fragments | stealth: sparse, ten
 exploration: atmospheric, 2-3 para | dialogue: minimal narration, NPCs drive scene
 travel_montage: 2-3 sentences, skip to arrival | rest: slow, 1-2 para
 celebration: lively, sensory | dramatic: theatrical, tension | dream: surreal, symbolic
-Max 2 consecutive exploration/travel/rest without a complication. Travel without interaction → travel_montage.
-ROUTE FAMILIARITY: exits/routes marked [familiar (Nx)] mean the character has walked this path N times. When familiarity ≥ 3, compress travel narration to 1-2 sentences (routine journey, skip sensory detail). When [first time], describe the path richly with concrete sensory details. In between — moderate detail.`;
+Max 2 consecutive exploration/travel/rest without a complication. Travel without interaction → travel_montage.`;
 }
 
 export function narrativeRulesBlock() {
@@ -42,8 +41,7 @@ export function narrativeRulesBlock() {
 - Avoid: stacked adjectives, abstract feelings, uniform NPC voice, tax-collector clichés.
 - NPCs present MUST speak in direct dialogue segments, never just described indirectly.
 - Humor never deflates real stakes. Even at high humor: failures hurt mechanically.
-- Keep narration ~25% shorter than default. Cut filler, repeated atmosphere, redundant transitions.
-- LOCATION HISTORY: when [LOCATION HISTORY] is present, reference past events naturally — acknowledge changed state, don't repeat entries verbatim. If the player resolved a problem here before, the location should reflect that (e.g. cleared bandits → peaceful, dead NPC → memorial/absence).`;
+- Keep narration ~25% shorter than default. Cut filler, repeated atmosphere, redundant transitions.`;
 }
 
 export function dialogueFormatBlock() {
@@ -162,6 +160,9 @@ export function responseFormatBlock(language) {
     "moneyChange": null,
     "skillsUsed": [],
     "actionDifficulty": "easy|medium|hard|veryHard|extreme",
+    "learnSpell": null,
+    "manaMaxChange": null,
+    "addScroll": null,
     "dungeonComplete": null
   },
   "dialogueIfQuestTargetCompleted": null
@@ -170,24 +171,6 @@ FIELD SCOPE: diceRolls + dialogueIfQuestTargetCompleted are TOP-LEVEL. questUpda
 EMPTY vs OMIT: leave arrays empty ([]) and objects null when nothing happened. But if the narrative resolved a quest objective / transferred an item / moved the player, the matching stateChanges slot MUST be filled — the mockup lists every slot so you never "forget" one.
 npcsIntroduced: one entry per NEW speaking NPC (not already in NPCs section). Omit or [] if none.
 ${languageRule}`;
-}
-
-export function spatialAwarenessBlock() {
-  return `SPATIAL AWARENESS (use [LOCATION CONTEXT] when present):
-1. NEVER teleport characters. Movement must follow listed exits or the player must discover a new path.
-2. Respect: locked doors, distance, time cost, danger, faction barriers, time-of-day restrictions.
-3. If no exit leads where the player wants to go, offer: exploration, asking an NPC, skill check, obtaining a map.
-4. Distinguish "knows it exists" from "can walk there." Knowing about ruins doesn't mean knowing the path.
-5. Use the perception hints provided. Don't invent senses not listed (e.g. don't say "you hear water" unless audible_from is listed).
-6. "I perceive X" ≠ "I am at X." Seeing a tower doesn't mean being at the tower.
-7. NEVER reveal locations marked [SECRET] or [HIDDEN] in narration unless the player actively searches.
-8. Locations marked [rumored] — use hedging: "mówią że...", "ponoć...".
-9. NPCs marked [GM-ONLY] do not exist for the player until triggered.
-10. Every NPC you introduce must be at a specific location. State where they are.
-11. If an NPC moves during the scene, describe where they go.
-12. You may describe new rooms, paths, buildings — the graph system will extract them from your narrative automatically.
-13. Be specific about spatial relationships: "schody w dół", "drzwi po lewej", "za rogiem", "widać z okna".
-14. Don't invent locations that contradict the existing [LOCATION CONTEXT].`;
 }
 
 export function worldSettingBlock(campaign) {

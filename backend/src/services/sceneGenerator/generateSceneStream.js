@@ -40,6 +40,7 @@ import {
   isYassatoCameoOnCooldown,
   generateYassatoCameoScene,
 } from './yassatoCameo.js';
+import { detectMagicExposure } from './magicExposure.js';
 
 const log = childLogger({ module: 'sceneGenerator' });
 
@@ -213,10 +214,6 @@ export async function generateSceneStream(campaignId, playerAction, options = {}
     // 3. Context assembly — skip entities already emitted inline in system prompt
     const currentLocation = coreState.world?.currentLocation || '';
     const inlineKeys = getInlineEntityKeys(coreState);
-    // Thread the polymorphic location ref so assembleContext can fetch graph context
-    if (activeCurrentRef?.kind && activeCurrentRef?.id) {
-      intentResult._currentRef = activeCurrentRef;
-    }
     const contextBlocks = await assembleContext(
       campaignId, intentResult, currentLocation, inlineKeys,
       { provider, timeoutMs: llmNanoTimeoutMs, playerAction },
@@ -255,6 +252,8 @@ export async function generateSceneStream(campaignId, playerAction, options = {}
     });
     recentScenes.reverse();
 
+    const magicExposure = detectMagicExposure(recentScenes, coreState.character);
+
     const systemPromptParts = buildLeanSystemPrompt(coreState, recentScenes, language, {
       dmSettings,
       needsSystemEnabled,
@@ -263,6 +262,7 @@ export async function generateSceneStream(campaignId, playerAction, options = {}
       intentResult,
       livingWorldEnabled,
       questGiverHint,
+      magicExposure,
     });
 
     const userPrompt = buildUserPrompt(playerAction, {
@@ -584,34 +584,10 @@ export async function generateSceneStream(campaignId, playerAction, options = {}
     // persistCharacterSnapshot can fan out to the F4 child tables inside the
     // same tx as the scene insert.
     const persistChar = activeCharacterId && updatedCharacter && updatedCharacter !== activeCharacter;
-    const skillGains = updatedCharacter?._skillGains || [];
-    if (updatedCharacter?._skillGains) delete updatedCharacter._skillGains;
-
     const savedScene = await prisma.$transaction(async (tx) => {
       const scene = await tx.campaignScene.create({ data: sceneCreateData });
       if (persistChar) {
         await persistCharacterSnapshot(activeCharacterId, updatedCharacter, tx);
-      }
-      if (activeCharacterId && skillGains.length > 0) {
-        const narrativeExcerpt = (sceneResult.narrative || '').slice(0, 200) || null;
-        const diceRollsBySkill = {};
-        for (const dr of (sceneResult.diceRolls || [])) {
-          if (dr?.skill) diceRollsBySkill[dr.skill] = { skill: dr.skill, roll: dr.roll, total: dr.total, threshold: dr.threshold, success: dr.success, margin: dr.margin, difficulty: dr.difficulty };
-        }
-        await tx.characterSkillGain.createMany({
-          data: skillGains.map((g) => ({
-            characterId: activeCharacterId,
-            skillName: g.skillName,
-            xpGained: g.xpGained,
-            oldLevel: g.oldLevel,
-            newLevel: g.newLevel,
-            playerAction: playerAction || null,
-            narrative: narrativeExcerpt,
-            diceRollInfo: diceRollsBySkill[g.skillName] || null,
-            sceneIndex: newSceneIndex,
-            campaignId,
-          })),
-        });
       }
       return scene;
     });
@@ -816,30 +792,10 @@ async function runYassatoCameoPath({
   };
 
   const persistChar = activeCharacterId && updatedCharacter && updatedCharacter !== activeCharacter;
-  const yassatoSkillGains = updatedCharacter?._skillGains || [];
-  if (updatedCharacter?._skillGains) delete updatedCharacter._skillGains;
-
   const savedScene = await prisma.$transaction(async (tx) => {
     const scene = await tx.campaignScene.create({ data: sceneCreateData });
     if (persistChar) {
       await persistCharacterSnapshot(activeCharacterId, updatedCharacter, tx);
-    }
-    if (activeCharacterId && yassatoSkillGains.length > 0) {
-      const narrativeExcerpt = (sceneResult.narrative || '').slice(0, 200) || null;
-      await tx.characterSkillGain.createMany({
-        data: yassatoSkillGains.map((g) => ({
-          characterId: activeCharacterId,
-          skillName: g.skillName,
-          xpGained: g.xpGained,
-          oldLevel: g.oldLevel,
-          newLevel: g.newLevel,
-          playerAction: playerAction || null,
-          narrative: narrativeExcerpt,
-          diceRollInfo: null,
-          sceneIndex: newSceneIndex,
-          campaignId,
-        })),
-      });
     }
     return scene;
   });

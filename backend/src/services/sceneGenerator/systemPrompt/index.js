@@ -18,7 +18,6 @@ import {
   playerInputPolicyBlock,
   responseFormatBlock,
   worldSettingBlock,
-  spatialAwarenessBlock,
 } from './staticRules.js';
 import { buildConditionalRules } from './conditionalRules.js';
 import { buildDmSettingsBlock } from './dmSettingsBlock.js';
@@ -66,6 +65,7 @@ export function buildLeanSystemPrompt(coreState, recentScenes, language = 'pl', 
   intentResult = {},
   livingWorldEnabled = false,
   questGiverHint = null,
+  magicExposure = null,
 } = {}) {
   const cs = coreState;
   const intent = intentResult._intent || 'freeform';
@@ -94,12 +94,6 @@ export function buildLeanSystemPrompt(coreState, recentScenes, language = 'pl', 
     worldSettingBlock(campaign),
   ];
 
-  // Spatial awareness rules — only when living world is on and graph may
-  // have edges. Placed in static prefix (cacheable).
-  if (livingWorldEnabled) {
-    staticSections.push(spatialAwarenessBlock());
-  }
-
   // Living World static-content blocks. Item attribution + dungeon-flow hints
   // stay; the location-policy slot (newLocations / currentLocation) moved
   // ENTIRELY into conditionalRules — it now fires only when the player is
@@ -120,7 +114,7 @@ export function buildLeanSystemPrompt(coreState, recentScenes, language = 'pl', 
   // ═══════════════════════════════════════════════════════════════
   const dynamicSections = [];
 
-  const conditionalRules = buildConditionalRules({ intent, coreState: cs, scenePhase, livingWorldEnabled });
+  const conditionalRules = buildConditionalRules({ intent, coreState: cs, scenePhase, livingWorldEnabled, magicExposure });
   if (conditionalRules.length > 0) {
     dynamicSections.push(`Conditional rules:\n${conditionalRules.join('\n')}`);
   }

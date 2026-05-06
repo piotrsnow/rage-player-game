@@ -12,7 +12,6 @@ const BESTIARY_RACES_STR = BESTIARY_RACES.join(', ');
 const COMBAT_INTENTS = new Set(['combat', 'stealth', 'freeform', 'idle', 'first_scene']);
 const LORE_INTENTS = new Set(['talk', 'search', 'persuade', 'freeform', 'first_scene']);
 const MAGICAL_LOC_RE = /jaskini|dungeon|ruin|wież|tower|crypt|temple|świątyni|portal|magiczn|arcane|nekromant|podziemn/;
-const RECRUITMENT_INTENTS = new Set(['talk', 'persuade', 'freeform', 'first_scene']);
 
 // Location types where AI MAY emit a new sublocation entry. Settlements +
 // canonical sublocations of settlements (interior/dungeon as parents are
@@ -23,7 +22,7 @@ const SUBLOCATION_HOST_TYPES = new Set([
   'capital', 'city', 'town', 'village', 'hamlet', 'interior', 'dungeon',
 ]);
 
-export function buildConditionalRules({ intent, coreState, scenePhase = null, livingWorldEnabled = false }) {
+export function buildConditionalRules({ intent, coreState, scenePhase = null, livingWorldEnabled = false, magicExposure = null }) {
   const rules = [];
   const cs = coreState;
   const campaign = cs.campaign || {};
@@ -76,37 +75,18 @@ export function buildConditionalRules({ intent, coreState, scenePhase = null, li
     );
   }
 
-  if (RECRUITMENT_INTENTS.has(intent)) {
-    rules.push(
-      `RECRUITMENT / TAMING:\n` +
-      `When the player explicitly attempts to tame, call, befriend, or recruit a creature or NPC (e.g. "wołam psa", "próbuję oswoić wilka", "przekonuję strażnika żeby poszedł ze mną"), resolve a skill check using a pre-rolled d50:\n` +
-      `- Animal/beast/monster: use Przetrwanie or Wiedza o naturze (whichever is higher). Recruitment threshold: margin ≥ 25.\n` +
-      `- Humanoid NPC: use Perswazja. Recruitment threshold: margin ≥ 50.\n` +
-      `If the check meets the threshold:\n` +
-      `  1. Narrate the creature/NPC responding positively and joining the party.\n` +
-      `  2. In stateChanges.npcs[], emit the NPC with: action:"introduce", attitude:"friendly", disposition:10, joinParty:true, plus appropriate race/creatureKind/role/personality. If the player named the creature in their action, use that name. Otherwise pick a fitting name.\n` +
-      `If the check succeeds (margin ≥ 0) but below the recruitment threshold: narrate a friendly reaction — the creature is not hostile but does NOT join. No joinParty.\n` +
-      `If the check fails: the creature ignores or flees. No joinParty.\n` +
-      `Limit: max 3 companions in party. If context shows 3+ companions already travelling with the player, recruitment auto-fails narratively ("twoja drużyna jest już zbyt liczna").`,
-    );
-  }
-
-  // Location-policy slots — added when the player is somewhere a sublocation
+  // Location-policy slots — added ONLY when the player is somewhere a slot
   // makes sense. Settlement / canonical-subloc → sublocation creation. Inside
-  // a dungeon_room → currentLocation reassignment to the next room.
-  // Also fires when the player is wandering but has a currentLocationName
-  // (narratively inside a settlement without an anchored FK — the sublocation
-  // pipeline resolves the parent by name and rejects gracefully on miss).
+  // a dungeon_room → currentLocation reassignment to the next room. Anywhere
+  // else (wilderness, raw terrain, null) → neither slot is offered, so AI
+  // can't even try to emit them. Keeps the prompt lean and stops drift.
   const currentLocType = world.currentLocationType || null;
-  const isInSettlement = currentLocType && SUBLOCATION_HOST_TYPES.has(currentLocType);
-  const wanderingWithLocationName = !isInSettlement && !currentLocType && !!world.currentLocation;
-  if (isInSettlement || wanderingWithLocationName) {
+  if (currentLocType && SUBLOCATION_HOST_TYPES.has(currentLocType)) {
     const currentLocName = world.currentLocation || '<current settlement>';
     rules.push(
       `LOCATION POLICY (sublocation-allowed): the player is inside "${currentLocName}". ` +
       `If they walk INTO a new tavern/forge/wing/chamber that doesn't already exist, you MAY add ONE entry to stateChanges.newLocations:\n` +
-      `  "newLocations": [{"name":"<distinctive name>", "parentLocationName":"${currentLocName}", "locationType":"interior", "slotType":"<slotType or null>", "description":"<optional>"}]\n` +
-      `- Name rule: use ≥2 words (e.g. "Piwnica Karczmy"). Single-word names are accepted ONLY for known room types: piwnica, strych, kuchnia, zbrojownia, spiżarnia, komnata, wieża, loch, studnia, kaplica, pracownia, magazyn, stajnia, poddasze, skarbiec, biblioteka, laboratorium, winiarnia, piekarnia.\n` +
+      `  "newLocations": [{"name":"<≥2 words>", "parentLocationName":"${currentLocName}", "locationType":"interior", "slotType":"<slotType or null>", "description":"<optional>"}]\n` +
       `- parentLocationName MUST be a real canonical name from above (current settlement OR a canonical sublocation in its walk-up chain). Fictional parents → silent reject.\n` +
       `- Emit ONE entry when the player actually walks IN — engine auto-promotes that single new sublocation to currentLocation. Multiple emitted entries do NOT auto-promote.\n` +
       `- Mentioning a building without entering it ≠ a newLocations entry. Just narrate.`,
@@ -212,6 +192,21 @@ export function buildConditionalRules({ intent, coreState, scenePhase = null, li
       `- Bridge collapsed / tunnel caved in → { action:"remove_edge", fromLocation:"X", toLocation:"Y" }\n` +
       `- New passage described in narration → { action:"create_edge", fromLocation:"X", toLocation:"Y", relationType:"path"|"door"|"stairs"|... }\n` +
       `Do NOT emit graphUpdates for: purely decorative details, movement on already-known edges, info already in the graph.`,
+    );
+  }
+
+  if (magicExposure?.eligible) {
+    const spellList = (magicExposure.availableSpells || []).join(', ');
+    const spellOption = spellList
+      ? `\n- learnSpell: one of [${spellList}] — character learns a starting spell. Pick one that fits the narrative.`
+      : '';
+    rules.push(
+      `MAGIC BREAKTHROUGH: Character has been interacting with magic beyond their abilities and had a breakthrough moment. ` +
+      `You MAY grant ONE magical reward this scene:` +
+      spellOption +
+      `\n- manaMaxChange: 2-4 — character's max mana pool increases.` +
+      `\nChoose whichever fits the narrative. Narrate organically — a sudden insight, dormant power awakening, a surge of energy. ` +
+      `Do NOT grant both in the same scene. This is a rare event — weave it into the story naturally.`,
     );
   }
 
