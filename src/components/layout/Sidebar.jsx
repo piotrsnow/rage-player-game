@@ -101,7 +101,7 @@ Opisz bardzo konkretne konsekwencje tej decyzji dla fabuły: relacji, zasobów, 
 
   return (
     <aside
-      className="hidden lg:flex flex-col h-screen w-64 fixed left-0 top-0 z-40 border-r border-primary/[0.10] shadow-[6px_0_24px_rgba(0,0,0,0.5)] backdrop-blur-xl sidebar-ambient pt-16"
+      className="hidden lg:flex flex-col h-screen w-64 fixed left-0 top-0 z-40 backdrop-blur-xl sidebar-ambient sidebar-torn-edge pt-16"
       style={SIDEBAR_PLAY_SURFACE_STYLE}
     >
       <div className="px-6 mb-8">
