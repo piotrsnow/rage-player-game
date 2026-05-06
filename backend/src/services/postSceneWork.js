@@ -14,6 +14,7 @@ import { resolveLocationByName } from './livingWorld/worldStateService.js';
 import { markEdgeDiscovered } from './livingWorld/travelGraph.js';
 import { listLocationsForCampaign } from './livingWorld/locationQueries.js';
 import { LOCATION_KIND_WORLD } from './locationRefs.js';
+import { extractGraphUpdate, validateGraphUpdate, applyGraphUpdate } from './locationGraph/index.js';
 
 const log = childLogger({ module: 'postSceneWork' });
 
@@ -228,6 +229,40 @@ export async function handlePostSceneWork({
     });
   } catch (err) {
     log.warn({ err: err?.message, sceneId }, '_locationSnapshot write failed (non-fatal)');
+  }
+
+  // Location Graph — extract spatial/structural updates from the scene
+  // narrative and apply them to the graph. Async + best-effort; never blocks
+  // the main post-scene pipeline. Runs after Phase 1 so currentLocation FK
+  // is already set on the campaign row.
+  if (campaign?.livingWorldEnabled && sceneTranscript) {
+    try {
+      const locKind = campaign.currentLocationKind || null;
+      const locId = campaign.currentLocationId || null;
+      if (locKind && locId) {
+        const graphUpdate = await extractGraphUpdate({
+          sceneText: sceneTranscript,
+          playerAction,
+          stateChanges,
+          campaignId,
+          locationId: locId,
+          locationKind: locKind,
+          provider,
+          timeoutMs: llmNanoTimeoutMs,
+        });
+        if (graphUpdate) {
+          const { valid, warnings } = validateGraphUpdate(graphUpdate);
+          if (warnings.length > 0) {
+            log.debug({ warnings, campaignId }, 'Graph update validation warnings');
+          }
+          if (valid) {
+            await applyGraphUpdate(graphUpdate, { campaignId });
+          }
+        }
+      }
+    } catch (err) {
+      log.warn({ err: err?.message, campaignId }, 'Graph extraction/apply failed (non-fatal)');
+    }
   }
 
   // Living World Phase 3 — reputation hook. Runs after Phase 1 so CampaignNPC

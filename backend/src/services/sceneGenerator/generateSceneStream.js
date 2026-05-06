@@ -210,6 +210,10 @@ export async function generateSceneStream(campaignId, playerAction, options = {}
     // 3. Context assembly — skip entities already emitted inline in system prompt
     const currentLocation = coreState.world?.currentLocation || '';
     const inlineKeys = getInlineEntityKeys(coreState);
+    // Thread the polymorphic location ref so assembleContext can fetch graph context
+    if (activeCurrentRef?.kind && activeCurrentRef?.id) {
+      intentResult._currentRef = activeCurrentRef;
+    }
     const contextBlocks = await assembleContext(
       campaignId, intentResult, currentLocation, inlineKeys,
       { provider, timeoutMs: llmNanoTimeoutMs, playerAction },

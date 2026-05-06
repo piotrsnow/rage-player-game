@@ -8,6 +8,7 @@ import { handleGetLocation } from './handlers/location.js';
 import { handleGetCodex } from './handlers/codex.js';
 import { buildWorldLorePreamble } from './worldLore.js';
 import { buildLivingWorldContext } from './contextBuilders/livingWorld.js';
+import { buildNarrativeContext } from '../locationGraph/graphContextBuilder.js';
 
 export { buildWorldLorePreamble };
 
@@ -96,6 +97,19 @@ export async function assembleContext(
     );
   }
 
+  // Location Graph — lean spatial context (exits, NPCs, perception hints).
+  // Fetched when the campaign has a resolved polymorphic location ref.
+  if (selectionResult._currentRef?.kind && selectionResult._currentRef?.id) {
+    fetches.push(
+      buildNarrativeContext(selectionResult._currentRef.id, selectionResult._currentRef.kind, campaignId)
+        .then((data) => ({ type: 'locationGraph', data }))
+        .catch((err) => {
+          log.warn({ err: err?.message, campaignId }, 'locationGraph context fetch failed');
+          return { type: 'locationGraph', data: null };
+        }),
+    );
+  }
+
   // Semantic search through campaign history
   if (selectionResult.needs_memory_search && selectionResult.memory_query) {
     fetches.push(
@@ -104,7 +118,7 @@ export async function assembleContext(
   }
 
   if (fetches.length === 0) {
-    return { npcs: {}, quests: {}, location: null, codex: {}, memory: null, livingWorld: null, worldLore: null };
+    return { npcs: {}, quests: {}, location: null, codex: {}, memory: null, livingWorld: null, worldLore: null, locationGraph: null };
   }
 
   const results = await Promise.all(fetches);
@@ -112,7 +126,7 @@ export async function assembleContext(
 }
 
 function groupByType(results) {
-  const grouped = { npcs: {}, quests: {}, location: null, codex: {}, memory: null, livingWorld: null, worldLore: null };
+  const grouped = { npcs: {}, quests: {}, location: null, codex: {}, memory: null, livingWorld: null, worldLore: null, locationGraph: null };
 
   for (const r of results) {
     switch (r.type) {
@@ -136,6 +150,9 @@ function groupByType(results) {
         break;
       case 'worldLore':
         grouped.worldLore = r.data;
+        break;
+      case 'locationGraph':
+        grouped.locationGraph = r.data;
         break;
     }
   }

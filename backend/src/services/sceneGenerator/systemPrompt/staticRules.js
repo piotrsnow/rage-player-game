@@ -170,6 +170,24 @@ npcsIntroduced: one entry per NEW speaking NPC (not already in NPCs section). Om
 ${languageRule}`;
 }
 
+export function spatialAwarenessBlock() {
+  return `SPATIAL AWARENESS (use [LOCATION CONTEXT] when present):
+1. NEVER teleport characters. Movement must follow listed exits or the player must discover a new path.
+2. Respect: locked doors, distance, time cost, danger, faction barriers, time-of-day restrictions.
+3. If no exit leads where the player wants to go, offer: exploration, asking an NPC, skill check, obtaining a map.
+4. Distinguish "knows it exists" from "can walk there." Knowing about ruins doesn't mean knowing the path.
+5. Use the perception hints provided. Don't invent senses not listed (e.g. don't say "you hear water" unless audible_from is listed).
+6. "I perceive X" ≠ "I am at X." Seeing a tower doesn't mean being at the tower.
+7. NEVER reveal locations marked [SECRET] or [HIDDEN] in narration unless the player actively searches.
+8. Locations marked [rumored] — use hedging: "mówią że...", "ponoć...".
+9. NPCs marked [GM-ONLY] do not exist for the player until triggered.
+10. Every NPC you introduce must be at a specific location. State where they are.
+11. If an NPC moves during the scene, describe where they go.
+12. You may describe new rooms, paths, buildings — the graph system will extract them from your narrative automatically.
+13. Be specific about spatial relationships: "schody w dół", "drzwi po lewej", "za rogiem", "widać z okna".
+14. Don't invent locations that contradict the existing [LOCATION CONTEXT].`;
+}
+
 export function worldSettingBlock(campaign) {
   const worldDesc = campaign.worldDescription || 'A dark fantasy world.';
   return `World: ${worldDesc}${campaign.hook ? `\nHook: ${campaign.hook}` : ''}`;

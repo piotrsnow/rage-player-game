@@ -298,6 +298,7 @@ model Campaign {
   discoveredLocations         CampaignDiscoveredLocation[]
   edgeDiscoveries             CampaignEdgeDiscovery[]
   campaignLocations           CampaignLocation[]
+  locationEdges               LocationEdge[]
 
   @@index([userId])
   @@index([isPublic])
@@ -608,8 +609,12 @@ model WorldLocation {
   knownByDefault     Boolean      @default(false)
   dangerLevel        DangerLevel  @default(safe)
 
-  aliases      Json  @default("[]")
-  roomMetadata Json?
+  aliases        Json    @default("[]")
+  roomMetadata   Json?
+  tags           Json    @default("[]")
+  atmosphere     String?
+  narrativeRoles Json    @default("[]")
+  scale          Int     @default(5)
 
   embeddingText String?
   embedding     Unsupported("vector(1536)")?
@@ -691,6 +696,10 @@ model CampaignLocation {
   slotKind           String       @default("custom")
   dangerLevel        DangerLevel  @default(safe)
   roomMetadata       Json?
+  tags               Json         @default("[]")
+  atmosphere         String?
+  narrativeRoles     Json         @default("[]")
+  scale              Int          @default(5)
 
   embeddingText String?
   embedding     Unsupported("vector(1536)")?
@@ -704,6 +713,38 @@ model CampaignLocation {
   @@index([campaignId])
   @@index([regionX, regionY])
   @@index([locationType])
+}
+
+// Location Graph — semantic edges between any pair of locations (canonical
+// WorldLocation OR per-campaign CampaignLocation). Polymorphic from/to via
+// kind+id pairs. Supplements Road (which stays for Dijkstra travel) with
+// richer spatial, perception, social, narrative, and temporal relations.
+model LocationEdge {
+  id              String   @id @default(uuid(7)) @db.Uuid
+  fromKind        String
+  fromId          String   @db.Uuid
+  toKind          String
+  toId            String   @db.Uuid
+  edgeType        String
+  category        String
+  bidirectional   Boolean  @default(true)
+  weight          Float    @default(1.0)
+  metadata        Json     @default("{}")
+  discoveryState  String   @default("unknown")
+  confidence      Float    @default(1.0)
+  campaignId      String?  @db.Uuid
+  createdBy       String   @default("system")
+  isActive        Boolean  @default(true)
+  createdAt       DateTime @default(now()) @db.Timestamptz
+  updatedAt       DateTime @updatedAt @db.Timestamptz
+
+  campaign Campaign? @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+
+  @@index([fromKind, fromId])
+  @@index([toKind, toId])
+  @@index([edgeType])
+  @@index([category])
+  @@index([campaignId])
 }
 
 model UserWorldKnowledge {

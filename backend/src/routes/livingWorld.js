@@ -21,6 +21,7 @@ import { generate as generateNpcDialog } from '../services/livingWorld/npcDialog
 import { listLocationsForCampaign } from '../services/livingWorld/locationQueries.js';
 import { loadCampaignFog } from '../services/livingWorld/userDiscoveryService.js';
 import { loadUserApiKeys } from '../services/apiKeyService.js';
+import { loadCampaignGraph } from '../services/locationGraph/graphService.js';
 
 const log = childLogger({ module: 'livingWorldRoutes' });
 
@@ -253,6 +254,77 @@ export async function livingWorldRoutes(fastify) {
     }
     reply.header('etag', etag);
     return reply.send(payload);
+  });
+
+  // GET /campaigns/:id/location-graph — graph view for the frontend modal
+  fastify.get('/campaigns/:id/location-graph', {
+    schema: {
+      params: {
+        type: 'object',
+        properties: { id: { type: 'string', format: 'uuid' } },
+        required: ['id'],
+      },
+      querystring: {
+        type: 'object',
+        properties: {
+          focusKind: { type: 'string', enum: ['world', 'campaign'] },
+          focusId: { type: 'string', format: 'uuid' },
+          hops: { type: 'integer', minimum: 1, maximum: 5, default: 2 },
+        },
+      },
+    },
+  }, async (request, reply) => {
+    const campaign = await assertCampaignOwnership(request, reply, request.params.id);
+    if (!campaign) return;
+    const { focusKind, focusId, hops = 2 } = request.query;
+    let resolvedFocusKind = focusKind || null;
+    let resolvedFocusId = focusId || null;
+    if (!resolvedFocusKind || !resolvedFocusId) {
+      const full = await prisma.campaign.findUnique({
+        where: { id: request.params.id },
+        select: { currentLocationKind: true, currentLocationId: true },
+      });
+      resolvedFocusKind = resolvedFocusKind || full?.currentLocationKind || null;
+      resolvedFocusId = resolvedFocusId || full?.currentLocationId || null;
+    }
+    const { nodes, edges } = await loadCampaignGraph(request.params.id, {
+      focusKind: resolvedFocusKind,
+      focusId: resolvedFocusId,
+      hops,
+    });
+
+    const nodeList = [];
+    for (const [key, node] of nodes) {
+      nodeList.push({
+        id: node.id,
+        kind: node._kind,
+        name: node.canonicalName || node.displayName || node.name,
+        type: node.locationType || 'generic',
+        scale: node.scale ?? 5,
+        tags: node.tags || [],
+        atmosphere: node.atmosphere || null,
+        dangerLevel: node.dangerLevel || 'safe',
+        regionX: node.regionX ?? 0,
+        regionY: node.regionY ?? 0,
+      });
+    }
+
+    const edgeList = edges.map((e) => ({
+      id: e.id,
+      fromKind: e.fromKind,
+      fromId: e.fromId,
+      toKind: e.toKind,
+      toId: e.toId,
+      edgeType: e.edgeType,
+      category: e.category,
+      bidirectional: e.bidirectional,
+      weight: e.weight,
+      metadata: e.metadata,
+      discoveryState: e.discoveryState,
+      createdBy: e.createdBy,
+    }));
+
+    return reply.send({ nodes: nodeList, edges: edgeList });
   });
 
   // POST /npc-dialog/:worldNpcId — C2 1-on-1 dialog

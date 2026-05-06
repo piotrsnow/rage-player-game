@@ -1,4 +1,5 @@
 import { pickChatterLine } from '../../../../shared/domain/npcChatterPool.js';
+import { buildNarrativeContext } from '../locationGraph/graphContextBuilder.js';
 
 /**
  * Format pre-fetched context blocks (from assembleContext) into a prompt
@@ -35,6 +36,11 @@ export function buildContextSection(contextBlocks) {
   // Location
   if (contextBlocks.location && !contextBlocks.location.startsWith('No location found')) {
     parts.push(`[Location]\n${contextBlocks.location}`);
+  }
+
+  // Location Graph — lean spatial context (exits, NPCs, perception hints)
+  if (contextBlocks.locationGraph) {
+    parts.push(`[LOCATION CONTEXT]\n${contextBlocks.locationGraph}\n[/LOCATION CONTEXT]`);
   }
 
   // Codex

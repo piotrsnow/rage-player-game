@@ -18,6 +18,7 @@ import {
   playerInputPolicyBlock,
   responseFormatBlock,
   worldSettingBlock,
+  spatialAwarenessBlock,
 } from './staticRules.js';
 import { buildConditionalRules } from './conditionalRules.js';
 import { buildDmSettingsBlock } from './dmSettingsBlock.js';
@@ -92,6 +93,12 @@ export function buildLeanSystemPrompt(coreState, recentScenes, language = 'pl', 
     responseFormatBlock(language),
     worldSettingBlock(campaign),
   ];
+
+  // Spatial awareness rules — only when living world is on and graph may
+  // have edges. Placed in static prefix (cacheable).
+  if (livingWorldEnabled) {
+    staticSections.push(spatialAwarenessBlock());
+  }
 
   // Living World static-content blocks. Item attribution + dungeon-flow hints
   // stay; the location-policy slot (newLocations / currentLocation) moved
