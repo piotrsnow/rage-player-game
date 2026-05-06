@@ -1255,6 +1255,209 @@ export async function adminLivingWorldRoutes(fastify) {
     }
   });
 
+  // ── Entity Browser (unified listing + cascade delete) ─────────────
+  // Admin tool: query across all 8 entity tables in parallel, merge into
+  // a unified shape for the entity browser UI. Single-entity + bulk delete
+  // with FK cascade.
+
+  const ENTITY_TYPES = [
+    'WorldNPC', 'WorldLocation', 'Road',
+    'CampaignNPC', 'CampaignLocation', 'CampaignEdge', 'CampaignQuest', 'Character',
+  ];
+
+  fastify.get('/entities', guard({
+    schema: {
+      querystring: {
+        type: 'object',
+        additionalProperties: false,
+        properties: {
+          type: { type: 'string', enum: ENTITY_TYPES },
+          search: { type: 'string', maxLength: 200 },
+          campaignId: ID_STRING,
+          page: { type: 'integer', minimum: 1, default: 1 },
+          limit: { type: 'integer', minimum: 1, maximum: 200, default: 50 },
+        },
+      },
+    },
+  }), async (request) => {
+    const { type, search, campaignId, page, limit } = request.query;
+    const skip = ((page || 1) - 1) * limit;
+    const searchFilter = search ? { contains: search, mode: 'insensitive' } : undefined;
+
+    const typesToQuery = type ? [type] : ENTITY_TYPES;
+    const queries = {};
+
+    if (typesToQuery.includes('WorldNPC')) {
+      const where = {};
+      if (searchFilter) where.name = searchFilter;
+      queries.WorldNPC = prisma.worldNPC.findMany({
+        where, take: limit, skip, orderBy: { updatedAt: 'desc' },
+        select: { id: true, name: true, role: true, alive: true, category: true, currentLocationId: true, updatedAt: true },
+      });
+    }
+    if (typesToQuery.includes('WorldLocation')) {
+      const where = {};
+      if (searchFilter) where.canonicalName = searchFilter;
+      queries.WorldLocation = prisma.worldLocation.findMany({
+        where, take: limit, skip, orderBy: { updatedAt: 'desc' },
+        select: { id: true, canonicalName: true, locationType: true, region: true, parentLocationId: true, updatedAt: true },
+      });
+    }
+    if (typesToQuery.includes('Road')) {
+      const where = {};
+      queries.Road = prisma.road.findMany({
+        where, take: limit, skip, orderBy: { createdAt: 'desc' },
+        select: {
+          id: true, distance: true, terrainType: true, difficulty: true,
+          from: { select: { canonicalName: true } },
+          to: { select: { canonicalName: true } },
+          createdAt: true,
+        },
+      });
+    }
+    if (typesToQuery.includes('CampaignNPC')) {
+      const where = {};
+      if (searchFilter) where.name = searchFilter;
+      if (campaignId) where.campaignId = campaignId;
+      queries.CampaignNPC = prisma.campaignNPC.findMany({
+        where, take: limit, skip, orderBy: { updatedAt: 'desc' },
+        select: {
+          id: true, name: true, campaignId: true, alive: true, worldNpcId: true,
+          campaign: { select: { name: true } },
+          updatedAt: true,
+        },
+      });
+    }
+    if (typesToQuery.includes('CampaignLocation')) {
+      const where = {};
+      if (searchFilter) where.name = searchFilter;
+      if (campaignId) where.campaignId = campaignId;
+      queries.CampaignLocation = prisma.campaignLocation.findMany({
+        where, take: limit, skip, orderBy: { createdAt: 'desc' },
+        select: {
+          id: true, name: true, locationType: true, campaignId: true,
+          campaign: { select: { name: true } },
+          createdAt: true,
+        },
+      });
+    }
+    if (typesToQuery.includes('CampaignEdge')) {
+      const where = {};
+      if (campaignId) where.campaignId = campaignId;
+      queries.CampaignEdge = prisma.campaignEdge.findMany({
+        where, take: limit, skip, orderBy: { createdAt: 'desc' },
+        select: {
+          id: true, campaignId: true, relationType: true, fromKind: true, fromId: true,
+          toKind: true, toId: true, distance: true, visibility: true,
+          campaign: { select: { name: true } },
+          createdAt: true,
+        },
+      });
+    }
+    if (typesToQuery.includes('CampaignQuest')) {
+      const where = {};
+      if (searchFilter) where.questName = searchFilter;
+      if (campaignId) where.campaignId = campaignId;
+      queries.CampaignQuest = prisma.campaignQuest.findMany({
+        where, take: limit, skip, orderBy: { updatedAt: 'desc' },
+        select: {
+          id: true, questName: true, questType: true, status: true, campaignId: true,
+          campaign: { select: { name: true } },
+          updatedAt: true,
+        },
+      });
+    }
+    if (typesToQuery.includes('Character')) {
+      const where = {};
+      if (searchFilter) where.name = searchFilter;
+      queries.Character = prisma.character.findMany({
+        where, take: limit, skip, orderBy: { updatedAt: 'desc' },
+        select: {
+          id: true, name: true, species: true, characterLevel: true,
+          lockedCampaignId: true, lockedCampaignName: true,
+          updatedAt: true,
+        },
+      });
+    }
+
+    const keys = Object.keys(queries);
+    const results = await Promise.all(Object.values(queries));
+    const resultByType = {};
+    keys.forEach((k, i) => { resultByType[k] = results[i]; });
+
+    // Normalize into unified shape
+    const entities = [];
+    const counts = {};
+    for (const t of ENTITY_TYPES) {
+      const rows = resultByType[t] || [];
+      counts[t] = rows.length;
+      for (const row of rows) {
+        entities.push(normalizeEntity(t, row));
+      }
+    }
+
+    return { entities, counts, total: entities.length };
+  });
+
+  fastify.delete('/entities/:type/:id', guard(), async (request, reply) => {
+    const { type, id } = request.params;
+    if (!ENTITY_TYPES.includes(type)) {
+      return reply.code(400).send({ error: `Invalid entity type: ${type}` });
+    }
+    try {
+      const modelName = prismaModelName(type);
+      await prisma[modelName].delete({ where: { id } });
+      return { deleted: true, type, id };
+    } catch (err) {
+      if (err?.code === 'P2025') return reply.code(404).send({ error: 'Entity not found' });
+      log.error({ err, type, id }, 'entity delete failed');
+      return reply.code(500).send({ error: err.message });
+    }
+  });
+
+  fastify.delete('/entities/bulk', guard({
+    schema: {
+      body: {
+        type: 'object',
+        required: ['items'],
+        properties: {
+          items: {
+            type: 'array',
+            maxItems: 50,
+            items: {
+              type: 'object',
+              required: ['type', 'id'],
+              properties: {
+                type: { type: 'string' },
+                id: { type: 'string' },
+              },
+            },
+          },
+        },
+      },
+    },
+  }), async (request, reply) => {
+    const { items } = request.body;
+    const invalid = items.filter((i) => !ENTITY_TYPES.includes(i.type));
+    if (invalid.length) {
+      return reply.code(400).send({ error: `Invalid types: ${invalid.map((i) => i.type).join(', ')}` });
+    }
+    const deleted = [];
+    const errors = [];
+    await prisma.$transaction(async (tx) => {
+      for (const { type: t, id } of items) {
+        try {
+          const modelName = prismaModelName(t);
+          await tx[modelName].delete({ where: { id } });
+          deleted.push({ type: t, id });
+        } catch (err) {
+          errors.push({ type: t, id, error: err?.code === 'P2025' ? 'not_found' : err.message });
+        }
+      }
+    });
+    return { deleted, errors };
+  });
+
   // ── Model overrides (global admin config) ──
 
   fastify.get('/model-overrides', guard(), async () => {
@@ -1348,4 +1551,41 @@ function safeJson(s) {
   if (!s) return null;
   if (typeof s === 'object') return s;
   try { return JSON.parse(s); } catch { return null; }
+}
+
+function prismaModelName(entityType) {
+  const map = {
+    WorldNPC: 'worldNPC',
+    WorldLocation: 'worldLocation',
+    Road: 'road',
+    CampaignNPC: 'campaignNPC',
+    CampaignLocation: 'campaignLocation',
+    CampaignEdge: 'campaignEdge',
+    CampaignQuest: 'campaignQuest',
+    Character: 'character',
+  };
+  return map[entityType] || entityType;
+}
+
+function normalizeEntity(type, row) {
+  switch (type) {
+    case 'WorldNPC':
+      return { id: row.id, type, name: row.name, status: row.alive ? 'alive' : 'dead', details: row.role || '', source: 'world', campaignName: null };
+    case 'WorldLocation':
+      return { id: row.id, type, name: row.canonicalName, status: row.locationType, details: row.region || '', source: 'world', campaignName: null, parentId: row.parentLocationId };
+    case 'Road':
+      return { id: row.id, type, name: `${row.from?.canonicalName || '?'} ↔ ${row.to?.canonicalName || '?'}`, status: row.terrainType, details: `${row.distance || '?'} km`, source: 'world', campaignName: null };
+    case 'CampaignNPC':
+      return { id: row.id, type, name: row.name, status: row.alive ? 'alive' : 'dead', details: row.worldNpcId ? 'linked' : 'ephemeral', source: 'campaign', campaignId: row.campaignId, campaignName: row.campaign?.name || null };
+    case 'CampaignLocation':
+      return { id: row.id, type, name: row.name, status: row.locationType, details: '', source: 'campaign', campaignId: row.campaignId, campaignName: row.campaign?.name || null };
+    case 'CampaignEdge':
+      return { id: row.id, type, name: `${row.fromKind}:${row.fromId} ↔ ${row.toKind}:${row.toId}`, status: row.relationType, details: row.distance ? `${row.distance} km` : row.visibility, source: 'campaign', campaignId: row.campaignId, campaignName: row.campaign?.name || null };
+    case 'CampaignQuest':
+      return { id: row.id, type, name: row.questName, status: row.status, details: row.questType || '', source: 'campaign', campaignId: row.campaignId, campaignName: row.campaign?.name || null };
+    case 'Character':
+      return { id: row.id, type, name: row.name, status: `Lv.${row.characterLevel || 1}`, details: row.species || '', source: 'world', campaignName: row.lockedCampaignName || null };
+    default:
+      return { id: row.id, type, name: row.name || row.id, status: '', details: '', source: 'unknown', campaignName: null };
+  }
 }

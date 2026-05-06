@@ -79,6 +79,13 @@ export default function CampaignCreatorPage() {
   const [genVideoFading, setGenVideoFading] = useState(false);
   const [genVideoVisible, setGenVideoVisible] = useState(false);
 
+  const [bgVideoVisible, setBgVideoVisible] = useState(true);
+  const [bgVideoFading, setBgVideoFading] = useState(false);
+  useEffect(() => {
+    const t = setTimeout(() => setBgVideoFading(true), 300);
+    return () => clearTimeout(t);
+  }, []);
+
   useEffect(() => {
     if (isGenerating) {
       setGenVideoVisible(true);
@@ -330,10 +337,17 @@ export default function CampaignCreatorPage() {
   }
 
   return (
-    <div className="max-w-5xl mx-auto px-6 py-12 relative">
-      <VideoBackground src="/video/bg_video_1.mp4" />
+    <div className="max-w-5xl mx-auto px-6 py-12 relative z-10">
+      {bgVideoVisible && (
+        <div
+          style={{ opacity: bgVideoFading ? 0 : 1, transition: 'opacity 1.2s ease-out' }}
+          onTransitionEnd={() => { if (bgVideoFading) setBgVideoVisible(false); }}
+        >
+          <VideoBackground src="/video/bg_video_1.mp4" />
+        </div>
+      )}
       {isGenerating ? (
-        <div className="relative flex flex-col items-center justify-center py-32 animate-fade-in overflow-hidden rounded-xl">
+        <div className="fixed inset-0 z-50 flex flex-col items-center justify-center animate-fade-in overflow-hidden bg-black">
           {genVideoVisible && (
             <div
               className="absolute inset-0 z-0"
@@ -344,6 +358,7 @@ export default function CampaignCreatorPage() {
               onTransitionEnd={() => { if (genVideoFading) setGenVideoVisible(false); }}
             >
               <video
+                ref={(el) => { if (el) el.playbackRate = 0.5; }}
                 className="h-full w-full object-cover"
                 src="/video/krzemuch_intro.mp4"
                 autoPlay
@@ -351,7 +366,7 @@ export default function CampaignCreatorPage() {
                 playsInline
                 onEnded={() => setGenVideoFading(true)}
               />
-              <div className="absolute inset-0 bg-black/60" />
+              <div className="absolute inset-0 bg-black/40" />
             </div>
           )}
           <div className="relative z-10">

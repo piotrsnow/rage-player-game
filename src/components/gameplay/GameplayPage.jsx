@@ -66,6 +66,7 @@ import { useCombatResolution } from '../../hooks/useCombatResolution';
 import { useGameplayDerivedState } from '../../hooks/useGameplayDerivedState';
 import { useGameplayOverlays } from '../../hooks/useGameplayOverlays';
 import { useGameplayActions } from '../../hooks/useGameplayActions';
+import { useUltrawideBonus } from '../../hooks/useUltrawideBonus';
 import MainQuestCompleteModal from './MainQuestCompleteModal';
 
 function hashCode(str) {
@@ -86,6 +87,7 @@ export default function GameplayPage({ readOnly = false, shareToken = null, onRe
   const { t } = useTranslation();
   const dispatch = useGameDispatch();
   const autoSave = useGameAutoSave();
+  const uwBonus = useUltrawideBonus();
 
   // Granular per-slice subscriptions — each field only triggers a re-render when
   // that specific slice changes. No reconstructed `state` object: children that
@@ -894,7 +896,10 @@ export default function GameplayPage({ readOnly = false, shareToken = null, onRe
       </div>
 
       {/* Right Sidebar: Chat Panel */}
-      <aside className="w-full lg:w-96 bg-surface-container-low/50 backdrop-blur-md border-l border-outline-variant/15 flex flex-col h-[400px] lg:h-full shrink-0">
+      <aside
+        className="w-full lg:w-[442px] bg-surface-container-low/50 backdrop-blur-md border-l border-outline-variant/15 flex flex-col h-[400px] lg:h-full shrink-0"
+        style={uwBonus.chat > 0 ? { width: 442 + uwBonus.chat } : undefined}
+      >
         <ChatPanel
           messages={chatHistory}
           streamingNarrative={streamingNarrative}

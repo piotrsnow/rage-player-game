@@ -55,7 +55,7 @@ export default function IntroOverlay({ onVideoEnded } = {}) {
 
   return (
     <div
-      className="fixed inset-0 z-0 pointer-events-none"
+      className="fixed inset-0 z-[5] pointer-events-none"
       style={{
         opacity: fading ? 0 : 1,
         transition: 'opacity 0.8s ease-out',

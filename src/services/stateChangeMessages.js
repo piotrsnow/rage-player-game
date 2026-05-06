@@ -179,5 +179,12 @@ export function generateStateChangeMessages(stateChanges, state, t) {
     }
   }
 
+  if (stateChanges.newLocations?.length > 0) {
+    for (const loc of stateChanges.newLocations) {
+      if (!loc?.name || !loc.parentLocationName) continue;
+      msgs.push({ id: mkId(), role: 'system', subtype: 'location_discovered', content: t('system.locationDiscovered', { name: loc.name }), timestamp: ts });
+    }
+  }
+
   return msgs;
 }

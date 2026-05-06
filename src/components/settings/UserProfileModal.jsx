@@ -57,6 +57,7 @@ export default function UserProfileModal({ onClose }) {
           <div className="px-6 lg:px-12 py-8">
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
               <section className="space-y-6">
+                {backendUser?.isAdmin && <AdminBillingSection />}
                 <BackendServerSection
                   backendAuthChecking={backendAuthChecking}
                   backendUser={backendUser}
@@ -74,8 +75,6 @@ export default function UserProfileModal({ onClose }) {
                   sceneModelConfig={sceneModelConfig}
                   backendKeys={backendKeys}
                 />
-
-                {backendUser?.isAdmin && <AdminBillingSection />}
               </section>
             </div>
           </div>

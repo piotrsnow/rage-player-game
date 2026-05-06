@@ -345,7 +345,51 @@ export async function livingWorldRoutes(fastify) {
       }))
       .filter((f) => f.factionId);
 
-    return reply.send({ nodes: nodeList, edges: edgeList, factionOverlay });
+    // Occupants overlay — NPCs + player characters positioned at graph nodes
+    const campaignId = request.params.id;
+    const [campaignNpcs, campaignFull] = await Promise.all([
+      prisma.campaignNPC.findMany({
+        where: { campaignId, lastLocationKind: { not: null }, lastLocationId: { not: null } },
+        select: { id: true, name: true, role: true, category: true, lastLocationKind: true, lastLocationId: true },
+      }),
+      prisma.campaign.findUnique({
+        where: { id: campaignId },
+        select: {
+          currentLocationKind: true,
+          currentLocationId: true,
+          participants: {
+            select: { character: { select: { id: true, name: true, species: true } } },
+          },
+        },
+      }),
+    ]);
+
+    const occupants = [];
+    for (const npc of campaignNpcs) {
+      occupants.push({
+        id: npc.id,
+        name: npc.name,
+        type: 'npc',
+        role: npc.role,
+        category: npc.category,
+        locationKind: npc.lastLocationKind,
+        locationId: npc.lastLocationId,
+      });
+    }
+    if (campaignFull?.currentLocationKind && campaignFull?.currentLocationId) {
+      for (const p of campaignFull.participants || []) {
+        occupants.push({
+          id: p.character.id,
+          name: p.character.name,
+          type: 'player',
+          species: p.character.species,
+          locationKind: campaignFull.currentLocationKind,
+          locationId: campaignFull.currentLocationId,
+        });
+      }
+    }
+
+    return reply.send({ nodes: nodeList, edges: edgeList, factionOverlay, occupants });
   });
 
   // ── Location Graph CRUD (Phase 2) ──────────────────────────────────

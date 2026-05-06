@@ -111,6 +111,15 @@ export function isGeneratedLocationType(locationType) {
   return SETTLEMENT_TEMPLATES[locationType]?.generated === true;
 }
 
+// Single-word Polish room/interior names that are unambiguous enough to bypass
+// the >=2 significant-word distinctiveness check. Lowercase for comparison.
+export const KNOWN_INTERIOR_TYPES = new Set([
+  'piwnica', 'strych', 'kuchnia', 'zbrojownia', 'spiżarnia',
+  'komnata', 'wieża', 'loch', 'studnia', 'kaplica',
+  'pracownia', 'magazyn', 'stajnia', 'poddasze', 'skarbiec',
+  'biblioteka', 'laboratorium', 'winiarnia', 'piekarnia',
+]);
+
 /**
  * Classify an AI-emitted sublocation `slotType` against its parent's template.
  *
@@ -120,10 +129,10 @@ export function isGeneratedLocationType(locationType) {
  *   { kind: 'custom' }                    — narratively distinctive, goes as custom
  *   { kind: 'reject', reason }            — generic/duplicate/invalid
  *
- * Heuristic for custom distinctiveness (per user spec):
- *   - Name must be >= 2 words, OR
- *   - Contain a proper-noun-looking token (capitalized non-initial word)
- * Generic short names ("mały dom", "hut") are rejected.
+ * Heuristic for custom distinctiveness:
+ *   - Name must be >= 2 significant words, OR
+ *   - Name (lowercased) is in KNOWN_INTERIOR_TYPES
+ * Generic short names ("dom", "hut") are rejected.
  *
  * This is a pure function — given (slotType, name, parentTemplate),
  * returns the classification deterministically.
@@ -141,6 +150,10 @@ export function classifySublocation({ slotType, name, parentLocationType }) {
   // Unknown slotType — candidate for custom. Enforce narrative distinctiveness.
   const cleanName = String(name || '').trim();
   if (!cleanName) return { kind: 'reject', reason: 'missing_name' };
+
+  if (KNOWN_INTERIOR_TYPES.has(cleanName.toLowerCase())) {
+    return { kind: 'custom', slotType: slot || null };
+  }
 
   // At least 2 non-trivial words (words of length >= 3 after dropping stop-like fillers)
   const significantWords = cleanName

@@ -75,18 +75,22 @@ export function buildConditionalRules({ intent, coreState, scenePhase = null, li
     );
   }
 
-  // Location-policy slots — added ONLY when the player is somewhere a slot
+  // Location-policy slots — added when the player is somewhere a sublocation
   // makes sense. Settlement / canonical-subloc → sublocation creation. Inside
-  // a dungeon_room → currentLocation reassignment to the next room. Anywhere
-  // else (wilderness, raw terrain, null) → neither slot is offered, so AI
-  // can't even try to emit them. Keeps the prompt lean and stops drift.
+  // a dungeon_room → currentLocation reassignment to the next room.
+  // Also fires when the player is wandering but has a currentLocationName
+  // (narratively inside a settlement without an anchored FK — the sublocation
+  // pipeline resolves the parent by name and rejects gracefully on miss).
   const currentLocType = world.currentLocationType || null;
-  if (currentLocType && SUBLOCATION_HOST_TYPES.has(currentLocType)) {
+  const isInSettlement = currentLocType && SUBLOCATION_HOST_TYPES.has(currentLocType);
+  const wanderingWithLocationName = !isInSettlement && !currentLocType && !!world.currentLocation;
+  if (isInSettlement || wanderingWithLocationName) {
     const currentLocName = world.currentLocation || '<current settlement>';
     rules.push(
       `LOCATION POLICY (sublocation-allowed): the player is inside "${currentLocName}". ` +
       `If they walk INTO a new tavern/forge/wing/chamber that doesn't already exist, you MAY add ONE entry to stateChanges.newLocations:\n` +
-      `  "newLocations": [{"name":"<≥2 words>", "parentLocationName":"${currentLocName}", "locationType":"interior", "slotType":"<slotType or null>", "description":"<optional>"}]\n` +
+      `  "newLocations": [{"name":"<distinctive name>", "parentLocationName":"${currentLocName}", "locationType":"interior", "slotType":"<slotType or null>", "description":"<optional>"}]\n` +
+      `- Name rule: use ≥2 words (e.g. "Piwnica Karczmy"). Single-word names are accepted ONLY for known room types: piwnica, strych, kuchnia, zbrojownia, spiżarnia, komnata, wieża, loch, studnia, kaplica, pracownia, magazyn, stajnia, poddasze, skarbiec, biblioteka, laboratorium, winiarnia, piekarnia.\n` +
       `- parentLocationName MUST be a real canonical name from above (current settlement OR a canonical sublocation in its walk-up chain). Fictional parents → silent reject.\n` +
       `- Emit ONE entry when the player actually walks IN — engine auto-promotes that single new sublocation to currentLocation. Multiple emitted entries do NOT auto-promote.\n` +
       `- Mentioning a building without entering it ≠ a newLocations entry. Just narrate.`,

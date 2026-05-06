@@ -13,6 +13,7 @@ export default function GraphToolbar({
   onSearch, searchQuery,
   onValidate,
   searchInputRef,
+  snapToGrid, onToggleSnap, onResetLayout,
 }) {
   const { t } = useTranslation();
 
@@ -92,6 +93,26 @@ export default function GraphToolbar({
       >
         <span className="material-symbols-outlined text-sm">conversion_path</span>
         {t('locationGraph.toolbar.addEdge')}
+      </button>
+
+      <button
+        onClick={onToggleSnap}
+        title={t('locationGraph.tooltips.snapToGrid')}
+        className={`flex items-center gap-1 px-3 py-1.5 rounded-sm transition-colors uppercase tracking-widest ${
+          snapToGrid ? 'bg-primary/30 text-primary' : 'hover:bg-white/5 text-on-surface-variant'
+        }`}
+      >
+        <span className="material-symbols-outlined text-sm">{snapToGrid ? 'grid_on' : 'grid_off'}</span>
+        {t('locationGraph.toolbar.snapToGrid')}
+      </button>
+
+      <button
+        onClick={onResetLayout}
+        title={t('locationGraph.tooltips.resetLayout')}
+        className="flex items-center gap-1 px-3 py-1.5 rounded-sm hover:bg-white/5 text-on-surface-variant transition-colors uppercase tracking-widest"
+      >
+        <span className="material-symbols-outlined text-sm">restart_alt</span>
+        {t('locationGraph.toolbar.resetLayout')}
       </button>
 
       {/* Mode toggle */}

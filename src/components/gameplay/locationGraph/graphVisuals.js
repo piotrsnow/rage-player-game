@@ -1,5 +1,5 @@
 export const NODE_VISUALS = {
-  world:      { icon: 'public',       color: '#334155', label: 'Świat' },
+  world:      { icon: 'public',       color: '#64748b', label: 'Świat' },
   region:     { icon: 'map',          color: '#065f46', label: 'Region' },
   area:       { icon: 'park',         color: '#15803d', label: 'Obszar' },
   settlement: { icon: 'castle',       color: '#d97706', label: 'Osada' },

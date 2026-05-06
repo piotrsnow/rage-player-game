@@ -53,6 +53,7 @@ function LoggedInBanner({ user }) {
   const [badgeLegend, setBadgeLegend] = useState('');
   const [badgeSnark, setBadgeSnark] = useState('');
   const [badgeLoading, setBadgeLoading] = useState(false);
+  const [diceStats, setDiceStats] = useState(null);
   const [ttsState, setTtsState] = useState('idle');
 
   const cardRef = useRef(null);
@@ -85,6 +86,7 @@ function LoggedInBanner({ user }) {
       });
       if (res?.legend) setBadgeLegend(res.legend);
       if (res?.snark) setBadgeSnark(res.snark);
+      if (res?.diceStats) setDiceStats(res.diceStats);
       sessionStorage.setItem(BADGE_SESSION_KEY, '1');
     } catch {}
     setBadgeLoading(false);
@@ -380,13 +382,13 @@ function LoggedInBanner({ user }) {
                 {displayName}
               </h2>
               <div className="flex items-center gap-2 flex-wrap">
-                <span className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-primary/10 border border-primary/25 text-sm font-headline">
+                <span className="inline-flex items-center gap-2 px-3 h-9 rounded-full bg-primary/10 border border-primary/25 text-sm font-headline">
                   <span className="material-symbols-outlined text-lg text-primary">star</span>
                   <span className="text-on-surface-variant/80 text-xs uppercase tracking-wider">Lvl</span>
                   <span className="text-on-surface font-headline">{level}</span>
                 </span>
                 {speciesLabel && (
-                  <span className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-primary/10 border border-primary/25 text-sm font-headline">
+                  <span className="inline-flex items-center gap-2 px-3 h-9 rounded-full bg-primary/10 border border-primary/25 text-sm font-headline">
                     <span className="material-symbols-outlined text-lg text-primary">groups</span>
                     <span className="text-on-surface-variant/80 text-xs uppercase tracking-wider">{speciesLabel}</span>
                   </span>
@@ -427,7 +429,7 @@ function LoggedInBanner({ user }) {
                     {chip.value}
                   </span>
                   {/* Tooltip */}
-                  <span className="pointer-events-none absolute -top-9 left-1/2 -translate-x-1/2 opacity-0 group-hover:opacity-100 transition-opacity duration-150 whitespace-nowrap px-2 py-1 rounded bg-surface-dim/95 border border-primary/25 text-[10px] text-on-surface font-headline shadow-lg z-50">
+                  <span className="pointer-events-none absolute -top-20 left-1/2 -translate-x-1/2 opacity-0 group-hover:opacity-100 transition-opacity duration-150 whitespace-nowrap px-4 py-2 rounded bg-surface-dim/95 border border-primary/25 text-xl text-on-surface font-headline shadow-lg z-50">
                     {chip.label} {chip.value}
                   </span>
                 </div>
@@ -465,11 +467,13 @@ function LoggedInBanner({ user }) {
           </div>
         </div>
 
-        {/* ===== BACK — snarky exploits + narrator ===== */}
-        <div className="flip-card-back holo-card p-8 flex flex-col justify-center overflow-hidden">
-          <h3 className="font-headline text-tertiary text-xl flex items-center gap-2.5">
-            <span className="material-symbols-outlined text-primary-dim text-2xl">theater_comedy</span>
-            {t('lobby.snarkTitle', 'Twoje wybryki')}
+        {/* ===== BACK — snark + dice stats ===== */}
+        <div className="flip-card-back holo-card p-8 flex flex-col overflow-hidden">
+          <div className="flex items-center gap-2.5 mb-2">
+            <h3 className="font-headline text-tertiary text-xl flex items-center gap-2.5">
+              <span className="material-symbols-outlined text-primary-dim text-2xl">theater_comedy</span>
+              {t('lobby.snarkTitle', 'Twoje wybryki')}
+            </h3>
             {ttsAvailable && (
               <button
                 type="button"
@@ -487,47 +491,62 @@ function LoggedInBanner({ user }) {
                 </span>
               </button>
             )}
-          </h3>
+          </div>
 
-          <OrnamentalDivider />
-
-          {/* Legend on back — holo style */}
-          {badgeLegend && (
-            <p className="text-base leading-relaxed italic animate-text-shimmer text-center mb-4">
-              &ldquo;{badgeLegend}&rdquo;
-            </p>
-          )}
-
-          <div className="flex-1 min-h-0 overflow-y-auto custom-scrollbar flex flex-col justify-center">
+          <div className="flex-1 min-h-0 overflow-y-auto custom-scrollbar flex flex-col items-center justify-center text-center">
             {badgeSnark ? (
-              <p className="text-base leading-relaxed italic animate-text-shimmer">
+              <p className="text-base leading-relaxed italic animate-text-shimmer max-w-md">
                 {badgeSnark}
               </p>
             ) : badgeLoading ? (
-              <div className="flex items-center justify-center gap-2.5 text-outline/30 text-base py-8">
+              <div className="flex items-center justify-center gap-2.5 text-outline/30 text-base py-4">
                 <span className="material-symbols-outlined text-lg animate-spin">sync</span>
                 {t('common.loading')}
               </div>
             ) : (
-              <div className="text-center text-on-surface-variant/40 py-8">
+              <div className="text-on-surface-variant/40 py-4">
                 <span className="material-symbols-outlined text-4xl text-outline/15 block mb-3">sentiment_neutral</span>
                 <p className="text-base">{t('lobby.snarkEmpty', 'Brak materiału do drwin... na razie.')}</p>
               </div>
             )}
             {ttsState === 'error' && (
-              <p className="mt-3 text-xs text-error/70">
+              <p className="mt-2 text-xs text-error/70">
                 {t('lobby.snarkTtsError', 'Nie udało się odtworzyć narracji.')}
               </p>
             )}
           </div>
 
-          {/* Footer */}
-          <div className="flex items-center gap-3 pt-4 border-t border-outline-variant/8">
-            <span className="text-[10px] text-outline/20 font-label uppercase tracking-widest flex items-center gap-1.5">
-              <span className="material-symbols-outlined text-sm">360</span>
-              {t('lobby.flipBack', 'Click to flip back')}
-            </span>
-          </div>
+          {diceStats && diceStats.totalRolls > 0 && (
+            <div className="mt-auto">
+              <div className="flex flex-wrap gap-2 justify-center">
+                {[
+                  { icon: 'casino', value: diceStats.totalRolls, label: `Rzuty: ${diceStats.totalRolls}`, color: 'text-primary', border: 'border-primary/20', hoverBorder: 'hover:border-primary/45' },
+                  { icon: 'check_circle', value: `${Math.round((diceStats.successes / diceStats.totalRolls) * 100)}%`, label: `Sukces: ${diceStats.successes}/${diceStats.totalRolls}`, color: 'text-emerald-400', border: 'border-emerald-500/20', hoverBorder: 'hover:border-emerald-500/45' },
+                  { icon: 'bar_chart', value: diceStats.avgRoll, label: `Średni rzut: ${diceStats.avgRoll}`, color: 'text-tertiary', border: 'border-tertiary/20', hoverBorder: 'hover:border-tertiary/45' },
+                  { icon: 'star', value: diceStats.critSuccesses, label: `Kryty (1): ${diceStats.critSuccesses}`, color: 'text-amber-400', border: 'border-amber-500/20', hoverBorder: 'hover:border-amber-500/45' },
+                  { icon: 'dangerous', value: diceStats.critFailures, label: `Fumble (50): ${diceStats.critFailures}`, color: 'text-error', border: 'border-error/20', hoverBorder: 'hover:border-error/45' },
+                  ...(diceStats.bestSkill ? [{ icon: 'trending_up', value: '', label: `Najlepsza: ${diceStats.bestSkill}`, color: 'text-emerald-400', border: 'border-emerald-500/20', hoverBorder: 'hover:border-emerald-500/45' }] : []),
+                  ...(diceStats.worstSkill ? [{ icon: 'trending_down', value: '', label: `Najgorsza: ${diceStats.worstSkill}`, color: 'text-error', border: 'border-error/20', hoverBorder: 'hover:border-error/45' }] : []),
+                ].map((chip) => (
+                  <div
+                    key={chip.icon}
+                    className={`group relative flex items-center h-14 w-14 rounded-md justify-center border bg-gradient-to-br from-primary/10 via-tertiary/5 to-primary/10 shadow-[inset_0_0_0_1px_rgba(255,255,255,0.04)] transition-[border-color,box-shadow] duration-200 ease-out ${chip.border} ${chip.hoverBorder}`}
+                  >
+                    <span className={`material-symbols-outlined text-2xl ${chip.color}`}>{chip.icon}</span>
+                    {chip.value !== '' && (
+                      <span className="absolute -bottom-0.5 -right-0.5 text-[10px] font-headline text-on-surface bg-surface-dim/80 rounded px-0.5 leading-tight">
+                        {chip.value}
+                      </span>
+                    )}
+                    <span className="pointer-events-none absolute -top-20 left-1/2 -translate-x-1/2 opacity-0 group-hover:opacity-100 transition-opacity duration-150 whitespace-nowrap px-4 py-2 rounded bg-surface-dim/95 border border-primary/25 text-xl text-on-surface font-headline shadow-lg z-50">
+                      {chip.label}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
         </div>
       </div>
     </div>

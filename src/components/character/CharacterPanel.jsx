@@ -62,7 +62,7 @@ function getSkillAttribute(skillName) {
   return entry?.attribute || null;
 }
 
-function SkillDetailPanel({ skillName, level, character, characterId, t }) {
+function SkillDetailPanel({ skillName, level, character, t }) {
   const attrKey = getSkillAttribute(skillName);
   const attrValue = attrKey ? (character.attributes?.[attrKey] || 0) : 0;
   const attrLabel = attrKey ? translateAttribute(attrKey, t) : '—';
@@ -70,55 +70,58 @@ function SkillDetailPanel({ skillName, level, character, characterId, t }) {
   const translatedName = translateSkill(skillName, t);
 
   return (
-    <div className="col-span-full bg-surface-container/90 backdrop-blur-xl border border-skill-rose/30 rounded-sm p-4 animate-fade-in">
-      <div className="flex items-start gap-3">
-        <span className="material-symbols-outlined text-skill-rose text-2xl mt-0.5">
+    <div className="bg-surface-container-low p-6 border border-outline-variant/10 rounded-sm animate-fade-in">
+      <div className="flex items-start gap-4">
+        <span className="material-symbols-outlined text-skill-rose text-3xl mt-0.5">
           {SKILL_ICONS[skillName] || 'star'}
         </span>
         <div className="flex-1 min-w-0">
-          <h4 className="text-skill-rose font-headline text-lg leading-tight">{translatedName}</h4>
+          <h4 className="text-skill-rose font-headline text-xl leading-tight">{translatedName}</h4>
           {attrKey && (
-            <p className="text-on-surface-variant/70 text-xs mt-0.5">
-              Powiązana cecha: <span className="text-primary">{attrLabel}</span>
+            <p className="text-on-surface-variant/70 text-sm mt-1">
+              Powiązana cecha: <span className="text-primary font-semibold">{attrLabel}</span>
             </p>
-          )}
-
-          <div className="mt-3 p-3 bg-surface-container-high/60 rounded-sm border border-outline-variant/10">
-            <p className="text-on-surface text-xs font-label uppercase tracking-wider mb-2">Rzut umiejętności</p>
-            <p className="text-on-surface-variant text-sm">
-              <span className="text-tertiary font-headline">d50</span>
-              {' + '}
-              <span className="text-primary font-headline">{attrValue}</span>
-              <span className="text-on-surface-variant/60"> ({attrLabel})</span>
-              {' + '}
-              <span className="text-skill-rose font-headline">{level}</span>
-              <span className="text-on-surface-variant/60"> (umiejętność)</span>
-              {' vs próg trudności'}
-            </p>
-            <div className="flex flex-wrap gap-2 mt-2">
-              {Object.entries(DIFFICULTY_THRESHOLDS).map(([key, val]) => (
-                <span key={key} className="text-[10px] px-2 py-0.5 rounded-sm bg-surface-container-highest/80 text-on-surface-variant border border-outline-variant/10">
-                  {DIFFICULTY_LABELS[key] || key}: <span className="text-tertiary font-headline">{val}</span>
-                </span>
-              ))}
-            </div>
-            {luck > 0 && (
-              <p className="text-xs text-on-surface-variant/70 mt-2 italic">
-                Fart: {luck}% szans na automatyczny sukces.
-              </p>
-            )}
-          </div>
-
-          {characterId && (
-            <div className="mt-3 border-t border-outline-variant/10 pt-3">
-              <p className="text-on-surface text-xs font-label uppercase tracking-wider mb-1">
-                {t('advancement.skillHistory', 'Historia rozwoju')}
-              </p>
-              <SkillGainHistory characterId={characterId} skillName={skillName} />
-            </div>
           )}
         </div>
       </div>
+
+      <div className="mt-4 p-4 bg-surface-container-high/60 rounded-sm border border-outline-variant/10">
+        <p className="text-on-surface text-xs font-label uppercase tracking-wider mb-2.5">Rzut umiejętności</p>
+        <p className="text-on-surface-variant text-base">
+          <span className="text-tertiary font-headline text-lg">d50</span>
+          {' + '}
+          <span className="text-primary font-headline text-lg">{attrValue}</span>
+          <span className="text-on-surface-variant/60 text-sm"> ({attrLabel})</span>
+          {' + '}
+          <span className="text-skill-rose font-headline text-lg">{level}</span>
+          <span className="text-on-surface-variant/60 text-sm"> (umiejętność)</span>
+          {' vs próg trudności'}
+        </p>
+        <div className="flex flex-wrap gap-2 mt-3">
+          {Object.entries(DIFFICULTY_THRESHOLDS).map(([key, val]) => (
+            <span key={key} className="text-xs px-2.5 py-1 rounded-sm bg-surface-container-highest/80 text-on-surface-variant border border-outline-variant/10">
+              {DIFFICULTY_LABELS[key] || key}: <span className="text-tertiary font-headline">{val}</span>
+            </span>
+          ))}
+        </div>
+        {luck > 0 && (
+          <p className="text-sm text-on-surface-variant/70 mt-3 italic">
+            Fart: {luck}% szans na automatyczny sukces.
+          </p>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function SkillGainHistoryBox({ characterId, skillName, t }) {
+  return (
+    <div className="bg-surface-container-low p-6 border border-outline-variant/10 rounded-sm animate-fade-in">
+      <h3 className="text-tertiary font-headline flex items-center gap-2 mb-4">
+        <span className="material-symbols-outlined text-base">timeline</span>
+        {t('advancement.skillHistory', 'Historia rozwoju')}
+      </h3>
+      <SkillGainHistory characterId={characterId} skillName={skillName} />
     </div>
   );
 }
@@ -146,56 +149,69 @@ function SkillsGrid({ character, t }) {
     setSelectedSkill((prev) => (prev === name ? null : name));
   };
 
-  return (
-    <div className="w-full text-left bg-surface-container-low border border-outline-variant/10 rounded-sm transition-all hover:border-primary/20">
-      <button
-        type="button"
-        onClick={() => setExpanded((v) => !v)}
-        className="w-full flex items-center justify-between px-4 pt-4 pb-2 cursor-pointer"
-      >
-        <h3 className="text-tertiary font-headline flex items-center gap-2">
-          <span className="material-symbols-outlined text-sm">school</span>
-          {t('character.skills')}
-        </h3>
-        <span className={`material-symbols-outlined text-sm text-on-surface-variant transition-transform ${expanded ? 'rotate-180' : ''}`}>
-          expand_more
-        </span>
-      </button>
-      <div className={`px-4 pb-4 grid gap-2 ${expanded ? 'grid-cols-2 sm:grid-cols-3' : 'grid-cols-4 sm:grid-cols-6'}`}>
-        {learned.map(({ name, level }) => {
-          const icon = SKILL_ICONS[name] || 'star';
-          const isSelected = selectedSkill === name;
-          return (
-            <button
-              key={name}
-              type="button"
-              onClick={(e) => handleSkillClick(e, name)}
-              className={`bg-surface-container-high/60 backdrop-blur-md p-2 border-b-2 flex flex-col items-center text-center transition-all cursor-pointer hover:bg-surface-container-highest/80 ${
-                isSelected ? 'border-skill-rose bg-surface-container-highest/80' : 'border-primary/20'
-              }`}
-            >
-              <span className="material-symbols-outlined text-skill-rose mb-0.5 text-2xl">{icon}</span>
-              {expanded && (
-                <span className="text-on-surface-variant font-label text-[8px] uppercase tracking-[0.1em] mb-0.5 leading-tight">
-                  {translateSkill(name, t)}
-                </span>
-              )}
-              <span className="text-tertiary font-headline text-xl">{level}</span>
-            </button>
-          );
-        })}
+  const selectedLevel = selectedSkill
+    ? (learned.find((s) => s.name === selectedSkill) || {}).level || 0
+    : 0;
 
-        {selectedSkill && (
-          <SkillDetailPanel
-            skillName={selectedSkill}
-            level={(learned.find((s) => s.name === selectedSkill) || {}).level || 0}
-            character={character}
-            characterId={characterId}
-            t={t}
-          />
-        )}
+  return (
+    <>
+      <div className="w-full text-left bg-surface-container-low border border-outline-variant/10 rounded-sm transition-all hover:border-primary/20">
+        <button
+          type="button"
+          onClick={() => setExpanded((v) => !v)}
+          className="w-full flex items-center justify-between px-5 pt-5 pb-3 cursor-pointer"
+        >
+          <h3 className="text-tertiary font-headline flex items-center gap-2">
+            <span className="material-symbols-outlined text-base">school</span>
+            {t('character.skills')}
+          </h3>
+          <span className={`material-symbols-outlined text-base text-on-surface-variant transition-transform ${expanded ? 'rotate-180' : ''}`}>
+            expand_more
+          </span>
+        </button>
+        <div className={`px-5 pb-5 grid gap-2.5 ${expanded ? 'grid-cols-2 sm:grid-cols-3' : 'grid-cols-4 sm:grid-cols-6'}`}>
+          {learned.map(({ name, level }) => {
+            const icon = SKILL_ICONS[name] || 'star';
+            const isSelected = selectedSkill === name;
+            return (
+              <button
+                key={name}
+                type="button"
+                onClick={(e) => handleSkillClick(e, name)}
+                className={`bg-surface-container-high/60 backdrop-blur-md p-3 border-b-2 flex flex-col items-center text-center transition-all cursor-pointer hover:bg-surface-container-highest/80 ${
+                  isSelected ? 'border-skill-rose bg-surface-container-highest/80' : 'border-primary/20'
+                }`}
+              >
+                <span className="material-symbols-outlined text-skill-rose mb-1 text-3xl">{icon}</span>
+                {expanded && (
+                  <span className="text-on-surface-variant font-label text-[9px] uppercase tracking-[0.1em] mb-0.5 leading-tight">
+                    {translateSkill(name, t)}
+                  </span>
+                )}
+                <span className="text-tertiary font-headline text-2xl">{level}</span>
+              </button>
+            );
+          })}
+        </div>
       </div>
-    </div>
+
+      {selectedSkill && (
+        <SkillDetailPanel
+          skillName={selectedSkill}
+          level={selectedLevel}
+          character={character}
+          t={t}
+        />
+      )}
+
+      {selectedSkill && characterId && (
+        <SkillGainHistoryBox
+          characterId={characterId}
+          skillName={selectedSkill}
+          t={t}
+        />
+      )}
+    </>
   );
 }
 

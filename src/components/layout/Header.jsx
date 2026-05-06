@@ -285,7 +285,7 @@ export default function Header() {
                     aria-label={t('admin.livingWorld')}
                     className="material-symbols-outlined text-on-surface-variant hover:text-tertiary transition-all active:scale-95 duration-200 cursor-pointer w-9 h-9 flex items-center justify-center rounded-full hover:bg-surface-container-high/40"
                   >
-                    public
+                    auto_stories
                   </button>
                 </Tooltip>
                 <Tooltip content={t('admin.userManagement')} placement="bottom" variant="compact" asChild>

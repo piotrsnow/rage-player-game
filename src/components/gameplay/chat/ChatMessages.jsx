@@ -203,6 +203,7 @@ const SUBTYPE_STYLES = {
   char_xp:          { icon: 'auto_awesome', color: 'text-sky-400',     line: 'to-sky-400/35' },
   character_levelup: { icon: 'stars',      color: 'text-amber-300',   line: 'to-amber-400/45' },
   achievement_unlock: { icon: 'emoji_events', color: 'text-amber-400', line: 'to-amber-400/40' },
+  location_discovered: { icon: 'explore', color: 'text-teal-300', line: 'to-teal-300/30' },
 };
 
 /** Rich inline colors for skill / character XP system lines (matches `stateChangeMessages` shapes). */

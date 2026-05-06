@@ -363,6 +363,12 @@ export async function promoteCampaignLocationToCanonical(campaignLocationId) {
         .catch((err) => log.warn({ err: err?.message, worldLocationId: worldLocation.id }, 'promoted location index failed'));
     }
 
+    // Auto-create Road + LocationEdge to the nearest canonical top-level
+    // settlement so the promoted location isn't left floating disconnected.
+    await autoLinkToNearestSettlement(worldLocation).catch((err) =>
+      log.warn({ err: err?.message, worldLocationId: worldLocation.id }, 'autoLinkToNearestSettlement failed (non-fatal)'),
+    );
+
     log.info(
       { sourceCampaignLocationId: campaignLocationId, worldLocationId: worldLocation.id, name: worldLocation.canonicalName },
       'CampaignLocation destructively promoted to canonical WorldLocation',
@@ -376,6 +382,79 @@ export async function promoteCampaignLocationToCanonical(campaignLocationId) {
     log.warn({ err: err?.message, campaignLocationId }, 'promoteCampaignLocationToCanonical failed');
     return { ok: false, reason: 'write_failed', error: err?.message };
   }
+}
+
+/**
+ * After a CampaignLocation is promoted to a canonical WorldLocation, find the
+ * nearest canonical top-level settlement by Euclidean distance and create a
+ * bidirectional Road + corresponding LocationEdge. Skips if the location
+ * already has an outgoing Road or has no coordinates.
+ */
+async function autoLinkToNearestSettlement(worldLocation) {
+  if (!worldLocation?.id) return;
+  const x = worldLocation.regionX || 0;
+  const y = worldLocation.regionY || 0;
+
+  const existingRoad = await prisma.road.findFirst({
+    where: { OR: [{ fromLocationId: worldLocation.id }, { toLocationId: worldLocation.id }] },
+    select: { id: true },
+  });
+  if (existingRoad) return;
+
+  const settlements = await prisma.worldLocation.findMany({
+    where: {
+      parentLocationId: null,
+      id: { not: worldLocation.id },
+    },
+    select: { id: true, canonicalName: true, regionX: true, regionY: true },
+  });
+  if (settlements.length === 0) return;
+
+  let nearest = null;
+  let minDist = Infinity;
+  for (const s of settlements) {
+    const dx = (s.regionX || 0) - x;
+    const dy = (s.regionY || 0) - y;
+    const dist = Math.sqrt(dx * dx + dy * dy);
+    if (dist < minDist) {
+      minDist = dist;
+      nearest = s;
+    }
+  }
+  if (!nearest) return;
+
+  const distanceKm = Math.round(minDist * 10) / 10 || 1;
+
+  await prisma.road.create({
+    data: {
+      fromLocationId: worldLocation.id,
+      toLocationId: nearest.id,
+      distance: distanceKm,
+      difficulty: 'safe',
+      terrainType: 'trail',
+    },
+  });
+
+  await prisma.locationEdge.create({
+    data: {
+      fromKind: LOCATION_KIND_WORLD,
+      fromId: worldLocation.id,
+      toKind: LOCATION_KIND_WORLD,
+      toId: nearest.id,
+      edgeType: 'path_to',
+      category: 'movement',
+      bidirectional: true,
+      weight: distanceKm,
+      metadata: { distance: distanceKm, autoLinked: true },
+      discoveryState: 'unknown',
+      createdBy: 'system',
+    },
+  });
+
+  log.info(
+    { worldLocationId: worldLocation.id, nearestId: nearest.id, nearestName: nearest.canonicalName, distanceKm },
+    'Auto-linked promoted location to nearest settlement',
+  );
 }
 
 /** @deprecated F5b — kept as a thin alias for callers that still reference the

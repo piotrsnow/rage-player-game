@@ -10,6 +10,64 @@ import { callAIJson, parseJsonOrNull } from '../services/aiJsonCall.js';
 import { loadUserApiKeys } from '../services/apiKeyService.js';
 import { SCENE_CLIENT_SELECT } from '../services/campaignSerialize.js';
 
+async function aggregateDiceStats(prisma, campaignIds) {
+  const empty = { totalRolls: 0, successes: 0, failures: 0, critSuccesses: 0, critFailures: 0, avgRoll: 0, bestSkill: null, worstSkill: null };
+  if (!campaignIds.length) return empty;
+
+  const allScenes = await prisma.campaignScene.findMany({
+    where: { campaignId: { in: campaignIds }, diceRoll: { not: null } },
+    select: { diceRoll: true },
+  });
+
+  const rolls = allScenes.flatMap((s) => {
+    const d = s.diceRoll;
+    return Array.isArray(d) ? d : d ? [d] : [];
+  }).filter((r) => typeof r.roll === 'number');
+
+  if (rolls.length === 0) return empty;
+
+  let successes = 0;
+  let failures = 0;
+  let critSuccesses = 0;
+  let critFailures = 0;
+  let rollSum = 0;
+  const skillSuccessMap = {};
+  const skillTotalMap = {};
+
+  for (const r of rolls) {
+    rollSum += r.roll;
+    if (r.success) successes++;
+    else failures++;
+    if (r.roll === 1) critSuccesses++;
+    if (r.roll === 50) critFailures++;
+    const sk = r.skill || 'unknown';
+    skillTotalMap[sk] = (skillTotalMap[sk] || 0) + 1;
+    if (r.success) skillSuccessMap[sk] = (skillSuccessMap[sk] || 0) + 1;
+  }
+
+  let bestSkill = null;
+  let worstSkill = null;
+  let bestRate = -1;
+  let worstRate = 2;
+  for (const [sk, total] of Object.entries(skillTotalMap)) {
+    if (total < 2 || sk === 'unknown') continue;
+    const rate = (skillSuccessMap[sk] || 0) / total;
+    if (rate > bestRate) { bestRate = rate; bestSkill = sk; }
+    if (rate < worstRate) { worstRate = rate; worstSkill = sk; }
+  }
+
+  return {
+    totalRolls: rolls.length,
+    successes,
+    failures,
+    critSuccesses,
+    critFailures,
+    avgRoll: Math.round((rollSum / rolls.length) * 10) / 10,
+    bestSkill,
+    worstSkill,
+  };
+}
+
 function normalizeCharacterAge(age) {
   const parsed = Number(age);
   if (!Number.isFinite(parsed)) return 23;
@@ -314,21 +372,24 @@ export async function characterRoutes(fastify) {
     });
     if (!char) return reply.code(404).send({ error: 'Character not found' });
 
+    const campaigns = await prisma.campaignParticipant.findMany({
+      where: { characterId: char.id },
+      select: { campaignId: true },
+    });
+    const campaignIds = campaigns.map((c) => c.campaignId);
+
+    const diceStats = await aggregateDiceStats(prisma, campaignIds);
+
     if (!force && char.badgeSummary && char.badgeUpdatedAt) {
       return {
         summary: char.badgeSummary,
         legend: char.badgeLegend,
         snark: char.badgeSnark,
         updatedAt: char.badgeUpdatedAt,
+        diceStats,
         cached: true,
       };
     }
-
-    const campaigns = await prisma.campaignParticipant.findMany({
-      where: { characterId: char.id },
-      select: { campaignId: true },
-    });
-    const campaignIds = campaigns.map((c) => c.campaignId);
 
     let scenes = [];
     if (campaignIds.length > 0) {
@@ -397,7 +458,7 @@ Return JSON with exactly three fields, all written in ${isPolish ? 'Polish' : 'E
         },
       });
 
-      return { summary, legend, snark, updatedAt: now, cached: false };
+      return { summary, legend, snark, updatedAt: now, diceStats, cached: false };
     } catch (err) {
       const status = err.statusCode || 502;
       return reply.code(status).send({ error: err.message, code: err.code || 'AI_REQUEST_FAILED' });

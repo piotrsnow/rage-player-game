@@ -6,6 +6,7 @@ import {
   buildDistinctSceneCountMap,
   dedupeScenesByIndexAsc,
   extractTotalCost,
+  normalizeSceneAssetUrls,
   stripNormalizedFromCoreState,
 } from '../../services/campaignSerialize.js';
 import {
@@ -25,7 +26,7 @@ import { resolveLocationByName } from '../../services/livingWorld/worldStateServ
 import { consumeStartSpawn, peekStartSpawn } from '../../services/livingWorld/startSpawnCache.js';
 import { applyInitialLocations } from '../../services/livingWorld/initialLocationsResolver.js';
 import { unpackWorldBounds } from '../../services/locationRefs.js';
-import { seedEdgesFromExistingData } from '../../services/locationGraph/index.js';
+import { seedEdgesFromExistingData, ensureContainsEdge } from '../../services/locationGraph/index.js';
 import { CAMPAIGN_WRITE_SCHEMA } from './schemas.js';
 
 const log = childLogger({ module: 'campaigns' });
@@ -113,6 +114,40 @@ export async function crudCampaignRoutes(app) {
       scenes: dedupedScenes,
       characters,
     };
+  });
+
+  app.get('/:id/scenes/:sceneIndex', async (request, reply) => {
+    const { id: campaignId, sceneIndex: rawIndex } = request.params;
+    const sceneIndex = parseInt(rawIndex, 10);
+    if (Number.isNaN(sceneIndex) || sceneIndex < 0) {
+      return reply.code(400).send({ error: 'Invalid sceneIndex' });
+    }
+
+    const campaign = await prisma.campaign.findUnique({
+      where: { id: campaignId },
+      select: { userId: true },
+    });
+    if (!campaign) return reply.code(404).send({ error: 'Campaign not found' });
+
+    if (campaign.userId !== request.user.id) {
+      const participant = await prisma.campaignParticipant.findFirst({
+        where: { campaignId, character: { userId: request.user.id } },
+        select: { id: true },
+      });
+      if (!participant) return reply.code(403).send({ error: 'Not authorized' });
+    }
+
+    const scene = await prisma.campaignScene.findFirst({
+      where: { campaignId, sceneIndex },
+      orderBy: { createdAt: 'desc' },
+      select: {
+        narrative: true, chosenAction: true, imageUrl: true,
+        sceneIndex: true, diceRoll: true, createdAt: true,
+      },
+    });
+    if (!scene) return reply.code(404).send({ error: 'Scene not found' });
+
+    return normalizeSceneAssetUrls(scene);
   });
 
   app.post('/', {
@@ -223,6 +258,17 @@ export async function crudCampaignRoutes(app) {
       seedEdgesFromExistingData().catch((err) =>
         log.warn({ err: err?.message, campaignId: campaign.id }, 'seedEdgesFromExistingData failed (non-fatal)'),
       );
+
+      // Verify contains edge for the start sublocation → parent settlement.
+      // seedEdgesFromExistingData covers canonical hierarchy globally but runs
+      // async; ensure the specific start sublocation edge is present so the
+      // graph is traversable from scene 1.
+      const peeked = peekStartSpawn(request.user.id);
+      if (peeked?.sublocationId && peeked?.settlementId) {
+        ensureContainsEdge(peeked.settlementId, peeked.sublocationId).catch((err) =>
+          log.warn({ err: err?.message, campaignId: campaign.id }, 'ensureContainsEdge failed (non-fatal)'),
+        );
+      }
     }
 
     // Round B+ — apply AI-emitted initialLocations into the campaign sandbox

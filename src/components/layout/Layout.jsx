@@ -3,6 +3,7 @@ import { Outlet, useLocation } from 'react-router-dom';
 import Header from './Header';
 import Sidebar from './Sidebar';
 import MobileNav from './MobileNav';
+import { useUltrawideBonus } from '../../hooks/useUltrawideBonus';
 import { MusicProvider } from '../../contexts/MusicContext';
 import { ModalProvider, useModals } from '../../contexts/ModalContext';
 import { DictationProvider } from '../../contexts/DictationContext';
@@ -119,6 +120,7 @@ function ModalLayer() {
 export default function Layout() {
   const location = useLocation();
   const isPlaying = location.pathname.startsWith('/play');
+  const uwBonus = useUltrawideBonus();
 
   return (
     <MusicProvider>
@@ -127,7 +129,10 @@ export default function Layout() {
         <div className="min-h-screen bg-surface-dim">
           <Header />
           <Sidebar />
-          <main className={`pt-16 pb-24 lg:pb-0 min-h-screen ${isPlaying ? 'lg:pl-64' : ''}`}>
+          <main
+            className={`pt-16 pb-24 lg:pb-0 min-h-screen ${isPlaying ? 'lg:pl-[294px]' : ''}`}
+            style={isPlaying && uwBonus.sidebar > 0 ? { paddingLeft: 294 + uwBonus.sidebar } : undefined}
+          >
             <ErrorBoundary>
               <Outlet />
             </ErrorBoundary>

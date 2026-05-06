@@ -144,12 +144,14 @@ export async function processStateChanges(campaignId, stateChanges, { prevLoc = 
     : null;
   const hasCoords = aiX !== null && aiY !== null;
 
+  let aiNameResolved = false;
   if (aiName || hasCoords) {
     try {
       let updates = null;
       if (aiName) {
         const resolved = await resolveCurrentLocationTarget(campaignId, aiName);
         if (resolved) {
+          aiNameResolved = true;
           const coords = await lookupLocationByKindId({
             prisma,
             kind: resolved.kind,
@@ -244,6 +246,39 @@ export async function processStateChanges(campaignId, stateChanges, { prevLoc = 
     locResult = await processLocationChanges(campaignId, stateChanges.newLocations, { prevLoc }) || { createdSublocs: [] };
   }
 
+  // Retry: initial aiName resolution failed (sublocation didn't exist yet),
+  // but newLocations just created a matching row. Re-resolve and anchor.
+  if (aiName && !aiNameResolved && locResult.createdSublocs.length > 0) {
+    try {
+      const retryResolved = await resolveCurrentLocationTarget(campaignId, aiName);
+      if (retryResolved) {
+        const retryCoords = await lookupLocationByKindId({
+          prisma,
+          kind: retryResolved.kind,
+          id: retryResolved.id,
+          select: { regionX: true, regionY: true },
+        }).catch(() => null);
+        await prisma.campaign.update({
+          where: { id: campaignId },
+          data: {
+            currentLocationName: retryResolved.name,
+            currentLocationKind: retryResolved.kind,
+            currentLocationId: retryResolved.id,
+            currentX: retryCoords?.regionX ?? null,
+            currentY: retryCoords?.regionY ?? null,
+          },
+        });
+        aiNameResolved = true;
+        log.info(
+          { campaignId, name: retryResolved.name, kind: retryResolved.kind },
+          'currentLocation resolved on retry (sublocation created by newLocations in same scene)',
+        );
+      }
+    } catch (err) {
+      log.warn({ err: err?.message, campaignId, aiName }, 'currentLocation retry-resolve failed (non-fatal)');
+    }
+  }
+
   // Auto-promote: AI emitted exactly one new sublocation whose parent is in
   // the player's walk-up ancestor chain → set it as currentLocation. Covers
   // intra-settlement (gracz wchodzi do nowej tawerny), inter-subloc within
@@ -251,28 +286,69 @@ export async function processStateChanges(campaignId, stateChanges, { prevLoc = 
   // and child-of-canonical-subloc (Wieża Maga → Pracownia). Multi-subloc
   // emission (AI mentions kilka budynków) does NOT auto-promote — only one
   // is the player's actual destination, and we'd guess wrong.
-  if (livingWorldEnabled && locResult.createdSublocs.length === 1 && currentRef) {
+  // Skip if retry-resolve already anchored the player (aiNameResolved=true).
+  if (livingWorldEnabled && locResult.createdSublocs.length === 1 && !aiNameResolved) {
     try {
       const created = locResult.createdSublocs[0];
-      const parentKey = `${created.row.parentLocationKind}:${created.row.parentLocationId}`;
-      const ancestors = await walkUpAncestors(currentRef);
-      if (ancestors.has(parentKey)) {
+      let shouldPromote = false;
+
+      if (currentRef) {
+        // Normal path: verify parent is in the ancestor chain of current location.
+        const parentKey = `${created.row.parentLocationKind}:${created.row.parentLocationId}`;
+        const ancestors = await walkUpAncestors(currentRef);
+        shouldPromote = ancestors.has(parentKey);
+      } else {
+        // Wandering: no currentRef — promote unconditionally. The player
+        // explicitly walked into this sublocation (AI emitted exactly one).
+        shouldPromote = true;
+      }
+
+      if (shouldPromote) {
         await prisma.campaign.update({
           where: { id: campaignId },
           data: {
             currentLocationName: created.row.name,
             currentLocationKind: created.kind,
             currentLocationId: created.row.id,
-            // F5d — keep continuous coords in sync with the new anchor so the
-            // player marker on the map jumps with the auto-promoted subloc.
             currentX: typeof created.row.regionX === 'number' ? created.row.regionX : null,
             currentY: typeof created.row.regionY === 'number' ? created.row.regionY : null,
           },
         });
         log.info(
-          { campaignId, sublocId: created.row.id, sublocName: created.row.name },
-          'Auto-promoted new sublocation to currentLocation (parent in walk-up chain)',
+          { campaignId, sublocId: created.row.id, sublocName: created.row.name, hadCurrentRef: !!currentRef },
+          'Auto-promoted new sublocation to currentLocation',
         );
+
+        // Create movement edge from previous location to the new sublocation.
+        if (currentRef) {
+          const fromKey = `${currentRef.kind}:${currentRef.id}`;
+          const toKey = `${created.kind}:${created.row.id}`;
+          if (fromKey !== toKey) {
+            const existing = await prisma.locationEdge.findFirst({
+              where: {
+                fromKind: currentRef.kind, fromId: currentRef.id,
+                toKind: created.kind, toId: created.row.id,
+                category: 'movement', isActive: true,
+              },
+            });
+            if (!existing) {
+              await createEdge({
+                fromKind: currentRef.kind,
+                fromId: currentRef.id,
+                toKind: created.kind,
+                toId: created.row.id,
+                edgeType: 'path_to',
+                category: 'movement',
+                bidirectional: true,
+                weight: 1.0,
+                metadata: { autoCreated: true },
+                discoveryState: 'visited',
+                campaignId,
+                createdBy: 'system',
+              });
+            }
+          }
+        }
       }
     } catch (err) {
       log.warn({ err: err?.message, campaignId }, 'auto-promote sublocation → currentLocation failed (non-fatal)');

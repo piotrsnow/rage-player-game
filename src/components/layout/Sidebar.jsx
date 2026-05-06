@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import { useLocation } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
+import { useUltrawideBonus } from '../../hooks/useUltrawideBonus';
 import {
   useGameCampaign,
   useGameCharacter,
@@ -25,6 +26,7 @@ export default function Sidebar() {
   const location = useLocation();
   const { t } = useTranslation();
   const { backendUser } = useSettings();
+  const uwBonus = useUltrawideBonus();
   const campaign = useGameCampaign();
   const soloCharacter = useGameCharacter();
   const soloParty = useGameParty();
@@ -101,12 +103,12 @@ Opisz bardzo konkretne konsekwencje tej decyzji dla fabuły: relacji, zasobów, 
 
   return (
     <aside
-      className="hidden lg:flex flex-col h-screen w-64 fixed left-0 top-0 z-40 backdrop-blur-xl sidebar-ambient sidebar-torn-edge pt-16"
-      style={SIDEBAR_PLAY_SURFACE_STYLE}
+      className="hidden lg:flex flex-col h-screen w-[294px] fixed left-0 top-0 z-40 backdrop-blur-xl sidebar-ambient sidebar-torn-edge pt-16"
+      style={{ ...SIDEBAR_PLAY_SURFACE_STYLE, ...(uwBonus.sidebar > 0 && { width: 294 + uwBonus.sidebar }) }}
     >
       <div className="px-6 mb-8">
         {character.portraitUrl && (
-          <div className="mt-[60px] mb-4 aspect-[3/4] overflow-hidden rounded-sm border border-outline-variant/20 bg-surface-container-high shadow-[0_10px_30px_rgba(0,0,0,0.25)]">
+          <div className="mt-[80px] mb-4 aspect-[3/4] overflow-hidden rounded-sm border border-outline-variant/20 bg-surface-container-high shadow-[0_10px_30px_rgba(0,0,0,0.25)]">
             <img
               src={apiClient.resolveMediaUrl(character.portraitUrl)}
               alt={character.name}

@@ -5,6 +5,38 @@ import { childLogger } from '../../lib/logger.js';
 const log = childLogger({ module: 'seedEdges' });
 
 /**
+ * Ensure a `contains` edge exists from parentId → childId. Idempotent.
+ * Used at campaign creation to guarantee the start sublocation's hierarchy
+ * edge is present before the first scene.
+ */
+export async function ensureContainsEdge(parentId, childId) {
+  if (!parentId || !childId) return;
+  const existing = await prisma.locationEdge.findFirst({
+    where: {
+      fromKind: LOCATION_KIND_WORLD, fromId: parentId,
+      toKind: LOCATION_KIND_WORLD, toId: childId,
+      edgeType: 'contains', isActive: true,
+    },
+    select: { id: true },
+  });
+  if (existing) return;
+  await prisma.locationEdge.create({
+    data: {
+      fromKind: LOCATION_KIND_WORLD, fromId: parentId,
+      toKind: LOCATION_KIND_WORLD, toId: childId,
+      edgeType: 'contains',
+      category: 'structural',
+      bidirectional: false,
+      weight: 1.0,
+      metadata: {},
+      discoveryState: 'known',
+      createdBy: 'system',
+    },
+  });
+  log.info({ parentId, childId }, 'Created missing contains edge for start sublocation');
+}
+
+/**
  * Auto-generate LocationEdge rows from existing Road and parentLocationId
  * relationships. Idempotent — checks for existing edges before creating.
  * Called on first graph load for a campaign or as a one-time migration.

@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useSpeechRecognition } from './useSpeechRecognition';
 import { classifyHeuristic, formatTranscript } from '../services/voiceModeClassifier';
 
@@ -269,7 +269,9 @@ export function useDictation({
     };
   }, []);
 
-  return {
+  const pausedByTTS = pausedByTTSRef.current && narratorState === 'playing';
+
+  return useMemo(() => ({
     enabled,
     mode,
     autoMode,
@@ -280,7 +282,7 @@ export function useDictation({
     listening: speech.listening,
     interim: speech.interim,
     supported: speech.supported,
-    pausedByTTS: pausedByTTSRef.current && narratorState === 'playing',
+    pausedByTTS,
     toggleEnabled,
     setMode,
     setAutoMode,
@@ -294,5 +296,12 @@ export function useDictation({
     toggleListening: speech.toggle,
     start: speech.start,
     stop: speech.stop,
-  };
+  }), [
+    enabled, mode, autoMode, handsFree, muteOnTTS, autoSubmitMs, detectedMode,
+    speech.listening, speech.interim, speech.supported,
+    pausedByTTS,
+    toggleEnabled, setMode, setAutoMode, setHandsFree, setMuteOnTTS, setAutoSubmitMs,
+    setOnResult, setOnAutoSubmit, setGameContext, cancelAutoSubmit,
+    speech.toggle, speech.start, speech.stop,
+  ]);
 }

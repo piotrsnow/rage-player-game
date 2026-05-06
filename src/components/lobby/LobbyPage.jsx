@@ -9,6 +9,8 @@ import { useSettings } from '../../contexts/SettingsContext';
 import { useModals } from '../../contexts/ModalContext';
 import { useMultiplayer } from '../../contexts/MultiplayerContext';
 import { useDocumentTitle } from '../../hooks/useDocumentTitle';
+import { useLobbyHeroFit } from '../../hooks/useLobbyHeroFit';
+import { useLobbyLoggedInSizing } from '../../hooks/useLobbyLoggedInSizing';
 import Button from '../ui/Button';
 import GlassCard from '../ui/GlassCard';
 import CampaignCard from './CampaignCard';
@@ -359,11 +361,25 @@ export default function LobbyPage() {
   const recentCampaigns = campaigns.slice(0, RECENT_COUNT);
   const hasMoreCampaigns = campaigns.length > RECENT_COUNT;
 
+  const hasRejoinBanner = !!rejoinInfo;
+  const [lobbyRootEl, setLobbyRootEl] = useState(null);
+  const [heroSlotEl, setHeroSlotEl] = useState(null);
+  const { logoMaxHeightPx, logoTranslateYPx, badgeOverlapPx } = useLobbyLoggedInSizing(isLoggedIn);
+  const { outerRef, innerRef, fitScale, clipHeight } = useLobbyHeroFit({
+    isLoggedIn,
+    hasCampaigns,
+    hasServerAi,
+    logoVisible,
+    hasRejoinBanner,
+    lobbyRootEl,
+    heroSlotEl,
+  });
+
   return (
     <>
     <IntroOverlay onVideoEnded={handleVideoEnded} />
-    {logoVisible && <VideoBackground src="/video/bg_video_1.mp4" />}
-    <div className="flex flex-col items-center min-h-[calc(100vh-4rem)] px-6 py-6 relative z-10 overflow-hidden">
+    <VideoBackground src="/video/bg_video_1.mp4" />
+    <div ref={setLobbyRootEl} className="flex flex-col items-center min-h-[calc(100dvh-4rem)] px-6 py-6 relative z-10 overflow-hidden w-full">
       {campaignNotFound && (
         <div className="fixed top-20 left-1/2 -translate-x-1/2 z-50 flex items-center gap-3 px-5 py-3 rounded-lg bg-error/15 border border-error/30 text-error text-sm font-label shadow-lg backdrop-blur-sm animate-slide-up">
           <span className="material-symbols-outlined text-base">error</span>
@@ -420,78 +436,110 @@ export default function LobbyPage() {
         </div>
       )}
 
-      {/* Main content — fits viewport */}
-      <div className="w-full max-w-5xl flex flex-col items-center relative z-10 animate-slide-up my-auto gap-6">
+      {/* Hero fills remaining column height — stable clientHeight for fitScale (no my-auto feedback) */}
+      <div
+        ref={setHeroSlotEl}
+        className="flex flex-1 flex-col items-center justify-center min-h-0 w-full max-w-full"
+      >
+        <div className="w-full max-w-5xl flex flex-col items-center relative z-10 animate-slide-up min-h-0">
+        <div
+          ref={outerRef}
+          className="w-full overflow-hidden flex justify-center max-w-full"
+          style={clipHeight != null ? { height: clipHeight } : undefined}
+        >
+          <div
+            ref={innerRef}
+            className="flex flex-col items-center w-full max-w-full gap-6"
+            style={{
+              transform: `scale(${fitScale})`,
+              transformOrigin: 'top center',
+            }}
+          >
+            {/* Hero logo — big, centered; larger for logged-in users */}
+            <img
+              src={t('common.logoPath', '/nikczemnu_logo.png')}
+              alt={t('lobby.title')}
+              className={isLoggedIn
+                ? 'h-auto w-auto max-w-full object-contain drop-shadow-2xl'
+                : 'h-60 md:h-80 lg:h-[22rem] w-auto drop-shadow-2xl'}
+              style={
+                isLoggedIn && logoMaxHeightPx != null
+                  ? {
+                      opacity: logoVisible ? 1 : 0,
+                      transition: 'opacity 2s ease-in',
+                      maxHeight: logoMaxHeightPx,
+                      transform: `translateY(-${logoTranslateYPx}px)`,
+                    }
+                  : { opacity: logoVisible ? 1 : 0, transition: 'opacity 2s ease-in' }
+              }
+            />
 
-        {/* Hero logo — big, centered; larger for logged-in users */}
-        <img
-          src={t('common.logoPath', '/nikczemnu_logo.png')}
-          alt={t('lobby.title')}
-          className={isLoggedIn
-            ? 'h-[22.5rem] md:h-[30rem] lg:h-[35rem] -translate-y-[60px] w-auto drop-shadow-2xl'
-            : 'h-60 md:h-80 lg:h-[22rem] w-auto drop-shadow-2xl'}
-          style={{ opacity: logoVisible ? 1 : 0, transition: 'opacity 2s ease-in' }}
-        />
-
-        {!isLoggedIn && (
-          <>
-            <div
-              className="flex items-center gap-3"
-              style={{ opacity: logoVisible ? 1 : 0, transition: 'opacity 2s ease-in' }}
-            >
-              <div className="h-px w-12 bg-gradient-to-r from-transparent to-primary/40" />
-              <span className="material-symbols-outlined text-primary/40 text-sm">diamond</span>
-              <div className="h-px w-12 bg-gradient-to-l from-transparent to-primary/40" />
-            </div>
-
-            <p
-              className="text-on-surface-variant font-body text-base max-w-md leading-relaxed text-center"
-              style={{ opacity: logoVisible ? 1 : 0, transition: 'opacity 2s ease-in' }}
-            >
-              {t('lobby.subtitle')}
-            </p>
-          </>
-        )}
-
-        {/* Not logged in — centered auth panel */}
-        {!isLoggedIn && (
-          <div className="w-full max-w-sm">
-            <AuthPanel />
-          </div>
-        )}
-
-        {/* Logged in — single column: badge, then buttons */}
-        {isLoggedIn && (
-          <div className="w-full max-w-2xl flex flex-col items-center gap-5 relative z-20 -translate-y-[120px]">
-            <AuthPanel />
-
-            {!hasServerAi && (
-              <div
-                onClick={openSettings}
-                data-testid="api-key-warning"
-                className="w-full glass-panel-elevated p-3 rounded-sm border-l-2 border-tertiary cursor-pointer hover:border-tertiary/80 transition-all hover:translate-y-[-1px] hover:shadow-[0_12px_40px_rgba(0,0,0,0.4)]"
-              >
-                <div className="flex items-start gap-2">
-                  <span className="material-symbols-outlined text-tertiary mt-0.5 text-sm">key</span>
-                  <p className="text-on-surface-variant text-xs leading-snug">
-                    {t('lobby.apiKeyRequired', 'Server AI configuration required')}
-                  </p>
+            {!isLoggedIn && (
+              <>
+                <div
+                  className="flex items-center gap-3"
+                  style={{ opacity: logoVisible ? 1 : 0, transition: 'opacity 2s ease-in' }}
+                >
+                  <div className="h-px w-12 bg-gradient-to-r from-transparent to-primary/40" />
+                  <span className="material-symbols-outlined text-primary/40 text-sm">diamond</span>
+                  <div className="h-px w-12 bg-gradient-to-l from-transparent to-primary/40" />
                 </div>
+
+                <p
+                  className="text-on-surface-variant font-body text-base max-w-md leading-relaxed text-center"
+                  style={{ opacity: logoVisible ? 1 : 0, transition: 'opacity 2s ease-in' }}
+                >
+                  {t('lobby.subtitle')}
+                </p>
+              </>
+            )}
+
+            {/* Not logged in — centered auth panel */}
+            {!isLoggedIn && (
+              <div className="w-full max-w-sm">
+                <AuthPanel />
               </div>
             )}
 
-            <div className="flex flex-row gap-4 items-stretch w-full">
-              <Button size="lg" className="flex-1" onClick={() => navigate('/create')}>
-                {t('lobby.newCampaign')}
-              </Button>
-              {hasCampaigns && (
-                <Button size="lg" variant="secondary" className="flex-1" onClick={() => setShowAllCampaigns(true)}>
-                  {t('lobby.continueCampaign')}
-                </Button>
-              )}
-            </div>
+            {/* Logged in — single column: badge, then buttons */}
+            {isLoggedIn && (
+              <div
+                className="w-full max-w-2xl flex flex-col items-center gap-5 relative z-20"
+                style={{ transform: `translateY(-${badgeOverlapPx}px)` }}
+              >
+                {/* Badge + CTAs at full CSS size; only outer hero uses fitScale when needed */}
+                <AuthPanel />
+
+                {!hasServerAi && (
+                  <div
+                    onClick={openSettings}
+                    data-testid="api-key-warning"
+                    className="w-full glass-panel-elevated p-3 rounded-sm border-l-2 border-tertiary cursor-pointer hover:border-tertiary/80 transition-all hover:translate-y-[-1px] hover:shadow-[0_12px_40px_rgba(0,0,0,0.4)]"
+                  >
+                    <div className="flex items-start gap-2">
+                      <span className="material-symbols-outlined text-tertiary mt-0.5 text-sm">key</span>
+                      <p className="text-on-surface-variant text-xs leading-snug">
+                        {t('lobby.apiKeyRequired', 'Server AI configuration required')}
+                      </p>
+                    </div>
+                  </div>
+                )}
+
+                <div className="flex flex-row gap-4 items-stretch w-full">
+                  <Button size="lg" className="flex-1" onClick={() => navigate('/create')}>
+                    {t('lobby.newCampaign')}
+                  </Button>
+                  {hasCampaigns && (
+                    <Button size="lg" variant="secondary" className="flex-1" onClick={() => setShowAllCampaigns(true)}>
+                      {t('lobby.continueCampaign')}
+                    </Button>
+                  )}
+                </div>
+              </div>
+            )}
           </div>
-        )}
+        </div>
+        </div>
       </div>
 
       {/* All Campaigns Modal */}

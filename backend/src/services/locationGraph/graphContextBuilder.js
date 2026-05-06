@@ -1,8 +1,60 @@
 import { loadSubgraph, getNpcsAtLocation } from './graphService.js';
 import { EDGE_TYPES, EDGE_TYPE_NAMES, EDGE_CATEGORY_NAMES } from '../../../../shared/domain/locationGraph.js';
+import { prisma } from '../../lib/prisma.js';
+import { LOCATION_KIND_WORLD } from '../locationRefs.js';
 import { childLogger } from '../../lib/logger.js';
 
 const log = childLogger({ module: 'graphContextBuilder' });
+
+/**
+ * Walk `parentLocationId` upward from a WorldLocation to build a readable
+ * hierarchy chain (e.g. "Karczma Pod Złotym Dzbanem (tavern) → Kamionka Stara (village)").
+ * Stops after 5 hops to prevent accidental cycles.
+ */
+async function buildParentChain(locationId) {
+  const chain = [];
+  let currentId = locationId;
+  for (let i = 0; i < 5 && currentId; i++) {
+    const loc = await prisma.worldLocation.findUnique({
+      where: { id: currentId },
+      select: { id: true, canonicalName: true, locationType: true, parentLocationId: true },
+    });
+    if (!loc) break;
+    chain.push({ id: loc.id, name: loc.canonicalName, type: loc.locationType });
+    currentId = loc.parentLocationId;
+  }
+  return chain;
+}
+
+/**
+ * Load 1-hop Road neighbors of a top-level settlement. Returns an array
+ * of `{ name, type, distance, direction }` for nearby canonical locations.
+ */
+async function loadRoadNeighbors(settlementId) {
+  const roads = await prisma.road.findMany({
+    where: {
+      OR: [{ fromLocationId: settlementId }, { toLocationId: settlementId }],
+      terrainType: { not: 'dungeon_corridor' },
+    },
+    select: {
+      fromLocationId: true, toLocationId: true,
+      distance: true, direction: true,
+      from: { select: { canonicalName: true, locationType: true } },
+      to: { select: { canonicalName: true, locationType: true } },
+    },
+    take: 8,
+  });
+  return roads.map((r) => {
+    const isFrom = r.fromLocationId === settlementId;
+    const neighbor = isFrom ? r.to : r.from;
+    return {
+      name: neighbor.canonicalName,
+      type: neighbor.locationType,
+      distance: r.distance,
+      direction: r.direction || null,
+    };
+  });
+}
 
 /**
  * Build a lean ~400 token context block for the premium narrative model.
@@ -21,6 +73,27 @@ export async function buildNarrativeContext(locationId, locationKind, campaignId
     const lines = [];
     const name = currentNode.canonicalName || currentNode.displayName || currentNode.name || 'Unknown';
     lines.push(`Current: ${name}${currentNode.atmosphere ? ` — ${currentNode.atmosphere}` : ''}`);
+
+    // Parent chain + nearby settlements (canonical WorldLocations only)
+    if (locationKind === LOCATION_KIND_WORLD) {
+      const chain = await buildParentChain(locationId);
+      if (chain.length > 1) {
+        lines.push(`Location hierarchy: ${chain.map((c) => `${c.name} (${c.type})`).join(' → ')}`);
+      }
+      const topLocation = chain[chain.length - 1];
+      if (topLocation?.id) {
+        const neighbors = await loadRoadNeighbors(topLocation.id);
+        if (neighbors.length > 0) {
+          const parts = neighbors.map((n) => {
+            const dist = n.distance ? `~${n.distance} km` : '';
+            const dir = n.direction || '';
+            const suffix = [dist, dir].filter(Boolean).join(' ');
+            return `${n.name} (${n.type}${suffix ? ', ' + suffix : ''})`;
+          });
+          lines.push(`Nearby: ${parts.join(', ')}`);
+        }
+      }
+    }
 
     const myKey = `${locationKind}:${locationId}`;
 

@@ -103,8 +103,9 @@ export default function GameplayHeader({
           >
             chevron_left
           </button>
-          <span className={`text-xs ${isReviewingPastScene ? 'text-primary font-bold' : 'text-outline'}`}>
-            {t('common.scene')} {displayedSceneIndex + 1} / {scenes.length}
+          <span className={`text-xs flex items-center gap-1 ${isReviewingPastScene ? 'text-primary font-bold' : 'text-outline'}`}>
+            <span className="material-symbols-outlined text-sm">auto_stories</span>
+            {displayedSceneIndex + 1} / {scenes.length}
           </span>
           {scenes.length > 2 && (
             <span
@@ -295,7 +296,7 @@ export default function GameplayHeader({
                 aria-label={t('worldState.title')}
                 className="material-symbols-outlined text-sm text-outline hover:text-primary transition-colors"
               >
-                auto_stories
+                public
               </button>
             </Tooltip>
             <Tooltip content={t('gameplay.exportLog')} placement="bottom" variant="compact" asChild>

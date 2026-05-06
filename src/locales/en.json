@@ -1411,7 +1411,8 @@
     "questObjectiveVerified": "Objective verified: {{quest}} — {{objective}}",
     "moneySpent": "{{name}} spent {{amount}}",
     "moneyGained": "{{name}} received {{amount}}",
-    "characterLevelUp": "Character Level {{old}} → {{new}}! +{{points}} attribute point(s)"
+    "characterLevelUp": "Character Level {{old}} → {{new}}! +{{points}} attribute point(s)",
+    "locationDiscovered": "New location discovered: {{name}}"
   },
   "currency": {
     "purse": "Purse",
@@ -2201,7 +2202,9 @@
       "addNode": "+Node",
       "addEdge": "+Edge",
       "player": "Player",
-      "validate": "Validate"
+      "validate": "Validate",
+      "snapToGrid": "Snap",
+      "resetLayout": "Reset"
     },
     "addNode": {
       "title": "New Location",
@@ -2239,6 +2242,30 @@
       "mapped": "Mapped",
       "hidden": "Hidden"
     },
+    "tabs": {
+      "graph": "Location Graph",
+      "entities": "World Entities"
+    },
+    "entityBrowser": {
+      "types": "Entity Types",
+      "allTypes": "All Types",
+      "searchPlaceholder": "Search by name…",
+      "selected": "{{count}} selected",
+      "deleteSelected": "Delete ({{count}})",
+      "confirmDelete": "Confirm delete?",
+      "noResults": "No entities found",
+      "page": "Page {{page}}",
+      "colType": "Type",
+      "colName": "Name",
+      "colStatus": "Status",
+      "colDetails": "Details",
+      "colSource": "Source",
+      "colCampaign": "Campaign",
+      "selectToInspect": "Select a row to inspect",
+      "inspectorTitle": "Entity Details",
+      "deleteEntity": "Delete entity",
+      "confirmDeleteEntity": "Confirm delete?"
+    },
     "tooltips": {
       "scale": "Filter nodes by scale — lower = more detail",
       "addNode": "Click on canvas to place a new location node (shortcut: +)",
@@ -2254,7 +2281,9 @@
       "perception": "Audibility, visibility, smells between locations",
       "social": "Faction territories, political influence",
       "narrative": "Story-driven connections, quest-driven relations",
-      "temporal": "Time-based changes — day/night, seasonal access"
+      "temporal": "Time-based changes — day/night, seasonal access",
+      "snapToGrid": "Snap nodes to grid when dragging",
+      "resetLayout": "Reset manual node positions to automatic layout"
     }
   },
   "intuition": {

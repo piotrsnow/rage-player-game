@@ -360,7 +360,7 @@
     "momentumBonus": "Momentum {{bonus}}",
     "dispositionBonus": "Przychylność {{bonus}}",
     "skillBonus": "{{skill}} {{bonus}}",
-    "momentumActive": "Momentum {{bonus}} w następnym rzucie",
+    "momentumActive": "Momentum {{bonus}}",
     "exportLog": "Pobierz Log Rozgrywki",
     "exportCampaignJson": "Pobierz Kampanię (JSON)",
     "generatingMusic": "Generowanie muzyki...",
@@ -1384,7 +1384,8 @@
     "questObjectiveVerified": "Cel zweryfikowany: {{quest}} — {{objective}}",
     "moneySpent": "{{name}} wydał/a {{amount}}",
     "moneyGained": "{{name}} otrzymał/a {{amount}}",
-    "characterLevelUp": "Poziom postaci {{old}} → {{new}}! +{{points}} punkt atrybutu"
+    "characterLevelUp": "Poziom postaci {{old}} → {{new}}! +{{points}} punkt atrybutu",
+    "locationDiscovered": "Odkryto nową lokację: {{name}}"
   },
   "currency": {
     "purse": "Sakiewka",
@@ -1856,7 +1857,9 @@
       "addNode": "+Węzeł",
       "addEdge": "+Krawędź",
       "player": "Gracz",
-      "validate": "Waliduj"
+      "validate": "Waliduj",
+      "snapToGrid": "Siatka",
+      "resetLayout": "Reset"
     },
     "addNode": {
       "title": "Nowa Lokacja",
@@ -1894,6 +1897,30 @@
       "mapped": "Zmapowany",
       "hidden": "Ukryty"
     },
+    "tabs": {
+      "graph": "Graf Lokacji",
+      "entities": "Encje Świata"
+    },
+    "entityBrowser": {
+      "types": "Typy encji",
+      "allTypes": "Wszystkie typy",
+      "searchPlaceholder": "Szukaj po nazwie…",
+      "selected": "{{count}} zaznaczono",
+      "deleteSelected": "Usuń ({{count}})",
+      "confirmDelete": "Potwierdzić?",
+      "noResults": "Brak encji",
+      "page": "Strona {{page}}",
+      "colType": "Typ",
+      "colName": "Nazwa",
+      "colStatus": "Status",
+      "colDetails": "Szczegóły",
+      "colSource": "Źródło",
+      "colCampaign": "Kampania",
+      "selectToInspect": "Wybierz wiersz do podglądu",
+      "inspectorTitle": "Szczegóły Encji",
+      "deleteEntity": "Usuń encję",
+      "confirmDeleteEntity": "Potwierdzić usunięcie?"
+    },
     "tooltips": {
       "scale": "Filtruj węzły wg skali — mniejsza = więcej szczegółów",
       "addNode": "Kliknij na canvas aby umieścić nowy węzeł lokacji (skrót: +)",
@@ -1909,7 +1936,9 @@
       "perception": "Słyszalność, widoczność, zapachy między lokacjami",
       "social": "Terytoria frakcji, wpływy polityczne",
       "narrative": "Połączenia fabularne, quest-driven relacje",
-      "temporal": "Zmiany w czasie — dzień/noc, sezonowe dostępy"
+      "temporal": "Zmiany w czasie — dzień/noc, sezonowe dostępy",
+      "snapToGrid": "Przyciągaj węzły do siatki podczas przeciągania",
+      "resetLayout": "Resetuj ręczne rozmieszczenie węzłów do automatycznego układu"
     }
   },
   "intuition": {

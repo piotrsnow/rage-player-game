@@ -70,6 +70,18 @@ describe('decideSublocationAdmission', () => {
     expect(r).toEqual({ admission: 'reject', reason: 'generic_name' });
   });
 
+  it('admits a known interior type as single-word name', () => {
+    for (const name of ['Piwnica', 'Strych', 'Kuchnia', 'Zbrojownia']) {
+      const r = decideSublocationAdmission({
+        parentLocationType: 'village',
+        childrenBySlot: emptyChildren,
+        slotType: null,
+        name,
+      });
+      expect(r.admission).toBe('custom');
+    }
+  });
+
   it('does NOT cap optional emissions — sublocations are per-campaign sandbox', () => {
     // village template optionalCap was 3; we now ignore the cap.
     const r = decideSublocationAdmission({

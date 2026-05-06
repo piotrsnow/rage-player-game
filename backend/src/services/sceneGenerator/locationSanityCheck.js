@@ -121,7 +121,10 @@ export function detectSuspiciousLocationChange({ playerAction, sceneResult, prev
   // the LATEST entry is scene N-1 (the prior scene); the one before it is N-2.
   // The current scene is being generated NOW so it is NOT in recentTrail yet.
   // Flip pattern means N-1 is some other location AND N-2 equals the new emit.
-  if (recentTrail.length >= 2) {
+  // Skip when the player has explicit movement vocabulary — returning to a
+  // parent location from a sublocation (e.g. "wracam do świątyni") is a valid
+  // A→B→A transition, not a hallucinated teleport.
+  if (!hasMovementCue(playerAction) && recentTrail.length >= 2) {
     const nMinus1 = recentTrail[recentTrail.length - 1];
     const nMinus2 = recentTrail[recentTrail.length - 2];
     const aiLocN = normalizeLocName(aiLoc);

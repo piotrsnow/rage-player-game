@@ -6,6 +6,7 @@ const BASE = '/livingWorld/campaigns';
 export function useLocationGraph(campaignId) {
   const [nodes, setNodes] = useState([]);
   const [edges, setEdges] = useState([]);
+  const [occupants, setOccupants] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [selected, setSelected] = useState(null); // { type: 'node'|'edge', id }
@@ -33,6 +34,7 @@ export function useLocationGraph(campaignId) {
       const data = await apiClient.request(`${BASE}/${campaignId}/location-graph${suffix}`);
       setNodes(data.nodes || []);
       setEdges(data.edges || []);
+      setOccupants(data.occupants || []);
     } catch (err) {
       setError(err.message);
     } finally {
@@ -107,6 +109,7 @@ export function useLocationGraph(campaignId) {
   return {
     nodes: filteredNodes, edges: filteredEdges,
     allNodes: nodes, allEdges: edges,
+    occupants,
     loading, error,
     selected, setSelected, selectedNode, selectedEdge,
     mode, setMode,
