@@ -255,7 +255,7 @@ export default function CharacterCreationModal({ onConfirm, onClose, genre = 'Fa
                 onChange={(e) => setName(e.target.value)}
                 placeholder={t('charCreator.namePlaceholder')}
                 maxLength={40}
-                className="flex-1 bg-transparent border-0 border-b border-outline-variant/20 focus:border-primary/50 focus:ring-0 text-on-surface text-sm py-2 px-1 placeholder:text-outline/40 font-body"
+                className="flex-1 bg-transparent border-0 border-b border-outline-variant/20 focus:border-primary/50 focus:ring-0 text-on-surface text-sm py-2 px-1 placeholder:text-on-surface-variant/60 font-body"
               />
               <input
                 type="number"
@@ -264,7 +264,7 @@ export default function CharacterCreationModal({ onConfirm, onClose, genre = 'Fa
                 value={age}
                 onChange={(e) => setAge(normalizeCharacterAge(e.target.value))}
                 aria-label={t('charCreator.ageLabel')}
-                className="w-20 bg-transparent border-0 border-b border-outline-variant/20 focus:border-primary/50 focus:ring-0 text-on-surface text-sm py-2 px-1 placeholder:text-outline/40 font-body text-right"
+                className="w-20 bg-transparent border-0 border-b border-outline-variant/20 focus:border-primary/50 focus:ring-0 text-on-surface text-sm py-2 px-1 placeholder:text-on-surface-variant/60 font-body text-right"
               />
               <div className="flex gap-1.5 shrink-0">
                 {['male', 'female'].map((g) => (
@@ -382,7 +382,7 @@ export default function CharacterCreationModal({ onConfirm, onClose, genre = 'Fa
               onChange={(e) => setBackstory(e.target.value)}
               placeholder={t('charCreator.backstoryPlaceholder')}
               rows={3}
-              className="w-full bg-transparent border-0 border-b border-outline-variant/20 focus:border-primary/50 focus:ring-0 text-on-surface text-sm py-2 px-1 resize-none placeholder:text-outline/40 font-body"
+              className="w-full bg-transparent border-0 border-b border-outline-variant/20 focus:border-primary/50 focus:ring-0 text-on-surface text-sm py-2 px-1 resize-none placeholder:text-on-surface-variant/60 font-body"
             />
           </section>
         </div>

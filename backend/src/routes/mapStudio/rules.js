@@ -39,10 +39,10 @@ export async function ruleRoutes(fastify) {
       data: {
         packId,
         name: body.name ?? '',
-        leftTraits: JSON.stringify(body.leftTraits ?? {}),
-        rightTraits: JSON.stringify(body.rightTraits ?? {}),
+        leftTraits: body.leftTraits ?? {},
+        rightTraits: body.rightTraits ?? {},
         via: body.via,
-        viaRef: JSON.stringify(body.viaRef ?? {}),
+        viaRef: body.viaRef ?? {},
         priority: body.priority ?? 0,
       },
     });
@@ -62,10 +62,10 @@ export async function ruleRoutes(fastify) {
 
     const data = {};
     if (body.name !== undefined) data.name = body.name;
-    if (body.leftTraits !== undefined) data.leftTraits = JSON.stringify(body.leftTraits);
-    if (body.rightTraits !== undefined) data.rightTraits = JSON.stringify(body.rightTraits);
+    if (body.leftTraits !== undefined) data.leftTraits = body.leftTraits;
+    if (body.rightTraits !== undefined) data.rightTraits = body.rightTraits;
     if (body.via !== undefined) data.via = body.via;
-    if (body.viaRef !== undefined) data.viaRef = JSON.stringify(body.viaRef);
+    if (body.viaRef !== undefined) data.viaRef = body.viaRef;
     if (body.priority !== undefined) data.priority = body.priority;
 
     const row = await prisma.connectionRule.update({ where: { id }, data });

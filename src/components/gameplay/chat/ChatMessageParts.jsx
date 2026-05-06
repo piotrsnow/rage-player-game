@@ -1,10 +1,168 @@
+import { useState, useRef, useCallback, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
-import { splitTextForHighlight } from '../../../services/elevenlabs';
+import { splitTextForHighlight, elevenlabsService } from '../../../services/elevenlabs';
+import { xttsService } from '../../../services/xtts';
+import { apiClient } from '../../../services/apiClient';
 import { getDialogueSpeakerLabel } from '../../../services/dialogueSegments';
 import { useGameSlice } from '../../../stores/gameSelectors';
+import { useGame } from '../../../contexts/GameContext';
+import { useSettings } from '../../../contexts/SettingsContext';
+import { resolveSegmentVoice } from '../../../services/characterVoiceResolver';
 import { GenderIcon } from '../../../utils/genderIcon';
 import Tooltip from '../../ui/Tooltip';
 import NpcSpeakerChip from './NpcSpeakerChip';
+import {
+  claimExclusiveReadAloud,
+  clearExclusiveReadAloudAudio,
+  isExclusiveReadAloudOwner,
+  setExclusiveReadAloudAudio,
+  subscribeExclusiveReadAloud,
+} from '../../../utils/readAloudExclusive';
+
+export function ReadAloudButton({ text, seg = null, scenePacing = null }) {
+  const { settings, hasApiKey } = useSettings();
+  const { state: gameState, dispatch } = useGame();
+  const campaignId = useGameSlice((s) => s.campaign?.backendId) || null;
+  const [state, setState] = useState('idle');
+  const audioRef = useRef(null);
+  const mountedRef = useRef(true);
+  const lastAttemptRef = useRef(null);
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      lastAttemptRef.current = null;
+      audioRef.current?.pause();
+      audioRef.current = null;
+    };
+  }, []);
+
+  useEffect(() => {
+    return subscribeExclusiveReadAloud(() => {
+      const mine = lastAttemptRef.current;
+      if (mine == null) return;
+      if (isExclusiveReadAloudOwner(mine)) return;
+      lastAttemptRef.current = null;
+      audioRef.current = null;
+      if (mountedRef.current) setState('idle');
+    });
+  }, []);
+
+  const stop = useCallback(() => {
+    lastAttemptRef.current = null;
+    audioRef.current = null;
+    claimExclusiveReadAloud();
+    if (mountedRef.current) setState('idle');
+  }, []);
+
+  const toggle = async (e) => {
+    e.stopPropagation();
+    if (state === 'playing' || state === 'loading') { stop(); return; }
+
+    const attemptId = claimExclusiveReadAloud();
+    lastAttemptRef.current = attemptId;
+
+    const provider = settings.ttsProvider || 'elevenlabs';
+    const voiceId = seg
+      ? resolveSegmentVoice(seg, {
+          defaultVoiceId: settings.narratorVoiceId,
+          narratorVoiceId: settings.narratorVoiceId,
+          maleVoices: settings.maleVoices,
+          femaleVoices: settings.femaleVoices,
+          characterVoiceMap: gameState.characterVoiceMap,
+          ttsProvider: provider,
+          viewerMode: false,
+          dispatch,
+        }).voiceId
+      : settings.narratorVoiceId;
+    const hasTts = voiceId && hasApiKey(provider);
+
+    if (!hasTts) {
+      const synth = window.speechSynthesis;
+      if (!synth) return;
+      const u = new SpeechSynthesisUtterance(text);
+      u.lang = settings.language || 'pl';
+      u.rate = 1;
+      u.onend = () => {
+        if (!isExclusiveReadAloudOwner(attemptId) || !mountedRef.current) return;
+        lastAttemptRef.current = null;
+        setState('idle');
+      };
+      u.onerror = () => {
+        if (!isExclusiveReadAloudOwner(attemptId) || !mountedRef.current) return;
+        lastAttemptRef.current = null;
+        setState('idle');
+      };
+      setState('playing');
+      synth.speak(u);
+      return;
+    }
+
+    setState('loading');
+    try {
+      let audioUrl;
+      if (provider === 'xtts') {
+        const res = await xttsService.textToSpeech(voiceId, text, settings.language || 'pl', campaignId);
+        audioUrl = res.audioUrl;
+      } else {
+        const res = await elevenlabsService.textToSpeechWithTimestamps(undefined, voiceId, text, undefined, campaignId, scenePacing);
+        audioUrl = res.audioUrl;
+      }
+      if (!mountedRef.current) return;
+      if (!isExclusiveReadAloudOwner(attemptId)) {
+        lastAttemptRef.current = null;
+        if (mountedRef.current) setState('idle');
+        return;
+      }
+      const fullUrl = apiClient.resolveMediaUrl(audioUrl);
+      const audio = new Audio(fullUrl);
+      audioRef.current = audio;
+      setExclusiveReadAloudAudio(audio);
+      audio.onended = () => {
+        clearExclusiveReadAloudAudio(audio);
+        if (!isExclusiveReadAloudOwner(attemptId) || !mountedRef.current) return;
+        lastAttemptRef.current = null;
+        setState('idle');
+        audioRef.current = null;
+      };
+      audio.onerror = () => {
+        clearExclusiveReadAloudAudio(audio);
+        if (!isExclusiveReadAloudOwner(attemptId) || !mountedRef.current) return;
+        lastAttemptRef.current = null;
+        setState('idle');
+        audioRef.current = null;
+      };
+      setState('playing');
+      audio.play();
+    } catch {
+      lastAttemptRef.current = null;
+      if (mountedRef.current) setState('idle');
+    }
+  };
+
+  const icon = state === 'loading' ? 'hourglass_top'
+    : state === 'playing' ? 'stop_circle'
+    : 'volume_up';
+
+  return (
+    <button
+      type="button"
+      onClick={toggle}
+      disabled={state === 'loading'}
+      className={`inline-flex items-center justify-center w-4 h-4 rounded-full transition-all shrink-0 ml-1 ${
+        state !== 'idle'
+          ? 'opacity-100 bg-primary/10'
+          : 'opacity-0 group-hover/seg:opacity-60 hover:!opacity-100 hover:bg-primary/10'
+      }`}
+      aria-label={state === 'playing' ? 'Stop' : 'Read aloud'}
+    >
+      <span className={`material-symbols-outlined text-[12px] text-primary/70 hover:text-primary ${state === 'loading' ? 'animate-spin' : ''}`}>
+        {icon}
+      </span>
+    </button>
+  );
+}
 
 /**
  * Look up the full NPC row for a dialogue speaker. Case-insensitive match
@@ -43,6 +201,23 @@ export function HighlightedText({ text, highlightInfo, segmentIndex, messageId, 
   const highlightedSegmentIndex = hi?.logicalSegmentIndex ?? hi?.segmentIndex;
   const activeWordIndex = Number.isInteger(hi?.segmentWordIndex) ? hi.segmentWordIndex : hi?.wordIndex;
   const isActive = hi && hi.messageId === messageId && highlightedSegmentIndex === segmentIndex && activeWordIndex >= 0;
+  const isSegmentActive = !isActive && hi && hi.messageId === messageId && highlightedSegmentIndex === segmentIndex && hi.segmentActive;
+
+  if (isSegmentActive) {
+    return (
+      <span
+        className={`${className || ''} inline-flex items-center gap-1`}
+        ref={(el) => { if (el) el.scrollIntoView({ behavior: 'smooth', block: 'nearest' }); }}
+      >
+        <span className="rounded-sm bg-primary/10 border-l-2 border-primary/60 pl-1 animate-pulse">
+          {text}
+        </span>
+        <span className="material-symbols-outlined text-primary text-xs animate-pulse leading-none">
+          graphic_eq
+        </span>
+      </span>
+    );
+  }
 
   if (!isActive) {
     return <span className={className}>{text}</span>;
@@ -74,31 +249,50 @@ export function HighlightedText({ text, highlightInfo, segmentIndex, messageId, 
 }
 
 
-export function DialogueSegments({ segments, narrator, messageId }) {
+export function NarrativeWithLoading({ narrator, messageId, segmentIndex, children }) {
+  const isThisMessage = narrator?.currentMessageId === messageId;
+  const active = isThisMessage && narrator?.currentSegmentIndex === segmentIndex;
+  const loading = !active && isThisMessage && narrator?.loadingSegmentIndices?.has(segmentIndex);
+  if (!loading) return children;
+  return (
+    <div className="relative">
+      <TtsLoadingOverlay />
+      {children}
+    </div>
+  );
+}
+
+function TtsLoadingOverlay() {
+  return (
+    <div className="absolute inset-0 rounded border border-primary/30 bg-surface/40 backdrop-blur-[1px] flex items-center justify-center pointer-events-none z-10">
+      <span className="material-symbols-outlined text-primary/70 text-sm animate-pulse">volume_up</span>
+    </div>
+  );
+}
+
+export function DialogueSegments({ segments, narrator, messageId, scenePacing = null }) {
   const { t } = useTranslation();
   const worldNpcs = useGameSlice((s) => s.world?.npcs);
   const characterVoiceMap = useGameSlice((s) => s.characterVoiceMap);
   if (!segments || segments.length === 0) return null;
 
-  const isSegmentActive = (index) => {
-    return narrator?.currentMessageId === messageId && narrator?.currentSegmentIndex === index;
-  };
-
+  const isThisMessage = narrator?.currentMessageId === messageId;
+  const isSegmentActive = (index) => isThisMessage && narrator?.currentSegmentIndex === index;
+  const isSegmentLoading = (index) => isThisMessage && narrator?.loadingSegmentIndices?.has(index);
 
   return (
     <div className="space-y-2">
       {segments.map((seg, i) => {
-        // Segments filtered via `filterDuplicateDialogueSegmentsWithIndex`
-        // carry their original position so narrator highlights (which are
-        // keyed by the pre-filter index) still line up after removals.
         const logicalIndex = Number.isInteger(seg?._logicalSegmentIndex) ? seg._logicalSegmentIndex : i;
         const active = isSegmentActive(logicalIndex);
+        const loading = !active && isSegmentLoading(logicalIndex);
         if (seg.type === 'dialogue') {
           const speakerGender = resolveSegmentGender(seg, worldNpcs, characterVoiceMap);
           const speakerLabel = getDialogueSpeakerLabel(seg, t('common.npc'));
           const speakerNpc = resolveSegmentNpc(seg, worldNpcs);
           return (
-            <div key={i} className={`pl-3 border-l-2 border-tertiary-dim/40 transition-colors ${active ? 'border-tertiary bg-surface-tint/5' : ''}`}>
+            <div key={i} className={`group/seg relative pl-3 border-l-2 border-tertiary-dim/40 transition-colors ${active ? 'border-tertiary bg-surface-tint/5' : ''}`}>
+              {loading && <TtsLoadingOverlay />}
               <div className="flex items-center gap-1.5 mb-0.5">
                 <NpcSpeakerChip
                   npc={speakerNpc}
@@ -112,22 +306,29 @@ export function DialogueSegments({ segments, narrator, messageId }) {
                   </span>
                 )}
               </div>
-              <p className="text-xs text-on-surface leading-snug">
-                &ldquo;<HighlightedText text={seg.text} highlightInfo={narrator?.highlightInfo} segmentIndex={logicalIndex} messageId={messageId} />&rdquo;
-              </p>
+              <div className="flex items-start gap-0.5">
+                <p className="text-xs text-on-surface leading-snug flex-1">
+                  &ldquo;<HighlightedText text={seg.text} highlightInfo={narrator?.highlightInfo} segmentIndex={logicalIndex} messageId={messageId} />&rdquo;
+                </p>
+                <ReadAloudButton text={seg.text} seg={seg} scenePacing={scenePacing} />
+              </div>
             </div>
           );
         }
         return (
-          <div key={i} className={`transition-colors ${active ? 'bg-surface-tint/5 rounded-sm' : ''}`}>
-            <p className="text-xs text-on-surface-variant leading-snug italic">
-              <HighlightedText text={seg.text} highlightInfo={narrator?.highlightInfo} segmentIndex={logicalIndex} messageId={messageId} />
-              {active && (
-                <span className="material-symbols-outlined text-primary text-xs ml-1 align-middle animate-pulse">
-                  graphic_eq
-                </span>
-              )}
-            </p>
+          <div key={i} className={`group/seg relative transition-colors ${active ? 'bg-surface-tint/5 rounded-sm' : ''}`}>
+            {loading && <TtsLoadingOverlay />}
+            <div className="flex items-start gap-0.5">
+              <p className="text-xs text-on-surface-variant leading-snug italic flex-1">
+                <HighlightedText text={seg.text} highlightInfo={narrator?.highlightInfo} segmentIndex={logicalIndex} messageId={messageId} />
+                {active && (
+                  <span className="material-symbols-outlined text-primary text-xs ml-1 align-middle animate-pulse">
+                    graphic_eq
+                  </span>
+                )}
+              </p>
+              <ReadAloudButton text={seg.text} />
+            </div>
           </div>
         );
       })}

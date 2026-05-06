@@ -1,17 +1,10 @@
 import { useTranslation } from 'react-i18next';
 import { useSettings } from '../../contexts/SettingsContext';
 import { useModalA11y } from '../../hooks/useModalA11y';
-import { useElevenlabsVoices } from '../../hooks/useElevenlabsVoices';
-import { useMediaCacheStats } from '../../hooks/useMediaCacheStats';
-import { useConfigImportExport } from '../../hooks/useConfigImportExport';
 import Button from '../ui/Button';
 import LanguageSection from './sections/LanguageSection';
-import BackendServerSection from './sections/BackendServerSection';
-import ConfigBackupSection from './sections/ConfigBackupSection';
 import NarrativeAnchorsSection from './sections/NarrativeAnchorsSection';
 import NarratorStyleSection from './sections/NarratorStyleSection';
-import NarratorVoicesSection from './sections/NarratorVoicesSection';
-import { SfxSection, MusicSection } from './sections/AudioSections';
 
 export default function DMSettingsPage({ onClose }) {
   const { t } = useTranslation();
@@ -21,66 +14,7 @@ export default function DMSettingsPage({ onClose }) {
     updateSettings,
     updateDMSettings,
     resetSettings,
-    importSettings,
-    loadFromAccount,
-    hasApiKey,
-    backendUser,
-    backendAuthChecking,
-    backendLogout,
   } = useSettings();
-
-  const {
-    voices,
-    loadingVoices,
-    voiceError,
-    testingVoice,
-    loadVoices,
-    clearVoices,
-    testVoice,
-  } = useElevenlabsVoices({ language: settings.language });
-
-  const { cacheStats } = useMediaCacheStats({
-    useBackend: settings.useBackend,
-    backendUrl: settings.backendUrl,
-  });
-
-  const { fileInputRef, importStatus, exportConfig, importConfig } = useConfigImportExport({
-    importSettings,
-  });
-
-  const handleReset = () => {
-    resetSettings();
-    clearVoices();
-  };
-
-  const handleLoadVoices = () => {
-    if (!hasApiKey('elevenlabs')) return;
-    return loadVoices();
-  };
-
-  const handleSelectNarratorVoice = (voice) => {
-    updateSettings({
-      narratorVoiceId: voice.voiceId,
-      narratorVoiceName: voice.name,
-    });
-  };
-
-  const handleToggleGenderPool = (voice, gender) => {
-    const key = gender === 'female' ? 'femaleVoices' : 'maleVoices';
-    const current = settings[key] || [];
-    const exists = current.some((v) => v.voiceId === voice.voiceId);
-    if (exists) {
-      updateSettings({ [key]: current.filter((v) => v.voiceId !== voice.voiceId) });
-    } else {
-      updateSettings({ [key]: [...current, { voiceId: voice.voiceId, voiceName: voice.name }] });
-    }
-  };
-
-  const handleTestVoice = (voiceIdOverride) => {
-    const voiceId = voiceIdOverride || settings.narratorVoiceId;
-    if (!voiceId || !hasApiKey('elevenlabs')) return;
-    testVoice(voiceId);
-  };
 
   return (
     <div
@@ -119,7 +53,6 @@ export default function DMSettingsPage({ onClose }) {
             </header>
 
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-              {/* Left Column: DM & Gameplay Settings */}
               <section className="space-y-6 animate-fade-in">
                 <LanguageSection
                   language={settings.language}
@@ -130,46 +63,12 @@ export default function DMSettingsPage({ onClose }) {
                   dmSettings={settings.dmSettings}
                   updateDMSettings={updateDMSettings}
                 />
+              </section>
 
+              <section className="space-y-6 animate-fade-in">
                 <NarratorStyleSection
                   dmSettings={settings.dmSettings}
                   updateDMSettings={updateDMSettings}
-                />
-              </section>
-
-              {/* Right Column: Media & Backend Settings */}
-              <section className="space-y-6 animate-fade-in">
-                <NarratorVoicesSection
-                  settings={settings}
-                  updateSettings={updateSettings}
-                  backendUser={backendUser}
-                  hasApiKey={hasApiKey}
-                  voices={voices}
-                  loadingVoices={loadingVoices}
-                  voiceError={voiceError}
-                  testingVoice={testingVoice}
-                  onLoadVoices={handleLoadVoices}
-                  onSelectNarratorVoice={handleSelectNarratorVoice}
-                  onToggleGenderPool={handleToggleGenderPool}
-                  onTestVoice={handleTestVoice}
-                />
-
-                <SfxSection settings={settings} updateSettings={updateSettings} />
-
-                <MusicSection settings={settings} updateSettings={updateSettings} />
-
-                <BackendServerSection
-                  backendAuthChecking={backendAuthChecking}
-                  backendUser={backendUser}
-                  backendLogout={backendLogout}
-                  cacheStats={cacheStats}
-                />
-
-                <ConfigBackupSection
-                  fileInputRef={fileInputRef}
-                  importStatus={importStatus}
-                  onExport={exportConfig}
-                  onImport={importConfig}
                 />
               </section>
             </div>
@@ -177,7 +76,7 @@ export default function DMSettingsPage({ onClose }) {
         </div>
 
         <footer className="shrink-0 border-t border-outline-variant/15 bg-surface-container-highest/80 backdrop-blur-xl px-6 lg:px-12 py-4 flex justify-end">
-          <Button variant="ghost" onClick={handleReset}>
+          <Button variant="ghost" onClick={resetSettings}>
             {t('settings.resetGrimoire')}
           </Button>
         </footer>

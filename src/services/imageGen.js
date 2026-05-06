@@ -50,7 +50,7 @@ function applyPresetToPayload(payload, sdModel, kind = 'scene') {
   }
 }
 
-async function generateSceneViaProxy(prompt, provider, campaignId, { forceNew = false, portraitUrl = null, sdModel = null, sdSeed = null, shape = 'scene' } = {}) {
+async function generateSceneViaProxy(prompt, provider, campaignId, { forceNew = false, portraitUrl = null, sdModel = null, sdSeed = null, shape = 'scene', negativePrompt = null } = {}) {
   const body = { prompt };
   if (campaignId) body.campaignId = campaignId;
   if (forceNew) body.forceNew = true;
@@ -76,12 +76,15 @@ async function generateSceneViaProxy(prompt, provider, campaignId, { forceNew = 
     if (sdModel) payload.model = sdModel;
     if (Number.isInteger(sdSeed)) payload.seed = sdSeed;
     if (isSquare) {
-      // Set w/h before applyPresetToPayload so the preset's scene-bucket
-      // dims don't overwrite them (applyPreset only fills when null).
       payload.width = 1024;
       payload.height = 1024;
     }
     applyPresetToPayload(payload, sdModel, 'scene');
+    if (negativePrompt) {
+      payload.negativePrompt = payload.negativePrompt
+        ? `${negativePrompt}, ${payload.negativePrompt}`
+        : negativePrompt;
+    }
     const data = await apiClient.post('/proxy/sd-webui/generate', payload);
     return canonicalUrl(data.url);
   }
@@ -198,24 +201,26 @@ export const imageService = {
     const enCareerName = await ensureEnglish(careerName);
     const prompt = buildPortraitPrompt(species, gender, age, enCareerName, genre, provider, imageStyle, Boolean(imageBlob), darkPalette, seriousness, extras, sdModel);
 
+    let url;
     if (provider === 'dalle') {
-      return generatePortraitViaDalleProxy(prompt);
+      url = await generatePortraitViaDalleProxy(prompt);
+    } else if (provider === 'gpt-image') {
+      if (imageBlob) {
+        url = await generatePortraitViaGptImageEditsProxy(imageBlob, prompt);
+      } else {
+        const data = await apiClient.post('/proxy/openai/images', { prompt, model: 'gpt-image-1.5', size: '1024x1024' });
+        url = canonicalUrl(data.url);
+      }
+    } else if (provider === 'gemini') {
+      url = imageBlob
+        ? await generatePortraitViaGeminiImg2ImgProxy(imageBlob, prompt)
+        : await generatePortraitViaGeminiProxy(prompt);
+    } else if (provider === 'sd-webui') {
+      url = await generatePortraitViaSdWebuiProxy(imageBlob, prompt, strength, sdModel, sdSeed);
+    } else {
+      url = await generatePortraitViaStabilityProxy(imageBlob, prompt, strength);
     }
-    if (provider === 'gpt-image') {
-      if (imageBlob) return generatePortraitViaGptImageEditsProxy(imageBlob, prompt);
-      const data = await apiClient.post('/proxy/openai/images', { prompt, model: 'gpt-image-1.5', size: '1024x1024' });
-      return canonicalUrl(data.url);
-    }
-    if (provider === 'gemini') {
-      return imageBlob
-        ? generatePortraitViaGeminiImg2ImgProxy(imageBlob, prompt)
-        : generatePortraitViaGeminiProxy(prompt);
-    }
-    if (provider === 'sd-webui') {
-      return generatePortraitViaSdWebuiProxy(imageBlob, prompt, strength, sdModel, sdSeed);
-    }
-    // Default: Stability
-    return generatePortraitViaStabilityProxy(imageBlob, prompt, strength);
+    return { url, prompt };
   },
 
   async generatePlaygroundImage({ prompt, provider = 'dalle', sdModel = null, sdSeed = null, referenceBlob = null, strength = 0.55 } = {}) {
@@ -272,6 +277,10 @@ export const imageService = {
       seriousness,
       sdModel,
     });
-    return generateSceneViaProxy(prompt, provider, campaignId, { sdModel, sdSeed, forceNew, shape: 'square' });
+    const itemNegative = provider === 'sd-webui'
+      ? 'person, human, character, hand, hands, fingers, holding, wielding, figure, body, face, portrait, full body, half body'
+      : null;
+    const url = await generateSceneViaProxy(prompt, provider, campaignId, { sdModel, sdSeed, forceNew, shape: 'square', negativePrompt: itemNegative });
+    return { url, prompt };
   },
 };

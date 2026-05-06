@@ -28,6 +28,9 @@ File types:
 | [concepts/fog-of-war.md](concepts/fog-of-war.md) | Three-state location visibility, canonical vs non-canonical split, `userDiscoveryService` helpers |
 | [concepts/world-lore.md](concepts/world-lore.md) | Admin-editable `WorldLoreSection` prepended to every scene prompt, `buildWorldLorePreamble` cache |
 | [concepts/campaign-sandbox.md](concepts/campaign-sandbox.md) | CampaignNPC shadows over immutable WorldNPC, clone-on-first-encounter, field ownership matrix |
+| [concepts/living-world.md](concepts/living-world.md) | Living World phase roadmap, tick model, clone architecture, write-back plans |
+| [concepts/npc-clone-architecture.md](concepts/npc-clone-architecture.md) | WorldNPC → CampaignNPC shadow cloning, writer ownership, divergence policy |
+| [concepts/biome-and-step-movement.md](concepts/biome-and-step-movement.md) | Polygon biome map, free-vector movement, pathScan + 250 m discovery, world barriers |
 | [concepts/hearsay-and-ai-locations.md](concepts/hearsay-and-ai-locations.md) | `[NPC_KNOWLEDGE]` prompt block, `locationMentioned` policy, AI-created non-canonical locations |
 
 ## Patterns — reusable code shapes
@@ -35,7 +38,6 @@ File types:
 | File | Use when |
 |---|---|
 | [patterns/sse-streaming.md](patterns/sse-streaming.md) | **MANDATORY READ** before touching any SSE route. `writeSseHead` invariants, client parser shape, Playwright mock format. |
-| [patterns/bullmq-queues.md](patterns/bullmq-queues.md) | Adding a new queue job, changing worker concurrency, debugging queue/pub-sub issues |
 | [patterns/zustand-facade.md](patterns/zustand-facade.md) | Writing new reducer handlers, picking between granular selectors and `useGame()` |
 | [patterns/pure-lift-refactoring.md](patterns/pure-lift-refactoring.md) | Breaking up god-components or monolithic services |
 | [patterns/hook-pure-factory-testing.md](patterns/hook-pure-factory-testing.md) | **MANDATORY READ** before writing hook tests. No `@testing-library/react`; extract pure factories. |
@@ -57,6 +59,7 @@ File types:
 | [decisions/currency-three-tier-pl.md](decisions/currency-three-tier-pl.md) | Złota/Srebrna/Miedziana Korona, `1 ZK = 20 SK = 240 MK` |
 | [decisions/titles-from-achievements.md](decisions/titles-from-achievements.md) | Character identity via achievement-unlocked titles, not classes |
 | [decisions/hand-authored-world-seed.md](decisions/hand-authored-world-seed.md) | Canonical world in `seedWorld.js`; Living World proc-gen stays opt-in |
+| [decisions/postgres-prod-hosting.md](decisions/postgres-prod-hosting.md) | Production Postgres hosting choice (Cloud SQL) |
 
 ## Ideas — future concepts (not adopted)
 
@@ -66,10 +69,21 @@ See [ideas/README.md](ideas/README.md) for the full convention. Current ideas:
 
 - [ideas/async-tool-pattern.md](ideas/async-tool-pattern.md)
 - [ideas/autonomous-npcs.md](ideas/autonomous-npcs.md)
+- [ideas/biome-tiles.md](ideas/biome-tiles.md)
 - [ideas/combat-auto-resolve.md](ideas/combat-auto-resolve.md)
 - [ideas/declarative-event-routing.md](ideas/declarative-event-routing.md)
+- [ideas/deja-vu-npc-memory.md](ideas/deja-vu-npc-memory.md)
 - [ideas/deferred-event-batching.md](ideas/deferred-event-batching.md)
+- [ideas/freeroam-mode.md](ideas/freeroam-mode.md)
+- [ideas/living-world-admin-extras.md](ideas/living-world-admin-extras.md)
+- [ideas/living-world-atonement-loop.md](ideas/living-world-atonement-loop.md)
+- [ideas/living-world-cross-user-visibility.md](ideas/living-world-cross-user-visibility.md)
+- [ideas/living-world-npc-auto-dispatch.md](ideas/living-world-npc-auto-dispatch.md)
+- [ideas/living-world-scene-orchestration.md](ideas/living-world-scene-orchestration.md)
+- [ideas/living-world-vector-search.md](ideas/living-world-vector-search.md)
+- [ideas/npc-action-assignment.md](ideas/npc-action-assignment.md)
 - [ideas/prompt-fragment-system.md](ideas/prompt-fragment-system.md)
+- [ideas/side-quests-between-campaigns.md](ideas/side-quests-between-campaigns.md)
 
 ## Rules for editing this knowledge base
 

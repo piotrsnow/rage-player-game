@@ -1,6 +1,6 @@
+import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { ATTRIBUTE_KEYS, cumulativeCharXpThreshold } from '../../data/rpgSystem';
-import Tooltip from '../ui/Tooltip';
+import { ATTRIBUTE_KEYS, ATTRIBUTE_DESCRIPTIONS, DIFFICULTY_THRESHOLDS, cumulativeCharXpThreshold } from '../../data/rpgSystem';
 
 const ATTR_ICONS = {
   sila: 'fitness_center',
@@ -11,8 +11,60 @@ const ATTR_ICONS = {
   szczescie: 'casino',
 };
 
-export default function StatsGrid({ attributes, mana, characterLevel, characterXp, attributePoints }) {
+const DIFFICULTY_LABELS = {
+  easy: 'Łatwy',
+  medium: 'Średni',
+  hard: 'Trudny',
+  veryHard: 'B. trudny',
+  extreme: 'Ekstremalny',
+};
+
+function StatDetailPanel({ attrKey, value, t }) {
+  const fullName = t(`rpgAttributes.${attrKey}`, { defaultValue: attrKey });
+  const description = t(`tooltips.stats.${attrKey}`, { defaultValue: '' }) || ATTRIBUTE_DESCRIPTIONS[attrKey] || '';
+
+  return (
+    <div className="col-span-3 sm:col-span-6 bg-surface-container/90 backdrop-blur-xl border border-primary/20 rounded-sm p-4 animate-fade-in">
+      <div className="flex items-start gap-3">
+        <span className="material-symbols-outlined text-primary text-2xl mt-0.5">
+          {ATTR_ICONS[attrKey] || 'star'}
+        </span>
+        <div className="flex-1 min-w-0">
+          <h4 className="text-primary font-headline text-lg leading-tight">{fullName}</h4>
+          <p className="text-on-surface-variant text-sm mt-1 leading-relaxed">{description}</p>
+
+          <div className="mt-3 p-3 bg-surface-container-high/60 rounded-sm border border-outline-variant/10">
+            <p className="text-on-surface text-xs font-label uppercase tracking-wider mb-2">Rzut cechy</p>
+            <p className="text-on-surface-variant text-sm">
+              <span className="text-tertiary font-headline">d50</span>
+              {' + '}
+              <span className="text-primary font-headline">{value}</span>
+              <span className="text-on-surface-variant/60"> ({fullName})</span>
+              {' + umiejętność vs próg trudności'}
+            </p>
+            <div className="flex flex-wrap gap-2 mt-2">
+              {Object.entries(DIFFICULTY_THRESHOLDS).map(([key, val]) => (
+                <span key={key} className="text-[10px] px-2 py-0.5 rounded-sm bg-surface-container-highest/80 text-on-surface-variant border border-outline-variant/10">
+                  {DIFFICULTY_LABELS[key] || key}: <span className="text-tertiary font-headline">{val}</span>
+                </span>
+              ))}
+            </div>
+          </div>
+
+          {attrKey === 'szczescie' && (
+            <p className="text-xs text-on-surface-variant/70 mt-2 italic">
+              Każdy rzut ma {value}% szans na automatyczny sukces (fart).
+            </p>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export default function StatsGrid({ attributes, characterLevel, characterXp, attributePoints }) {
   const { t } = useTranslation();
+  const [selectedStat, setSelectedStat] = useState(null);
 
   if (!attributes) return null;
 
@@ -24,9 +76,12 @@ export default function StatsGrid({ attributes, mana, characterLevel, characterX
     ? Math.min(100, ((charXp - prevThreshold) / (nextThreshold - prevThreshold)) * 100)
     : 0;
 
+  const handleStatClick = (key) => {
+    setSelectedStat((prev) => (prev === key ? null : key));
+  };
+
   return (
     <div className="space-y-3">
-      {/* Character Level */}
       <div className="flex items-center gap-3 px-3 py-2 bg-tertiary-container/10 border border-tertiary/20 rounded-sm">
         <span className="material-symbols-outlined text-tertiary text-lg">military_tech</span>
         <span className="text-xs font-label uppercase tracking-widest text-on-surface-variant">
@@ -48,40 +103,36 @@ export default function StatsGrid({ attributes, mana, characterLevel, characterX
           const value = attributes[key] || 0;
           const icon = ATTR_ICONS[key] || 'star';
           const short = t(`rpgAttributeShort.${key}`, { defaultValue: key });
+          const isSelected = selectedStat === key;
 
           return (
-            <Tooltip key={key} content={t(`tooltips.stats.${key}`, { defaultValue: '' })}>
-              <div
-                className="bg-surface-container-high/60 backdrop-blur-md p-4 border-b-2 border-primary/20 flex flex-col items-center text-center transition-all hover:bg-surface-container-highest/80"
-              >
-                <span className="material-symbols-outlined text-primary-dim mb-1 text-2xl">
-                  {icon}
-                </span>
-                <span className="text-on-surface-variant font-label text-[9px] uppercase tracking-[0.15em] mb-1">
-                  {short}
-                </span>
-                <span className="text-tertiary font-headline text-3xl">{value}</span>
-              </div>
-            </Tooltip>
+            <button
+              key={key}
+              type="button"
+              onClick={() => handleStatClick(key)}
+              className={`bg-surface-container-high/60 backdrop-blur-md p-4 border-b-2 flex flex-col items-center text-center transition-all cursor-pointer hover:bg-surface-container-highest/80 ${
+                isSelected ? 'border-primary bg-surface-container-highest/80' : 'border-primary/20'
+              }`}
+            >
+              <span className="material-symbols-outlined text-primary-dim/50 mb-1 text-3xl">
+                {icon}
+              </span>
+              <span className="text-on-surface-variant font-label text-[9px] uppercase tracking-[0.15em] mb-1">
+                {short}
+              </span>
+              <span className="text-tertiary font-headline text-3xl">{value}</span>
+            </button>
           );
         })}
-      </div>
 
-      {mana && (
-        <div className="flex items-center gap-3 px-3 py-2 bg-tertiary-container/10 border border-tertiary/20 rounded-sm">
-          <span className="material-symbols-outlined text-tertiary text-lg">water_drop</span>
-          <span className="text-xs font-label uppercase tracking-widest text-on-surface-variant">Mana</span>
-          <div className="flex-1 h-2 bg-surface-container-high/60 rounded-full overflow-hidden">
-            <div
-              className="h-full bg-tertiary rounded-full transition-all duration-300"
-              style={{ width: `${mana.max > 0 ? (mana.current / mana.max) * 100 : 0}%` }}
-            />
-          </div>
-          <span className="text-sm font-headline text-tertiary tabular-nums">
-            {mana.current}/{mana.max}
-          </span>
-        </div>
-      )}
+        {selectedStat && (
+          <StatDetailPanel
+            attrKey={selectedStat}
+            value={attributes[selectedStat] || 0}
+            t={t}
+          />
+        )}
+      </div>
     </div>
   );
 }

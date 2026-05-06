@@ -72,9 +72,9 @@ export async function tileRoutes(fastify) {
     // a 3-tile patch round-tripped 3× the single-query RTT (~600 ms).
     const results = await pmap(body.patches, 32, async ({ localId, patch }) => {
       const data = {};
-      if (patch.atoms !== undefined) data.atoms = JSON.stringify(patch.atoms);
-      if (patch.traits !== undefined) data.traits = JSON.stringify(patch.traits);
-      if (patch.tags !== undefined) data.tags = JSON.stringify(patch.tags);
+      if (patch.atoms !== undefined) data.atoms = patch.atoms;
+      if (patch.traits !== undefined) data.traits = patch.traits;
+      if (patch.tags !== undefined) data.tags = patch.tags;
       if (patch.autotileGroupId !== undefined) data.autotileGroupId = patch.autotileGroupId ?? null;
       if (patch.autotileRole !== undefined) data.autotileRole = patch.autotileRole ?? null;
       if (patch.notes !== undefined) data.notes = patch.notes;
@@ -86,9 +86,9 @@ export async function tileRoutes(fastify) {
           tilesetId: body.tilesetId,
           localId,
           regionId: patch.regionId ?? '',
-          atoms: JSON.stringify(patch.atoms ?? []),
-          traits: JSON.stringify(patch.traits ?? {}),
-          tags: JSON.stringify(patch.tags ?? []),
+          atoms: patch.atoms ?? [],
+          traits: patch.traits ?? {},
+          tags: patch.tags ?? [],
           autotileGroupId: patch.autotileGroupId ?? null,
           autotileRole: patch.autotileRole ?? null,
           notes: patch.notes ?? '',

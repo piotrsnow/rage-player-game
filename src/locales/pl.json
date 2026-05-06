@@ -142,7 +142,12 @@
     "imageConfig": "Obrazy",
     "saveCampaign": "Zapisz Kampanię",
     "saving": "Zapisywanie...",
-    "campaignSaved": "Zapisano!"
+    "campaignSaved": "Zapisano!",
+    "profile": "Profil",
+    "audioConfig": "Dźwięk"
+  },
+  "profile": {
+    "title": "Profil Użytkownika"
   },
   "imageConfig": {
     "title": "Konfiguracja Obrazów",
@@ -255,6 +260,11 @@
     "randomizePrompt": "Losuj temat",
     "randomizingPrompt": "Losowanie...",
     "generatePromptFromInput": "Ułóż temat z wpisanego tekstu",
+    "topicHistory": "Historia tematów",
+    "topicHistoryEmpty": "Brak zapisanych tematów. Użyj \"Ułóż temat\", aby wygenerować pierwszy.",
+    "topicHistoryOriginal": "Oryginalny tekst",
+    "topicHistoryGenerated": "Wygenerowany temat",
+    "topicHistoryClose": "Zamknij historię",
     "beginRitual": "Rozpocznij Przygodę",
     "loadingTitle": "Grimuar się budzi... tworzy twój świat",
     "loadingDescription": "AI generuje świat kampanii, hak fabularny, postać i scenę otwierającą. To może chwilę potrwać.",
@@ -273,7 +283,7 @@
     "tones": {
       "Dark": "Mroczny",
       "Epic": "Epicki",
-      "Humorous": "Humorystyczny"
+      "Humorous": "Zabawny"
     },
     "toneDesc": {
       "Dark": "Ponury, moralnie szary, brutalny",
@@ -284,6 +294,13 @@
       "Short": "Krótka",
       "Medium": "Średnia",
       "Long": "Długa"
+    },
+    "difficultyLabel": "Trudność",
+    "difficulties": {
+      "low": "Niska",
+      "medium": "Średnia",
+      "high": "Wysoka",
+      "deadly": "Śmiertelna"
     }
   },
   "gameplay": {
@@ -571,6 +588,9 @@
     },
     "useCrystal": "Użyj kryształu",
     "regenerateImage": "Wygeneruj ponownie",
+    "imagePromptTooltip": "Prompt obrazka",
+    "copyImagePrompt": "Skopiuj prompt",
+    "imagePromptCopied": "Skopiowano!",
     "crystalModalTitle": "Kryształ Many",
     "crystalModalDesc": "Wybierz co ulepszyć. Efekt jest trwały i zużywa kryształ.",
     "equipment": "Ekwipunek",
@@ -606,6 +626,8 @@
     "catMisc": "Inne"
   },
   "settings": {
+    "audioTitle": "Dźwięk i TTS",
+    "audioSubtitle": "Konfiguracja syntezy głosu narratora, efektów dźwiękowych i muzyki w tle.",
     "localLLM": "Lokalny LLM",
     "localLLMDesc": "Połącz się z lokalnie uruchomionym LLM przez Ollama lub LM Studio, aby grać offline.",
     "localLLMEndpoint": "Adres URL endpointu",
@@ -726,8 +748,12 @@
     },
     "language": "Język",
     "languageDesc": "Język interfejsu i narracji AI",
+    "ttsProvider": "Dostawca TTS",
     "narrator": "Narrator",
     "narratorDesc": "ElevenLabs synteza mowy dla narracji MG",
+    "xttsTitle": "XTTS (lokalne TTS)",
+    "xttsDesc": "Lokalna synteza mowy XTTS v2 — wymaga karty GPU i uruchomionego serwera voiceapp.",
+    "configureXtts": "XTTS wymaga uruchomionego serwera voiceapp i ustawienia XTTS_URL w zmiennych środowiskowych backendu.",
     "sharedVoiceSettingsHint": "Te ustawienia głosów są współdzielone globalnie dla wszystkich graczy podłączonych do backendu.",
     "narratorEnabled": "Włącz Narratora",
     "narratorAutoPlay": "Auto-odtwarzanie Wiadomości MG",
@@ -1126,11 +1152,42 @@
   },
   "costs": {
     "totalCost": "Koszt AI",
+    "scene": "Sceny",
     "aiText": "Generowanie tekstu",
     "images": "Obrazy",
     "tts": "Narracja",
     "sfx": "Efekty dźwiękowe",
     "music": "Muzyka"
+  },
+  "credits": {
+    "title": "Credits",
+    "available": "dostępne",
+    "description": "Wybierz pakiet lub wpisz własną kwotę, aby doładować konto.",
+    "customAmount": "Własna kwota",
+    "topUp": "Doładuj",
+    "redirecting": "Przekierowuję...",
+    "amountRange": "Kwota musi być między $1 a $100",
+    "checkoutFailed": "Płatność nie powiodła się",
+    "success": "Doładowanie zakończone pomyślnie!",
+    "footer": "Płatności obsługiwane przez Stripe. Kwoty w USD."
+  },
+  "sceneCost": {
+    "title": "Koszt sceny",
+    "subtitle": "Wybierz dodatki wpływające na koszt każdej sceny",
+    "ttsLabel": "Czytanie tekstu",
+    "tts": {
+      "none": "Brak",
+      "local": "Local (XTTS)",
+      "best": "Best (ElevenLabs)"
+    },
+    "imageLabel": "Generowanie obrazu",
+    "image": {
+      "none": "Brak",
+      "good": "Good (GPT-image)",
+      "local": "Local (Stable Diffusion)"
+    },
+    "base": "Baza",
+    "perScene": "Za scenę"
   },
   "locationChip": {
     "wandering": "W drodze"
@@ -1227,6 +1284,9 @@
     "referencePhotoHintGemini": "Bez zdjęcia AI wygeneruje portret tylko z opisu postaci. Ze zdjęciem będzie próbować zachować podobieństwo twarzy.",
     "portraitDescGptImage": "AI wygeneruje portret fantasy twojej postaci. Możesz dodać zdjęcie referencyjne, aby zachować podobieństwo twarzy w portrecie.",
     "referencePhotoHintGptImage": "Bez zdjęcia AI wygeneruje portret tylko z opisu postaci. Ze zdjęciem zachowa twoje rysy twarzy i tożsamość.",
+    "portraitPromptTooltip": "Prompt portretu",
+    "copyPortraitPrompt": "Skopiuj prompt",
+    "portraitPromptCopied": "Skopiowano!",
     "attributePointsRemaining": "Pozostałe punkty cech",
     "speciesBonus": "Bonus rasowy",
     "racialSkill": "Rasowa"
@@ -1257,7 +1317,10 @@
     "legendRegenerate": "Napisz na nowo",
     "legendLoading": "Spisywanie legendy...",
     "legendError": "Nie udało się wygenerować legendy",
-    "legendNoAi": "Skonfiguruj klucz AI aby wygenerować legendę"
+    "legendNoAi": "Skonfiguruj klucz AI aby wygenerować legendę",
+    "noSelection": "Nie wybrano postaci",
+    "noSelectionHint": "Wybierz postać z listy lub stwórz nową",
+    "createCard": "Stwórz Postać"
   },
   "system": {
     "diceRollMessage": "Test {{skill}}: k100 wynik {{roll}} vs cel {{target}} — PS {{sl}} — {{result}}",
@@ -1571,7 +1634,15 @@
     "noRecruitableNpcs": "Brak NPC, z którymi masz wystarczająco dobre relacje.",
     "partyFull": "Drużyna pełna ({{current}}/{{max}})",
     "dismiss": "Pożegnaj",
-    "dismissConfirm": "Czy na pewno chcesz pożegnać {{name}}?"
+    "dismissConfirm": "Czy na pewno chcesz pożegnać {{name}}?",
+    "noKnownNpcs": "Nie poznałeś jeszcze żadnych postaci w tej kampanii.",
+    "blockReason": {
+      "dead": "Nie żyje",
+      "inParty": "Już w drużynie",
+      "lowDisposition": "Niska sympatia",
+      "cooldown": "Jeszcze nie teraz",
+      "notRecent": "Dawno niewidziany"
+    }
   },
   "webcam": {
     "videoChat": "Wideorozmowa",
@@ -1689,5 +1760,16 @@
     "criticalFail": "Krytyczna porażka — wszystkie składniki stracone!",
     "close": "Zamknij laboratorium",
     "noRecipes": "Brak dostępnych receptur"
+  },
+  "admin": {
+    "userManagement": "Zarządzanie użytkownikami",
+    "users": "Użytkownicy",
+    "livingWorld": "Żywy Świat",
+    "adminBadge": "Admin",
+    "you": "Ty",
+    "makeAdmin": "Nadaj admina",
+    "removeAdmin": "Odbierz admina",
+    "cannotDemoteSelf": "Nie możesz odebrać sobie roli admina",
+    "noUsers": "Brak użytkowników"
   }
 }

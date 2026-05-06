@@ -6,8 +6,8 @@ const DUCK_VOLUME_RATIO = 0.2;
 
 const log = (...args) => console.log('%c[LocalMusic]', 'color:#34d399;font-weight:bold', ...args);
 
-export function useLocalMusic(narratorPlaybackState, { folder, active = true } = {}) {
-  const { settings } = useSettings();
+export function useLocalMusic(narratorPlaybackState, { folder, active = true, silenced = false } = {}) {
+  const { settings, backendAuthChecking } = useSettings();
 
   const [tracks, setTracks] = useState([]);
   const [isPlaying, setIsPlaying] = useState(false);
@@ -20,6 +20,7 @@ export function useLocalMusic(narratorPlaybackState, { folder, active = true } =
   const fadeInRafRef = useRef(null);
   const targetVolumeRef = useRef((settings.musicVolume ?? 40) / 100);
   const isDuckedRef = useRef(false);
+  const isSilencedRef = useRef(silenced);
   const trackIndexRef = useRef(-1);
   const shuffledRef = useRef([]);
   const wantPlayingRef = useRef(false);
@@ -29,23 +30,37 @@ export function useLocalMusic(narratorPlaybackState, { folder, active = true } =
     return Math.max(0, Math.min(1, (settings.musicVolume ?? 40) / 100));
   }, [settings.musicVolume]);
 
+  const applyOutputVolume = useCallback(() => {
+    const audio = activeAudioRef.current;
+    if (!audio) return;
+    const base = targetVolumeRef.current;
+    if (isSilencedRef.current) {
+      audio.volume = 0;
+      return;
+    }
+    if (isDuckedRef.current) {
+      audio.volume = base * DUCK_VOLUME_RATIO;
+    } else {
+      audio.volume = base;
+    }
+  }, []);
+
   useEffect(() => {
     targetVolumeRef.current = getBaseVolume();
-    if (activeAudioRef.current && !isDuckedRef.current) {
-      activeAudioRef.current.volume = targetVolumeRef.current;
-    }
-  }, [getBaseVolume]);
+    applyOutputVolume();
+  }, [getBaseVolume, applyOutputVolume]);
+
+  useEffect(() => {
+    isSilencedRef.current = silenced;
+    applyOutputVolume();
+  }, [silenced, applyOutputVolume]);
 
   useEffect(() => {
     if (!narratorPlaybackState) return;
     const narrating = narratorPlaybackState === 'playing' || narratorPlaybackState === 'loading';
     isDuckedRef.current = narrating;
-    if (activeAudioRef.current) {
-      activeAudioRef.current.volume = narrating
-        ? targetVolumeRef.current * DUCK_VOLUME_RATIO
-        : targetVolumeRef.current;
-    }
-  }, [narratorPlaybackState]);
+    applyOutputVolume();
+  }, [narratorPlaybackState, applyOutputVolume]);
 
   const baseUrl = settings.useBackend && settings.backendUrl
     ? settings.backendUrl.replace(/\/+$/, '')
@@ -80,10 +95,11 @@ export function useLocalMusic(narratorPlaybackState, { folder, active = true } =
   }, [baseUrl, folder]);
 
   useEffect(() => {
+    if (backendAuthChecking) return;
     if (settings.localMusicEnabled && (settings.useBackend ? settings.backendUrl : true)) {
       fetchTracks();
     }
-  }, [settings.localMusicEnabled, settings.useBackend, settings.backendUrl, fetchTracks]);
+  }, [settings.localMusicEnabled, settings.useBackend, settings.backendUrl, backendAuthChecking, fetchTracks]);
 
   useEffect(() => {
     if (previousFolderRef.current === folder) return;
@@ -136,10 +152,6 @@ export function useLocalMusic(narratorPlaybackState, { folder, active = true } =
   const playTrack = useCallback((track) => {
     stopFade();
 
-    const baseVol = targetVolumeRef.current;
-    const ducked = isDuckedRef.current;
-    const effectiveMax = ducked ? baseVol * DUCK_VOLUME_RATIO : baseVol;
-
     if (activeAudioRef.current) {
       fadingAudioRef.current = activeAudioRef.current;
       const oldAudio = fadingAudioRef.current;
@@ -175,7 +187,11 @@ export function useLocalMusic(narratorPlaybackState, { folder, active = true } =
       const fadeInStart = performance.now();
       const fadeInTick = () => {
         const t = Math.min(1, (performance.now() - fadeInStart) / CROSSFADE_MS);
-        newAudio.volume = Math.min(effectiveMax, effectiveMax * t);
+        const base = targetVolumeRef.current;
+        let max = base;
+        if (isSilencedRef.current) max = 0;
+        else if (isDuckedRef.current) max = base * DUCK_VOLUME_RATIO;
+        newAudio.volume = Math.min(max, max * t);
         if (t < 1) {
           fadeInRafRef.current = requestAnimationFrame(fadeInTick);
         } else {
@@ -256,16 +272,29 @@ export function useLocalMusic(narratorPlaybackState, { folder, active = true } =
   const setVolume = useCallback((vol) => {
     const v = Math.max(0, Math.min(1, vol / 100));
     targetVolumeRef.current = v;
-    if (activeAudioRef.current && !isDuckedRef.current) {
-      activeAudioRef.current.volume = v;
-    }
-  }, []);
+    applyOutputVolume();
+  }, [applyOutputVolume]);
 
   useEffect(() => {
+    if (!settings.localMusicEnabled) {
+      wantPlayingRef.current = false;
+      stopFade();
+      if (activeAudioRef.current) {
+        activeAudioRef.current.pause();
+        activeAudioRef.current.removeAttribute('src');
+        activeAudioRef.current = null;
+      }
+      setIsPlaying(false);
+      setCurrentTrack(null);
+    }
+  }, [settings.localMusicEnabled, stopFade]);
+
+  useEffect(() => {
+    if (backendAuthChecking) return;
     if (active && settings.localMusicEnabled && loaded && tracks.length > 0 && !isPlaying && !currentTrack) {
       startPlaying();
     }
-  }, [active, settings.localMusicEnabled, loaded, tracks.length]);
+  }, [active, settings.localMusicEnabled, backendAuthChecking, loaded, tracks.length]);
 
   useEffect(() => {
     return () => {

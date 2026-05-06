@@ -85,8 +85,23 @@ async function completeAuthResponse(fastify, reply, user, deviceInfo) {
   return {
     accessToken,
     csrfToken,
-    user: { id: user.id, email: user.email },
+    user: { id: user.id, email: user.email, isAdmin: !!user.isAdmin, credits: user.credits ?? 0 },
   };
+}
+
+function isEnvAdmin(email) {
+  return config.adminEmail && email.toLowerCase() === config.adminEmail;
+}
+
+async function maybePromoteEnvAdmin(user) {
+  if (!user.isAdmin && isEnvAdmin(user.email)) {
+    return prisma.user.update({
+      where: { id: user.id },
+      data: { isAdmin: true },
+      select: { id: true, email: true, isAdmin: true, credits: true },
+    });
+  }
+  return user;
 }
 
 async function updateUserSettingsDocument(userId, data) {
@@ -118,7 +133,11 @@ export async function authRoutes(fastify) {
     }
 
     const passwordHash = await bcrypt.hash(password, SALT_ROUNDS);
-    const user = await prisma.user.create({ data: { email, passwordHash } });
+    const isAdmin = isEnvAdmin(email);
+    const user = await prisma.user.create({
+      data: { email, passwordHash, isAdmin },
+      select: { id: true, email: true, isAdmin: true, credits: true },
+    });
 
     return completeAuthResponse(fastify, reply, user, request.headers['user-agent'] || '');
   });
@@ -136,7 +155,7 @@ export async function authRoutes(fastify) {
     },
   }, async (request, reply) => {
     const { email, password } = request.body;
-    const user = await prisma.user.findUnique({ where: { email } });
+    let user = await prisma.user.findUnique({ where: { email } });
     if (!user) {
       return reply.code(401).send({ error: 'Invalid credentials' });
     }
@@ -145,6 +164,8 @@ export async function authRoutes(fastify) {
     if (!valid) {
       return reply.code(401).send({ error: 'Invalid credentials' });
     }
+
+    user = await maybePromoteEnvAdmin(user);
 
     return completeAuthResponse(fastify, reply, user, request.headers['user-agent'] || '');
   });
@@ -163,15 +184,17 @@ export async function authRoutes(fastify) {
       return reply.code(401).send({ error: 'Invalid or expired refresh token' });
     }
 
-    const user = await prisma.user.findUnique({
+    let user = await prisma.user.findUnique({
       where: { id: verified.userId },
-      select: { id: true, email: true, isAdmin: true },
+      select: { id: true, email: true, isAdmin: true, credits: true },
     });
     if (!user) {
       await revokeRefreshToken(cookieValue);
       clearAuthCookies(reply);
       return reply.code(401).send({ error: 'User not found' });
     }
+
+    user = await maybePromoteEnvAdmin(user);
 
     const accessToken = signAccessToken(fastify, user);
     const csrfToken = generateCsrfToken();
@@ -180,7 +203,7 @@ export async function authRoutes(fastify) {
     return {
       accessToken,
       csrfToken,
-      user: { id: user.id, email: user.email },
+      user: { id: user.id, email: user.email, isAdmin: !!user.isAdmin, credits: user.credits ?? 0 },
     };
   });
 
@@ -198,7 +221,7 @@ export async function authRoutes(fastify) {
   fastify.get('/me', { onRequest: [fastify.authenticate] }, async (request) => {
     const user = await prisma.user.findUnique({
       where: { id: request.user.id },
-      select: { id: true, email: true, settings: true, createdAt: true },
+      select: { id: true, email: true, isAdmin: true, settings: true, credits: true, createdAt: true },
     });
     if (!user) throw { statusCode: 404, message: 'User not found' };
 
@@ -255,6 +278,14 @@ export async function authRoutes(fastify) {
       resolved['sd-webui'] = { configured: true, masked };
     } else {
       resolved['sd-webui'] = { configured: false };
+    }
+
+    if (config.xttsUrl) {
+      let masked = config.xttsUrl;
+      try { masked = new URL(config.xttsUrl).host; } catch { /* keep raw */ }
+      resolved['xtts'] = { configured: true, masked };
+    } else {
+      resolved['xtts'] = { configured: false };
     }
 
     return resolved;

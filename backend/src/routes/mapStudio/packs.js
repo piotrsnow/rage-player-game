@@ -47,8 +47,8 @@ export async function packRoutes(fastify) {
         name: body.name,
         projectTilesize: body.projectTilesize,
         scaleAlgo: body.scaleAlgo,
-        origin: JSON.stringify(body.origin ?? {}),
-        traitVocab: JSON.stringify(body.traitVocab ?? {}),
+        origin: body.origin ?? {},
+        traitVocab: body.traitVocab ?? {},
       },
     });
     return deserializePack(row);
@@ -69,8 +69,8 @@ export async function packRoutes(fastify) {
     if (body.name !== undefined) data.name = body.name;
     if (body.projectTilesize !== undefined) data.projectTilesize = body.projectTilesize;
     if (body.scaleAlgo !== undefined) data.scaleAlgo = body.scaleAlgo;
-    if (body.origin !== undefined) data.origin = JSON.stringify(body.origin);
-    if (body.traitVocab !== undefined) data.traitVocab = JSON.stringify(body.traitVocab);
+    if (body.origin !== undefined) data.origin = body.origin;
+    if (body.traitVocab !== undefined) data.traitVocab = body.traitVocab;
 
     const row = await prisma.tilesetPack.update({ where: { id }, data });
     return deserializePack(row);

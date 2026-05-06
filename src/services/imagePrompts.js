@@ -484,7 +484,7 @@ export function buildItemImagePrompt(item, { genre = 'Fantasy', tone = 'Epic', p
   const worldContext = sanitizeForImageGen(genre || 'Fantasy', provider);
 
   if (isSdWebui) {
-    const sdSubject = `inventory artwork of ${itemName} (${itemType}, ${itemRarity}), ${itemDescription}, ${worldContext} setting, centered, single item`;
+    const sdSubject = `single isolated ${itemType} on plain background, ${itemName} (${itemRarity}), ${itemDescription}, ${worldContext}, inventory icon, centered object, no person, no hands, no character`;
     return buildSdPrompt({
       subject: sdSubject,
       tone,

@@ -1,3 +1,4 @@
+import { useState, useCallback, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { apiClient } from '../../../services/apiClient';
 import { gameData } from '../../../services/gameDataService';
@@ -163,6 +164,19 @@ export default function ItemDetailBox({
   isRegenerating = false,
 }) {
   const { t } = useTranslation();
+  const [promptExpanded, setPromptExpanded] = useState(false);
+  const [promptCopied, setPromptCopied] = useState(false);
+  const copyResetRef = useRef(null);
+
+  const handleCopyPrompt = useCallback(async () => {
+    if (!item.fullImagePrompt) return;
+    try {
+      await navigator.clipboard.writeText(item.fullImagePrompt);
+      setPromptCopied(true);
+      clearTimeout(copyResetRef.current);
+      copyResetRef.current = setTimeout(() => setPromptCopied(false), 2000);
+    } catch { /* clipboard may be unavailable */ }
+  }, [item.fullImagePrompt]);
 
   const rarity = item.rarity || item.availability || 'common';
   const rarityColor = rarityColors[rarity] || rarityColors.common;
@@ -195,6 +209,64 @@ export default function ItemDetailBox({
             fallbackIcon={icon}
             wrapperClassName="border border-outline-variant/20 flex items-center justify-center overflow-hidden"
           />
+          {item.fullImagePrompt && !promptExpanded && (
+            <button
+              type="button"
+              onClick={() => setPromptExpanded(true)}
+              aria-label={t('inventory.imagePromptTooltip', 'Prompt obrazka')}
+              className="absolute top-2 left-2 flex items-center justify-center w-8 h-8 rounded-sm bg-surface-container-highest/60 backdrop-blur-md border border-outline-variant/25 text-on-surface-variant hover:text-primary hover:bg-surface-container-highest/80 hover:border-primary/40 transition-all"
+            >
+              <span className="material-symbols-outlined text-[18px]">history_edu</span>
+            </button>
+          )}
+          {promptExpanded && (
+            <div className="absolute inset-0 flex items-end p-2" style={{ zIndex: 5 }}>
+              <div className="w-full rounded-sm bg-surface-container-highest/70 backdrop-blur-md border border-outline-variant/25 shadow-[0_4px_24px_rgba(0,0,0,0.6)]">
+                <div className="flex items-center justify-between gap-2 px-3 py-2 border-b border-outline-variant/15">
+                  <div className="flex items-center gap-1.5 min-w-0">
+                    <span className="material-symbols-outlined text-[16px] text-on-surface-variant">history_edu</span>
+                    <span className="text-[10px] font-label uppercase tracking-widest text-on-surface-variant truncate">
+                      {t('inventory.imagePromptTooltip', 'Prompt obrazka')}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-1 shrink-0">
+                    <button
+                      type="button"
+                      onClick={handleCopyPrompt}
+                      aria-label={t('inventory.copyImagePrompt', 'Skopiuj prompt')}
+                      className={`flex items-center gap-1 px-2 h-7 rounded-sm border transition-all ${
+                        promptCopied
+                          ? 'bg-success/15 border-success/40 text-success'
+                          : 'bg-surface-container-highest/60 border-outline-variant/25 text-on-surface-variant hover:text-primary hover:border-primary/40'
+                      }`}
+                    >
+                      <span className="material-symbols-outlined text-[14px]">
+                        {promptCopied ? 'check' : 'content_copy'}
+                      </span>
+                      <span className="text-[10px] font-label uppercase tracking-widest">
+                        {promptCopied
+                          ? t('inventory.imagePromptCopied', 'Skopiowano!')
+                          : t('inventory.copyImagePrompt', 'Skopiuj prompt')}
+                      </span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setPromptExpanded(false)}
+                      aria-label={t('common.close', 'Zamknij')}
+                      className="flex items-center justify-center w-7 h-7 rounded-sm bg-surface-container-highest/60 border border-outline-variant/25 text-on-surface-variant hover:text-primary hover:border-primary/40 transition-all"
+                    >
+                      <span className="material-symbols-outlined text-[16px]">close</span>
+                    </button>
+                  </div>
+                </div>
+                <div className="px-3 py-2 max-h-32 overflow-y-auto">
+                  <p className="text-[11px] leading-relaxed text-on-surface-variant whitespace-pre-wrap break-words">
+                    {item.fullImagePrompt}
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
           {onRegenerateImage && (
             <button
               type="button"

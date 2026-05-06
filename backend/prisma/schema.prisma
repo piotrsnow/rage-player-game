@@ -57,15 +57,17 @@ enum ReviewStatus {
 // ═══════════════════════════════════════════════════════════════════════
 
 model User {
-  id              String   @id @default(uuid(7)) @db.Uuid
-  email           String   @unique
-  passwordHash    String
-  apiKeys         String   @default("{}")
-  settings        Json     @default("{}")
-  isAdmin         Boolean  @default(false)
-  contentLanguage String   @default("pl")
-  createdAt       DateTime @default(now()) @db.Timestamptz
-  updatedAt       DateTime @updatedAt @db.Timestamptz
+  id               String   @id @default(uuid(7)) @db.Uuid
+  email            String   @unique
+  passwordHash     String
+  apiKeys          String   @default("{}")
+  settings         Json     @default("{}")
+  isAdmin          Boolean  @default(false)
+  contentLanguage  String   @default("pl")
+  credits          Int      @default(200)
+  stripeCustomerId String?  @unique
+  createdAt        DateTime @default(now()) @db.Timestamptz
+  updatedAt        DateTime @updatedAt @db.Timestamptz
 
   campaigns           Campaign[]
   characters          Character[]
@@ -75,6 +77,7 @@ model User {
   wanted3dEntries     Wanted3D[]
   worldKnowledge      UserWorldKnowledge?
   refreshTokens       RefreshToken[]
+  topicHistory        TopicHistory[]
 }
 
 model RefreshToken {
@@ -1208,4 +1211,158 @@ model Wanted3D {
   @@index([campaignId])
   @@index([status])
   @@map("3dwanted")
+}
+
+// ── Map Studio (dev tool — no auth, pseudo-user) ────────────────────
+
+model TilesetPack {
+  id               String   @id @default(uuid(7)) @db.Uuid
+  userId           String   @db.Uuid
+  name             String
+  projectTilesize  Int      @default(24)
+  scaleAlgo        String   @default("nearest")
+  origin           Json     @default("{}")
+  traitVocab       Json     @default("{}")
+  schemaVersion    Int      @default(1)
+  createdAt        DateTime @default(now()) @db.Timestamptz
+  updatedAt        DateTime @updatedAt @db.Timestamptz
+
+  tilesets        Tileset[]
+  connectionRules ConnectionRule[]
+
+  @@index([userId])
+}
+
+model Tileset {
+  id                String   @id @default(uuid(7)) @db.Uuid
+  packId            String   @db.Uuid
+  name              String
+  imageKey          String
+  imageWidth        Int      @default(0)
+  imageHeight       Int      @default(0)
+  nativeTilesize    Int      @default(16)
+  regions           Json     @default("[]")
+  sliceMode         String   @default("whole")
+  atlas             Json     @default("{}")
+  renderedVariants  Json     @default("{}")
+  createdAt         DateTime @default(now()) @db.Timestamptz
+  updatedAt         DateTime @updatedAt @db.Timestamptz
+
+  pack            TilesetPack     @relation(fields: [packId], references: [id], onDelete: Cascade)
+  tiles           Tile[]
+  autotileGroups  AutotileGroup[]
+
+  @@index([packId])
+}
+
+model Tile {
+  id               String   @id @default(uuid(7)) @db.Uuid
+  tilesetId        String   @db.Uuid
+  regionId         String   @default("")
+  localId          Int
+  col              Int      @default(0)
+  row              Int      @default(0)
+  nativeSize       Int      @default(16)
+  atoms            Json     @default("[]")
+  traits           Json     @default("{}")
+  tags             Json     @default("[]")
+  autotileGroupId  String?  @db.Uuid
+  autotileRole     String?
+  notes            String   @default("")
+  createdAt        DateTime @default(now()) @db.Timestamptz
+  updatedAt        DateTime @updatedAt @db.Timestamptz
+
+  tileset        Tileset        @relation(fields: [tilesetId], references: [id], onDelete: Cascade)
+  autotileGroup  AutotileGroup? @relation(fields: [autotileGroupId], references: [id], onDelete: SetNull)
+
+  @@unique([tilesetId, localId])
+  @@index([tilesetId])
+  @@index([autotileGroupId])
+}
+
+model AutotileGroup {
+  id          String   @id @default(uuid(7)) @db.Uuid
+  tilesetId   String   @db.Uuid
+  regionId    String   @default("")
+  name        String
+  layout      String   @default("blob_47")
+  originCol   Int      @default(0)
+  originRow   Int      @default(0)
+  cols        Int?
+  rows        Int?
+  cells       Json     @default("{}")
+  traits      Json     @default("{}")
+  createdAt   DateTime @default(now()) @db.Timestamptz
+  updatedAt   DateTime @updatedAt @db.Timestamptz
+
+  tileset Tileset @relation(fields: [tilesetId], references: [id], onDelete: Cascade)
+  tiles   Tile[]
+
+  @@index([tilesetId])
+}
+
+model ConnectionRule {
+  id          String   @id @default(uuid(7)) @db.Uuid
+  packId      String   @db.Uuid
+  name        String   @default("")
+  leftTraits  Json     @default("{}")
+  rightTraits Json     @default("{}")
+  via         String   @default("autotile_group")
+  viaRef      Json     @default("{}")
+  priority    Int      @default(0)
+  createdAt   DateTime @default(now()) @db.Timestamptz
+  updatedAt   DateTime @updatedAt @db.Timestamptz
+
+  pack TilesetPack @relation(fields: [packId], references: [id], onDelete: Cascade)
+
+  @@index([packId])
+}
+
+model MapDoc {
+  id              String   @id @default(uuid(7)) @db.Uuid
+  userId          String   @db.Uuid
+  name            String
+  size            Json     @default("[64,64]")
+  projectTilesize Int      @default(24)
+  packIds         String[] @default([])
+  layers          Json     @default("{}")
+  collision       String   @default("")
+  objects         Json     @default("[]")
+  meta            Json     @default("{}")
+  campaignId      String?  @db.Uuid
+  createdAt       DateTime @default(now()) @db.Timestamptz
+  updatedAt       DateTime @updatedAt @db.Timestamptz
+
+  @@index([userId])
+}
+
+model MapActor {
+  id         String   @id @default(uuid(7)) @db.Uuid
+  userId     String   @db.Uuid
+  name       String
+  appearance Json     @default("{}")
+  tags       String[] @default([])
+  createdAt  DateTime @default(now()) @db.Timestamptz
+  updatedAt  DateTime @updatedAt @db.Timestamptz
+
+  @@index([userId])
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// Topic History — stores seed text + AI-generated topic pairs from the
+// campaign creator "ułóż temat z wpisanego tekstu" feature.
+// ═══════════════════════════════════════════════════════════════════════
+
+model TopicHistory {
+  id             String   @id @default(uuid(7)) @db.Uuid
+  userId         String   @db.Uuid
+  seedText       String
+  generatedTopic String
+  genre          String   @default("")
+  tone           String   @default("")
+  createdAt      DateTime @default(now()) @db.Timestamptz
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt(sort: Desc)])
 }

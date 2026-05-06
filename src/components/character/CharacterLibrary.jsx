@@ -1,10 +1,34 @@
+import { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import CharacterPanel from './CharacterPanel';
 import { getGenderLabel } from '../../utils/characterUtils';
 import { apiClient } from '../../services/apiClient';
+import { storage } from '../../services/storage';
 
 function BrowsingView({ character, settings, onBack }) {
   const { t } = useTranslation();
+  const [fullCharacter, setFullCharacter] = useState(character);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    const charId = character.backendId || character.id;
+    if (!charId || !apiClient.isConnected()) {
+      setFullCharacter(character);
+      return;
+    }
+    let cancelled = false;
+    setLoading(true);
+    storage.loadCharacter(charId).then((full) => {
+      if (cancelled) return;
+      setFullCharacter(full || character);
+    }).catch(() => {
+      if (!cancelled) setFullCharacter(character);
+    }).finally(() => {
+      if (!cancelled) setLoading(false);
+    });
+    return () => { cancelled = true; };
+  }, [character]);
+
   return (
     <div className="px-4 md:px-10 py-8">
       <button
@@ -24,29 +48,35 @@ function BrowsingView({ character, settings, onBack }) {
 
       <div className="mb-12 relative animate-fade-in">
         <h1 className="text-4xl md:text-5xl font-headline text-tertiary mb-2 drop-shadow-[0_2px_4px_rgba(197,154,255,0.1)]">
-          {character.name}
+          {fullCharacter.name}
         </h1>
         <div className="flex items-center gap-4 text-on-surface-variant font-label text-sm uppercase tracking-[0.2em] flex-wrap">
-          <span>{t(`species.${character.species}`, { defaultValue: character.species })}</span>
+          <span>{t(`species.${fullCharacter.species}`, { defaultValue: fullCharacter.species })}</span>
           <span className="w-1 h-1 bg-primary rounded-full" />
-          <span>{t('character.gender')}: {getGenderLabel(character.gender, t)}</span>
+          <span>{t('character.gender')}: {getGenderLabel(fullCharacter.gender, t)}</span>
           <span className="w-1 h-1 bg-primary rounded-full" />
-          <span>{t('character.age')}: {character.age ?? 23}</span>
+          <span>{t('character.age')}: {fullCharacter.age ?? 23}</span>
           <span className="w-1 h-1 bg-primary rounded-full" />
-          <span>{character.characterXp || 0} {t('common.xp')}</span>
+          <span>{fullCharacter.characterXp || 0} {t('common.xp')}</span>
         </div>
       </div>
 
-      <CharacterPanel
-        character={character}
-        settings={settings}
-        t={t}
-        characterVoiceMap={{}}
-        showAdvancement={false}
-        setShowAdvancement={() => {}}
-        dispatch={null}
-        isMultiplayer={false}
-      />
+      {loading ? (
+        <div className="flex justify-center py-12">
+          <span className="material-symbols-outlined text-3xl text-primary/40 animate-spin">progress_activity</span>
+        </div>
+      ) : (
+        <CharacterPanel
+          character={fullCharacter}
+          settings={settings}
+          t={t}
+          characterVoiceMap={{}}
+          showAdvancement={false}
+          setShowAdvancement={() => {}}
+          dispatch={null}
+          isMultiplayer={false}
+        />
+      )}
     </div>
   );
 }

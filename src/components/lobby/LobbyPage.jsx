@@ -13,6 +13,7 @@ import Button from '../ui/Button';
 import GlassCard from '../ui/GlassCard';
 import CampaignCard from './CampaignCard';
 import AuthPanel from './AuthPanel';
+import IntroOverlay from './IntroOverlay';
 
 function FloatingRune({ delay, className }) {
   return (
@@ -128,7 +129,7 @@ export default function LobbyPage() {
   const location = useLocation();
   const { t, i18n } = useTranslation();
   const { dispatch } = useGame();
-  const { openSettings } = useModals();
+  const { openSettings, openProfile } = useModals();
   useDocumentTitle(t('common.tagline'));
   const { backendUser, hasApiKey } = useSettings();
   const mp = useMultiplayer();
@@ -148,6 +149,13 @@ export default function LobbyPage() {
       navigate('/', { replace: true, state: {} });
     }
   }, [location.state, navigate]);
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('credits') === 'success' || params.get('credits') === 'cancel') {
+      openProfile();
+    }
+  }, [openProfile]);
 
   useEffect(() => {
     let cancelled = false;
@@ -336,6 +344,8 @@ export default function LobbyPage() {
   const hasCampaigns = campaigns.length > 0;
 
   return (
+    <>
+    <IntroOverlay />
     <div className="flex flex-col items-center justify-center min-h-[calc(100vh-4rem)] px-6 py-12 relative overflow-hidden">
       {campaignNotFound && (
         <div className="fixed top-20 left-1/2 -translate-x-1/2 z-50 flex items-center gap-3 px-5 py-3 rounded-lg bg-error/15 border border-error/30 text-error text-sm font-label shadow-lg backdrop-blur-sm animate-slide-up">
@@ -380,19 +390,21 @@ export default function LobbyPage() {
       </div>
 
       {/* Action Buttons */}
-      <div className="flex flex-col sm:flex-row gap-6 items-center mb-16 animate-slide-up relative z-10" style={{ animationDelay: '0.2s' }}>
-        <Button size="lg" onClick={() => navigate('/create')}>
-          {t('lobby.newCampaign')}
-        </Button>
-        {isLoggedIn && hasCampaigns && (
-          <>
-            <span className="text-xs text-outline uppercase tracking-widest hidden sm:block">{t('common.or', 'or')}</span>
-            <Button size="lg" variant="secondary" onClick={handleContinue}>
-              {t('lobby.continueCampaign')}
-            </Button>
-          </>
-        )}
-      </div>
+      {isLoggedIn && (
+        <div className="flex flex-col sm:flex-row gap-6 items-center mb-16 animate-slide-up relative z-10" style={{ animationDelay: '0.2s' }}>
+          <Button size="lg" onClick={() => navigate('/create')}>
+            {t('lobby.newCampaign')}
+          </Button>
+          {hasCampaigns && (
+            <>
+              <span className="text-xs text-outline uppercase tracking-widest hidden sm:block">{t('common.or', 'or')}</span>
+              <Button size="lg" variant="secondary" onClick={handleContinue}>
+                {t('lobby.continueCampaign')}
+              </Button>
+            </>
+          )}
+        </div>
+      )}
 
       {/* Multiplayer Rejoin Banner */}
       {rejoinInfo && (
@@ -434,7 +446,7 @@ export default function LobbyPage() {
       )}
 
       {/* API Key Warning */}
-      {!hasServerAi && (
+      {isLoggedIn && !hasServerAi && (
         <div className="mb-8 max-w-md w-full animate-slide-up relative z-10" style={{ animationDelay: '0.25s' }}>
           <div
             onClick={openSettings}
@@ -515,5 +527,6 @@ export default function LobbyPage() {
         </div>
       )}
     </div>
+    </>
   );
 }

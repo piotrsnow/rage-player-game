@@ -148,7 +148,12 @@
     "imageConfig": "Images",
     "saveCampaign": "Save Campaign",
     "saving": "Saving...",
-    "campaignSaved": "Saved!"
+    "campaignSaved": "Saved!",
+    "profile": "Profile",
+    "audioConfig": "Audio"
+  },
+  "profile": {
+    "title": "User Profile"
   },
   "imageConfig": {
     "title": "Image Configuration",
@@ -263,6 +268,11 @@
     "randomizePrompt": "Randomize Topic",
     "randomizingPrompt": "Generating...",
     "generatePromptFromInput": "Generate a topic from the entered text",
+    "topicHistory": "Topic History",
+    "topicHistoryEmpty": "No saved topics yet. Use \"Generate topic\" to create your first.",
+    "topicHistoryOriginal": "Original text",
+    "topicHistoryGenerated": "Generated topic",
+    "topicHistoryClose": "Close history",
     "beginRitual": "Begin the Adventure",
     "loadingTitle": "The Grimoire stirs... crafting your world",
     "loadingDescription": "The AI is generating your campaign world, story hook, character, and opening scene. This may take a moment.",
@@ -292,6 +302,13 @@
       "Short": "Short",
       "Medium": "Medium",
       "Long": "Long"
+    },
+    "difficultyLabel": "Difficulty",
+    "difficulties": {
+      "low": "Low",
+      "medium": "Medium",
+      "high": "High",
+      "deadly": "Deadly"
     }
   },
   "gameplay": {
@@ -578,6 +595,9 @@
     },
     "useCrystal": "Use crystal",
     "regenerateImage": "Regenerate image",
+    "imagePromptTooltip": "Image prompt",
+    "copyImagePrompt": "Copy prompt",
+    "imagePromptCopied": "Copied!",
     "crystalModalTitle": "Mana Crystal",
     "crystalModalDesc": "Choose what to improve. The effect is permanent and consumes the crystal.",
     "equipment": "Equipment",
@@ -613,6 +633,8 @@
     "catMisc": "Misc"
   },
   "settings": {
+    "audioTitle": "Audio & TTS",
+    "audioSubtitle": "Configure narrator voice synthesis, sound effects and background music playback.",
     "localLLM": "Local LLM",
     "localLLMDesc": "Connect to a locally running LLM via Ollama or LM Studio for offline play.",
     "localLLMEndpoint": "Endpoint URL",
@@ -733,8 +755,12 @@
     },
     "language": "Language",
     "languageDesc": "Interface and AI narration language",
+    "ttsProvider": "TTS Provider",
     "narrator": "Narrator",
     "narratorDesc": "ElevenLabs text-to-speech for DM narration",
+    "xttsTitle": "XTTS (local TTS)",
+    "xttsDesc": "Local XTTS v2 speech synthesis — requires a GPU and running voiceapp server.",
+    "configureXtts": "XTTS requires the voiceapp server to be running and XTTS_URL set in the backend environment variables.",
     "sharedVoiceSettingsHint": "These voice settings are shared globally for all players connected to the backend.",
     "narratorEnabled": "Enable Narrator",
     "narratorAutoPlay": "Auto-play DM Messages",
@@ -1133,11 +1159,42 @@
   },
   "costs": {
     "totalCost": "Total AI Cost",
+    "scene": "Scenes",
     "aiText": "Text generation",
     "images": "Images",
     "tts": "Narration",
     "sfx": "Sound effects",
     "music": "Music"
+  },
+  "credits": {
+    "title": "Credits",
+    "available": "available",
+    "description": "Choose a package or enter a custom amount to top up your account.",
+    "customAmount": "Custom amount",
+    "topUp": "Top Up",
+    "redirecting": "Redirecting...",
+    "amountRange": "Amount must be between $1 and $100",
+    "checkoutFailed": "Checkout failed",
+    "success": "Top-up completed successfully!",
+    "footer": "Payments processed by Stripe. Amounts in USD."
+  },
+  "sceneCost": {
+    "title": "Scene cost",
+    "subtitle": "Choose add-ons that affect the cost of each scene",
+    "ttsLabel": "Text reading",
+    "tts": {
+      "none": "None",
+      "local": "Local (XTTS)",
+      "best": "Best (ElevenLabs)"
+    },
+    "imageLabel": "Image generation",
+    "image": {
+      "none": "None",
+      "good": "Good (GPT-image)",
+      "local": "Local (Stable Diffusion)"
+    },
+    "base": "Base",
+    "perScene": "Per scene"
   },
   "locationChip": {
     "wandering": "On the road"
@@ -1254,6 +1311,9 @@
     "referencePhotoHintGemini": "Without a photo, AI will generate the portrait only from the character description. With a photo, it will try to preserve facial resemblance.",
     "portraitDescGptImage": "AI will generate a fantasy portrait of your character. You can add a reference photo to preserve your facial likeness in the portrait.",
     "referencePhotoHintGptImage": "Without a photo, AI will generate the portrait only from the character description. With a photo, it will preserve your face and identity.",
+    "portraitPromptTooltip": "Portrait prompt",
+    "copyPortraitPrompt": "Copy prompt",
+    "portraitPromptCopied": "Copied!",
     "attributePointsRemaining": "Remaining attribute points",
     "speciesBonus": "Species bonus",
     "racialSkill": "Racial"
@@ -1284,7 +1344,10 @@
     "legendRegenerate": "Write it again",
     "legendLoading": "Chronicling the legend...",
     "legendError": "Could not generate the legend",
-    "legendNoAi": "Configure an AI key to generate a legend"
+    "legendNoAi": "Configure an AI key to generate a legend",
+    "noSelection": "No character selected",
+    "noSelectionHint": "Pick a character from the list or create a new one",
+    "createCard": "Create Character"
   },
   "system": {
     "diceRollMessage": "{{skill}} test: d100 roll {{roll}} vs target {{target}} — SL {{sl}} — {{result}}",
@@ -1923,7 +1986,15 @@
     "noRecruitableNpcs": "No NPCs you're close enough with.",
     "partyFull": "Party full ({{current}}/{{max}})",
     "dismiss": "Dismiss",
-    "dismissConfirm": "Really part ways with {{name}}?"
+    "dismissConfirm": "Really part ways with {{name}}?",
+    "noKnownNpcs": "You haven't met any characters in this campaign yet.",
+    "blockReason": {
+      "dead": "Dead",
+      "inParty": "Already in party",
+      "lowDisposition": "Low disposition",
+      "cooldown": "Not yet",
+      "notRecent": "Not seen recently"
+    }
   },
   "webcam": {
     "videoChat": "Video Chat",
@@ -2034,5 +2105,16 @@
     "criticalFail": "Critical failure — all ingredients lost!",
     "close": "Close laboratory",
     "noRecipes": "No recipes available"
+  },
+  "admin": {
+    "userManagement": "User Management",
+    "users": "Users",
+    "livingWorld": "Living World",
+    "adminBadge": "Admin",
+    "you": "You",
+    "makeAdmin": "Make Admin",
+    "removeAdmin": "Remove Admin",
+    "cannotDemoteSelf": "Cannot remove your own admin role",
+    "noUsers": "No users found"
   }
 }

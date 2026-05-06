@@ -155,12 +155,15 @@ describe('sd-webui compact prompts — scene-first, style tail ≤6 words', () =
     expect(portrait.endsWith('oil painting, impasto, painterly')).toBe(true);
   });
 
-  it('builds a compact sd-webui item prompt: "inventory artwork of …" then tag', () => {
+  it('builds a compact sd-webui item prompt with isolation cues then style tag', () => {
     const item = buildItemImagePrompt(
       { name: 'Rusted Dagger', type: 'weapon', rarity: 'common' },
       { provider: 'sd-webui', sdModel: 'starlightXLAnimated_v3', imageStyle: 'anime' },
     );
-    expect(item.startsWith('inventory artwork of Rusted Dagger')).toBe(true);
+    expect(item.startsWith('single isolated weapon on plain background')).toBe(true);
+    expect(item).toContain('Rusted Dagger');
+    expect(item).toContain('no person');
+    expect(item).toContain('no character');
     expect(item.endsWith('anime style, cel-shaded, vivid')).toBe(true);
     expect(item.startsWith('masterpiece, best quality')).toBe(false);
   });

@@ -9,6 +9,7 @@
 // not safe for public exposure. If Map Studio ever ships, replace the stub
 // below with `fastify.authenticate` again.
 
+import { prisma } from '../../lib/prisma.js';
 import { packRoutes } from './packs.js';
 import { tilesetRoutes } from './tilesets.js';
 import { tileRoutes } from './tiles.js';
@@ -18,11 +19,30 @@ import { mapRoutes } from './maps.js';
 import { importRoutes } from './import.js';
 import { actorRoutes } from './actors.js';
 
-// 24-char hex zero ObjectId — valid shape for Prisma's @db.ObjectId, and
-// will never collide with a real Mongo-generated id.
-const MAP_STUDIO_USER_ID = '000000000000000000000000';
+// Zero UUID — stands in for a real user since Map Studio skips auth.
+// MediaAsset has a User FK, so the row must actually exist in the DB.
+const MAP_STUDIO_USER_ID = '00000000-0000-0000-0000-000000000000';
+
+let systemUserReady;
+
+async function ensureSystemUser() {
+  if (!systemUserReady) {
+    systemUserReady = prisma.user.upsert({
+      where: { id: MAP_STUDIO_USER_ID },
+      update: {},
+      create: {
+        id: MAP_STUDIO_USER_ID,
+        email: 'map-studio-system@localhost',
+        passwordHash: '!disabled',
+      },
+    });
+  }
+  return systemUserReady;
+}
 
 export async function mapStudioRoutes(fastify) {
+  await ensureSystemUser();
+
   fastify.addHook('onRequest', async (request) => {
     request.user = { id: MAP_STUDIO_USER_ID };
   });

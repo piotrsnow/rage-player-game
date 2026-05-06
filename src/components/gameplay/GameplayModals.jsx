@@ -80,6 +80,7 @@ export default function GameplayModals({
           characterVoiceMap={characterVoiceMap}
           maleVoices={settings.maleVoices}
           femaleVoices={settings.femaleVoices}
+          ttsProvider={settings.ttsProvider || 'elevenlabs'}
           dispatch={dispatch}
           autoSave={autoSave}
           campaignId={campaignId}

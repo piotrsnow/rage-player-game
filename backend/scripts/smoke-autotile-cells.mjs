@@ -10,7 +10,7 @@
 //   3. DELETE the group → asserts tiles lose the group link
 //
 // Run: node backend/scripts/smoke-autotile-cells.mjs
-// Requires a reachable MongoDB (DATABASE_URL) and `npx prisma generate` done.
+// Requires a reachable Postgres (DATABASE_URL) and `npx prisma generate` done.
 
 import 'dotenv/config';
 import Fastify from 'fastify';
@@ -39,9 +39,7 @@ async function buildApp(userId) {
 }
 
 async function makeFixture() {
-  // ObjectId-shaped userId is fine for our purposes (no real User row needed
-  // because autotileRoutes only checks pack.userId).
-  const userId = '0'.repeat(24).replace(/^./, 'a');
+  const userId = '00000000-0000-0000-0000-000000000000';
   const pack = await prisma.tilesetPack.create({
     data: {
       userId,
@@ -73,13 +71,7 @@ async function makeFixture() {
       });
     }
   }
-  // createMany isn't supported on MongoDB for all versions — fall back to a
-  // loop if needed. Prisma 5 supports it on Mongo since 4.14.
-  try {
-    await prisma.tile.createMany({ data: tileRows });
-  } catch {
-    for (const t of tileRows) await prisma.tile.create({ data: t });
-  }
+  await prisma.tile.createMany({ data: tileRows });
   return { userId, pack, tileset };
 }
 

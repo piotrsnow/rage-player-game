@@ -1,0 +1,27 @@
+{
+  "name": "rpgon-voiceapp",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "XTTS Voice Studio — voice sample manager + TTS server UI for RPGon.",
+  "scripts": {
+    "dev": "concurrently -n py,vite -c blue,green \"node scripts/start-server.js\" \"vite\"",
+    "dev:frontend": "vite",
+    "dev:server": "node scripts/start-server.js",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "zustand": "^5.0.12"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^4.3.4",
+    "autoprefixer": "^10.4.20",
+    "concurrently": "^9.2.1",
+    "postcss": "^8.4.49",
+    "tailwindcss": "^3.4.16",
+    "vite": "^6.0.3"
+  }
+}

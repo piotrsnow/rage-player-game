@@ -1,0 +1,15 @@
+{
+  "name": "@rpgon/ui-theme",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Shared Tailwind preset + base CSS layer for the main RPGon app and the map studio app.",
+  "exports": {
+    "./tailwind.preset.js": "./tailwind.preset.js",
+    "./base.css": "./base.css"
+  },
+  "files": [
+    "tailwind.preset.js",
+    "base.css"
+  ]
+}

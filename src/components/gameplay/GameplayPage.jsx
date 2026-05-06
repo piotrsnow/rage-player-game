@@ -456,6 +456,7 @@ export default function GameplayPage({ readOnly = false, shareToken = null, onRe
     isMultiplayer,
     players: mp.state.players,
     characterVoiceMap: sCharacterVoiceMap,
+    ttsProvider: settings.ttsProvider || 'elevenlabs',
     dispatch,
   });
 
@@ -607,6 +608,11 @@ export default function GameplayPage({ readOnly = false, shareToken = null, onRe
               resetImageAttempts(sceneId);
               return repairSceneImage(sceneId, { reason: 'manual-retry', forceNew: true });
             }}
+            gameError={readOnly ? null : error}
+            onDismissGameError={actions.dismissError}
+            mpErrorCode={mpErrorCode}
+            isMultiplayer={isMultiplayer}
+            onOpenSettings={openSettings}
           />
           {overlayText && (
             <TypewriterActionOverlay
@@ -701,11 +707,6 @@ export default function GameplayPage({ readOnly = false, shareToken = null, onRe
           showMpConnectionBanner={showMpConnectionBanner}
           isMpReconnecting={isMpReconnecting}
           reconnectState={reconnectState}
-          error={error}
-          mpErrorCode={mpErrorCode}
-          isMultiplayer={isMultiplayer}
-          onDismissError={actions.dismissError}
-          onOpenSettings={openSettings}
         />
 
         {/* Living World companions (Phase 2) — local party lives in the sidebar grid. */}

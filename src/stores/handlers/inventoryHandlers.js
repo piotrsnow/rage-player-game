@@ -26,10 +26,13 @@ export const inventoryHandlers = {
   },
 
   UPDATE_INVENTORY_ITEM_IMAGE: (draft, action) => {
-    const { itemId, imageUrl } = action.payload || {};
+    const { itemId, imageUrl, fullImagePrompt } = action.payload || {};
     if (!itemId || !draft.character?.inventory?.length) return;
     const item = draft.character.inventory.find((i) => i?.id === itemId);
-    if (item) item.imageUrl = imageUrl;
+    if (item) {
+      item.imageUrl = imageUrl;
+      item.fullImagePrompt = fullImagePrompt ?? null;
+    }
   },
 
   USE_MANA_CRYSTAL: (draft, action) => {

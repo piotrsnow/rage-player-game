@@ -10,7 +10,7 @@ import {
 import { elevenlabsService } from '../services/elevenlabs';
 import { apiClient } from '../services/apiClient';
 import { calculateCost } from '../services/costTracker';
-import { resolveVoiceForCharacter } from '../services/characterVoiceResolver';
+import { resolveVoiceForCharacter, reassignVoiceOnError, isVoiceNotFoundError } from '../services/characterVoiceResolver';
 import {
   getCombatBattleCryLine,
   getCombatPreloadCategories,
@@ -178,6 +178,7 @@ export function useCombatAudio(combat) {
         maleVoices: settings.maleVoices || [],
         femaleVoices: settings.femaleVoices || [],
         narratorVoiceId: settings.narratorVoiceId || null,
+        ttsProvider: settings.ttsProvider || 'elevenlabs',
       },
       dispatch
     );
@@ -233,15 +234,49 @@ export function useCombatAudio(combat) {
       const url = typeof resolvedUrl === 'string' ? resolvedUrl : await resolvedUrl;
       playUrl(apiClient.resolveMediaUrl(url));
     } catch (err) {
+      if (isVoiceNotFoundError(err)) {
+        const gender = getCombatantGender(combatant);
+        const newVoiceId = reassignVoiceOnError(
+          combatant.name,
+          voiceId,
+          gender,
+          characterVoiceMap || {},
+          {
+            maleVoices: settings.maleVoices || [],
+            femaleVoices: settings.femaleVoices || [],
+            narratorVoiceId: settings.narratorVoiceId || null,
+            ttsProvider: settings.ttsProvider || 'elevenlabs',
+          },
+          dispatch
+        );
+        if (newVoiceId) {
+          try {
+            const retryUrl = await elevenlabsService.textToSpeechStream(undefined, newVoiceId, line, undefined, campaignId);
+            dispatch({ type: 'ADD_AI_COST', payload: calculateCost('tts', { charCount: line.length }) });
+            const retryCacheKey = `${newVoiceId}:${settings.language}:${line}`;
+            battleCryCacheRef.current.set(retryCacheKey, retryUrl);
+            playUrl(apiClient.resolveMediaUrl(retryUrl));
+          } catch (retryErr) {
+            console.warn('[CombatAudio] Battle cry retry failed:', retryErr?.message || retryErr);
+          }
+        }
+        return;
+      }
       console.warn('[CombatAudio] Battle cry failed:', err?.message || err);
     }
   }, [
     campaignId,
+    characterVoiceMap,
     combat?.active,
     dispatch,
+    getCombatantGender,
     playUrl,
     resolveCombatantVoiceId,
+    settings.femaleVoices,
     settings.language,
+    settings.maleVoices,
+    settings.narratorVoiceId,
+    settings.ttsProvider,
     ttsEnabled,
   ]);
 

@@ -38,13 +38,13 @@ export async function mapRoutes(fastify) {
       data: {
         userId: request.user.id,
         name: body.name,
-        size: JSON.stringify(body.size ?? [64, 64]),
+        size: body.size ?? [64, 64],
         projectTilesize: body.projectTilesize,
         packIds: body.packIds ?? [],
-        layers: JSON.stringify(body.layers ?? {}),
+        layers: body.layers ?? {},
         collision: body.collision ?? '',
-        objects: JSON.stringify(body.objects ?? []),
-        meta: JSON.stringify(body.meta ?? {}),
+        objects: body.objects ?? [],
+        meta: body.meta ?? {},
         campaignId: body.campaignId ?? null,
       },
     });
@@ -64,13 +64,13 @@ export async function mapRoutes(fastify) {
 
     const data = {};
     if (body.name !== undefined) data.name = body.name;
-    if (body.size !== undefined) data.size = JSON.stringify(body.size);
+    if (body.size !== undefined) data.size = body.size;
     if (body.projectTilesize !== undefined) data.projectTilesize = body.projectTilesize;
     if (body.packIds !== undefined) data.packIds = body.packIds;
-    if (body.layers !== undefined) data.layers = JSON.stringify(body.layers);
+    if (body.layers !== undefined) data.layers = body.layers;
     if (body.collision !== undefined) data.collision = body.collision;
-    if (body.objects !== undefined) data.objects = JSON.stringify(body.objects);
-    if (body.meta !== undefined) data.meta = JSON.stringify(body.meta);
+    if (body.objects !== undefined) data.objects = body.objects;
+    if (body.meta !== undefined) data.meta = body.meta;
     if (body.campaignId !== undefined) data.campaignId = body.campaignId;
 
     const row = await prisma.mapDoc.update({ where: { id }, data });

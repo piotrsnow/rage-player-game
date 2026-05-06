@@ -122,6 +122,10 @@ export default function PortraitGenerator({ species, age, gender, careerName, ge
   // `onPortraitReady`. `resolveMediaUrl` is only applied at render time
   // for the <img> src below.
   const [generatedUrl, setGeneratedUrl] = useState(() => toCanonicalStoragePath(initialPortrait) || null);
+  const [portraitPrompt, setPortraitPrompt] = useState(null);
+  const [promptExpanded, setPromptExpanded] = useState(false);
+  const [promptCopied, setPromptCopied] = useState(false);
+  const promptCopyResetRef = useRef(null);
   const [error, setError] = useState(null);
   const [showCapture, setShowCapture] = useState(!initialPortrait);
   const [captureSession, setCaptureSession] = useState(0);
@@ -133,6 +137,16 @@ export default function PortraitGenerator({ species, age, gender, careerName, ge
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [lightboxOpen]);
+
+  const handleCopyPrompt = useCallback(async () => {
+    if (!portraitPrompt) return;
+    try {
+      await navigator.clipboard.writeText(portraitPrompt);
+      setPromptCopied(true);
+      clearTimeout(promptCopyResetRef.current);
+      promptCopyResetRef.current = setTimeout(() => setPromptCopied(false), 2000);
+    } catch { /* clipboard may be unavailable */ }
+  }, [portraitPrompt]);
 
   const handleEmotionChange = useCallback((key, value) => {
     setEmotions((current) => rebalanceEmotions(current, key, value));
@@ -153,7 +167,7 @@ export default function PortraitGenerator({ species, age, gender, careerName, ge
     abortRef.current = false;
 
     try {
-      const url = await imageService.generatePortrait(
+      const result = await imageService.generatePortrait(
         canUseReferenceImage ? photoBlob : null,
         { species, age, gender, careerName, genre },
         apiKey,
@@ -167,7 +181,9 @@ export default function PortraitGenerator({ species, age, gender, careerName, ge
         Number.isInteger(settings.sdWebuiSeed) ? settings.sdWebuiSeed : null,
       );
       if (!abortRef.current) {
-        setGeneratedUrl(url);
+        setGeneratedUrl(result.url);
+        setPortraitPrompt(result.prompt);
+        setPromptExpanded(false);
         setShowCapture(false);
       }
     } catch (err) {
@@ -195,6 +211,8 @@ export default function PortraitGenerator({ species, age, gender, careerName, ge
 
   const handleRemove = useCallback(() => {
     setGeneratedUrl(null);
+    setPortraitPrompt(null);
+    setPromptExpanded(false);
     setPhotoBlob(null);
     setShowCapture(canUseReferenceImage);
     setCaptureSession((value) => value + 1);
@@ -239,6 +257,68 @@ export default function PortraitGenerator({ species, age, gender, careerName, ge
             <span className="material-symbols-outlined text-3xl text-white drop-shadow-lg">zoom_in</span>
           </div>
         </button>
+        {portraitPrompt && (
+          <div className="w-full max-w-[220px] mt-1">
+            {!promptExpanded ? (
+              <button
+                type="button"
+                onClick={() => setPromptExpanded(true)}
+                aria-label={t('charCreator.portraitPromptTooltip', 'Prompt portretu')}
+                className="flex items-center gap-1 px-2 py-1 rounded-sm bg-surface-container-highest/60 border border-outline-variant/25 text-on-surface-variant hover:text-primary hover:border-primary/40 transition-all text-[10px] font-label"
+              >
+                <span className="material-symbols-outlined text-[16px]">history_edu</span>
+                <span className="uppercase tracking-widest truncate">
+                  {t('charCreator.portraitPromptTooltip', 'Prompt portretu')}
+                </span>
+              </button>
+            ) : (
+              <div className="rounded-sm bg-surface-container-highest/70 backdrop-blur-md border border-outline-variant/25 shadow-[0_4px_24px_rgba(0,0,0,0.6)]">
+                <div className="flex items-center justify-between gap-2 px-3 py-2 border-b border-outline-variant/15">
+                  <div className="flex items-center gap-1.5 min-w-0">
+                    <span className="material-symbols-outlined text-[16px] text-on-surface-variant">history_edu</span>
+                    <span className="text-[10px] font-label uppercase tracking-widest text-on-surface-variant truncate">
+                      {t('charCreator.portraitPromptTooltip', 'Prompt portretu')}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-1 shrink-0">
+                    <button
+                      type="button"
+                      onClick={handleCopyPrompt}
+                      aria-label={t('charCreator.copyPortraitPrompt', 'Skopiuj prompt')}
+                      className={`flex items-center gap-1 px-2 h-7 rounded-sm border transition-all ${
+                        promptCopied
+                          ? 'bg-success/15 border-success/40 text-success'
+                          : 'bg-surface-container-highest/60 border-outline-variant/25 text-on-surface-variant hover:text-primary hover:border-primary/40'
+                      }`}
+                    >
+                      <span className="material-symbols-outlined text-[14px]">
+                        {promptCopied ? 'check' : 'content_copy'}
+                      </span>
+                      <span className="text-[10px] font-label uppercase tracking-widest">
+                        {promptCopied
+                          ? t('charCreator.portraitPromptCopied', 'Skopiowano!')
+                          : t('charCreator.copyPortraitPrompt', 'Skopiuj prompt')}
+                      </span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setPromptExpanded(false)}
+                      aria-label={t('common.close', 'Zamknij')}
+                      className="flex items-center justify-center w-7 h-7 rounded-sm bg-surface-container-highest/60 border border-outline-variant/25 text-on-surface-variant hover:text-primary hover:border-primary/40 transition-all"
+                    >
+                      <span className="material-symbols-outlined text-[16px]">close</span>
+                    </button>
+                  </div>
+                </div>
+                <div className="px-3 py-2 max-h-32 overflow-y-auto">
+                  <p className="text-[11px] leading-relaxed text-on-surface-variant whitespace-pre-wrap break-words">
+                    {portraitPrompt}
+                  </p>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
         {lightboxOpen && createPortal(
           <div
             role="dialog"

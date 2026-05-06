@@ -37,11 +37,20 @@ const STORE_BODY_SCHEMA = {
 };
 
 export async function mediaRoutes(fastify) {
-  // Public read by storage path (opaque hashed paths) — needed for shared campaign viewers without JWT.
+  // Public read by storage path OR media key — needed for shared campaign
+  // viewers without JWT. The mapapp frontend resolves tileset images via
+  // `mediaUrlForKey(imageKey)`, which encodes the key into the URL. The key
+  // (e.g. "tileset-src:abc") differs from the storage path
+  // (e.g. "tilesets-src/abc.png"), so we fall back to a key-based lookup
+  // when the path doesn't match a file directly.
   fastify.get('/file/*', async (request, reply) => {
-    const path = request.params['*'];
+    const param = request.params['*'];
 
-    const asset = await prisma.mediaAsset.findFirst({ where: { path } });
+    let asset = await prisma.mediaAsset.findFirst({ where: { path: param } });
+    if (!asset) {
+      asset = await prisma.mediaAsset.findUnique({ where: { key: param } });
+    }
+
     if (asset) {
       prisma.mediaAsset.update({
         where: { key: asset.key },
@@ -49,10 +58,11 @@ export async function mediaRoutes(fastify) {
       }).catch((err) => fastify.log.warn(err, `mediaAsset.update lastAccessedAt failed (${asset.key})`));
     }
 
-    const result = await store.get(path);
+    const effectivePath = asset?.path || param;
+    const result = await store.get(effectivePath);
     if (!result) return reply.code(404).send({ error: 'Media file not found' });
 
-    const ext = path.split('.').pop()?.toLowerCase();
+    const ext = effectivePath.split('.').pop()?.toLowerCase();
     const contentType = asset?.contentType || EXT_CONTENT_TYPES[ext] || 'application/octet-stream';
     reply.header('Content-Type', contentType);
     reply.header('Cache-Control', 'public, max-age=86400');

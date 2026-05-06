@@ -360,6 +360,18 @@ export const apiClient = {
     clearAuthState();
   },
 
+  getCredits() {
+    return this.get('/credits');
+  },
+
+  createCreditsCheckout(amountCents) {
+    return this.post('/credits/checkout', { amountCents });
+  },
+
+  verifyCreditsCheckout(sessionId) {
+    return this.post('/credits/verify', { sessionId });
+  },
+
   resolveMediaUrl(url) {
     if (!url || typeof url !== 'string') return url;
     if (url.startsWith('data:') || url.startsWith('blob:')) return url;

@@ -1,0 +1,32 @@
+{
+  "name": "rpgon-mapapp",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Tileset Studio + Map Editor for RPGon. Separate Vite app, shares auth cookies with main backend.",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "import-tset": "node tools/import-tset.mjs"
+  },
+  "dependencies": {
+    "jszip": "^3.10.1",
+    "pixi.js": "^8.5.2",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "react-router-dom": "^6.28.0",
+    "zod": "^4.3.6",
+    "zustand": "^5.0.12"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^4.3.4",
+    "autoprefixer": "^10.4.20",
+    "postcss": "^8.4.49",
+    "tailwindcss": "^3.4.16",
+    "vite": "^6.0.3",
+    "vitest": "^4.1.5"
+  }
+}

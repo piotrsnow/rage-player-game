@@ -128,7 +128,7 @@ function NpcRow({ npc, quests, characterVoiceMap, taggedVoices, hasVoicePool, ha
   );
 }
 
-export default function NpcTab({ npcs, quests, characterVoiceMap, maleVoices, femaleVoices, dispatch, autoSave, navigateTo, t }) {
+export default function NpcTab({ npcs, quests, characterVoiceMap, maleVoices, femaleVoices, ttsProvider, dispatch, autoSave, navigateTo, t }) {
   if (npcs.length === 0) {
     return <EmptyState icon="group" text={t('worldState.emptyNpcs')} />;
   }
@@ -143,9 +143,11 @@ export default function NpcTab({ npcs, quests, characterVoiceMap, maleVoices, fe
   const showVoicePoolHint = !hasMaleVoices || !hasFemaleVoices;
 
   const handleVoiceChange = (npcName, npcGender, voiceId) => {
+    const pool = [...(maleVoices || []), ...(femaleVoices || [])];
+    const voice = pool.find((v) => v.voiceId === voiceId);
     dispatch({
       type: 'MAP_CHARACTER_VOICE',
-      payload: { characterName: npcName, voiceId: voiceId || null, gender: npcGender || null },
+      payload: { characterName: npcName, voiceId: voiceId || null, gender: npcGender || null, voiceName: voice?.voiceName || null, ttsProvider: ttsProvider || 'elevenlabs' },
     });
     if (autoSave) autoSave();
   };

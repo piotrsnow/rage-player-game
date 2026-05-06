@@ -41,6 +41,7 @@ export function processSceneDialogue(result, state, settings, dispatch, { isFirs
       maleVoices: settings.maleVoices || [],
       femaleVoices: settings.femaleVoices || [],
       narratorVoiceId: settings.narratorVoiceId || null,
+      ttsProvider: settings.ttsProvider || 'elevenlabs',
     },
     playerNames,
     currentLocation: result.stateChanges?.currentLocation || state.world?.currentLocation || '',

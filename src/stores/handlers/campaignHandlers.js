@@ -17,7 +17,11 @@ export const campaignHandlers = {
     };
     const voiceMap = {};
     if (char.voiceId && char.name) {
-      voiceMap[char.name] = { voiceId: char.voiceId, gender: char.gender || null };
+      voiceMap[char.name] = {
+        voiceId: char.voiceId,
+        gender: char.gender || null,
+        byProvider: char.voicesByProvider || {},
+      };
     }
     return {
       ...initialState,
@@ -90,7 +94,10 @@ export const campaignHandlers = {
         loaded.characterVoiceMap[loaded.character.name] = {
           voiceId: loaded.character.voiceId,
           gender: loaded.character.gender || null,
+          byProvider: loaded.character.voicesByProvider || {},
         };
+      } else if (!loaded.characterVoiceMap[loaded.character.name].byProvider && loaded.character.voicesByProvider) {
+        loaded.characterVoiceMap[loaded.character.name].byProvider = loaded.character.voicesByProvider;
       }
     }
 

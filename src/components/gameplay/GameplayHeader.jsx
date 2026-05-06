@@ -2,6 +2,7 @@ import { useTranslation } from 'react-i18next';
 import { apiClient } from '../../services/apiClient';
 import { exportAsJson, exportAsMarkdown } from '../../services/exportLog';
 import { getGameState } from '../../stores/gameStore';
+import { useGameSlice } from '../../stores/gameSelectors';
 import CostBadge from '../ui/CostBadge';
 import LocationChip from '../ui/LocationChip';
 
@@ -64,6 +65,8 @@ export default function GameplayHeader({
   const currentAct = campaign?.structure?.currentAct || 1;
   const actName = campaign?.structure?.acts?.find((a) => a.number === currentAct)?.name;
 
+  const worldLocation = useGameSlice((s) => s.world?.currentLocation);
+
   const deriveLocSnapshot = (scene) => {
     if (!scene) return null;
     const snap = scene.stateChanges?._locationSnapshot;
@@ -71,7 +74,9 @@ export default function GameplayHeader({
     const raw = scene.stateChanges?.currentLocation;
     return raw ? { name: raw, kind: 'wandering', id: null } : null;
   };
-  const currentLocSnapshot = deriveLocSnapshot(viewedScene || currentScene);
+  const currentLocSnapshot =
+    deriveLocSnapshot(viewedScene || currentScene)
+    || (worldLocation ? { name: worldLocation, kind: 'settled', id: null } : null);
   const prevSceneIdx = (displayedSceneIndex ?? 0) - 1;
   const previousLocSnapshot = prevSceneIdx >= 0 ? deriveLocSnapshot(scenes?.[prevSceneIdx]) : null;
 

@@ -15,13 +15,18 @@ export function MusicProvider({ children }) {
   const campaignGenre = useGameSlice((s) => s.campaign?.genre);
 
   const [narratorState, setNarratorState] = useState(null);
+  const [suppressLobbyMusicForIntroVideo, setSuppressLobbyMusicForIntroVideo] = useState(false);
 
   const isGameplay = location.pathname.startsWith('/play') || location.pathname.startsWith('/view/');
   const prevIsGameplayRef = useRef(isGameplay);
 
   const campaignMusicFolder = GENRE_MUSIC_FOLDER[campaignGenre] || undefined;
 
-  const ambient = useLocalMusic(null, { folder: 'lobby', active: !isGameplay });
+  const ambient = useLocalMusic(null, {
+    folder: 'lobby',
+    active: !isGameplay,
+    silenced: suppressLobbyMusicForIntroVideo,
+  });
   const campaign = useLocalMusic(isGameplay ? narratorState : null, { folder: campaignMusicFolder, active: isGameplay });
 
   useEffect(() => {
@@ -71,6 +76,7 @@ export function MusicProvider({ children }) {
         setNarratorState,
         ambient,
         campaign,
+        setSuppressLobbyMusicForIntroVideo,
       }}
     >
       {children}

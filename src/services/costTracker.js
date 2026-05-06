@@ -22,6 +22,17 @@ const PRICING = {
   meshy: { perGeneration: 0.10 },
 };
 
+const SCENE_BASE_COST = 0.05;
+const TTS_TIER_COST = { none: 0, local: 0.02, best: 0.10 };
+const IMAGE_TIER_COST = { none: 0, good: 0.10, local: 0.02 };
+
+export function calculateSceneCost(settings) {
+  const base = SCENE_BASE_COST;
+  const tts = TTS_TIER_COST[settings.sceneTtsTier] || 0;
+  const image = IMAGE_TIER_COST[settings.sceneImageTier] || 0;
+  return { type: 'scene', cost: base + tts + image, base, tts, image, timestamp: Date.now() };
+}
+
 export function calculateCost(type, metadata = {}) {
   const timestamp = Date.now();
 

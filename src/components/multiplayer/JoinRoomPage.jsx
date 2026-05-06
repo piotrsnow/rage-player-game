@@ -181,7 +181,7 @@ export default function JoinRoomPage() {
             placeholder="A3K9"
             maxLength={4}
             autoFocus
-            className="w-full text-center font-headline text-4xl tracking-[0.4em] bg-transparent border-0 border-b-2 border-outline-variant/30 focus:border-primary/60 focus:ring-0 text-on-surface py-4 px-2 placeholder:text-outline/20"
+            className="w-full text-center font-headline text-4xl tracking-[0.4em] bg-transparent border-0 border-b-2 border-outline-variant/30 focus:border-primary/60 focus:ring-0 text-on-surface py-4 px-2 placeholder:text-on-surface-variant/60"
           />
         </div>
 

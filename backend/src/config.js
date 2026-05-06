@@ -17,6 +17,7 @@ export const config = {
   databaseUrl: process.env.DATABASE_URL || 'postgresql://rpgon:rpgon@localhost:5432/rpgon',
 
   jwtSecret: process.env.JWT_SECRET,
+  adminEmail: (process.env.ADMIN_EMAIL || '').toLowerCase(),
   // 15 minutes — short-lived access token. The refresh-token cookie flow
   // (/v1/auth/refresh) swaps a 30-day opaque refresh token for a fresh
   // access token; the FE auto-retries 401s through this path. Keep this in
@@ -65,6 +66,8 @@ export const config = {
     hiresFix: process.env.SD_WEBUI_HIRES_FIX === '1',
   },
 
+  xttsUrl: process.env.XTTS_URL || '',
+
   elevenlabsDefaultVoiceId: "HnELITaEvp7a0HOmfoBo",
 
   apiKeyEncryptionSecret: process.env.API_KEY_ENCRYPTION_SECRET,
@@ -80,6 +83,11 @@ export const config = {
   runtimeServiceAccount: process.env.RUNTIME_SERVICE_ACCOUNT || '',
 
   corsOrigin: process.env.CORS_ORIGIN || 'http://localhost:5173',
+
+  stripe: {
+    secretKey: process.env.STRIPE_SECRET_KEY || '',
+    webhookSecret: process.env.STRIPE_WEBHOOK_SECRET || '',
+  },
 
   // Model tiering — premium for scene/campaign generation, standard for
   // compression/recaps/combat commentary, nano for intent classification +

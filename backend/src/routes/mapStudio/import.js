@@ -52,7 +52,7 @@ async function storeTilesetBuffer(userId, name, buffer, contentType = 'image/png
       size: buffer.length,
       backend: config.mediaBackend,
       path: storagePath,
-      metadata: JSON.stringify({ kind: 'tileset-src', name }),
+      metadata: { kind: 'tileset-src', name },
     },
     update: {
       size: buffer.length,
@@ -214,8 +214,8 @@ export async function importRoutes(fastify) {
           name: finalName,
           projectTilesize: packMeta.projectTilesize ?? 24,
           scaleAlgo: packMeta.scaleAlgo ?? 'nearest',
-          origin: JSON.stringify(packMeta.origin ?? { source: 'png' }),
-          traitVocab: JSON.stringify({}),
+          origin: packMeta.origin ?? { source: 'png' },
+          traitVocab: {},
         },
       });
     }
@@ -252,9 +252,9 @@ export async function importRoutes(fastify) {
           imageWidth: width,
           imageHeight: height,
           nativeTilesize: t.nativeTilesize ?? 16,
-          regions: JSON.stringify(t.regions ?? []),
+          regions: t.regions ?? [],
           sliceMode: (t.regions ?? []).length > 0 ? 'regions' : 'whole',
-          atlas: JSON.stringify({}),
+          atlas: {},
         },
       });
 
@@ -283,7 +283,7 @@ export async function importRoutes(fastify) {
                   layout: g.layout ?? 'blob_47',
                   originCol: g.originCol ?? 0,
                   originRow: g.originRow ?? 0,
-                  traits: JSON.stringify({}),
+                  traits: {},
                 },
               })
             )

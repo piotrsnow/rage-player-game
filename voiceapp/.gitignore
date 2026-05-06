@@ -1,0 +1,7 @@
+node_modules/
+dist/
+server/__pycache__/
+server/voices/*.wav
+!server/voices/manifest.json
+*.pyc
+.venv/

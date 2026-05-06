@@ -12,7 +12,7 @@ import FactionsTab from './world/FactionsTab';
 const TABS = ['npcs', 'map', 'quests', 'factions', 'time', 'effects', 'journal'];
 const TAB_ICONS = { npcs: 'group', map: 'map', quests: 'assignment', factions: 'groups', time: 'schedule', effects: 'auto_fix_high', journal: 'menu_book' };
 
-export default function WorldStateModal({ world, quests, characterVoiceMap, maleVoices, femaleVoices, dispatch, autoSave, campaignId, currentSceneId, onTravel, onEnterSub, onClose }) {
+export default function WorldStateModal({ world, quests, characterVoiceMap, maleVoices, femaleVoices, ttsProvider, dispatch, autoSave, campaignId, currentSceneId, onTravel, onEnterSub, onClose }) {
   const { t } = useTranslation();
   const [activeTab, setActiveTab] = useState('npcs');
   const [highlightId, setHighlightId] = useState(null);
@@ -84,7 +84,7 @@ export default function WorldStateModal({ world, quests, characterVoiceMap, male
 
         <div ref={contentRef} className="flex-1 overflow-y-auto custom-scrollbar p-5">
           {activeTab === 'npcs' && (
-            <NpcTab npcs={npcs} quests={quests} characterVoiceMap={characterVoiceMap} maleVoices={maleVoices} femaleVoices={femaleVoices} dispatch={dispatch} autoSave={autoSave} navigateTo={navigateTo} t={t} />
+            <NpcTab npcs={npcs} quests={quests} characterVoiceMap={characterVoiceMap} maleVoices={maleVoices} femaleVoices={femaleVoices} ttsProvider={ttsProvider} dispatch={dispatch} autoSave={autoSave} navigateTo={navigateTo} t={t} />
           )}
           {activeTab === 'map' && (
             <MapTab campaignId={campaignId} currentSceneId={currentSceneId} currentLocation={currentLocation} onTravel={onTravel} onEnterSub={onEnterSub} t={t} />

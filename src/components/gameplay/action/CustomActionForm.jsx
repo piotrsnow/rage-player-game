@@ -213,7 +213,7 @@ export default function CustomActionForm({
             disabled={disabled && !isAutoTyping}
             readOnly={listening || isAutoTyping}
             style={hasDialogueText && !isAutoTyping ? { color: 'transparent', caretColor: '#fffbfe' } : undefined}
-            className={`relative w-full bg-transparent border-0 border-b-2 focus:ring-0 text-sm py-1.5 px-1 resize-none placeholder:text-outline/40 overflow-hidden disabled:opacity-50 transition-all duration-300 leading-[1.5] ${
+            className={`relative w-full bg-transparent border-0 border-b-2 focus:ring-0 text-sm py-1.5 px-1 resize-none placeholder:text-on-surface-variant/60 overflow-hidden disabled:opacity-50 transition-all duration-300 leading-[1.5] ${
               hasDialogueText ? 'selection:bg-amber-400/30' : ''
             } ${
               isAutoTyping

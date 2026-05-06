@@ -6,7 +6,7 @@ import { imageService } from '../../services/imageGen';
 import { apiClient } from '../../services/apiClient';
 import { createSceneId } from '../../services/gameState';
 import { storage } from '../../services/storage';
-import { calculateCost } from '../../services/costTracker';
+import { calculateCost, calculateSceneCost } from '../../services/costTracker';
 import { buildSpeculativeImageDescription } from '../../services/imagePrompts';
 import { ensureEnglish } from '../../services/translateImagePrompt';
 import { resolveMechanics } from '../../services/mechanics/index';
@@ -154,8 +154,7 @@ export function useSceneGeneration({ ensureMissingInventoryImages, ensureMissing
           resolved, isFirstScene, isCustomAction, fromAutoPlayer, combatResult, forceRoll,
         });
         const result = backendResult.result;
-        const usage = backendResult.usage;
-        if (usage) dispatch({ type: 'ADD_AI_COST', payload: calculateCost('ai', usage) });
+        dispatch({ type: 'ADD_AI_COST', payload: calculateSceneCost(settings) });
         const authoritativeCharacterSnapshot = backendResult.character || null;
         const newlyUnlockedAchievements = Array.isArray(backendResult.newlyUnlockedAchievements)
           ? backendResult.newlyUnlockedAchievements
@@ -244,7 +243,6 @@ export function useSceneGeneration({ ensureMissingInventoryImages, ensureMissing
           const capturedSceneId = sceneId;
           earlyImagePromise.then((imageUrl) => {
             if (imageUrl) {
-              dispatch({ type: 'ADD_AI_COST', payload: calculateCost('image', { provider: imageProvider }) });
               dispatch({ type: 'UPDATE_SCENE_IMAGE', payload: { sceneId: capturedSceneId, image: imageUrl } });
               autoSave();
             }
@@ -291,7 +289,6 @@ export function useSceneGeneration({ ensureMissingInventoryImages, ensureMissing
               state.character?.age, state.character?.gender, { sdModel: sdWebuiModel, sdSeed: Number.isInteger(sdWebuiSeed) ? sdWebuiSeed : null }, imageSeriousness,
               state.character?.portraitUrl || null
             );
-            dispatch({ type: 'ADD_AI_COST', payload: calculateCost('image', { provider: imageProvider }) });
             dispatch({ type: 'UPDATE_SCENE_IMAGE', payload: { sceneId, image: imageUrl, fullImagePrompt } });
             autoSave();
           } catch (imgErr) {

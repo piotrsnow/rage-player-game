@@ -1,6 +1,7 @@
 import { lazy, Suspense } from 'react';
 import { Routes, Route } from 'react-router-dom';
 import Layout from './components/layout/Layout';
+import RequireAuth from './components/ui/RequireAuth';
 import LoadingSpinner from './components/ui/LoadingSpinner';
 
 const LobbyPage = lazy(() => import('./components/lobby/LobbyPage'));
@@ -32,38 +33,6 @@ export default function App() {
           }
         />
         <Route
-          path="/create"
-          element={
-            <Suspense fallback={<RouteFallback />}>
-              <CampaignCreatorPage />
-            </Suspense>
-          }
-        />
-        <Route
-          path="/play/:campaignId?"
-          element={
-            <Suspense fallback={<RouteFallback />}>
-              <GameplayPage />
-            </Suspense>
-          }
-        />
-        <Route
-          path="/join/:code?"
-          element={
-            <Suspense fallback={<RouteFallback />}>
-              <JoinRoomPage />
-            </Suspense>
-          }
-        />
-        <Route
-          path="/gallery"
-          element={
-            <Suspense fallback={<RouteFallback />}>
-              <GalleryPage />
-            </Suspense>
-          }
-        />
-        <Route
           path="/view/:shareToken"
           element={
             <Suspense fallback={<RouteFallback />}>
@@ -71,14 +40,49 @@ export default function App() {
             </Suspense>
           }
         />
-        <Route
-          path="/admin/living-world"
-          element={
-            <Suspense fallback={<RouteFallback />}>
-              <AdminLivingWorldPage />
-            </Suspense>
-          }
-        />
+
+        <Route element={<RequireAuth />}>
+          <Route
+            path="/create"
+            element={
+              <Suspense fallback={<RouteFallback />}>
+                <CampaignCreatorPage />
+              </Suspense>
+            }
+          />
+          <Route
+            path="/play/:campaignId?"
+            element={
+              <Suspense fallback={<RouteFallback />}>
+                <GameplayPage />
+              </Suspense>
+            }
+          />
+          <Route
+            path="/join/:code?"
+            element={
+              <Suspense fallback={<RouteFallback />}>
+                <JoinRoomPage />
+              </Suspense>
+            }
+          />
+          <Route
+            path="/gallery"
+            element={
+              <Suspense fallback={<RouteFallback />}>
+                <GalleryPage />
+              </Suspense>
+            }
+          />
+          <Route
+            path="/admin/living-world"
+            element={
+              <Suspense fallback={<RouteFallback />}>
+                <AdminLivingWorldPage />
+              </Suspense>
+            }
+          />
+        </Route>
       </Route>
     </Routes>
   );

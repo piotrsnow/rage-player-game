@@ -19,7 +19,7 @@ import {
 import { renderTileVariant, deleteTileVariant } from '../../services/mapStudio/renderTileVariant.js';
 
 const TilesetCreateSchema = z.object({
-  packId: z.string().regex(/^[a-f0-9]{24}$/i),
+  packId: z.string().uuid(),
   name: z.string().trim().min(1).max(128),
   imageKey: z.string().min(1),
   imageWidth: z.number().int().nonnegative().default(0),
@@ -76,9 +76,9 @@ export async function tilesetRoutes(fastify) {
         imageWidth: body.imageWidth,
         imageHeight: body.imageHeight,
         nativeTilesize: body.nativeTilesize,
-        regions: JSON.stringify(body.regions ?? []),
+        regions: body.regions ?? [],
         sliceMode: body.sliceMode,
-        atlas: JSON.stringify(body.atlas ?? {}),
+        atlas: body.atlas ?? {},
       },
     });
     return deserializeTileset(row);
@@ -96,9 +96,9 @@ export async function tilesetRoutes(fastify) {
     const data = {};
     if (body.name !== undefined) data.name = body.name;
     if (body.nativeTilesize !== undefined) data.nativeTilesize = body.nativeTilesize;
-    if (body.regions !== undefined) data.regions = JSON.stringify(body.regions);
+    if (body.regions !== undefined) data.regions = body.regions;
     if (body.sliceMode !== undefined) data.sliceMode = body.sliceMode;
-    if (body.atlas !== undefined) data.atlas = JSON.stringify(body.atlas);
+    if (body.atlas !== undefined) data.atlas = body.atlas;
 
     const row = await prisma.tileset.update({ where: { id }, data });
     return deserializeTileset(row);
@@ -118,7 +118,7 @@ export async function tilesetRoutes(fastify) {
     const row = await prisma.tileset.update({
       where: { id },
       data: {
-        regions: JSON.stringify(body.regions),
+        regions: body.regions,
         sliceMode: body.regions.length > 0 ? 'regions' : 'whole',
       },
     });

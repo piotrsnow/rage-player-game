@@ -10,11 +10,181 @@ import StatusBar from '../ui/StatusBar';
 import PortraitGenerator from './PortraitGenerator';
 import CharacterHistoryPanel from './CharacterHistoryPanel';
 import CustomSelect from '../ui/CustomSelect';
-import Tooltip from '../ui/Tooltip';
-import { translateSkill } from '../../utils/rpgTranslate';
+import { translateSkill, translateAttribute } from '../../utils/rpgTranslate';
+import { SKILLS, DIFFICULTY_THRESHOLDS } from '../../data/rpgSystem';
 
-function getTooltipKey(name) {
-  return name?.replace(/\s*\(.*\)/, '') || '';
+const SKILL_ICONS = {
+  'Walka wrecz': 'sports_martial_arts',
+  'Walka bronia jednoręczna': 'sword_rose',
+  'Walka bronia dwureczna': 'swords',
+  'Strzelectwo': 'gps_fixed',
+  'Uniki': 'swipe',
+  'Walka dwiema brońmi': 'swords',
+  'Zastraszanie': 'mood_bad',
+  'Atletyka': 'exercise',
+  'Akrobatyka': 'sports_gymnastics',
+  'Jezdziectwo': 'cavalier',
+  'Perswazja': 'record_voice_over',
+  'Blef': 'theater_comedy',
+  'Handel': 'storefront',
+  'Przywodztwo': 'military_tech',
+  'Wystepy': 'mic',
+  'Wiedza ogolna': 'menu_book',
+  'Wiedza o potworach': 'pest_control',
+  'Wiedza o naturze': 'forest',
+  'Medycyna': 'healing',
+  'Alchemia': 'science',
+  'Rzemioslo': 'construction',
+  'Skradanie': 'visibility_off',
+  'Otwieranie zamkow': 'lock_open',
+  'Kradziez kieszonkowa': 'back_hand',
+  'Pulapki i mechanizmy': 'engineering',
+  'Spostrzegawczosc': 'visibility',
+  'Przetrwanie': 'local_fire_department',
+  'Tropienie': 'explore',
+  'Odpornosc': 'health_and_safety',
+  'Fart': 'stars',
+  'Hazard': 'casino',
+  'Przeczucie': 'psychology',
+};
+
+const DIFFICULTY_LABELS = {
+  easy: 'Łatwy',
+  medium: 'Średni',
+  hard: 'Trudny',
+  veryHard: 'B. trudny',
+  extreme: 'Ekstremalny',
+};
+
+function getSkillAttribute(skillName) {
+  const entry = SKILLS.find((s) => s.name === skillName);
+  return entry?.attribute || null;
+}
+
+function SkillDetailPanel({ skillName, level, character, t }) {
+  const attrKey = getSkillAttribute(skillName);
+  const attrValue = attrKey ? (character.attributes?.[attrKey] || 0) : 0;
+  const attrLabel = attrKey ? translateAttribute(attrKey, t) : '—';
+  const luck = character.attributes?.szczescie || 0;
+  const translatedName = translateSkill(skillName, t);
+
+  return (
+    <div className="col-span-full bg-surface-container/90 backdrop-blur-xl border border-skill-rose/30 rounded-sm p-4 animate-fade-in">
+      <div className="flex items-start gap-3">
+        <span className="material-symbols-outlined text-skill-rose text-2xl mt-0.5">
+          {SKILL_ICONS[skillName] || 'star'}
+        </span>
+        <div className="flex-1 min-w-0">
+          <h4 className="text-skill-rose font-headline text-lg leading-tight">{translatedName}</h4>
+          {attrKey && (
+            <p className="text-on-surface-variant/70 text-xs mt-0.5">
+              Powiązana cecha: <span className="text-primary">{attrLabel}</span>
+            </p>
+          )}
+
+          <div className="mt-3 p-3 bg-surface-container-high/60 rounded-sm border border-outline-variant/10">
+            <p className="text-on-surface text-xs font-label uppercase tracking-wider mb-2">Rzut umiejętności</p>
+            <p className="text-on-surface-variant text-sm">
+              <span className="text-tertiary font-headline">d50</span>
+              {' + '}
+              <span className="text-primary font-headline">{attrValue}</span>
+              <span className="text-on-surface-variant/60"> ({attrLabel})</span>
+              {' + '}
+              <span className="text-skill-rose font-headline">{level}</span>
+              <span className="text-on-surface-variant/60"> (umiejętność)</span>
+              {' vs próg trudności'}
+            </p>
+            <div className="flex flex-wrap gap-2 mt-2">
+              {Object.entries(DIFFICULTY_THRESHOLDS).map(([key, val]) => (
+                <span key={key} className="text-[10px] px-2 py-0.5 rounded-sm bg-surface-container-highest/80 text-on-surface-variant border border-outline-variant/10">
+                  {DIFFICULTY_LABELS[key] || key}: <span className="text-tertiary font-headline">{val}</span>
+                </span>
+              ))}
+            </div>
+            {luck > 0 && (
+              <p className="text-xs text-on-surface-variant/70 mt-2 italic">
+                Fart: {luck}% szans na automatyczny sukces.
+              </p>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function SkillsGrid({ character, t }) {
+  const [expanded, setExpanded] = useState(false);
+  const [selectedSkill, setSelectedSkill] = useState(null);
+
+  const learned = Object.entries(character.skills || {})
+    .filter(([, v]) => {
+      const level = typeof v === 'object' ? v.level : (v || 0);
+      return level > 0;
+    })
+    .map(([name, v]) => ({
+      name,
+      level: typeof v === 'object' ? v.level : (v || 0),
+    }))
+    .sort((a, b) => b.level - a.level || a.name.localeCompare(b.name));
+
+  if (learned.length === 0) return null;
+
+  const handleSkillClick = (e, name) => {
+    e.stopPropagation();
+    setSelectedSkill((prev) => (prev === name ? null : name));
+  };
+
+  return (
+    <div className="w-full text-left bg-surface-container-low border border-outline-variant/10 rounded-sm transition-all hover:border-primary/20">
+      <button
+        type="button"
+        onClick={() => setExpanded((v) => !v)}
+        className="w-full flex items-center justify-between px-4 pt-4 pb-2 cursor-pointer"
+      >
+        <h3 className="text-tertiary font-headline flex items-center gap-2">
+          <span className="material-symbols-outlined text-sm">school</span>
+          {t('character.skills')}
+        </h3>
+        <span className={`material-symbols-outlined text-sm text-on-surface-variant transition-transform ${expanded ? 'rotate-180' : ''}`}>
+          expand_more
+        </span>
+      </button>
+      <div className={`px-4 pb-4 grid gap-2 ${expanded ? 'grid-cols-2 sm:grid-cols-3' : 'grid-cols-4 sm:grid-cols-6'}`}>
+        {learned.map(({ name, level }) => {
+          const icon = SKILL_ICONS[name] || 'star';
+          const isSelected = selectedSkill === name;
+          return (
+            <button
+              key={name}
+              type="button"
+              onClick={(e) => handleSkillClick(e, name)}
+              className={`bg-surface-container-high/60 backdrop-blur-md p-2 border-b-2 flex flex-col items-center text-center transition-all cursor-pointer hover:bg-surface-container-highest/80 ${
+                isSelected ? 'border-skill-rose bg-surface-container-highest/80' : 'border-primary/20'
+              }`}
+            >
+              <span className="material-symbols-outlined text-skill-rose mb-0.5 text-2xl">{icon}</span>
+              {expanded && (
+                <span className="text-on-surface-variant font-label text-[8px] uppercase tracking-[0.1em] mb-0.5 leading-tight">
+                  {translateSkill(name, t)}
+                </span>
+              )}
+              <span className="text-tertiary font-headline text-xl">{level}</span>
+            </button>
+          );
+        })}
+
+        {selectedSkill && (
+          <SkillDetailPanel
+            skillName={selectedSkill}
+            level={(learned.find((s) => s.name === selectedSkill) || {}).level || 0}
+            character={character}
+            t={t}
+          />
+        )}
+      </div>
+    </div>
+  );
 }
 
 const NEEDS_META = [
@@ -238,38 +408,12 @@ export default function CharacterPanel({
         <div className="lg:col-span-5 space-y-6 animate-fade-in">
           <StatsGrid
             attributes={character.attributes}
-            mana={character.mana}
             characterLevel={character.characterLevel}
             characterXp={character.characterXp}
             attributePoints={character.attributePoints}
           />
 
-          {character.skills && Object.keys(character.skills).length > 0 && (
-            <div className="bg-surface-container-low p-6 border border-outline-variant/10 rounded-sm">
-              <h3 className="text-tertiary font-headline mb-4 flex items-center gap-2">
-                <span className="material-symbols-outlined text-sm">school</span>
-                {t('character.skills')}
-              </h3>
-              <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-sm">
-                {Object.entries(character.skills)
-                  .filter(([, v]) => {
-                    const level = typeof v === 'object' ? v.level : (v || 0);
-                    return level > 0;
-                  })
-                  .map(([name, v]) => {
-                    const level = typeof v === 'object' ? v.level : (v || 0);
-                    return (
-                      <Tooltip key={name} content={t(`tooltips.skills.${getTooltipKey(name)}`, { defaultValue: '' })}>
-                        <div className="flex justify-between text-on-surface-variant w-full">
-                          <span>{translateSkill(name, t)}</span>
-                          <span className="text-primary-dim font-bold">{level}</span>
-                        </div>
-                      </Tooltip>
-                    );
-                  })}
-              </div>
-            </div>
-          )}
+          <SkillsGrid character={character} t={t} />
 
           {selectedItem && (
             <div className="bg-surface-container-low p-6 border border-outline-variant/10 rounded-sm relative">

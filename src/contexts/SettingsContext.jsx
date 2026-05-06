@@ -18,6 +18,7 @@ const EMPTY_BACKEND_KEYS = {
   gemini: { configured: false },
   meshy: { configured: false },
   'sd-webui': { configured: false },
+  xtts: { configured: false },
 };
 
 const LOCAL_ONLY_KEYS = ['backendUrl', 'useBackend'];
@@ -110,6 +111,10 @@ const defaultSettings = {
   aiModelTier: 'premium',
   aiModel: '',
   meshyEnabled: false,
+  ttsProvider: 'elevenlabs',
+  voicesByProvider: {},
+  sceneTtsTier: 'none',
+  sceneImageTier: 'none',
   autoPlayer: {
     enabled: false,
     style: 'balanced',
@@ -211,10 +216,13 @@ export function SettingsProvider({ children }) {
           if (cancelled) return;
           if (data?.user) {
             setBackendUser(data.user);
+            // backendAuthChecking stays true — loadFromAccount will clear it
+            // once account settings have been merged into React state.
+          } else {
+            setBackendAuthChecking(false);
           }
         } catch {
           /* refresh cookie missing/expired — user logged out */
-        } finally {
           if (!cancelled) setBackendAuthChecking(false);
         }
       })();
@@ -292,26 +300,30 @@ export function SettingsProvider({ children }) {
 
 
   const loadFromAccount = useCallback(async () => {
-    const accountSettings = await storage.getSettingsFromAccount();
-    if (!accountSettings || Object.keys(accountSettings).length === 0) return;
+    try {
+      const accountSettings = await storage.getSettingsFromAccount();
+      if (!accountSettings || Object.keys(accountSettings).length === 0) return;
 
-    syncingFromBackendRef.current = true;
-    setSettings((prev) => {
-      const merged = mergeSettingsWithDefaults(accountSettings);
-      for (const key of LOCAL_ONLY_KEYS) {
-        if (prev[key] !== undefined && prev[key] !== '') {
-          merged[key] = prev[key];
+      syncingFromBackendRef.current = true;
+      setSettings((prev) => {
+        const merged = mergeSettingsWithDefaults(accountSettings);
+        for (const key of LOCAL_ONLY_KEYS) {
+          if (prev[key] !== undefined && prev[key] !== '') {
+            merged[key] = prev[key];
+          }
         }
-      }
-      return merged;
-    });
-    setTimeout(() => { syncingFromBackendRef.current = false; }, 200);
+        return merged;
+      });
+      setTimeout(() => { syncingFromBackendRef.current = false; }, 200);
 
-    fetchBackendKeys();
+      fetchBackendKeys();
 
-    storage.migrateLocalCampaignsToBackend().catch((err) => {
-      console.warn('[SettingsContext] Campaign migration failed:', err.message);
-    });
+      storage.migrateLocalCampaignsToBackend().catch((err) => {
+        console.warn('[SettingsContext] Campaign migration failed:', err.message);
+      });
+    } finally {
+      setBackendAuthChecking(false);
+    }
   }, [fetchBackendKeys]);
 
   useEffect(() => {
@@ -319,7 +331,33 @@ export function SettingsProvider({ children }) {
   }, [loadFromAccount]);
 
   const updateSettings = useCallback((updates) => {
-    setSettings((prev) => ({ ...prev, ...updates }));
+    setSettings((prev) => {
+      if (updates.ttsProvider && updates.ttsProvider !== prev.ttsProvider) {
+        const oldProvider = prev.ttsProvider || 'elevenlabs';
+        const newProvider = updates.ttsProvider;
+        const savedByProvider = { ...(prev.voicesByProvider || {}) };
+
+        savedByProvider[oldProvider] = {
+          narratorVoiceId: prev.narratorVoiceId,
+          narratorVoiceName: prev.narratorVoiceName,
+          maleVoices: prev.maleVoices,
+          femaleVoices: prev.femaleVoices,
+        };
+
+        const restored = savedByProvider[newProvider] || {};
+
+        return {
+          ...prev,
+          ...updates,
+          voicesByProvider: savedByProvider,
+          narratorVoiceId: restored.narratorVoiceId || '',
+          narratorVoiceName: restored.narratorVoiceName || '',
+          maleVoices: restored.maleVoices || [],
+          femaleVoices: restored.femaleVoices || [],
+        };
+      }
+      return { ...prev, ...updates };
+    });
   }, []);
 
   const updateDMSettings = useCallback((updates) => {

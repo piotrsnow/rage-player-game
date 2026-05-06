@@ -166,7 +166,7 @@ function LoginForm() {
             value={email}
             onChange={(e) => setEmail(e.target.value)}
             placeholder="user@example.com"
-            className="w-full bg-transparent border-0 border-b border-outline-variant/15 focus:border-primary/40 focus:ring-0 text-sm py-2.5 px-1 placeholder:text-outline/20 font-mono text-on-surface-variant"
+            className="w-full bg-transparent border-0 border-b border-outline-variant/15 focus:border-primary/40 focus:ring-0 text-sm py-2.5 px-1 placeholder:text-on-surface-variant/60 font-mono text-on-surface-variant"
           />
         </div>
 
@@ -183,7 +183,7 @@ function LoginForm() {
             onChange={(e) => setPassword(e.target.value)}
             placeholder="••••••"
             minLength={6}
-            className="w-full bg-transparent border-0 border-b border-outline-variant/15 focus:border-primary/40 focus:ring-0 text-sm py-2.5 px-1 placeholder:text-outline/20 text-on-surface-variant"
+            className="w-full bg-transparent border-0 border-b border-outline-variant/15 focus:border-primary/40 focus:ring-0 text-sm py-2.5 px-1 placeholder:text-on-surface-variant/60 text-on-surface-variant"
           />
           <p className="text-[10px] text-outline/30 mt-1">{t('settings.backendPasswordHint')}</p>
         </div>

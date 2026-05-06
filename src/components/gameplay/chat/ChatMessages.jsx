@@ -6,6 +6,8 @@ import {
   HighlightedText,
   DialogueSegments,
   NarratorHeaderButtons,
+  NarrativeWithLoading,
+  ReadAloudButton,
 } from './ChatMessageParts';
 import { filterDuplicateDialogueSegmentsWithIndex } from '../../../services/dialogueSegments';
 
@@ -42,11 +44,16 @@ export function DmMessage({ message, narrator }) {
         <div className="flex items-start gap-2">
           <div className="min-w-0 flex-1">
             {shouldRenderSegments ? (
-              <DialogueSegments segments={visibleSegments} narrator={narrator} messageId={message.id} />
+              <DialogueSegments segments={visibleSegments} narrator={narrator} messageId={message.id} scenePacing={message.scenePacing} />
             ) : (
-              <p className="text-xs text-on-surface-variant leading-snug italic">
-                <HighlightedText text={narrativeText} highlightInfo={narrator?.highlightInfo} segmentIndex={0} messageId={message.id} />
-              </p>
+              <NarrativeWithLoading narrator={narrator} messageId={message.id} segmentIndex={0}>
+                <div className="group/seg flex items-start gap-0.5">
+                  <p className="text-xs text-on-surface-variant leading-snug italic flex-1">
+                    <HighlightedText text={narrativeText} highlightInfo={narrator?.highlightInfo} segmentIndex={0} messageId={message.id} />
+                  </p>
+                  <ReadAloudButton text={narrativeText} scenePacing={message.scenePacing} />
+                </div>
+              </NarrativeWithLoading>
             )}
             <QuestWrapupEpilogue wrapup={message.dialogueIfQuestTargetCompleted} />
           </div>
@@ -118,11 +125,16 @@ export function CombatCommentaryMessage({ message, narrator }) {
       </div>
       <div className="rounded-r-lg border-l-2 border-amber-400/40 bg-amber-400/5 px-3 py-3 space-y-3">
         {message.dialogueSegments?.length > 0 ? (
-          <DialogueSegments segments={message.dialogueSegments} narrator={narrator} messageId={message.id} />
+          <DialogueSegments segments={message.dialogueSegments} narrator={narrator} messageId={message.id} scenePacing={message.scenePacing || 'combat'} />
         ) : (
-          <p className="text-xs text-on-surface leading-snug whitespace-pre-line">
-            <HighlightedText text={message.content} highlightInfo={narrator?.highlightInfo} segmentIndex={0} messageId={message.id} />
-          </p>
+          <NarrativeWithLoading narrator={narrator} messageId={message.id} segmentIndex={0}>
+            <div className="group/seg flex items-start gap-0.5">
+              <p className="text-xs text-on-surface leading-snug whitespace-pre-line flex-1">
+                <HighlightedText text={message.content} highlightInfo={narrator?.highlightInfo} segmentIndex={0} messageId={message.id} />
+              </p>
+              <ReadAloudButton text={message.content} scenePacing={message.scenePacing || 'combat'} />
+            </div>
+          </NarrativeWithLoading>
         )}
       </div>
     </div>

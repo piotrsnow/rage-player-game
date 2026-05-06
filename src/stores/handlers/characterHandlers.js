@@ -111,17 +111,81 @@ export const characterHandlers = {
   },
 
   MAP_CHARACTER_VOICE: (draft, action) => {
-    const { characterName, voiceId, gender, voiceName } = action.payload;
+    const { characterName, voiceId, gender, voiceName, ttsProvider } = action.payload;
     if (!draft.characterVoiceMap) draft.characterVoiceMap = {};
-    draft.characterVoiceMap[characterName] = { voiceId, gender };
+    const prev = draft.characterVoiceMap[characterName];
+    const byProvider = { ...(prev?.byProvider || {}) };
+    if (ttsProvider && voiceId) {
+      byProvider[ttsProvider] = { voiceId, voiceName: voiceName || null };
+    }
+    draft.characterVoiceMap[characterName] = { voiceId, gender, byProvider };
     if (draft.character && draft.character.name === characterName) {
       draft.character.voiceId = voiceId || null;
       draft.character.voiceName = voiceName || draft.character.voiceName || null;
+      if (ttsProvider && voiceId) {
+        if (!draft.character.voicesByProvider) draft.character.voicesByProvider = {};
+        draft.character.voicesByProvider[ttsProvider] = { voiceId, voiceName: voiceName || null };
+      }
+    }
+  },
+
+  SWITCH_CHARACTER_VOICE_PROVIDER: (draft, action) => {
+    const { oldProvider, newProvider, maleVoices = [], femaleVoices = [], narratorVoiceId = null } = action.payload;
+    draft.narratorVoiceId = narratorVoiceId || null;
+    if (!draft.characterVoiceMap) draft.characterVoiceMap = {};
+    const pool = [...maleVoices.map((v) => ({ ...v, gender: 'male' })), ...femaleVoices.map((v) => ({ ...v, gender: 'female' }))];
+    const usedNewIds = new Set();
+
+    for (const [name, entry] of Object.entries(draft.characterVoiceMap)) {
+      if (!entry.byProvider) entry.byProvider = {};
+      if (entry.voiceId && oldProvider) {
+        entry.byProvider[oldProvider] = {
+          voiceId: entry.voiceId,
+          voiceName: entry.byProvider[oldProvider]?.voiceName || null,
+        };
+      }
+      const restored = entry.byProvider[newProvider];
+      if (restored?.voiceId) {
+        entry.voiceId = restored.voiceId;
+        usedNewIds.add(restored.voiceId);
+      } else if (pool.length) {
+        const genderPool = entry.gender === 'female' ? femaleVoices
+          : entry.gender === 'male' ? maleVoices
+          : pool;
+        const candidates = genderPool.filter((v) => !usedNewIds.has(v.voiceId));
+        const pick = candidates.length ? candidates : (genderPool.length ? genderPool : pool);
+        const chosen = pick[Math.floor(Math.random() * pick.length)];
+        if (chosen) {
+          entry.voiceId = chosen.voiceId;
+          entry.byProvider[newProvider] = { voiceId: chosen.voiceId, voiceName: chosen.voiceName || null };
+          usedNewIds.add(chosen.voiceId);
+        }
+      } else {
+        entry.voiceId = null;
+      }
+    }
+
+    if (draft.character?.name && draft.characterVoiceMap[draft.character.name]) {
+      const entry = draft.characterVoiceMap[draft.character.name];
+      draft.character.voiceId = entry.voiceId || null;
+      const providerData = entry.byProvider?.[newProvider];
+      draft.character.voiceName = providerData?.voiceName || null;
+      if (!draft.character.voicesByProvider) draft.character.voicesByProvider = {};
+      if (oldProvider && draft.character.voiceId) {
+        draft.character.voicesByProvider[oldProvider] = entry.byProvider[oldProvider] || {};
+      }
+      if (providerData) {
+        draft.character.voicesByProvider[newProvider] = providerData;
+      }
     }
   },
 
   SET_NARRATOR_VOICE: (draft, action) => {
     draft.narratorVoiceId = action.payload || null;
+  },
+
+  CLEAR_CHARACTER_VOICE_MAP: (draft) => {
+    draft.characterVoiceMap = {};
   },
 
   ADD_TITLE: (draft, action) => {

@@ -8,7 +8,7 @@
 //   2) application/json (CLI transport) — inline base64
 //
 // Used to verify the transport dispatch keeps working after the multipart
-// refactor without requiring Atlas/Docker.
+// refactor without requiring Postgres/Docker.
 //
 // Run: node backend/scripts/smoke-import-transport.mjs
 

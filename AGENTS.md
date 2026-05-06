@@ -159,7 +159,7 @@ Give claude success criteria instead of step by step instructions.
 
 ### Backend (`backend/`)
 
-- **Routes** — `/v1/auth` (cookie refresh flow), campaigns CRUD, characters, `ai.js` (barrel → `routes/ai/` with SSE + single-shots + scenes + coreState), `/v1/admin/livingWorld` (gated on `User.isAdmin`), `/v1/internal/post-scene-work` (Cloud Tasks handler), game data, media, multiplayer WebSocket (split), proxy endpoints (OpenAI/Anthropic/Gemini/ElevenLabs/Stability/Meshy). All under `/v1/*`; `/health` at root.
+- **Routes** — `/v1/auth` (cookie refresh flow), campaigns CRUD (`routes/campaigns/` split: crud, public, recaps, schemas, sharing), characters, `ai.js` (barrel → `routes/ai/` with SSE + single-shots + scenes + keyTest), `/v1/admin/livingWorld` (gated on `User.isAdmin`), `/v1/living-world` (player-facing: companions join/leave, NPC dialog, location listing), `/v1/internal/post-scene-work` (Cloud Tasks handler), game data, media, music (streaming from local/GCS), playground (image prompt history CRUD), wanted3d (3D model demand tracking), multiplayer WebSocket (split), `/v1/map-studio` (tile editor — packs, tilesets, tiles, rules, autotile, maps, import, actors; no auth — dev tool), proxy endpoints (OpenAI/Anthropic/Gemini/ElevenLabs/Stability/Meshy/SD-WebUI). All under `/v1/*`; `/health` at root.
 - **Services** — scene generation pipeline (`sceneGenerator/` with `processStateChanges/` handlers split by bucket, `systemPrompt/` split by section), intent classification (`intentClassifier/` heuristics + nanoSelector), context assembly (`aiContextTools/` handlers + contextBuilders), memory compression, shared `aiJsonCall.js` for single-shot calls, multiplayer AI pipeline (`multiplayerAI/`), vector search, room manager, media storage, `cloudTasks.js` (post-scene enqueue), `postSceneWork.js` (async handler).
 - **Living World** — `services/livingWorld/` — campaign sandbox (CampaignNPC shadow + F5b CampaignLocation per-campaign sandbox), `questGoalAssigner/` (slim — `pickQuestGiver` Phase D + `categorize`; folder name vestigial after BE goal-assigner archive → [knowledge/ideas/npc-action-assignment.md](knowledge/ideas/npc-action-assignment.md)), npc agent loop, reputation, travel graph (Dijkstra over canonical-only `Road`s), dungeon seed, fog-of-war discovery helpers, hearsay orchestration. AI mid-play creation lands in `CampaignLocation`; canonical promotion happens via admin queue.
 - **Infrastructure** — `plugins/csrf.js`, `plugins/idempotency.js` (in-memory), `plugins/rateLimitKey.js`, `plugins/requireAdmin.js` (JWT claim-based), `refreshTokenService.js` (Postgres-backed, in-process 10-min reaper), `oidcVerify.js` (Cloud Tasks auth).
@@ -180,9 +180,23 @@ Give claude success criteria instead of step by step instructions.
 | `MediaAsset` | User-generated images/music/TTS |
 | `PrefabAsset` / `Wanted3D` | 3D model catalog |
 | `Achievement` | Per-user unlocked achievements |
+| `CampaignLocationSummary` | Per-location narrative summary (key NPCs, unresolved hooks, scene count) |
+| `CampaignDmAgent` / `CampaignDmMemoryEntry` / `CampaignDmPendingHook` | DM agent memory subsystem — persistent DM memory + pending narrative hooks (F2 child tables, FIFO-capped) |
+| `CampaignNpcExperience` | F2 — child table for `CampaignNPC.experienceLog`. FIFO-capped at 20 per NPC |
+| `CampaignQuestPrerequisite` | F3 — self-join on `CampaignQuest` for prerequisite chains |
 | `WorldNPC` / `WorldLocation` / `Road` / `WorldEvent` / `WorldReputation` | Living World canonical world state. F5b: `Road` renamed from `WorldLocationEdge` (canonical-only travel infra); `WorldLocation.isCanonical`/`createdByCampaignId` dropped — every WorldLocation IS canonical. |
+| `WorldNpcKnowledge` / `WorldLocationKnowledge` | F2 — child tables replacing JSONB `knowledgeBase` arrays. FIFO-capped at 50 per entity |
+| `WorldNpcDialogTurn` | F2 — child table for NPC dialog history. FIFO-capped at 50 per (npc, campaign) |
+| `WorldNpcAttribution` | Kill/harm attribution linking WorldNPC ↔ Character ↔ Campaign with justified-kill judge verdict |
+| `WorldNpcKnownLocation` | F3 — NPC geographic awareness graph (seed/promotion/dialog provenance) |
+| `WorldEntityEmbedding` | Round E Phase 9 — unified pgvector embedding store for world-scope RAG (`entityType` + `entityId`) |
 | `CampaignNPC` | Per-campaign shadow of WorldNPC (independent activeGoal). F5b: `lastLocation{Kind,Id}` is a polymorphic FK pair into either WorldLocation or CampaignLocation. |
 | `CampaignLocation` | F5b — per-campaign sandbox for AI-mid-play-created locations. Promoted to canonical WorldLocation via destructive copy + relink (admin queue). Carries own `regionX/regionY` for player-map rendering; off the canonical Road graph. |
+| `CampaignDiscoveredLocation` / `CampaignEdgeDiscovery` | F3/F5b — per-campaign fog-of-war for locations (polymorphic kind) and road edges |
+| `UserWorldKnowledge` / `UserDiscoveredLocation` / `UserDiscoveredEdge` | Account-level fog-of-war for canonical locations/edges — persists across campaigns |
+| `CharacterClearedDungeon` | F3/F5b — tracks cleared dungeons per character (polymorphic kind) |
+| `PendingWorldStateChange` | Round E — admin review queue for world-state changes extracted from campaigns |
+| `NPCPromotionCandidate` / `LocationPromotionCandidate` | Round E — admin queue for promoting campaign-born NPCs/locations to canonical world |
 | `WorldLoreSection` | Admin-editable world lore injected into every scene prompt |
 
 ## AI pipeline (summary)
@@ -329,10 +343,9 @@ Current ideas: async-tool-pattern, autonomous-npcs, combat-auto-resolve, declara
 
 ## Known gaps / technical debt
 
-- **`src/hooks/useNarrator.js` is ~945L** — biggest remaining monolith hook. Split is playtest-driven, not urgent.
-- **`backend/src/scripts/seedWorld.js` is ~1146L** — bootstrap script, not a hot path, but runs on every boot (idempotent upsert). Adding a seed-completion guard (env flag or DB marker) would skip the no-op I/O on warm starts.
+- **`src/hooks/useNarrator.js` is ~1028L** — biggest remaining monolith hook. Split is playtest-driven, not urgent.
+- **`backend/src/scripts/seedWorld.js` is ~1244L** — bootstrap script, not a hot path, but runs on every boot (idempotent upsert). Adding a seed-completion guard (env flag or DB marker) would skip the no-op I/O on warm starts.
 - **No token budget enforcement in `assembleContext()`.** Total prompt stays in ~3.5-7k tokens in practice thanks to upstream caps, but a runaway selection could blow past that. Add explicit counting if scenes start hitting model context limits or cost spikes.
-- **Prisma compound indexes missing on Living World models.** `WorldEvent` needs `@@index([eventType, visibility, createdAt])` for the admin events feed; `CampaignNPC` needs `@@index([campaignId, canonicalWorldNpcId])` for shadow lookups. Verify in `schema.prisma` before the next migration.
 - **OpenAI/Anthropic dispatchers in 3 places**: `aiJsonCall.js` (single-shot), `campaignGenerator.js` (streaming), `sceneGenerator/streamingClient.js` (streaming). Acceptable — streaming vs non-streaming APIs are genuinely different shapes.
 - **`src/services/diceRollInference.js` has legacy aliases** not in `shared/domain/diceRollInference.js`. Fold into the shared version when convenient.
 - **MP guest join doesn't write character campaign lock.** Only host's characters get locked via `POST /v1/campaigns`. Fix in `backend/src/routes/multiplayer/handlers/lobby.js` if guests report losing characters.
@@ -343,13 +356,16 @@ Current ideas: async-tool-pattern, autonomous-npcs, combat-auto-resolve, declara
 
 | File | Was | Now |
 |---|---|---|
-| `backend/src/routes/ai.js` | 698 LOC | 4-LOC barrel → `routes/ai/{index,schemas,sseBoilerplate,singleShots,campaignStream,sceneStream,scenes,coreState}.js` |
+| `backend/src/routes/ai.js` | 698 LOC | 4-LOC barrel → `routes/ai/{index,schemas,sseBoilerplate,singleShots,campaignStream,sceneStream,scenes,keyTest}.js` |
 | `backend/src/services/aiContextTools.js` | 1358 LOC | barrel → `aiContextTools/{index,handlers/*,contextBuilders/*,worldLore}.js` |
 | `backend/src/services/sceneGenerator/processStateChanges.js` | 1277 LOC | barrel → `processStateChanges/{index,schemas,handlers/*,sceneEmbedding}.js` with Zod validators per bucket |
 | `backend/src/services/intentClassifier.js` | 588 LOC | barrel → `intentClassifier/{index,heuristics,nanoSelector,nanoPrompt}.js` |
 | `backend/src/services/sceneGenerator/systemPrompt.js` | 550 LOC | barrel → `systemPrompt/{index,staticRules,conditionalRules,dmSettingsBlock,characterBlock,worldBlock,livingWorldBlock}.js` |
 | `backend/src/services/livingWorld/questGoalAssigner.js` | 557 LOC | barrel → `questGoalAssigner/{index,npcGiverPicker,categories,roleAffinity}.js` (post-archive: `questRole`, `backgroundGoals`, and the orchestrator removed; folder name is now vestigial) |
 | `src/components/admin/AdminLivingWorldPage.jsx` | 795 LOC | tab switcher → `adminLivingWorld/{tabs/*,shared/*}` |
+| `backend/src/routes/campaigns.js` | — | barrel → `campaigns/{crud,public,recaps,schemas,sharing}.js` |
+| `src/services/storage.js` | — | barrel → `storage/{index,activeCampaign,campaignLoad,campaignParse,campaignSave,characters,importExport,keys,localSnapshot,migrations,sceneIndexCache,settings}.js` |
+| `src/stores/handlers/applyStateChangesHandler.js` | — | barrel → `applyStateChangesHandler/{index,character,mapChanges,npcs,quests,sceneFlow,timeAndNeeds,worldKnowledge,worldSystems}.js` |
 
 Barrels keep the old import paths intact — `import { ... } from '.../systemPrompt.js'` and friends still work unchanged.
 

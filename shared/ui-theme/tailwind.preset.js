@@ -1,0 +1,96 @@
+// Shared Tailwind preset used by both the main RPGon app and the map studio app.
+//
+// Holds the full Material-3-ish token palette, font families, border radii,
+// keyframes, and animations. Individual apps plug it in via `presets: [preset]`
+// and only supply their own `content` globs.
+//
+// The `accent` / `accent-dim` tokens are driven by CSS custom properties
+// declared in shared/ui-theme/base.css, so an app (or a single page) can
+// override them without rebuilding Tailwind — e.g. mapapp can ship with the
+// same purple as the main app, then switch to amber by redefining --accent
+// in its own index.css.
+
+/** @type {import('tailwindcss').Config} */
+export default {
+  darkMode: 'class',
+  theme: {
+    extend: {
+      colors: {
+        'tertiary-dim': '#eed198',
+        'inverse-primary': '#7e29df',
+        secondary: '#e5e2e1',
+        'on-primary-fixed-variant': '#3f007c',
+        'secondary-container': '#474646',
+        'error-dim': '#d73357',
+        'primary-container': '#ba88ff',
+        'error-container': '#a70138',
+        'outline-variant': '#48474a',
+        'tertiary-fixed': '#fddfa5',
+        'surface-variant': '#262529',
+        'surface-tint': '#c59aff',
+        'on-primary': '#420082',
+        'on-secondary-container': '#d2d0cf',
+        'on-primary-fixed': '#000000',
+        'tertiary-container': '#fddfa5',
+        'on-tertiary-fixed-variant': '#6e592b',
+        'secondary-dim': '#d7d4d3',
+        'primary-dim': '#9547f7',
+        'on-surface': '#fffbfe',
+        'surface-bright': '#2c2c2f',
+        'tertiary-fixed-dim': '#eed198',
+        'secondary-fixed': '#e5e2e1',
+        'on-tertiary': '#6c572a',
+        'inverse-on-surface': '#565457',
+        'on-primary-container': '#330066',
+        'secondary-fixed-dim': '#d7d4d3',
+        outline: '#767578',
+        'on-secondary-fixed-variant': '#5c5b5b',
+        'surface-dim': '#0e0e10',
+        'on-surface-variant': '#adaaad',
+        'on-error-container': '#ffb2b9',
+        'on-error': '#490013',
+        'on-background': '#fffbfe',
+        'on-secondary': '#525151',
+        background: '#0e0e10',
+        'inverse-surface': '#fcf8fb',
+        surface: '#0e0e10',
+        'on-secondary-fixed': '#403f3f',
+        'surface-container-high': '#1f1f22',
+        'surface-container': '#19191c',
+        'on-tertiary-fixed': '#4f3d11',
+        primary: '#c59aff',
+        'primary-fixed-dim': '#b075ff',
+        tertiary: '#ffefd5',
+        error: '#ff6e84',
+        'surface-container-highest': '#262529',
+        'surface-container-lowest': '#000000',
+        'primary-fixed': '#ba88ff',
+        'on-tertiary-container': '#634f22',
+        'surface-container-low': '#131316',
+        accent: 'rgb(var(--accent) / <alpha-value>)',
+        'accent-dim': 'rgb(var(--accent-dim) / <alpha-value>)',
+      },
+      fontFamily: {
+        headline: ['Noto Serif', 'serif'],
+        body: ['Manrope', 'sans-serif'],
+        label: ['Manrope', 'sans-serif'],
+      },
+      borderRadius: {
+        DEFAULT: '0.125rem',
+        lg: '0.25rem',
+        xl: '0.5rem',
+        full: '0.75rem',
+      },
+      keyframes: {
+        'target-shimmer': {
+          '0%, 100%': { opacity: '0.55', filter: 'blur(1px)', transform: 'scale(1)' },
+          '50%': { opacity: '0.85', filter: 'blur(0.5px)', transform: 'scale(1.02)' },
+        },
+      },
+      animation: {
+        'target-shimmer': 'target-shimmer 3.5s ease-in-out infinite',
+      },
+    },
+  },
+  plugins: [],
+};

@@ -2,6 +2,7 @@ import { useState, useRef, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 
 const CATEGORY_ICONS = {
+  scene: 'theater_comedy',
   ai: 'smart_toy',
   image: 'image',
   tts: 'record_voice_over',

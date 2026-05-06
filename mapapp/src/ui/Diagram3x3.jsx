@@ -39,12 +39,32 @@ const PRESETS = {
   fill: { N: true, E: true, S: true, W: true, NE: true, NW: true, SE: true, SW: true, center: true },
 };
 
-export default function Diagram3x3({ highlight, preset, size = 48, label }) {
+export default function Diagram3x3({
+  highlight,
+  preset,
+  size = 48,
+  label,
+  onToggle,
+  mixedKeys,
+  disabledKeys,
+}) {
   const active = preset && PRESETS[preset] ? PRESETS[preset] : (highlight || {});
+  const mixed = mixedKeys || {};
+  const disabled = disabledKeys || {};
+  const interactive = typeof onToggle === 'function';
   const cell = size / 3;
   const stroke = 'rgba(148,163,184,0.35)';
   const fillOn = 'rgba(250,204,21,0.55)';
+  const fillMixed = 'rgba(250,204,21,0.25)';
   const fillOff = 'rgba(15,23,42,0.4)';
+  const hoverFill = 'rgba(250,204,21,0.35)';
+
+  function cellFill(key) {
+    if (active[key]) return fillOn;
+    if (mixed[key]) return fillMixed;
+    return fillOff;
+  }
+
   return (
     <div className="inline-flex flex-col items-center gap-1">
       <svg
@@ -53,17 +73,31 @@ export default function Diagram3x3({ highlight, preset, size = 48, label }) {
         viewBox={`0 0 ${size} ${size}`}
         role="img"
         aria-label={label || 'diagram 3x3'}
+        className={interactive ? 'cursor-pointer' : undefined}
       >
+        {interactive && (
+          <defs>
+            <style>{`
+              .d3x3-cell { transition: fill 0.1s; }
+              .d3x3-cell:not([data-disabled]):hover { fill: ${hoverFill} !important; }
+            `}</style>
+          </defs>
+        )}
         {CELLS.map((c) => (
           <rect
             key={c.key}
+            className={interactive ? 'd3x3-cell' : undefined}
+            data-disabled={disabled[c.key] ? '' : undefined}
             x={c.col * cell + 0.5}
             y={c.row * cell + 0.5}
             width={cell - 1}
             height={cell - 1}
-            fill={active[c.key] ? fillOn : fillOff}
-            stroke={stroke}
-            strokeWidth="1"
+            fill={cellFill(c.key)}
+            stroke={mixed[c.key] ? 'rgba(250,204,21,0.6)' : stroke}
+            strokeWidth={mixed[c.key] ? '1.5' : '1'}
+            strokeDasharray={mixed[c.key] ? '3 2' : undefined}
+            rx={interactive ? 2 : 0}
+            onClick={interactive && !disabled[c.key] ? () => onToggle(c.key) : undefined}
           />
         ))}
       </svg>
@@ -75,3 +109,5 @@ export default function Diagram3x3({ highlight, preset, size = 48, label }) {
     </div>
   );
 }
+
+export { CELLS, PRESETS };

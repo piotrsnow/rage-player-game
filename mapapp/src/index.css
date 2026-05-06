@@ -1,0 +1,27 @@
+/* Shared tokens, glass panels, scrollbar, animations. */
+@import '../../shared/ui-theme/base.css';
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html, body, #root {
+    height: 100%;
+  }
+  body {
+    @apply bg-surface-dim text-on-surface font-body;
+    margin: 0;
+  }
+  a { color: inherit; }
+}
+
+/* Accent override example — uncomment to give mapapp a distinct leading
+ * color (e.g. amber) while keeping the main app purple. The `accent` /
+ * `accent-dim` Tailwind tokens read from these variables at runtime.
+ *
+ * :root {
+ *   --accent: 255 200 120;
+ *   --accent-dim: 217 161 82;
+ * }
+ */

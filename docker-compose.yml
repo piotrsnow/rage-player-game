@@ -65,9 +65,13 @@ services:
       STABILITY_API_KEY: "${STABILITY_API_KEY:-}"
       GEMINI_API_KEY: "${GEMINI_API_KEY:-}"
       MESHY_API_KEY: "${MESHY_API_KEY:-}"
+      # Bootstrap admin email — auto-promotes matching user to isAdmin
+      ADMIN_EMAIL: "${ADMIN_EMAIL:-}"
       # Stable Diffusion WebUI (Automatic1111) — local REST. From inside the
       # container, `localhost` is the container itself; to reach A1111 running
       # on the Windows/macOS host use `http://host.docker.internal:7860`.
+      STRIPE_SECRET_KEY: "${STRIPE_SECRET_KEY:-}"
+      STRIPE_WEBHOOK_SECRET: "${STRIPE_WEBHOOK_SECRET:-}"
       SD_WEBUI_URL: "${SD_WEBUI_URL:-}"
       SD_WEBUI_SAMPLER: "${SD_WEBUI_SAMPLER:-}"
       SD_WEBUI_STEPS: "${SD_WEBUI_STEPS:-}"
@@ -75,6 +79,10 @@ services:
       SD_WEBUI_HIRES_FIX: "${SD_WEBUI_HIRES_FIX:-}"
       SD_WEBUI_SCENE_WIDTH: "${SD_WEBUI_SCENE_WIDTH:-}"
       SD_WEBUI_SCENE_HEIGHT: "${SD_WEBUI_SCENE_HEIGHT:-}"
+      # XTTS Voice Studio — local TTS. From inside the container use
+      # http://xtts:5050 (when xtts service is running) or
+      # http://host.docker.internal:5050 (when running natively on host).
+      XTTS_URL: "${XTTS_URL:-}"
     volumes:
       - media-data:/data/media
     # Docker Compose Watch: `npm run dev:watch` syncs local source into the
@@ -99,6 +107,26 @@ services:
           path: ./src
         - action: rebuild
           path: ./package.json
+
+  # XTTS Voice Studio — standalone voice manager + TTS server.
+  # Requires NVIDIA GPU; skip with `docker compose up backend` if no GPU.
+  xtts:
+    build: ./voiceapp
+    profiles: ["xtts"]
+    restart: unless-stopped
+    ports:
+      - "5050:5050"
+    volumes:
+      - ./voiceapp/server/voices:/app/server/voices
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    environment:
+      XTTS_MODEL_NAME: "${XTTS_MODEL_NAME:-tts_models/multilingual/multi-dataset/xtts_v2}"
 
 volumes:
   media-data:

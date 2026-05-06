@@ -1,0 +1,101 @@
+[
+  {
+    "id": "fronczewski_1",
+    "name": "Fronczewski 1",
+    "gender": "male",
+    "roles": [],
+    "filename": "fronczewski_1.wav",
+    "durationS": 23.7,
+    "addedAt": "2026-05-05T21:02:48.961501+00:00"
+  },
+  {
+    "id": "alko_patryk",
+    "name": "Alko Patryk",
+    "gender": "male",
+    "roles": [],
+    "filename": "alko_patryk.wav",
+    "durationS": 31.5,
+    "addedAt": "2026-05-05T21:08:16.623818+00:00"
+  },
+  {
+    "id": "yassato",
+    "name": "Yassato",
+    "gender": "male",
+    "roles": [],
+    "filename": "yassato.wav",
+    "durationS": 21.2,
+    "addedAt": "2026-05-05T21:20:51.952574+00:00"
+  },
+  {
+    "id": "twoj_stary",
+    "name": "Twój Stary",
+    "gender": "male",
+    "roles": [],
+    "filename": "twoj_stary.wav",
+    "durationS": 18.7,
+    "addedAt": "2026-05-05T21:21:07.643783+00:00"
+  },
+  {
+    "id": "spokojny_adam",
+    "name": "Spokojny Adam",
+    "gender": "male",
+    "roles": [],
+    "filename": "spokojny_adam.wav",
+    "durationS": 14.9,
+    "addedAt": "2026-05-05T21:21:16.780062+00:00"
+  },
+  {
+    "id": "ekspresywny_hale",
+    "name": "Ekspresywny Hale",
+    "gender": "male",
+    "roles": [],
+    "filename": "ekspresywny_hale.wav",
+    "durationS": 14.5,
+    "addedAt": "2026-05-05T21:21:26.424178+00:00"
+  },
+  {
+    "id": "krzyczacy_jerzy",
+    "name": "Krzyczący Jerzy",
+    "gender": "male",
+    "roles": [],
+    "filename": "krzyczacy_jerzy.wav",
+    "durationS": 17.5,
+    "addedAt": "2026-05-05T21:21:43.605510+00:00"
+  },
+  {
+    "id": "lily",
+    "name": "Lily",
+    "gender": "female",
+    "roles": [],
+    "filename": "lily.wav",
+    "durationS": 18.3,
+    "addedAt": "2026-05-05T21:21:50.582522+00:00"
+  },
+  {
+    "id": "alice",
+    "name": "Alice",
+    "gender": "female",
+    "roles": [],
+    "filename": "alice.wav",
+    "durationS": 18.4,
+    "addedAt": "2026-05-05T21:21:57.155057+00:00"
+  },
+  {
+    "id": "bill",
+    "name": "Bill",
+    "gender": "male",
+    "roles": [],
+    "filename": "bill.wav",
+    "durationS": 21.3,
+    "addedAt": "2026-05-05T21:22:06.125304+00:00"
+  },
+  {
+    "id": "bella",
+    "name": "Bella",
+    "gender": "female",
+    "roles": [],
+    "filename": "bella.wav",
+    "durationS": 15.8,
+    "addedAt": "2026-05-05T21:22:13.910921+00:00"
+  }
+]

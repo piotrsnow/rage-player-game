@@ -16,6 +16,52 @@ const Scene3DPanel = lazy(() => import('./Scene3D/Scene3DPanel'));
 
 const INTENSITY_MAP = { low: 0.35, medium: 0.65, high: 1 };
 
+function SceneGameErrorOverlay({
+  error,
+  mpErrorCode,
+  isMultiplayer,
+  onDismiss,
+  onOpenSettings,
+}) {
+  const { t } = useTranslation();
+  if (!error) return null;
+
+  return (
+    <div
+      className="pointer-events-auto absolute left-2 right-2 bottom-2 z-[25] max-h-[min(40%,12rem)] overflow-y-auto custom-scrollbar rounded-sm border border-error/35 bg-error-container/95 px-3 py-2.5 shadow-[0_4px_24px_rgba(0,0,0,0.65)] backdrop-blur-sm animate-fade-in"
+      role="alert"
+    >
+      <div className="flex items-start justify-between gap-2">
+        <p className="text-error text-xs leading-snug flex items-start gap-2 min-w-0">
+          <span className="material-symbols-outlined text-base shrink-0 mt-0.5">error</span>
+          <span className="min-w-0 break-words">{error}</span>
+        </p>
+        <button
+          type="button"
+          onClick={() => onDismiss?.()}
+          aria-label={t('common.close')}
+          className="text-error/60 hover:text-error transition-colors shrink-0"
+        >
+          <span className="material-symbols-outlined text-lg leading-none">close</span>
+        </button>
+      </div>
+      {mpErrorCode === 'NO_SERVER_API_KEY' && (
+        <p className="mt-2 text-[11px] text-on-surface-variant leading-snug">
+          {t('gameplay.serverApiKeyMissingHint', 'Server API keys are missing. Ask the host/admin to configure backend environment variables.')}
+        </p>
+      )}
+      {!isMultiplayer && typeof error === 'string' && error.includes('backend') && onOpenSettings && (
+        <button
+          type="button"
+          onClick={onOpenSettings}
+          className="mt-2 text-[11px] text-primary hover:text-tertiary transition-colors underline text-left"
+        >
+          {t('gameplay.goToSettings')}
+        </button>
+      )}
+    </div>
+  );
+}
 
 export default function ScenePanel({
   scene,
@@ -33,6 +79,11 @@ export default function ScenePanel({
   interactiveMap = false,
   onSceneGridChange,
   onFieldTurnReady,
+  gameError = null,
+  onDismissGameError = null,
+  mpErrorCode = null,
+  isMultiplayer = false,
+  onOpenSettings = null,
 }) {
   const { t } = useTranslation();
   const { settings, updateSettings } = useSettings();
@@ -277,6 +328,13 @@ export default function ScenePanel({
           <span className="material-symbols-outlined text-6xl text-outline/20 mb-3 block animate-float-slow">auto_stories</span>
           <p className="text-on-surface-variant text-xs">{t('gameplay.adventureBegins')}</p>
         </div>
+        <SceneGameErrorOverlay
+          error={gameError}
+          mpErrorCode={mpErrorCode}
+          isMultiplayer={isMultiplayer}
+          onDismiss={onDismissGameError}
+          onOpenSettings={onOpenSettings}
+        />
       </div>
     );
   }
@@ -510,6 +568,14 @@ export default function ScenePanel({
           />
         ))}
       </div>
+
+      <SceneGameErrorOverlay
+        error={gameError}
+        mpErrorCode={mpErrorCode}
+        isMultiplayer={isMultiplayer}
+        onDismiss={onDismissGameError}
+        onOpenSettings={onOpenSettings}
+      />
     </div>
   );
 }

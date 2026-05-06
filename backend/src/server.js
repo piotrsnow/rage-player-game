@@ -26,6 +26,7 @@ import { stabilityProxyRoutes } from './routes/proxy/stability.js';
 import { sdWebuiProxyRoutes } from './routes/proxy/sdWebui.js';
 import { geminiProxyRoutes } from './routes/proxy/gemini.js';
 import { meshyProxyRoutes } from './routes/proxy/meshy.js';
+import { xttsProxyRoutes } from './routes/proxy/xtts.js';
 import { musicRoutes } from './routes/music.js';
 import { multiplayerRoutes } from './routes/multiplayer.js';
 import { aiRoutes } from './routes/ai.js';
@@ -33,7 +34,11 @@ import { gameDataRoutes } from './routes/gameData.js';
 import { internalRoutes } from './routes/internal.js';
 import { livingWorldRoutes } from './routes/livingWorld.js';
 import { adminLivingWorldRoutes } from './routes/adminLivingWorld.js';
+import { adminUserRoutes } from './routes/adminUsers.js';
+import { creditsRoutes, creditsWebhookRoute } from './routes/credits.js';
 import { playgroundRoutes } from './routes/playground.js';
+import { topicHistoryRoutes } from './routes/topicHistory.js';
+import { mapStudioRoutes } from './routes/mapStudio/index.js';
 import { seedWorld } from './scripts/seedWorld.js';
 import {
   startRoomCleanup,
@@ -132,6 +137,7 @@ await fastify.register(async function proxyScope(app) {
   app.register(sdWebuiProxyRoutes, { prefix: '/sd-webui' });
   app.register(geminiProxyRoutes, { prefix: '/gemini' });
   app.register(meshyProxyRoutes, { prefix: '/meshy' });
+  app.register(xttsProxyRoutes, { prefix: '/xtts' });
 }, { prefix: '/v1/proxy' });
 
 await fastify.register(async function musicScope(app) {
@@ -175,6 +181,14 @@ await fastify.register(async function playgroundScope(app) {
   app.register(playgroundRoutes);
 }, { prefix: '/v1/playground' });
 
+// Topic history — persists seed text + AI-generated topic pairs from campaign creator.
+await fastify.register(async function topicHistoryScope(app) {
+  app.addHook('onRoute', (routeOptions) => {
+    routeOptions.config = { ...routeOptions.config, rateLimit: { max: 60, timeWindow: '1 minute' } };
+  });
+  app.register(topicHistoryRoutes);
+}, { prefix: '/v1/topic-history' });
+
 // Living World (Phase 2) — companion CAS, C2 dialog. Auth-gated, rate-limited like data routes.
 await fastify.register(async function livingWorldScope(app) {
   app.addHook('onRoute', (routeOptions) => {
@@ -197,6 +211,52 @@ await fastify.register(async (app) => {
   });
   app.register(adminLivingWorldRoutes);
 }, { prefix: '/v1/admin/livingWorld' });
+
+// Admin user management — list users, toggle isAdmin. Same guard as livingWorld admin.
+await fastify.register(async (app) => {
+  app.addHook('onRoute', (routeOptions) => {
+    routeOptions.config = {
+      ...routeOptions.config,
+      rateLimit: routeOptions.config?.rateLimit || { max: 30, timeWindow: '1 minute' },
+    };
+  });
+  app.register(adminUserRoutes);
+}, { prefix: '/v1/admin/users' });
+
+// Credits — authed routes for balance + Stripe checkout
+await fastify.register(async (app) => {
+  app.addHook('onRoute', (routeOptions) => {
+    routeOptions.config = {
+      ...routeOptions.config,
+      rateLimit: routeOptions.config?.rateLimit || { max: 20, timeWindow: '1 minute' },
+    };
+  });
+  app.register(creditsRoutes);
+}, { prefix: '/v1/credits' });
+
+// Stripe webhook — no auth, raw body for signature verification.
+// Registered in its own encapsulated scope so the buffer content-type
+// parser doesn't leak to other routes.
+await fastify.register(async (app) => {
+  app.addHook('onRoute', (routeOptions) => {
+    routeOptions.config = {
+      ...routeOptions.config,
+      rateLimit: routeOptions.config?.rateLimit || { max: 30, timeWindow: '1 minute' },
+    };
+  });
+  app.register(creditsWebhookRoute);
+}, { prefix: '/v1/credits' });
+
+// Map Studio — local dev tool, no auth. See routes/mapStudio/index.js.
+await fastify.register(async (app) => {
+  app.addHook('onRoute', (routeOptions) => {
+    routeOptions.config = {
+      ...routeOptions.config,
+      rateLimit: routeOptions.config?.rateLimit || { max: 120, timeWindow: '1 minute' },
+    };
+  });
+  app.register(mapStudioRoutes);
+}, { prefix: '/v1/map-studio' });
 
 startRoomCleanup();
 startRefreshTokenCleanup();

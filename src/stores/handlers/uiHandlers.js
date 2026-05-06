@@ -40,7 +40,7 @@ export const uiHandlers = {
   ADD_AI_COST: (draft, action) => {
     const entry = action.payload;
     if (!draft.aiCosts) {
-      draft.aiCosts = { total: 0, breakdown: { ai: 0, image: 0, tts: 0, sfx: 0, music: 0 }, history: [] };
+      draft.aiCosts = { total: 0, breakdown: { scene: 0, ai: 0, image: 0, tts: 0, sfx: 0, music: 0 }, history: [] };
     }
     const cost = entry.cost || 0;
     draft.aiCosts.total += cost;

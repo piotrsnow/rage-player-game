@@ -47,6 +47,10 @@ COPY --from=frontend-build /app/dist ./public/dist
 # (copying from build stage avoids context/sync mismatches in CI)
 COPY --from=frontend-build /app/shared /app/shared
 
+# shared/mapSchemas imports zod; make backend's node_modules resolvable
+# from /app/shared/ by symlinking at the /app level.
+RUN ln -s /app/backend/node_modules /app/node_modules
+
 ENV NODE_ENV=production
 ENV PORT=8080
 ENV HOST=0.0.0.0

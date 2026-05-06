@@ -1,12 +1,150 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import { apiClient } from '../../services/apiClient';
+import { elevenlabsService } from '../../services/elevenlabs';
+import { xttsService } from '../../services/xtts';
 import { storage } from '../../services/storage';
 import { ATTRIBUTE_KEYS } from '../../data/rpgSystem';
 import { isSafeLocation } from '../../../shared/domain/safeLocation';
 import PortraitGenerator from '../character/PortraitGenerator';
 import { useAI } from '../../hooks/useAI';
 import { useSettings } from '../../contexts/SettingsContext';
+import {
+  claimExclusiveReadAloud,
+  clearExclusiveReadAloudAudio,
+  isExclusiveReadAloudOwner,
+  setExclusiveReadAloudAudio,
+  subscribeExclusiveReadAloud,
+} from '../../utils/readAloudExclusive';
+
+function ReadAloudButton({ text, lang = 'pl' }) {
+  const { settings, hasApiKey } = useSettings();
+  const [state, setState] = useState('idle');
+  const audioRef = useRef(null);
+  const mountedRef = useRef(true);
+  const lastAttemptRef = useRef(null);
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      lastAttemptRef.current = null;
+      audioRef.current?.pause();
+      audioRef.current = null;
+    };
+  }, []);
+
+  useEffect(() => {
+    return subscribeExclusiveReadAloud(() => {
+      const mine = lastAttemptRef.current;
+      if (mine == null) return;
+      if (isExclusiveReadAloudOwner(mine)) return;
+      lastAttemptRef.current = null;
+      audioRef.current = null;
+      if (mountedRef.current) setState('idle');
+    });
+  }, []);
+
+  const stop = useCallback(() => {
+    lastAttemptRef.current = null;
+    audioRef.current = null;
+    claimExclusiveReadAloud();
+    if (mountedRef.current) setState('idle');
+  }, []);
+
+  const toggle = async () => {
+    if (state === 'playing' || state === 'loading') { stop(); return; }
+
+    const attemptId = claimExclusiveReadAloud();
+    lastAttemptRef.current = attemptId;
+
+    const provider = settings.ttsProvider || 'elevenlabs';
+    const voiceId = settings.narratorVoiceId;
+    const hasTts = voiceId && hasApiKey(provider);
+
+    if (!hasTts) {
+      const synth = window.speechSynthesis;
+      if (!synth) return;
+      const u = new SpeechSynthesisUtterance(text);
+      u.lang = lang;
+      u.rate = 1;
+      u.onend = () => {
+        if (!isExclusiveReadAloudOwner(attemptId) || !mountedRef.current) return;
+        lastAttemptRef.current = null;
+        setState('idle');
+      };
+      u.onerror = () => {
+        if (!isExclusiveReadAloudOwner(attemptId) || !mountedRef.current) return;
+        lastAttemptRef.current = null;
+        setState('idle');
+      };
+      setState('playing');
+      synth.speak(u);
+      return;
+    }
+
+    setState('loading');
+    try {
+      let audioUrl;
+      if (provider === 'xtts') {
+        const res = await xttsService.textToSpeech(voiceId, text, lang);
+        audioUrl = res.audioUrl;
+      } else {
+        const res = await elevenlabsService.textToSpeechWithTimestamps(undefined, voiceId, text);
+        audioUrl = res.audioUrl;
+      }
+      if (!mountedRef.current) return;
+      if (!isExclusiveReadAloudOwner(attemptId)) {
+        lastAttemptRef.current = null;
+        if (mountedRef.current) setState('idle');
+        return;
+      }
+      const fullUrl = apiClient.resolveMediaUrl(audioUrl);
+      const audio = new Audio(fullUrl);
+      audioRef.current = audio;
+      setExclusiveReadAloudAudio(audio);
+      audio.onended = () => {
+        clearExclusiveReadAloudAudio(audio);
+        if (!isExclusiveReadAloudOwner(attemptId) || !mountedRef.current) return;
+        lastAttemptRef.current = null;
+        setState('idle');
+        audioRef.current = null;
+      };
+      audio.onerror = () => {
+        clearExclusiveReadAloudAudio(audio);
+        if (!isExclusiveReadAloudOwner(attemptId) || !mountedRef.current) return;
+        lastAttemptRef.current = null;
+        setState('idle');
+        audioRef.current = null;
+      };
+      setState('playing');
+      audio.play();
+    } catch {
+      lastAttemptRef.current = null;
+      if (mountedRef.current) setState('idle');
+    }
+  };
+
+  const icon = state === 'loading' ? 'hourglass_top'
+    : state === 'playing' ? 'stop_circle'
+    : 'volume_up';
+
+  return (
+    <button
+      type="button"
+      onClick={toggle}
+      disabled={state === 'loading'}
+      className={`inline-flex items-center justify-center w-5 h-5 rounded-full transition-colors shrink-0 ml-1 align-middle ${
+        state !== 'idle' ? 'bg-primary/10' : 'hover:bg-primary/10'
+      }`}
+      aria-label={state === 'playing' ? 'Stop' : 'Read aloud'}
+    >
+      <span className={`material-symbols-outlined text-[14px] text-primary/60 hover:text-primary ${state === 'loading' ? 'animate-spin' : ''}`}>
+        {icon}
+      </span>
+    </button>
+  );
+}
 
 /**
  * Big, poster-style character summary shown under the "create/use" tabs in
@@ -33,8 +171,9 @@ function CharacterShowcase({
 }) {
   const { t } = useTranslation();
   const { generateCharacterLegend } = useAI();
-  const { hasApiKey } = useSettings();
+  const { hasApiKey, settings } = useSettings();
   const hasServerAi = hasApiKey('openai') || hasApiKey('anthropic');
+  const lang = settings.language || 'pl';
 
   const key = characterKey(character);
   const [legend, setLegend] = useState(() => legendCache.get(key) || '');
@@ -140,9 +279,14 @@ function CharacterShowcase({
                 <p className="text-[9px] uppercase tracking-widest text-primary/70 font-label mb-2">
                   {t('characterPicker.legendLabel', 'Legenda')}
                 </p>
-                <p className="text-sm text-on-surface italic leading-relaxed font-body">
-                  {legend}
-                </p>
+                <div className="text-sm text-on-surface italic leading-relaxed font-body space-y-2">
+                  {legend.split(/\n+/).filter(Boolean).map((para, i) => (
+                    <p key={i} className="flex items-start gap-0.5">
+                      <span className="flex-1">{para}</span>
+                      <ReadAloudButton text={para} lang={lang} />
+                    </p>
+                  ))}
+                </div>
                 <button
                   type="button"
                   onClick={handleGenerateLegend}
@@ -206,9 +350,53 @@ function getCharacterLockInfo(ch, t) {
   };
 }
 
+function ShowcasePlaceholder() {
+  const { t } = useTranslation();
+  return (
+    <div className="p-6 bg-surface-container-high/15 border border-outline-variant/20 rounded-sm opacity-50">
+      <div className="flex items-center justify-between mb-4 gap-3">
+        <div className="flex items-center gap-2">
+          <span className="material-symbols-outlined text-outline">person_off</span>
+          <span className="text-xs font-bold text-outline uppercase tracking-wider">
+            {t('characterPicker.noSelection')}
+          </span>
+        </div>
+      </div>
+      <div className="flex items-start gap-6">
+        <div className="w-[140px] h-[180px] bg-surface-container-lowest/50 rounded-sm flex items-center justify-center shrink-0 border border-outline-variant/10">
+          <span className="material-symbols-outlined text-5xl text-outline/30">person</span>
+        </div>
+        <div className="min-w-0 flex-1">
+          <p className="font-headline text-2xl text-outline/40 leading-tight">???</p>
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-1 text-xs text-outline/30">
+            <span>—</span>
+            <span className="text-outline/20">•</span>
+            <span>—</span>
+            <span className="text-outline/20">•</span>
+            <span>{t('characterPicker.levelLabel', 'Lv')} —</span>
+            <span className="text-outline/20">•</span>
+            <span>— {t('characterPicker.xpLabel')}</span>
+          </div>
+          <div className="flex flex-wrap gap-x-4 gap-y-1 mt-3">
+            {ATTRIBUTE_KEYS.slice(0, 6).map((attrKey) => (
+              <span key={attrKey} className="text-[11px] text-outline/30">
+                {t(`rpgAttributeShort.${attrKey}`)}:{' '}
+                <strong className="text-outline/40">—</strong>
+              </span>
+            ))}
+          </div>
+          <div className="mt-4 pt-4 border-t border-outline-variant/10">
+            <p className="text-sm text-outline/30 italic">
+              {t('characterPicker.noSelectionHint')}
+            </p>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function CharacterPicker({
-  charMode,
-  onCharModeChange,
   createdCharacter,
   selectedCharacter,
   onSelectedCharacterChange,
@@ -220,6 +408,7 @@ export default function CharacterPicker({
   genre,
 }) {
   const { t } = useTranslation();
+  const activeChar = createdCharacter || selectedCharacter;
 
   return (
     <section>
@@ -227,192 +416,155 @@ export default function CharacterPicker({
         {t('characterPicker.title')}
       </label>
 
-      <div className="flex gap-3 mb-6">
-        <button
-          onClick={() => {
-            onCharModeChange('new');
-            onSelectedCharacterChange(null);
-            onEditingSelectedPortraitChange(false);
-          }}
-          className={`flex-1 px-4 py-4 rounded-sm border transition-all duration-300 text-left ${
-            charMode === 'new'
-              ? 'bg-surface-tint text-on-primary border-primary shadow-[0_0_20px_rgba(197,154,255,0.3)]'
-              : 'bg-surface-container-high/40 text-on-surface-variant border-outline-variant/15 hover:bg-surface-container-high hover:text-tertiary hover:border-primary/20'
-          }`}
+      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
+        {savedCharacters.map((ch) => {
+          const charId = ch.backendId || ch.localId || ch.id;
+          const isSelected = selectedCharacter && (selectedCharacter.backendId || selectedCharacter.localId || selectedCharacter.id) === charId;
+          const lockInfo = getCharacterLockInfo(ch, t);
+          const cardClasses = lockInfo.locked
+            ? 'bg-surface-container-high/20 border-outline-variant/10 opacity-40 cursor-not-allowed'
+            : isSelected
+              ? 'bg-primary/10 border-primary/30 shadow-[0_0_15px_rgba(197,154,255,0.2)] cursor-pointer'
+              : 'bg-surface-container-high/40 border-outline-variant/10 hover:border-primary/20 hover:bg-surface-container-high/60 cursor-pointer';
+          return (
+            <div
+              key={charId}
+              title={lockInfo.locked ? lockInfo.tooltip : undefined}
+              aria-disabled={lockInfo.locked ? 'true' : undefined}
+              className={`p-4 rounded-sm border transition-all ${cardClasses}`}
+              onClick={async () => {
+                if (lockInfo.locked) return;
+                if (isSelected) {
+                  onSelectedCharacterChange(null);
+                  onEditingSelectedPortraitChange(false);
+                } else {
+                  const id = ch.backendId || ch.localId || ch.id;
+                  let fullChar;
+                  try {
+                    fullChar = await storage.loadCharacter(id);
+                  } catch {
+                    fullChar = null;
+                  }
+                  const base = fullChar || ch;
+                  const normalized = {
+                    ...base,
+                    backendId: base.backendId || ch.backendId || ch.id,
+                    localId: base.localId || ch.localId || ch.id,
+                  };
+                  onSelectedCharacterChange(normalized);
+                  onEditingSelectedPortraitChange(false);
+                }
+              }}
+            >
+              <div className="flex items-start gap-3">
+                <div className="w-14 h-[4.5rem] bg-surface-container-lowest rounded-sm flex items-center justify-center overflow-hidden shrink-0 border border-outline-variant/10">
+                  {ch.portraitUrl ? (
+                    <img src={apiClient.resolveMediaUrl(ch.portraitUrl)} alt={ch.name} className="w-full h-full object-cover" onError={(e) => { e.target.style.display = 'none'; }} />
+                  ) : (
+                    <span className="material-symbols-outlined text-2xl text-outline/40">person</span>
+                  )}
+                </div>
+                <div className="min-w-0 flex-1">
+                  <p className={`font-headline text-base truncate ${isSelected ? 'text-primary' : 'text-tertiary'}`}>
+                    {ch.name}
+                  </p>
+                  <p className="text-xs text-on-surface-variant truncate">
+                    {t(`species.${ch.species}`, { defaultValue: ch.species })}
+                  </p>
+                  <div className="flex items-center gap-2 mt-1.5 text-[11px] text-outline">
+                    <span>{ch.characterXp || 0} {t('characterPicker.xpLabel')}</span>
+                  </div>
+                </div>
+                {isSelected && !lockInfo.locked && (
+                  <span className="material-symbols-outlined text-primary text-lg shrink-0">check_circle</span>
+                )}
+                {lockInfo.locked && (
+                  <span
+                    className="material-symbols-outlined text-outline text-lg shrink-0"
+                    aria-label={lockInfo.tooltip}
+                  >
+                    lock
+                  </span>
+                )}
+              </div>
+              {lockInfo.locked && (
+                <p className="mt-2 text-[10px] text-outline/80 italic truncate">
+                  {t('characterPicker.lockedBadge', 'W kampanii: {{name}}', { name: lockInfo.campaignName })}
+                </p>
+              )}
+            </div>
+          );
+        })}
+
+        <div
+          onClick={onShowCharModal}
+          className="p-4 rounded-sm border border-dashed border-outline-variant/30 hover:border-primary/40 hover:bg-surface-tint/5 transition-all cursor-pointer group"
         >
-          <div className="flex items-center gap-2 mb-1">
-            <span className="material-symbols-outlined text-lg">person_add</span>
-            <span className="font-bold text-sm">{t('characterPicker.createNew')}</span>
+          <div className="flex items-start gap-3">
+            <div className="w-14 h-[4.5rem] rounded-sm flex items-center justify-center shrink-0 border border-dashed border-outline-variant/20 group-hover:border-primary/30">
+              {createdCharacter?.portraitUrl ? (
+                <img src={apiClient.resolveMediaUrl(createdCharacter.portraitUrl)} alt={createdCharacter.name} className="w-full h-full object-cover rounded-sm" onError={(e) => { e.target.style.display = 'none'; }} />
+              ) : (
+                <span className="material-symbols-outlined text-2xl text-outline/40 group-hover:text-primary transition-colors">person_add</span>
+              )}
+            </div>
+            <div className="min-w-0 flex-1">
+              <p className="font-headline text-base truncate text-on-surface-variant group-hover:text-primary transition-colors">
+                {createdCharacter ? createdCharacter.name : t('characterPicker.createCard')}
+              </p>
+              {createdCharacter && (
+                <p className="text-xs text-on-surface-variant truncate">
+                  {t(`species.${createdCharacter.species}`, { defaultValue: createdCharacter.species })}
+                </p>
+              )}
+              <div className="flex items-center gap-1 mt-1.5 text-[11px] text-outline group-hover:text-primary/70 transition-colors">
+                <span className="material-symbols-outlined text-sm">{createdCharacter ? 'edit' : 'add'}</span>
+                <span>{createdCharacter ? t('charCreator.editCharacter') : t('characterPicker.createCard')}</span>
+              </div>
+            </div>
+            {activeChar === createdCharacter && createdCharacter && (
+              <span className="material-symbols-outlined text-primary text-lg shrink-0">check_circle</span>
+            )}
           </div>
-          <p className="text-[10px] opacity-70">{t('characterPicker.createNewDesc')}</p>
-        </button>
-        <button
-          onClick={() => {
-            onCharModeChange('existing');
-            onEditingSelectedPortraitChange(false);
-          }}
-          className={`flex-1 px-4 py-4 rounded-sm border transition-all duration-300 text-left ${
-            charMode === 'existing'
-              ? 'bg-surface-tint text-on-primary border-primary shadow-[0_0_20px_rgba(197,154,255,0.3)]'
-              : 'bg-surface-container-high/40 text-on-surface-variant border-outline-variant/15 hover:bg-surface-container-high hover:text-tertiary hover:border-primary/20'
-          }`}
-        >
-          <div className="flex items-center gap-2 mb-1">
-            <span className="material-symbols-outlined text-lg">group</span>
-            <span className="font-bold text-sm">{t('characterPicker.useExisting')}</span>
-          </div>
-          <p className="text-[10px] opacity-70">{t('characterPicker.useExistingDesc')}</p>
-        </button>
+        </div>
       </div>
 
-      {charMode === 'new' && (
-        <div className="animate-fade-in">
-          {createdCharacter ? (
-            <CharacterShowcase
-              character={createdCharacter}
-              headlineKey="charCreator.characterReady"
-              actionLabel={t('charCreator.editCharacter')}
-              actionIcon="edit"
-              onAction={onShowCharModal}
-            />
-          ) : (
-            <button
-              onClick={onShowCharModal}
-              className="w-full p-6 border border-dashed border-outline-variant/30 rounded-sm hover:border-primary/40 hover:bg-surface-tint/5 transition-all group"
-            >
-              <div className="flex flex-col items-center gap-2">
-                <span className="material-symbols-outlined text-3xl text-outline group-hover:text-primary transition-colors">person_add</span>
-                <span className="text-sm font-label text-on-surface-variant group-hover:text-primary transition-colors">
-                  {t('charCreator.createCharacter')}
-                </span>
+      <div className="mt-6">
+        {activeChar ? (
+          <CharacterShowcase
+            character={activeChar}
+            headlineKey={createdCharacter ? 'charCreator.characterReady' : 'characterPicker.selectedCharacter'}
+            actionLabel={createdCharacter ? t('charCreator.editCharacter') : t('character.updatePortrait')}
+            actionIcon={createdCharacter ? 'edit' : 'photo_camera'}
+            onAction={createdCharacter
+              ? onShowCharModal
+              : () => onEditingSelectedPortraitChange(!editingSelectedPortrait)
+            }
+          >
+            {!createdCharacter && editingSelectedPortrait && (
+              <div className="mt-6 pt-6 border-t border-outline-variant/15">
+                <PortraitGenerator
+                  species={selectedCharacter.species}
+                  gender={selectedCharacter.gender}
+                  careerName={selectedCharacter.career?.name}
+                  genre={genre}
+                  initialPortrait={selectedCharacter.portraitUrl}
+                  onPortraitReady={async (url) => {
+                    try {
+                      await persistSelectedCharacter({ portraitUrl: url || '' });
+                      onEditingSelectedPortraitChange(false);
+                    } catch {
+                      // Keep the editor open so the user can retry.
+                    }
+                  }}
+                />
               </div>
-            </button>
-          )}
-        </div>
-      )}
-
-      {charMode === 'existing' && (
-        <div className="animate-fade-in">
-          {savedCharacters.length === 0 ? (
-            <p className="text-on-surface-variant text-sm text-center py-6 border border-outline-variant/10 rounded-sm bg-surface-container-high/20">
-              {t('characterPicker.noCharacters')}
-            </p>
-          ) : (
-            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
-              {savedCharacters.map((ch) => {
-                const charId = ch.backendId || ch.localId || ch.id;
-                const isSelected = selectedCharacter && (selectedCharacter.backendId || selectedCharacter.localId || selectedCharacter.id) === charId;
-                const lockInfo = getCharacterLockInfo(ch, t);
-                const cardClasses = lockInfo.locked
-                  ? 'bg-surface-container-high/20 border-outline-variant/10 opacity-40 cursor-not-allowed'
-                  : isSelected
-                    ? 'bg-primary/10 border-primary/30 shadow-[0_0_15px_rgba(197,154,255,0.2)] cursor-pointer'
-                    : 'bg-surface-container-high/40 border-outline-variant/10 hover:border-primary/20 hover:bg-surface-container-high/60 cursor-pointer';
-                return (
-                  <div
-                    key={charId}
-                    title={lockInfo.locked ? lockInfo.tooltip : undefined}
-                    aria-disabled={lockInfo.locked ? 'true' : undefined}
-                    className={`p-4 rounded-sm border transition-all ${cardClasses}`}
-                    onClick={async () => {
-                      if (lockInfo.locked) return;
-                      if (isSelected) {
-                        onSelectedCharacterChange(null);
-                        onEditingSelectedPortraitChange(false);
-                      } else {
-                        const id = ch.backendId || ch.localId || ch.id;
-                        let fullChar;
-                        try {
-                          fullChar = await storage.loadCharacter(id);
-                        } catch {
-                          fullChar = null;
-                        }
-                        const base = fullChar || ch;
-                        const normalized = {
-                          ...base,
-                          backendId: base.backendId || ch.backendId || ch.id,
-                          localId: base.localId || ch.localId || ch.id,
-                        };
-                        onSelectedCharacterChange(normalized);
-                        onEditingSelectedPortraitChange(false);
-                      }
-                    }}
-                  >
-                    <div className="flex items-start gap-3">
-                      <div className="w-12 h-16 bg-surface-container-lowest rounded-sm flex items-center justify-center overflow-hidden shrink-0 border border-outline-variant/10">
-                        {ch.portraitUrl ? (
-                          <img src={apiClient.resolveMediaUrl(ch.portraitUrl)} alt={ch.name} className="w-full h-full object-cover" onError={(e) => { e.target.style.display = 'none'; }} />
-                        ) : (
-                          <span className="material-symbols-outlined text-xl text-outline/40">person</span>
-                        )}
-                      </div>
-                      <div className="min-w-0 flex-1">
-                        <p className={`font-headline text-sm truncate ${isSelected ? 'text-primary' : 'text-tertiary'}`}>
-                          {ch.name}
-                        </p>
-                        <p className="text-[10px] text-on-surface-variant truncate">
-                          {t(`species.${ch.species}`, { defaultValue: ch.species })}
-                        </p>
-                        <div className="flex items-center gap-2 mt-1 text-[9px] text-outline">
-                          <span>{ch.characterXp || 0} {t('characterPicker.xpLabel')}</span>
-                        </div>
-                      </div>
-                      {isSelected && !lockInfo.locked && (
-                        <span className="material-symbols-outlined text-primary text-lg shrink-0">check_circle</span>
-                      )}
-                      {lockInfo.locked && (
-                        <span
-                          className="material-symbols-outlined text-outline text-lg shrink-0"
-                          aria-label={lockInfo.tooltip}
-                        >
-                          lock
-                        </span>
-                      )}
-                    </div>
-                    {lockInfo.locked && (
-                      <p className="mt-2 text-[9px] text-outline/80 italic truncate">
-                        {t('characterPicker.lockedBadge', 'W kampanii: {{name}}', { name: lockInfo.campaignName })}
-                      </p>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-          )}
-
-          {selectedCharacter && (
-            <div className="mt-4">
-              <CharacterShowcase
-                character={selectedCharacter}
-                headlineKey="characterPicker.selectedCharacter"
-                actionLabel={t('character.updatePortrait')}
-                actionIcon="photo_camera"
-                onAction={() => onEditingSelectedPortraitChange(!editingSelectedPortrait)}
-              >
-                {editingSelectedPortrait && (
-                  <div className="mt-6 pt-6 border-t border-outline-variant/15">
-                    <PortraitGenerator
-                      species={selectedCharacter.species}
-                      gender={selectedCharacter.gender}
-                      careerName={selectedCharacter.career?.name}
-                      genre={genre}
-                      initialPortrait={selectedCharacter.portraitUrl}
-                      onPortraitReady={async (url) => {
-                        try {
-                          await persistSelectedCharacter({ portraitUrl: url || '' });
-                          onEditingSelectedPortraitChange(false);
-                        } catch {
-                          // Keep the editor open so the user can retry.
-                        }
-                      }}
-                    />
-                  </div>
-                )}
-              </CharacterShowcase>
-            </div>
-          )}
-        </div>
-      )}
+            )}
+          </CharacterShowcase>
+        ) : (
+          <ShowcasePlaceholder />
+        )}
+      </div>
     </section>
   );
 }

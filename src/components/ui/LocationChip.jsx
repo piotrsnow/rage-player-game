@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 const TRANSITION_MS = 3500;
+const GLOW_LINGER_MS = 2000;
 
 function nameOf(loc) {
   if (!loc) return null;
@@ -11,6 +12,7 @@ function nameOf(loc) {
 export default function LocationChip({ current, previous }) {
   const { t } = useTranslation();
   const [stage, setStage] = useState('idle');
+  const [glowing, setGlowing] = useState(false);
   const lastSeenRef = useRef(nameOf(current));
 
   useEffect(() => {
@@ -18,42 +20,46 @@ export default function LocationChip({ current, previous }) {
     const prev = nameOf(previous);
     const last = lastSeenRef.current;
 
-    // Trigger transition only when (a) current name actually differs from the
-    // previous scene's snapshot AND (b) we haven't already animated this same
-    // pair (lastSeenRef catches re-renders that don't change the location).
     if (cur && prev && cur !== prev && cur !== last) {
       setStage('transitioning');
+      setGlowing(true);
       lastSeenRef.current = cur;
-      const handle = setTimeout(() => setStage('idle'), TRANSITION_MS);
-      return () => clearTimeout(handle);
+      const transHandle = setTimeout(() => setStage('idle'), TRANSITION_MS);
+      const glowHandle = setTimeout(() => setGlowing(false), TRANSITION_MS + GLOW_LINGER_MS);
+      return () => { clearTimeout(transHandle); clearTimeout(glowHandle); };
     }
     lastSeenRef.current = cur;
     setStage('idle');
     return undefined;
   }, [current, previous]);
 
-  if (!current) return null;
   const curName = nameOf(current);
   const prevName = nameOf(previous);
-  const wandering = !curName && current.kind === 'wandering';
+  const wandering = !curName && current?.kind === 'wandering';
+  const hasLocation = !!curName;
+
+  const pillBase = 'flex items-center gap-1.5 text-[11px] font-bold px-2.5 py-1 rounded-full transition-all duration-500';
+  const pillIdle = 'bg-surface-container-high/60 text-on-surface-variant';
+  const pillGlow = 'bg-primary/15 text-primary ring-2 ring-primary/40 shadow-[0_0_12px_rgba(197,154,255,0.35)]';
 
   if (stage === 'transitioning' && prevName && curName) {
     return (
-      <div className="flex items-center gap-1 text-[10px] text-on-surface-variant font-bold animate-fade-in">
-        <span className="material-symbols-outlined text-xs">location_on</span>
-        <span className="text-outline opacity-60 line-through">{prevName}</span>
-        <span className="material-symbols-outlined text-[10px] text-primary">arrow_forward</span>
-        <span className="text-primary">{curName}</span>
+      <div className={`${pillBase} ${pillGlow} animate-fade-in`}>
+        <span className="material-symbols-outlined text-sm text-primary">location_on</span>
+        <span className="text-outline/60 line-through text-[10px]">{prevName}</span>
+        <span className="material-symbols-outlined text-[10px] text-primary animate-pulse">arrow_forward</span>
+        <span className="text-primary font-extrabold">{curName}</span>
       </div>
     );
   }
 
   return (
-    <div className="flex items-center gap-1 text-[10px] text-on-surface-variant font-bold">
-      <span className="material-symbols-outlined text-xs">location_on</span>
-      <span className={wandering ? 'opacity-60 italic' : ''}>
+    <div className={`${pillBase} ${glowing ? pillGlow : pillIdle}`}>
+      <span className={`material-symbols-outlined text-sm ${glowing ? 'text-primary' : ''}`}>location_on</span>
+      <span className={wandering ? 'opacity-60 italic' : hasLocation ? '' : 'opacity-40'}>
         {curName || t('locationChip.wandering', 'W drodze')}
       </span>
+      {glowing && <span className="w-1.5 h-1.5 rounded-full bg-primary animate-pulse" />}
     </div>
   );
 }

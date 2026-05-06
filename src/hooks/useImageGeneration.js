@@ -53,7 +53,7 @@ export function useImageGeneration() {
       activeLocks.add(itemId);
 
       try {
-        const imageUrl = await imageService.generateItemImage(item, {
+        const result = await imageService.generateItemImage(item, {
           genre: options.genre ?? state.campaign?.genre,
           tone: options.tone ?? state.campaign?.tone,
           provider: imageProvider,
@@ -65,18 +65,18 @@ export function useImageGeneration() {
           sdSeed: Number.isInteger(sdWebuiSeed) ? sdWebuiSeed : null,
           forceNew,
         });
-        if (!imageUrl) return null;
+        if (!result?.url) return null;
 
         dispatch({
           type: 'UPDATE_INVENTORY_ITEM_IMAGE',
-          payload: { itemId, imageUrl },
+          payload: { itemId, imageUrl: result.url, fullImagePrompt: result.prompt },
         });
         itemImageFailureTimestampsRef.current.delete(itemId);
         dispatch({ type: 'ADD_AI_COST', payload: calculateCost('image', { provider: imageProvider }) });
         if (!options.skipAutoSave) {
           autoSave();
         }
-        return imageUrl;
+        return result.url;
       } catch (err) {
         const message = err?.message || 'Item image generation failed';
         itemImageFailureTimestampsRef.current.set(itemId, Date.now());
@@ -119,7 +119,7 @@ export function useImageGeneration() {
         if (locks.has(npc.id)) continue;
         locks.add(npc.id);
         try {
-          const portraitUrl = await generateNpcPortrait(npc, {
+          const result = await generateNpcPortrait(npc, {
             genre: state.campaign?.genre,
             provider: imageProvider,
             imageStyle,
@@ -128,6 +128,7 @@ export function useImageGeneration() {
             sdModel: sdWebuiModel,
             sdSeed: Number.isInteger(sdWebuiSeed) ? sdWebuiSeed : null,
           });
+          const portraitUrl = typeof result === 'string' ? result : result?.url;
           if (portraitUrl) {
             dispatch({ type: 'UPDATE_NPC_PORTRAIT', payload: { npcId: npc.id, portraitUrl } });
             dispatch({ type: 'ADD_AI_COST', payload: calculateCost('image', { provider: imageProvider }) });

@@ -19,10 +19,9 @@
 
 import { prisma } from '../../lib/prisma.js';
 
-function parseJson(value, fallback) {
-  if (value == null || value === '') return fallback;
-  if (typeof value === 'object') return value;
-  try { return JSON.parse(value); } catch { return fallback; }
+function parseJson(val, fallback) {
+  if (val == null) return fallback;
+  return typeof val === 'object' ? val : fallback;
 }
 
 function normaliseTraitValue(v) {

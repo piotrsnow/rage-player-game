@@ -9,7 +9,6 @@ import { useMultiplayer } from '../../contexts/MultiplayerContext';
 import { apiClient } from '../../services/apiClient';
 import { storage } from '../../services/storage';
 import Button from '../ui/Button';
-import Slider from '../ui/Slider';
 import CountdownProgress from '../ui/CountdownProgress';
 import PlayerLobby from '../multiplayer/PlayerLobby';
 import CharacterCreationModal from '../character/CharacterCreationModal';
@@ -19,11 +18,16 @@ import {
   toneIds,
   toneIcons,
   lengthIds,
+  lengthIcons,
+  difficultyIds,
+  difficultyIcons,
 } from './creatorConstants';
+import { allowedTiersForLevel } from '../../../shared/domain/difficultyTier';
 import ChipGroup from './ChipGroup';
 import ModeToggle from './ModeToggle';
 import CharacterPicker from './CharacterPicker';
 import StoryPromptSection from './StoryPromptSection';
+import LivingWorldModal from './LivingWorldModal';
 
 export default function CampaignCreatorPage() {
   const navigate = useNavigate();
@@ -46,7 +50,7 @@ export default function CampaignCreatorPage() {
     tone: 'Epic',
     length: 'Medium',
     storyPrompt: '',
-    livingWorldEnabled: false,
+    livingWorldEnabled: true,
     // Phase 7 — world time controls. Only sent to backend when
     // livingWorldEnabled is true (and the user left defaults alone → omitted).
     worldTimeRatio: 24,
@@ -58,16 +62,20 @@ export default function CampaignCreatorPage() {
 
   const [isRandomizing, setIsRandomizing] = useState(false);
   const [isGeneratingFromInput, setIsGeneratingFromInput] = useState(false);
-  const [charMode, setCharMode] = useState('new');
+
   const [savedCharacters, setSavedCharacters] = useState([]);
   const [selectedCharacter, setSelectedCharacter] = useState(null);
   const [charsLoaded, setCharsLoaded] = useState(false);
   const [showCharModal, setShowCharModal] = useState(false);
+  const [showLivingWorldModal, setShowLivingWorldModal] = useState(false);
   const [createdCharacter, setCreatedCharacter] = useState(null);
   const [editingSelectedPortrait, setEditingSelectedPortrait] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [showTopicHistory, setShowTopicHistory] = useState(false);
+  const [topicHistory, setTopicHistory] = useState([]);
+  const [isLoadingHistory, setIsLoadingHistory] = useState(false);
 
-  const hasCharacter = charMode === 'new' ? !!createdCharacter : !!selectedCharacter;
+  const hasCharacter = !!createdCharacter || !!selectedCharacter;
 
   useEffect(() => {
     if (charsLoaded) return;
@@ -130,14 +138,14 @@ export default function CampaignCreatorPage() {
   // Sync selected/created character to multiplayer room
   useEffect(() => {
     if (!inMpRoom) return;
-    const char = charMode === 'new' ? createdCharacter : selectedCharacter;
+    const char = createdCharacter || selectedCharacter;
     if (!char) return;
     mp.updateMyCharacter({
       name: char.name,
       gender: char.gender,
       characterData: char,
     });
-  }, [inMpRoom, charMode, createdCharacter, selectedCharacter]);
+  }, [inMpRoom, createdCharacter, selectedCharacter]);
 
   const handleRandomize = async () => {
     if (!hasServerAi || isRandomizing) return;
@@ -167,11 +175,39 @@ export default function CampaignCreatorPage() {
         seedText,
       });
       updateForm((p) => ({ ...p, storyPrompt: prompt }));
+      apiClient.post('/topic-history', {
+        seedText,
+        generatedTopic: prompt,
+        genre: form.genre,
+        tone: form.tone,
+      }).catch(() => {});
     } catch {
       // Error handled via context
     } finally {
       setIsGeneratingFromInput(false);
     }
+  };
+
+  const handleToggleHistory = async () => {
+    if (showTopicHistory) {
+      setShowTopicHistory(false);
+      return;
+    }
+    setIsLoadingHistory(true);
+    setShowTopicHistory(true);
+    try {
+      const data = await apiClient.get('/topic-history?page=1&pageSize=30');
+      setTopicHistory(data.items || []);
+    } catch {
+      setTopicHistory([]);
+    } finally {
+      setIsLoadingHistory(false);
+    }
+  };
+
+  const handleSelectFromHistory = (text) => {
+    updateForm((p) => ({ ...p, storyPrompt: text }));
+    setShowTopicHistory(false);
   };
 
   const handleCreateRoom = async () => {
@@ -295,6 +331,8 @@ export default function CampaignCreatorPage() {
             onModeChange={setMode}
             inMpRoom={inMpRoom}
             isBackendConnected={isBackendConnected}
+            livingWorldEnabled={!!form.livingWorldEnabled}
+            onLivingWorldClick={() => setShowLivingWorldModal(true)}
           />
 
           {isGuest && (
@@ -306,48 +344,99 @@ export default function CampaignCreatorPage() {
             </div>
           )}
 
-          {isMultiplayer && (
-            <section className="border border-outline-variant/15 rounded-sm p-6 bg-surface-container-high/20">
-              {inMpRoom ? (
-                <PlayerLobby />
-              ) : (
-                <div className="text-center space-y-4">
-                  <p className="text-on-surface-variant text-sm">{t('multiplayer.createOrJoin')}</p>
-                  <div className="flex gap-3 justify-center">
-                    <Button onClick={handleCreateRoom}>
-                      <span className="material-symbols-outlined text-sm">add</span>
-                      {t('multiplayer.createRoom')}
-                    </Button>
-                    <Button variant="ghost" onClick={() => navigate('/join')}>
-                      <span className="material-symbols-outlined text-sm">login</span>
-                      {t('multiplayer.joinRoom')}
-                    </Button>
+          <div
+            className="grid transition-[grid-template-rows,opacity] duration-300 ease-out"
+            style={{
+              gridTemplateRows: isMultiplayer ? '1fr' : '0fr',
+              opacity: isMultiplayer ? 1 : 0,
+            }}
+          >
+            <div className="overflow-hidden">
+              <section className="border border-outline-variant/15 rounded-sm p-6 bg-surface-container-high/20">
+                {inMpRoom ? (
+                  <PlayerLobby />
+                ) : (
+                  <div className="text-center space-y-4">
+                    <p className="text-on-surface-variant text-sm">{t('multiplayer.createOrJoin')}</p>
+                    <div className="flex gap-3 justify-center">
+                      <Button onClick={handleCreateRoom}>
+                        <span className="material-symbols-outlined text-sm">add</span>
+                        {t('multiplayer.createRoom')}
+                      </Button>
+                      <Button variant="ghost" onClick={() => navigate('/join')}>
+                        <span className="material-symbols-outlined text-sm">login</span>
+                        {t('multiplayer.joinRoom')}
+                      </Button>
+                    </div>
                   </div>
-                </div>
-              )}
-            </section>
-          )}
+                )}
+              </section>
+            </div>
+          </div>
 
-          <section>
-            <label className="block text-[10px] text-on-surface-variant font-label uppercase tracking-widest mb-4">
-              {t('creator.toneLabel')}
-            </label>
-            <ChipGroup
-              name="tone"
-              options={toneIds}
-              value={form.tone}
-              onChange={(v) => updateForm((p) => ({ ...p, tone: v }))}
-              showIcons
-              icons={toneIcons}
-              labels={Object.fromEntries(toneIds.map((id) => [id, t(`creator.tones.${id}`)]))}
-              descriptions={Object.fromEntries(toneIds.map((id) => [id, t(`creator.toneDesc.${id}`)]))}
-              disabled={isGuest}
-            />
-          </section>
+          {(() => {
+            const activeChar = createdCharacter || selectedCharacter;
+            const charLevel = Number(activeChar?.characterLevel || activeChar?.level || 1);
+            const tiers = allowedTiersForLevel(charLevel);
+            if (!tiers.includes(form.difficultyTier)) {
+              setTimeout(() => updateForm((p) => ({ ...p, difficultyTier: 'low' })), 0);
+            }
+            return (
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                <section>
+                  <label className="block text-[10px] text-on-surface-variant font-label uppercase tracking-widest mb-4">
+                    {t('creator.toneLabel')}
+                  </label>
+                  <ChipGroup
+                    name="tone"
+                    options={toneIds}
+                    value={form.tone}
+                    onChange={(v) => updateForm((p) => ({ ...p, tone: v }))}
+                    showIcons
+                    iconOnly
+                    icons={toneIcons}
+                    labels={Object.fromEntries(toneIds.map((id) => [id, t(`creator.tones.${id}`)]))}
+                    disabled={isGuest}
+                  />
+                </section>
+                <section>
+                  <label className="block text-[10px] text-on-surface-variant font-label uppercase tracking-widest mb-4">
+                    {t('creator.campaignLengthLabel')}
+                  </label>
+                  <ChipGroup
+                    name="length"
+                    options={lengthIds}
+                    value={form.length}
+                    onChange={(v) => updateForm((p) => ({ ...p, length: v }))}
+                    showIcons
+                    iconOnly
+                    icons={lengthIcons}
+                    labels={Object.fromEntries(lengthIds.map((id) => [id, t(`creator.lengths.${id}`)]))}
+                    disabled={isGuest}
+                  />
+                </section>
+                <section>
+                  <label className="block text-[10px] text-on-surface-variant font-label uppercase tracking-widest mb-4">
+                    {t('creator.difficultyLabel')}
+                  </label>
+                  <ChipGroup
+                    name="difficulty"
+                    options={difficultyIds}
+                    value={form.difficultyTier}
+                    onChange={(v) => updateForm((p) => ({ ...p, difficultyTier: v }))}
+                    showIcons
+                    iconOnly
+                    icons={difficultyIcons}
+                    labels={Object.fromEntries(difficultyIds.map((id) => [id, t(`creator.difficulties.${id}`)]))}
+                    disabled={isGuest}
+                    disabledOptions={difficultyIds.filter((id) => !tiers.includes(id))}
+                  />
+                </section>
+              </div>
+            );
+          })()}
 
           <CharacterPicker
-            charMode={charMode}
-            onCharModeChange={setCharMode}
             createdCharacter={createdCharacter}
             selectedCharacter={selectedCharacter}
             onSelectedCharacterChange={setSelectedCharacter}
@@ -359,59 +448,6 @@ export default function CampaignCreatorPage() {
             genre={form.genre}
           />
 
-          {(() => {
-            const activeChar = charMode === 'new' ? createdCharacter : selectedCharacter;
-            const charLevel = Number(activeChar?.characterLevel || activeChar?.level || 1);
-            const tiers = charLevel <= 5
-              ? ['low']
-              : charLevel <= 10
-                ? ['low', 'medium', 'high']
-                : ['low', 'medium', 'high', 'deadly'];
-            const tierLabels = { low: 'Low', medium: 'Medium', high: 'High', deadly: 'Deadly' };
-            // Clamp the stored value if the active character no longer permits it.
-            if (!tiers.includes(form.difficultyTier)) {
-              setTimeout(() => updateForm((p) => ({ ...p, difficultyTier: 'low' })), 0);
-            }
-            return (
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <section>
-                  <label className="block text-[10px] text-on-surface-variant font-label uppercase tracking-widest mb-4">
-                    {t('creator.campaignLengthLabel')}
-                  </label>
-                  <ChipGroup
-                    name="length"
-                    options={lengthIds}
-                    value={form.length}
-                    onChange={(v) => updateForm((p) => ({ ...p, length: v }))}
-                    labels={Object.fromEntries(lengthIds.map((id) => [id, t(`creator.lengths.${id}`)]))}
-                    disabled={isGuest}
-                  />
-                </section>
-                <section className="border border-outline-variant/15 rounded-sm p-4 bg-surface-container-high/20">
-                  <div className="flex items-center gap-2 mb-3">
-                    <span className="font-label text-sm text-on-surface">Trudność kampanii</span>
-                    <span className="text-[9px] uppercase tracking-widest px-1.5 py-0.5 rounded-sm bg-outline-variant/30 text-on-surface-variant">
-                      Nowe
-                    </span>
-                  </div>
-                  <select
-                    className="w-full bg-surface-container border border-outline-variant/30 rounded-sm px-3 py-2 text-sm text-on-surface"
-                    value={form.difficultyTier}
-                    onChange={(e) => updateForm((p) => ({ ...p, difficultyTier: e.target.value }))}
-                    title="Górna granica wrogów w scenach. lv 1-5 → tylko Low; lv 6-10 → Low/Medium/High; lv 11+ → wszystko."
-                  >
-                    {tiers.map((tier) => (
-                      <option key={tier} value={tier}>{tierLabels[tier]}</option>
-                    ))}
-                  </select>
-                  <p className="text-on-surface-variant text-[11px] mt-2 opacity-70">
-                    Poziom postaci: <strong>{charLevel}</strong> · Dozwolone: {tiers.join(', ')}
-                  </p>
-                </section>
-              </div>
-            );
-          })()}
-
           <StoryPromptSection
             storyPrompt={form.storyPrompt}
             onStoryPromptChange={(v) => updateForm((p) => ({ ...p, storyPrompt: v }))}
@@ -421,58 +457,12 @@ export default function CampaignCreatorPage() {
             isGeneratingFromInput={isGeneratingFromInput}
             onRandomize={handleRandomize}
             onGenerateFromInput={handleGenerateFromInput}
+            showHistory={showTopicHistory}
+            onToggleHistory={handleToggleHistory}
+            topicHistory={topicHistory}
+            onSelectHistory={handleSelectFromHistory}
+            isLoadingHistory={isLoadingHistory}
           />
-
-          <section className="border border-outline-variant/15 rounded-sm p-4 bg-surface-container-high/20">
-            <label className="flex items-start gap-3 cursor-pointer">
-              <input
-                type="checkbox"
-                className="mt-1 accent-tertiary"
-                checked={!!form.livingWorldEnabled}
-                disabled={isGuest}
-                onChange={(e) => updateForm((p) => ({ ...p, livingWorldEnabled: e.target.checked }))}
-              />
-              <div className="flex-1">
-                <div className="flex items-center gap-2 mb-1">
-                  <span className="font-label text-sm text-on-surface">Living World</span>
-                  <span className="text-[9px] uppercase tracking-widest px-1.5 py-0.5 rounded-sm bg-tertiary/20 text-tertiary border border-tertiary/30">
-                    Experimental
-                  </span>
-                </div>
-                <p className="text-on-surface-variant text-xs leading-relaxed">
-                  Ważni NPC i lokacje żyją między wizytami. Gdy opuścisz lokację, NPC zostaje zapauzowany i „żyje dalej" po powrocie (zależnie od upływu czasu). Świat persystuje między Twoimi kampaniami.
-                </p>
-              </div>
-            </label>
-
-            {form.livingWorldEnabled && !isGuest && (
-              <div className="mt-4 pt-4 border-t border-outline-variant/15">
-                <p className="text-on-surface-variant text-xs mb-4">
-                  Tempo upływu czasu w świecie gry względem realnego + maksymalna "dziura" gdy wracasz po przerwie.
-                </p>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  <Slider
-                    label="Tempo czasu"
-                    description="1h realnego = N godzin w grze (domyślnie 24 → 1h real = 1 dzień gry)"
-                    min={1}
-                    max={72}
-                    value={form.worldTimeRatio}
-                    onChange={(v) => updateForm((p) => ({ ...p, worldTimeRatio: v }))}
-                    displayValue={`${form.worldTimeRatio}×`}
-                  />
-                  <Slider
-                    label="Maks. offline gap"
-                    description="Ile dni gry maksymalnie upływa gdy wracasz po długiej przerwie"
-                    min={1}
-                    max={30}
-                    value={form.worldTimeMaxGapDays}
-                    onChange={(v) => updateForm((p) => ({ ...p, worldTimeMaxGapDays: v }))}
-                    displayValue={`${form.worldTimeMaxGapDays} dni`}
-                  />
-                </div>
-              </div>
-            )}
-          </section>
 
           {(state.error || mp.state.error) && (
             <div className="bg-error-container/20 border border-error/20 p-4 rounded-sm">
@@ -538,6 +528,19 @@ export default function CampaignCreatorPage() {
             setCreatedCharacter(char);
             setShowCharModal(false);
           }}
+        />
+      )}
+
+      {showLivingWorldModal && (
+        <LivingWorldModal
+          enabled={!!form.livingWorldEnabled}
+          onEnabledChange={(v) => updateForm((p) => ({ ...p, livingWorldEnabled: v }))}
+          worldTimeRatio={form.worldTimeRatio}
+          onWorldTimeRatioChange={(v) => updateForm((p) => ({ ...p, worldTimeRatio: v }))}
+          worldTimeMaxGapDays={form.worldTimeMaxGapDays}
+          onWorldTimeMaxGapDaysChange={(v) => updateForm((p) => ({ ...p, worldTimeMaxGapDays: v }))}
+          disabled={isGuest}
+          onClose={() => setShowLivingWorldModal(false)}
         />
       )}
     </div>

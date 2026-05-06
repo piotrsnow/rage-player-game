@@ -70,6 +70,74 @@ export function getRecentNpcsForRecruitment(scenes, world, party) {
   return result;
 }
 
+/** Disposition tier for UI labels and coloring. */
+export function getDispositionTier(disposition) {
+  const d = typeof disposition === 'number' ? disposition : 0;
+  if (d >= 30) return { label: 'Oddany', colorClass: 'text-tertiary' };
+  if (d >= 15) return { label: 'Przyjazny', colorClass: 'text-tertiary' };
+  if (d >= 5)  return { label: 'Sympatyczny', colorClass: 'text-on-surface' };
+  if (d >= -4) return { label: 'Neutralny', colorClass: 'text-on-surface-variant' };
+  if (d >= -15) return { label: 'Niechętny', colorClass: 'text-warning' };
+  return { label: 'Wrogi', colorClass: 'text-error' };
+}
+
+/**
+ * All campaign-known NPCs annotated with recruitment eligibility.
+ * Recruitable NPCs first (by disposition desc), then others (by disposition desc).
+ */
+export function getAllKnownNpcsForModal(scenes, world, party) {
+  const npcList = world?.npcs;
+  if (!Array.isArray(npcList) || npcList.length === 0) return [];
+
+  const recruitableSet = new Set(
+    getRecentNpcsForRecruitment(scenes, world, party).map((n) => n.id),
+  );
+
+  const partyList = Array.isArray(party) ? party : [];
+  const partyNpcIds = new Set(
+    partyList.map((m) => m?.recruitedFromNpcId || m?.id).filter(Boolean),
+  );
+
+  const sceneList = Array.isArray(scenes) ? scenes : [];
+  const recent = sceneList.slice(-RECENT_SCENE_WINDOW);
+  const recentNames = new Set();
+  for (const scene of recent) {
+    for (const name of getNpcNamesInScene(scene)) recentNames.add(name.toLowerCase());
+  }
+  const currentSceneIndex = sceneList.length;
+
+  const seen = new Set();
+  const result = [];
+  for (const npc of npcList) {
+    if (!npc?.name) continue;
+    const key = npc.name.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+
+    if (recruitableSet.has(npc.id)) {
+      result.push({ ...npc, canRecruit: true, blockReason: null });
+      continue;
+    }
+
+    let blockReason = 'not_recent';
+    if (npc.alive === false) blockReason = 'dead';
+    else if (npc.inParty || partyNpcIds.has(npc.id)) blockReason = 'in_party';
+    else if (
+      typeof npc.recruitCooldownUntilSceneIndex === 'number' &&
+      currentSceneIndex < npc.recruitCooldownUntilSceneIndex
+    ) blockReason = 'cooldown';
+    else if ((npc.disposition || 0) < MIN_DISPOSITION_TO_RECRUIT) blockReason = 'low_disposition';
+    else if (!recentNames.has(key)) blockReason = 'not_recent';
+
+    result.push({ ...npc, canRecruit: false, blockReason });
+  }
+
+  const byDisp = (a, b) => (b.disposition || 0) - (a.disposition || 0);
+  const recruitable = result.filter((n) => n.canRecruit).sort(byDisp);
+  const others = result.filter((n) => !n.canRecruit).sort(byDisp);
+  return [...recruitable, ...others];
+}
+
 /** chance% = clamp(30 + disposition × 1.4, 5, 100). */
 export function calculateRecruitChance(disposition) {
   const d = typeof disposition === 'number' ? disposition : 0;

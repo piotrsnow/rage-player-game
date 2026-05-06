@@ -1,0 +1,9 @@
+# Bulk assets kept out of git (pulled from LPC upstream or generated).
+# `/CharGen/` anchors the rule to the top-level `mapapp/CharGen/` binary
+# data folder so it doesn't also match `src/chargen/` on case-insensitive
+# filesystems (Windows / default macOS).
+/assets/
+/public/
+/CharGen/
+/dist/
+/node_modules/

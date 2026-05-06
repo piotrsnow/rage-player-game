@@ -137,6 +137,7 @@ export function useSceneBackendStream() {
                     maleVoices: settings.maleVoices || [],
                     femaleVoices: settings.femaleVoices || [],
                     narratorVoiceId: settings.narratorVoiceId || null,
+                    ttsProvider: settings.ttsProvider || 'elevenlabs',
                   },
                   dispatch
                 );

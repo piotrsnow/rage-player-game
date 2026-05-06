@@ -14,7 +14,6 @@ import {
   requireObjectId,
   deserializeAutotileGroup,
   loadTilesetOwned,
-  parseJsonField,
 } from './_helpers.js';
 
 const CreateSchema = AutotileGroupSchema.omit({ id: true }).extend({
@@ -94,8 +93,8 @@ export async function autotileRoutes(fastify) {
             originRow: body.originRow ?? 0,
             cols: isCustom ? (body.cols ?? null) : null,
             rows: isCustom ? (body.rows ?? null) : null,
-            cells: JSON.stringify(cells),
-            traits: JSON.stringify(body.traits ?? {}),
+            cells,
+            traits: body.traits ?? {},
           },
         });
         if (Object.keys(cells).length > 0) {
@@ -137,8 +136,8 @@ export async function autotileRoutes(fastify) {
       if (body.originRow !== undefined) data.originRow = body.originRow;
       if (body.cols !== undefined) data.cols = body.cols;
       if (body.rows !== undefined) data.rows = body.rows;
-      if (body.traits !== undefined) data.traits = JSON.stringify(body.traits);
-      if (body.cells !== undefined) data.cells = JSON.stringify(body.cells);
+      if (body.traits !== undefined) data.traits = body.traits;
+      if (body.cells !== undefined) data.cells = body.cells;
       // If layout switched away from custom, clear cols/rows for consistency.
       const effectiveLayout = body.layout ?? existing.layout;
       if (effectiveLayout !== 'custom') {
@@ -160,7 +159,7 @@ export async function autotileRoutes(fastify) {
           const effectiveCells =
             body.cells !== undefined
               ? body.cells
-              : parseJsonField(existing.cells, {});
+              : (existing.cells ?? {});
           await propagateCellsToTiles(tx, {
             groupId: id,
             tilesetId: existing.tilesetId,

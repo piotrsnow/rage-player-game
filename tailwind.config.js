@@ -56,11 +56,13 @@ export default {
         'primary-fixed': '#ba88ff',
         'on-tertiary-container': '#634f22',
         'surface-container-low': '#1b1b1e',
+        'skill-rose': '#e879a0',
       },
       fontFamily: {
         headline: ['Noto Serif', 'serif'],
         body: ['Manrope', 'sans-serif'],
         label: ['Manrope', 'sans-serif'],
+        medieval: ['Amita', 'cursive'],
       },
       borderRadius: {
         DEFAULT: '0.125rem',

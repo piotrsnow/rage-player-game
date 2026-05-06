@@ -271,7 +271,7 @@ export default function AutoPlayerPanel({
               onChange={(e) => updateAutoPlayerSettings({ customInstructions: e.target.value })}
               placeholder={t('autoPlayer.customInstructionsPlaceholder')}
               rows={2}
-              className="w-full bg-surface-container-high/40 border border-outline-variant/15 rounded-sm px-3 py-2 text-xs text-on-surface placeholder:text-outline/50 resize-none focus:outline-none focus:border-primary/30"
+              className="w-full bg-surface-container-high/40 border border-outline-variant/15 rounded-sm px-3 py-2 text-xs text-on-surface placeholder:text-on-surface-variant/60 resize-none focus:outline-none focus:border-primary/30"
             />
           </div>
         </div>

@@ -29,10 +29,10 @@ const KERNELS = {
   lanczos3: 'lanczos3',
 };
 
-function parseJson(str, fallback) {
-  if (str == null || str === '') return fallback;
-  if (typeof str === 'object') return str;
-  try { return JSON.parse(str); } catch { return fallback; }
+// Prisma Json columns return native objects; this is a no-op safety net.
+function parseJson(val, fallback) {
+  if (val == null) return fallback;
+  return typeof val === 'object' ? val : fallback;
 }
 
 function variantStoragePath(packId, tilesetId, targetSize, algo) {
@@ -170,22 +170,22 @@ export async function renderTileVariant({ tilesetId, targetSize, algo, force = f
       size: outBuffer.length,
       backend: config.mediaBackend,
       path: storagePath,
-      metadata: JSON.stringify({
+      metadata: {
         kind: 'tileset-variant',
         tilesetId: tileset.id,
         targetSize,
         algo: effectiveAlgo,
-      }),
+      },
     },
     update: {
       size: outBuffer.length,
       path: storagePath,
-      metadata: JSON.stringify({
+      metadata: {
         kind: 'tileset-variant',
         tilesetId: tileset.id,
         targetSize,
         algo: effectiveAlgo,
-      }),
+      },
       lastAccessedAt: new Date(),
     },
   });
@@ -199,7 +199,7 @@ export async function renderTileVariant({ tilesetId, targetSize, algo, force = f
   const nextVariants = { ...renderedVariants, [cacheKey]: entry };
   await prisma.tileset.update({
     where: { id: tileset.id },
-    data: { renderedVariants: JSON.stringify(nextVariants) },
+    data: { renderedVariants: nextVariants },
   });
 
   logger.info?.(
@@ -229,7 +229,7 @@ export async function deleteTileVariant({ tilesetId, targetSize }) {
   const { [cacheKey]: _, ...rest } = renderedVariants;
   await prisma.tileset.update({
     where: { id: tileset.id },
-    data: { renderedVariants: JSON.stringify(rest) },
+    data: { renderedVariants: rest },
   });
   return { deleted: true };
 }

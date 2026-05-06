@@ -44,7 +44,13 @@ export function enrichDialogueSpeakers({
   currentLocation = '',
   dispatch,
 }) {
-  const { maleVoices = [], femaleVoices = [], narratorVoiceId = null } = voicePools;
+  const { maleVoices = [], femaleVoices = [], narratorVoiceId = null, ttsProvider = null } = voicePools;
+  const knownVoiceIds = new Set([
+    ...(maleVoices || []).map((v) => v.voiceId),
+    ...(femaleVoices || []).map((v) => v.voiceId),
+    ...(narratorVoiceId ? [narratorVoiceId] : []),
+  ].filter(Boolean));
+  const isKnownVoice = (id) => knownVoiceIds.has(id);
   const source = Array.isArray(segments) ? segments : [];
   if (source.length === 0) {
     return { segments: source, stateChanges: stateChanges || {} };
@@ -111,14 +117,15 @@ export function enrichDialogueSpeakers({
     const speakerGender = trustedGender;
     const hasKnownNpc = knownNpcNames.has(speakerKey) || existingNpcChangeNames.has(speakerKey);
 
-    let voiceId = localVoiceMap[speakerName]?.voiceId || null;
+    const existingVoice = localVoiceMap[speakerName]?.voiceId;
+    let voiceId = (existingVoice && isKnownVoice(existingVoice)) ? existingVoice : null;
     if (!voiceId) {
       if (hasKnownNpc) {
         voiceId = resolveVoiceForCharacter(
           speakerName,
           speakerGender,
           localVoiceMap,
-          { maleVoices, femaleVoices, narratorVoiceId },
+          { maleVoices, femaleVoices, narratorVoiceId, ttsProvider },
           dispatch
         ) || voiceId;
       } else {
@@ -126,7 +133,7 @@ export function enrichDialogueSpeakers({
         if (voiceId) {
           dispatch?.({
             type: 'MAP_CHARACTER_VOICE',
-            payload: { characterName: speakerName, voiceId, gender: speakerGender },
+            payload: { characterName: speakerName, voiceId, gender: speakerGender, ttsProvider },
           });
         }
         if (!existingNpcChangeNames.has(speakerKey)) {
@@ -163,6 +170,7 @@ export function enrichDialogueSpeakers({
     return {
       ...segment,
       voiceId,
+      ...(speakerGender ? { gender: speakerGender } : {}),
     };
   });
 
