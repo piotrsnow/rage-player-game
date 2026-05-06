@@ -1068,6 +1068,7 @@
     "tabs": {
       "npcs": "BN-y",
       "map": "Mapa",
+      "graph": "Graf",
       "factions": "Frakcje",
       "time": "Czas",
       "effects": "Efekty",
@@ -1771,5 +1772,75 @@
     "removeAdmin": "Odbierz admina",
     "cannotDemoteSelf": "Nie możesz odebrać sobie roli admina",
     "noUsers": "Brak użytkowników"
+  },
+  "locationGraph": {
+    "title": "Graf Lokacji",
+    "hierarchy": "Hierarchia",
+    "emptyTree": "Brak lokacji",
+    "selectToInspect": "Wybierz węzeł lub krawędź",
+    "openFullEditor": "Otwórz interaktywny edytor grafu dla szczegółowej edycji przestrzennej.",
+    "openEditor": "Otwórz Edytor Grafu",
+    "confirmDeleteNode": "Dezaktywować tę lokację i wszystkie jej połączenia?",
+    "confirmDeleteEdge": "Dezaktywować to połączenie?",
+    "renamePrompt": "Nowa nazwa:",
+    "validationOk": "Graf jest spójny — brak problemów.",
+    "inspector": {
+      "title": "Inspektor",
+      "name": "Nazwa",
+      "type": "Typ",
+      "tags": "Tagi",
+      "atmosphere": "Atmosfera",
+      "dangerLevel": "Poziom zagrożenia",
+      "scale": "Skala",
+      "deleteNode": "Dezaktywuj lokację",
+      "deleteEdge": "Dezaktywuj połączenie",
+      "edgeType": "Typ połączenia",
+      "bidirectional": "Dwukierunkowe",
+      "discoveryState": "Stan odkrycia"
+    },
+    "toolbar": {
+      "scale": "Skala",
+      "search": "Szukaj…",
+      "addNode": "+Węzeł",
+      "addEdge": "+Krawędź",
+      "player": "Gracz",
+      "validate": "Waliduj"
+    },
+    "addNode": {
+      "title": "Nowa Lokacja",
+      "namePlaceholder": "Nazwa lokacji…",
+      "noParent": "— brak rodzica —",
+      "create": "Utwórz"
+    },
+    "addEdge": {
+      "title": "Nowe Połączenie",
+      "selectTarget": "— wybierz cel —",
+      "create": "Utwórz"
+    },
+    "categories": {
+      "structural": "Strukturalne",
+      "spatial": "Przestrzenne",
+      "movement": "Ruch",
+      "access": "Dostęp",
+      "perception": "Percepcja",
+      "social": "Społeczne",
+      "narrative": "Narracyjne",
+      "temporal": "Czasowe"
+    },
+    "danger": {
+      "safe": "Bezpieczny",
+      "low": "Niski",
+      "moderate": "Umiarkowany",
+      "dangerous": "Niebezpieczny",
+      "deadly": "Śmiertelny"
+    },
+    "discovery": {
+      "unknown": "Nieznany",
+      "rumored": "Plotka",
+      "known": "Znany",
+      "visited": "Odwiedzony",
+      "mapped": "Zmapowany",
+      "hidden": "Ukryty"
+    }
   }
 }

@@ -1075,6 +1075,7 @@
     "tabs": {
       "npcs": "NPCs",
       "map": "Map",
+      "graph": "Graph",
       "factions": "Factions",
       "time": "Time",
       "effects": "Effects",
@@ -2116,5 +2117,75 @@
     "removeAdmin": "Remove Admin",
     "cannotDemoteSelf": "Cannot remove your own admin role",
     "noUsers": "No users found"
+  },
+  "locationGraph": {
+    "title": "Location Graph",
+    "hierarchy": "Hierarchy",
+    "emptyTree": "No locations yet",
+    "selectToInspect": "Select a node or edge",
+    "openFullEditor": "Open the interactive graph editor for detailed spatial editing.",
+    "openEditor": "Open Graph Editor",
+    "confirmDeleteNode": "Deactivate this location and all its connections?",
+    "confirmDeleteEdge": "Deactivate this connection?",
+    "renamePrompt": "New name:",
+    "validationOk": "Graph is consistent — no issues found.",
+    "inspector": {
+      "title": "Inspector",
+      "name": "Name",
+      "type": "Type",
+      "tags": "Tags",
+      "atmosphere": "Atmosphere",
+      "dangerLevel": "Danger level",
+      "scale": "Scale",
+      "deleteNode": "Deactivate location",
+      "deleteEdge": "Deactivate connection",
+      "edgeType": "Connection type",
+      "bidirectional": "Bidirectional",
+      "discoveryState": "Discovery state"
+    },
+    "toolbar": {
+      "scale": "Scale",
+      "search": "Search…",
+      "addNode": "+Node",
+      "addEdge": "+Edge",
+      "player": "Player",
+      "validate": "Validate"
+    },
+    "addNode": {
+      "title": "New Location",
+      "namePlaceholder": "Location name…",
+      "noParent": "— no parent —",
+      "create": "Create"
+    },
+    "addEdge": {
+      "title": "New Connection",
+      "selectTarget": "— select target —",
+      "create": "Create"
+    },
+    "categories": {
+      "structural": "Structural",
+      "spatial": "Spatial",
+      "movement": "Movement",
+      "access": "Access",
+      "perception": "Perception",
+      "social": "Social",
+      "narrative": "Narrative",
+      "temporal": "Temporal"
+    },
+    "danger": {
+      "safe": "Safe",
+      "low": "Low",
+      "moderate": "Moderate",
+      "dangerous": "Dangerous",
+      "deadly": "Deadly"
+    },
+    "discovery": {
+      "unknown": "Unknown",
+      "rumored": "Rumored",
+      "known": "Known",
+      "visited": "Visited",
+      "mapped": "Mapped",
+      "hidden": "Hidden"
+    }
   }
 }

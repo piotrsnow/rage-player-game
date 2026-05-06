@@ -21,7 +21,13 @@ import { generate as generateNpcDialog } from '../services/livingWorld/npcDialog
 import { listLocationsForCampaign } from '../services/livingWorld/locationQueries.js';
 import { loadCampaignFog } from '../services/livingWorld/userDiscoveryService.js';
 import { loadUserApiKeys } from '../services/apiKeyService.js';
-import { loadCampaignGraph } from '../services/locationGraph/graphService.js';
+import {
+  loadCampaignGraph,
+  createEdge,
+  updateEdge,
+  deactivateEdge,
+} from '../services/locationGraph/graphService.js';
+import { EDGE_TYPES } from '../../../shared/domain/locationGraph.js';
 
 const log = childLogger({ module: 'livingWorldRoutes' });
 
@@ -325,6 +331,373 @@ export async function livingWorldRoutes(fastify) {
     }));
 
     return reply.send({ nodes: nodeList, edges: edgeList });
+  });
+
+  // ── Location Graph CRUD (Phase 2) ──────────────────────────────────
+
+  const campaignIdParam = {
+    type: 'object',
+    required: ['id'],
+    properties: { id: { type: 'string', format: 'uuid' } },
+  };
+
+  // POST /campaigns/:id/location-graph/nodes
+  fastify.post('/campaigns/:id/location-graph/nodes', {
+    schema: {
+      params: campaignIdParam,
+      body: {
+        type: 'object',
+        required: ['name'],
+        additionalProperties: false,
+        properties: {
+          name: { type: 'string', minLength: 1, maxLength: 120 },
+          type: { type: 'string', maxLength: 40 },
+          description: { type: 'string', maxLength: 500 },
+          tags: { type: 'array', items: { type: 'string', maxLength: 40 }, maxItems: 10 },
+          scale: { type: 'integer', minimum: 0, maximum: 7 },
+          atmosphere: { type: 'string', maxLength: 200 },
+          dangerLevel: { type: 'string', maxLength: 20 },
+          parentKind: { type: 'string', enum: ['world', 'campaign'] },
+          parentId: { type: 'string', format: 'uuid' },
+        },
+      },
+    },
+  }, async (request, reply) => {
+    const campaign = await assertCampaignOwnership(request, reply, request.params.id);
+    if (!campaign) return;
+    const b = request.body;
+    const node = await prisma.campaignLocation.create({
+      data: {
+        campaignId: request.params.id,
+        name: b.name,
+        canonicalSlug: b.name.toLowerCase().trim().replace(/\s+/g, '_'),
+        description: b.description || '',
+        locationType: b.type || 'generic',
+        tags: b.tags || [],
+        scale: b.scale ?? 5,
+        atmosphere: b.atmosphere || null,
+        dangerLevel: b.dangerLevel || 'safe',
+        parentLocationKind: b.parentKind || null,
+        parentLocationId: b.parentId || null,
+      },
+    });
+    return reply.code(201).send({ node: { id: node.id, kind: 'campaign', name: node.name } });
+  });
+
+  // PUT /campaigns/:id/location-graph/nodes/:nodeId
+  fastify.put('/campaigns/:id/location-graph/nodes/:nodeId', {
+    schema: {
+      params: {
+        type: 'object',
+        required: ['id', 'nodeId'],
+        properties: {
+          id: { type: 'string', format: 'uuid' },
+          nodeId: { type: 'string', format: 'uuid' },
+        },
+      },
+      body: {
+        type: 'object',
+        additionalProperties: false,
+        properties: {
+          name: { type: 'string', minLength: 1, maxLength: 120 },
+          description: { type: 'string', maxLength: 500 },
+          tags: { type: 'array', items: { type: 'string', maxLength: 40 }, maxItems: 10 },
+          atmosphere: { type: 'string', maxLength: 200 },
+          dangerLevel: { type: 'string', maxLength: 20 },
+          scale: { type: 'integer', minimum: 0, maximum: 7 },
+        },
+      },
+    },
+  }, async (request, reply) => {
+    const campaign = await assertCampaignOwnership(request, reply, request.params.id);
+    if (!campaign) return;
+    const { nodeId } = request.params;
+    const b = request.body;
+
+    // Try CampaignLocation first, then WorldLocation
+    let updated = null;
+    const campaignLoc = await prisma.campaignLocation.findFirst({
+      where: { id: nodeId, campaignId: request.params.id },
+    });
+    if (campaignLoc) {
+      const data = {};
+      if (b.name !== undefined) { data.name = b.name; data.canonicalSlug = b.name.toLowerCase().trim().replace(/\s+/g, '_'); }
+      if (b.description !== undefined) data.description = b.description;
+      if (b.tags !== undefined) data.tags = b.tags;
+      if (b.atmosphere !== undefined) data.atmosphere = b.atmosphere;
+      if (b.dangerLevel !== undefined) data.dangerLevel = b.dangerLevel;
+      if (b.scale !== undefined) data.scale = b.scale;
+      if (Object.keys(data).length > 0) {
+        updated = await prisma.campaignLocation.update({ where: { id: nodeId }, data });
+      }
+    }
+    if (!updated) return reply.code(404).send({ error: 'Node not found or not editable' });
+    return reply.send({ ok: true });
+  });
+
+  // DELETE /campaigns/:id/location-graph/nodes/:nodeId (soft-delete via deactivating edges)
+  fastify.delete('/campaigns/:id/location-graph/nodes/:nodeId', {
+    schema: {
+      params: {
+        type: 'object',
+        required: ['id', 'nodeId'],
+        properties: {
+          id: { type: 'string', format: 'uuid' },
+          nodeId: { type: 'string', format: 'uuid' },
+        },
+      },
+    },
+  }, async (request, reply) => {
+    const campaign = await assertCampaignOwnership(request, reply, request.params.id);
+    if (!campaign) return;
+    const { nodeId } = request.params;
+
+    // Deactivate all edges connected to this node
+    await prisma.locationEdge.updateMany({
+      where: {
+        isActive: true,
+        OR: [
+          { fromId: nodeId },
+          { toId: nodeId },
+        ],
+      },
+      data: { isActive: false },
+    });
+
+    // Mark the CampaignLocation as inactive if it exists
+    const cl = await prisma.campaignLocation.findFirst({
+      where: { id: nodeId, campaignId: request.params.id },
+    });
+    if (cl) {
+      await prisma.campaignLocation.update({
+        where: { id: nodeId },
+        data: { description: `[DEACTIVATED] ${cl.description || ''}` },
+      });
+    }
+    return reply.send({ ok: true });
+  });
+
+  // POST /campaigns/:id/location-graph/edges
+  fastify.post('/campaigns/:id/location-graph/edges', {
+    schema: {
+      params: campaignIdParam,
+      body: {
+        type: 'object',
+        required: ['fromKind', 'fromId', 'toKind', 'toId', 'edgeType'],
+        additionalProperties: false,
+        properties: {
+          fromKind: { type: 'string', enum: ['world', 'campaign'] },
+          fromId: { type: 'string', format: 'uuid' },
+          toKind: { type: 'string', enum: ['world', 'campaign'] },
+          toId: { type: 'string', format: 'uuid' },
+          edgeType: { type: 'string', maxLength: 40 },
+          category: { type: 'string', maxLength: 20 },
+          bidirectional: { type: 'boolean' },
+          weight: { type: 'number', minimum: 0 },
+          metadata: { type: 'object' },
+          discoveryState: { type: 'string', maxLength: 20 },
+        },
+      },
+    },
+  }, async (request, reply) => {
+    const campaign = await assertCampaignOwnership(request, reply, request.params.id);
+    if (!campaign) return;
+    const b = request.body;
+    const typeInfo = EDGE_TYPES[b.edgeType];
+    if (!typeInfo) return reply.code(400).send({ error: `Unknown edge type: ${b.edgeType}` });
+
+    const edge = await createEdge({
+      fromKind: b.fromKind,
+      fromId: b.fromId,
+      toKind: b.toKind,
+      toId: b.toId,
+      edgeType: b.edgeType,
+      category: b.category || typeInfo.category,
+      bidirectional: b.bidirectional ?? typeInfo.bidirectional ?? true,
+      weight: b.weight ?? 1.0,
+      metadata: b.metadata || {},
+      discoveryState: b.discoveryState || 'known',
+      campaignId: request.params.id,
+      createdBy: 'admin',
+    });
+    return reply.code(201).send({ edge: { id: edge.id } });
+  });
+
+  // PUT /campaigns/:id/location-graph/edges/:edgeId
+  fastify.put('/campaigns/:id/location-graph/edges/:edgeId', {
+    schema: {
+      params: {
+        type: 'object',
+        required: ['id', 'edgeId'],
+        properties: {
+          id: { type: 'string', format: 'uuid' },
+          edgeId: { type: 'string', format: 'uuid' },
+        },
+      },
+      body: {
+        type: 'object',
+        additionalProperties: false,
+        properties: {
+          edgeType: { type: 'string', maxLength: 40 },
+          category: { type: 'string', maxLength: 20 },
+          bidirectional: { type: 'boolean' },
+          weight: { type: 'number', minimum: 0 },
+          metadata: { type: 'object' },
+          discoveryState: { type: 'string', maxLength: 20 },
+        },
+      },
+    },
+  }, async (request, reply) => {
+    const campaign = await assertCampaignOwnership(request, reply, request.params.id);
+    if (!campaign) return;
+    const { edgeId } = request.params;
+    const b = request.body;
+    const data = {};
+    if (b.edgeType !== undefined) {
+      if (!EDGE_TYPES[b.edgeType]) return reply.code(400).send({ error: `Unknown edge type: ${b.edgeType}` });
+      data.edgeType = b.edgeType;
+      data.category = b.category || EDGE_TYPES[b.edgeType].category;
+    }
+    if (b.bidirectional !== undefined) data.bidirectional = b.bidirectional;
+    if (b.weight !== undefined) data.weight = b.weight;
+    if (b.metadata !== undefined) data.metadata = b.metadata;
+    if (b.discoveryState !== undefined) data.discoveryState = b.discoveryState;
+    if (Object.keys(data).length === 0) return reply.send({ ok: true });
+    await updateEdge(edgeId, data);
+    return reply.send({ ok: true });
+  });
+
+  // DELETE /campaigns/:id/location-graph/edges/:edgeId
+  fastify.delete('/campaigns/:id/location-graph/edges/:edgeId', {
+    schema: {
+      params: {
+        type: 'object',
+        required: ['id', 'edgeId'],
+        properties: {
+          id: { type: 'string', format: 'uuid' },
+          edgeId: { type: 'string', format: 'uuid' },
+        },
+      },
+    },
+  }, async (request, reply) => {
+    const campaign = await assertCampaignOwnership(request, reply, request.params.id);
+    if (!campaign) return;
+    await deactivateEdge(request.params.edgeId);
+    return reply.send({ ok: true });
+  });
+
+  // POST /campaigns/:id/location-graph/move-npc
+  fastify.post('/campaigns/:id/location-graph/move-npc', {
+    schema: {
+      params: campaignIdParam,
+      body: {
+        type: 'object',
+        required: ['npcId', 'toKind', 'toId'],
+        additionalProperties: false,
+        properties: {
+          npcId: { type: 'string', format: 'uuid' },
+          toKind: { type: 'string', enum: ['world', 'campaign'] },
+          toId: { type: 'string', format: 'uuid' },
+        },
+      },
+    },
+  }, async (request, reply) => {
+    const campaign = await assertCampaignOwnership(request, reply, request.params.id);
+    if (!campaign) return;
+    const { npcId, toKind, toId } = request.body;
+    await prisma.campaignNPC.update({
+      where: { id: npcId },
+      data: { lastLocationKind: toKind, lastLocationId: toId },
+    });
+    return reply.send({ ok: true });
+  });
+
+  // GET /campaigns/:id/location-graph/search?q=
+  fastify.get('/campaigns/:id/location-graph/search', {
+    schema: {
+      params: campaignIdParam,
+      querystring: {
+        type: 'object',
+        required: ['q'],
+        properties: {
+          q: { type: 'string', minLength: 1, maxLength: 100 },
+        },
+      },
+    },
+  }, async (request, reply) => {
+    const campaign = await assertCampaignOwnership(request, reply, request.params.id);
+    if (!campaign) return;
+    const q = request.query.q.toLowerCase();
+
+    const [worldLocs, campaignLocs] = await Promise.all([
+      prisma.worldLocation.findMany({
+        where: {
+          OR: [
+            { canonicalName: { contains: q, mode: 'insensitive' } },
+            { displayName: { contains: q, mode: 'insensitive' } },
+          ],
+        },
+        select: { id: true, canonicalName: true, displayName: true, locationType: true, scale: true },
+        take: 20,
+      }),
+      prisma.campaignLocation.findMany({
+        where: {
+          campaignId: request.params.id,
+          name: { contains: q, mode: 'insensitive' },
+        },
+        select: { id: true, name: true, locationType: true, scale: true },
+        take: 20,
+      }),
+    ]);
+
+    const results = [
+      ...worldLocs.map((l) => ({ id: l.id, kind: 'world', name: l.displayName || l.canonicalName, type: l.locationType })),
+      ...campaignLocs.map((l) => ({ id: l.id, kind: 'campaign', name: l.name, type: l.locationType })),
+    ];
+    return reply.send({ results: results.slice(0, 30) });
+  });
+
+  // POST /campaigns/:id/location-graph/validate
+  fastify.post('/campaigns/:id/location-graph/validate', {
+    schema: { params: campaignIdParam },
+  }, async (request, reply) => {
+    const campaign = await assertCampaignOwnership(request, reply, request.params.id);
+    if (!campaign) return;
+    const campaignId = request.params.id;
+    const warnings = [];
+
+    // Check for NPCs without valid location refs
+    const npcsNoLoc = await prisma.campaignNPC.findMany({
+      where: { campaignId, OR: [{ lastLocationId: null }, { lastLocationKind: null }] },
+      select: { id: true, name: true },
+    });
+    for (const n of npcsNoLoc) {
+      warnings.push({ type: 'npc_no_location', message: `NPC "${n.name}" has no location`, entityId: n.id });
+    }
+
+    // Check for orphan edges (edges referencing missing nodes)
+    const edges = await prisma.locationEdge.findMany({
+      where: { isActive: true, OR: [{ campaignId: null }, { campaignId }] },
+      select: { id: true, fromKind: true, fromId: true, toKind: true, toId: true, edgeType: true },
+    });
+    const nodeIds = new Set();
+    const worldIds = new Set();
+    const campIds = new Set();
+    for (const e of edges) {
+      if (e.fromKind === 'world') worldIds.add(e.fromId); else campIds.add(e.fromId);
+      if (e.toKind === 'world') worldIds.add(e.toId); else campIds.add(e.toId);
+    }
+    const [existingWorld, existingCamp] = await Promise.all([
+      worldIds.size > 0 ? prisma.worldLocation.findMany({ where: { id: { in: [...worldIds] } }, select: { id: true } }) : [],
+      campIds.size > 0 ? prisma.campaignLocation.findMany({ where: { id: { in: [...campIds] } }, select: { id: true } }) : [],
+    ]);
+    const validIds = new Set([...existingWorld.map((r) => r.id), ...existingCamp.map((r) => r.id)]);
+    for (const e of edges) {
+      if (!validIds.has(e.fromId)) warnings.push({ type: 'orphan_edge', message: `Edge ${e.edgeType} references missing from-node`, entityId: e.id });
+      if (!validIds.has(e.toId)) warnings.push({ type: 'orphan_edge', message: `Edge ${e.edgeType} references missing to-node`, entityId: e.id });
+    }
+
+    return reply.send({ valid: warnings.length === 0, warnings: warnings.slice(0, 50) });
   });
 
   // POST /npc-dialog/:worldNpcId — C2 1-on-1 dialog
