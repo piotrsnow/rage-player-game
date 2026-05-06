@@ -22,6 +22,7 @@ import { useSettings } from '../../contexts/SettingsContext';
 import { useMultiplayer } from '../../contexts/MultiplayerContext';
 import { useAI } from '../../hooks/useAI';
 import { useDictation } from '../../hooks/useDictation';
+import { useDictationContext } from '../../contexts/DictationContext';
 import { useNarrator } from '../../hooks/useNarrator';
 import { useGlobalMusic } from '../../contexts/MusicContext';
 import { apiClient } from '../../services/apiClient';
@@ -124,7 +125,8 @@ export default function GameplayPage({ readOnly = false, shareToken = null, onRe
     narratorState: narrator.playbackState,
     narratorPause: narrator.pause,
   });
-  const { openSettings } = useModals();
+  const { openSettings, openGmModal } = useModals();
+  const dictCtx = useDictationContext();
   const mp = useMultiplayer();
   const {
     generateScene, generateImageForScene, generateRecap,
@@ -165,12 +167,16 @@ export default function GameplayPage({ readOnly = false, shareToken = null, onRe
     });
   }, [dictation.setGameContext, combat, currentScene]);
 
+  useEffect(() => {
+    dictCtx?.register(dictation);
+    return () => dictCtx?.unregister();
+  }, [dictation, dictCtx]);
+
   const { sessionStartTime, sessionSeconds, totalPlayTime } = usePlayTimeTracker();
 
   // Modal open/close flags — kept in the page because they don't fit any of
   // the extracted hooks' concerns and are wired straight into GameplayModals.
   const [worldModalOpen, setWorldModalOpen] = useState(false);
-  const [gmModalOpen, setGmModalOpen] = useState(false);
   const [mpPanelOpen, setMpPanelOpen] = useState(false);
   const [achievementsOpen, setAchievementsOpen] = useState(false);
   const [videoPanelOpen, setVideoPanelOpen] = useState(false);
@@ -558,8 +564,6 @@ export default function GameplayPage({ readOnly = false, shareToken = null, onRe
           currentScene={currentScene}
           character={character}
           allCharacters={allCharacters}
-          displayCharacter={displayCharacter}
-          isViewingCompanion={isViewingCompanion}
           attrPoints={attrPoints}
           setViewingSceneIndex={setViewingSceneIndex}
           handleSceneNavigation={handleSceneNavigation}
@@ -569,23 +573,17 @@ export default function GameplayPage({ readOnly = false, shareToken = null, onRe
           settings={settings}
           autoPlayScenes={autoPlayScenes}
           setAutoPlayScenes={setAutoPlayScenes}
-          handleRefresh={actions.handleRefresh}
-          isRefreshing={actions.isRefreshing}
           handleShare={actions.handleShare}
           shareCopied={actions.shareCopied}
           shareLoading={actions.shareLoading}
           aiCosts={aiCosts}
-          autoPlayer={autoPlayer}
-          onOpenAutoPlayerSettings={() => setAutoPlayerSettingsOpen(true)}
           onOpenAdvancement={() => actions.handleAdvancementOpen(character)}
           onOpenMpPanel={() => setMpPanelOpen(true)}
           onOpenSummaryModal={recap.openSummaryModal}
           onOpenAchievements={() => setAchievementsOpen(true)}
           onOpenWorldModal={() => setWorldModalOpen(true)}
-          onOpenGmModal={() => setGmModalOpen(true)}
           videoPanelOpen={videoPanelOpen}
           setVideoPanelOpen={setVideoPanelOpen}
-          dictation={dictation}
         />
 
         {!readOnly && (
@@ -938,8 +936,6 @@ export default function GameplayPage({ readOnly = false, shareToken = null, onRe
         }}
         worldModalOpen={worldModalOpen}
         onWorldModalClose={() => setWorldModalOpen(false)}
-        gmModalOpen={gmModalOpen}
-        onGmModalClose={() => setGmModalOpen(false)}
         mpPanelOpen={mpPanelOpen}
         onMpPanelClose={() => setMpPanelOpen(false)}
         advancementOpen={actions.advancementOpen}

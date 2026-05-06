@@ -10,7 +10,6 @@ const GameplayPage = lazy(() => import('./components/gameplay/GameplayPage'));
 const JoinRoomPage = lazy(() => import('./components/multiplayer/JoinRoomPage'));
 const GalleryPage = lazy(() => import('./components/gallery/GalleryPage'));
 const CampaignViewerPage = lazy(() => import('./components/viewer/CampaignViewerPage'));
-const AdminLivingWorldPage = lazy(() => import('./components/admin/AdminLivingWorldPage'));
 
 function RouteFallback() {
   return (
@@ -71,14 +70,6 @@ export default function App() {
             element={
               <Suspense fallback={<RouteFallback />}>
                 <GalleryPage />
-              </Suspense>
-            }
-          />
-          <Route
-            path="/admin/living-world"
-            element={
-              <Suspense fallback={<RouteFallback />}>
-                <AdminLivingWorldPage />
               </Suspense>
             }
           />

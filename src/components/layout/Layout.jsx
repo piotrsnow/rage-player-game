@@ -5,6 +5,7 @@ import Sidebar from './Sidebar';
 import MobileNav from './MobileNav';
 import { MusicProvider } from '../../contexts/MusicContext';
 import { ModalProvider, useModals } from '../../contexts/ModalContext';
+import { DictationProvider } from '../../contexts/DictationContext';
 import {
   useGameWorld,
   useGameQuests,
@@ -29,6 +30,7 @@ import WorldStateModal from '../gameplay/WorldStateModal';
 import TasksInfoModal from '../gameplay/TasksInfoModal';
 
 const LocationGraphModal = lazy(() => import('../gameplay/locationGraph/LocationGraphModal'));
+const GMModal = lazy(() => import('../gameplay/gm/GMModal'));
 
 function ModalLayer() {
   const {
@@ -52,6 +54,8 @@ function ModalLayer() {
     closeAdminUsers,
     locationGraphOpen,
     closeLocationGraph,
+    gmModalOpen,
+    closeGmModal,
     privacyOpen,
     closePrivacy,
   } = useModals();
@@ -103,6 +107,11 @@ function ModalLayer() {
           <LocationGraphModal campaignId={campaign.backendId} onClose={closeLocationGraph} />
         </Suspense>
       )}
+      {gmModalOpen && (
+        <Suspense fallback={null}>
+          <GMModal onClose={closeGmModal} />
+        </Suspense>
+      )}
     </>
   );
 }
@@ -113,6 +122,7 @@ export default function Layout() {
 
   return (
     <MusicProvider>
+      <DictationProvider>
       <ModalProvider>
         <div className="min-h-screen bg-surface-dim">
           <Header />
@@ -130,6 +140,7 @@ export default function Layout() {
           </div>
         </div>
       </ModalProvider>
+      </DictationProvider>
     </MusicProvider>
   );
 }

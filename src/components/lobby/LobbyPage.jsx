@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { storage } from '../../services/storage';
@@ -14,6 +14,7 @@ import GlassCard from '../ui/GlassCard';
 import CampaignCard from './CampaignCard';
 import AuthPanel from './AuthPanel';
 import IntroOverlay from './IntroOverlay';
+import VideoBackground from '../ui/VideoBackground';
 
 function FloatingRune({ delay, className }) {
   return (
@@ -339,6 +340,16 @@ export default function LobbyPage() {
   };
 
   const [showAllCampaigns, setShowAllCampaigns] = useState(false);
+  const [logoVisible, setLogoVisible] = useState(
+    () => !!sessionStorage.getItem('rpgon_intro_seen')
+  );
+  const handleVideoEnded = useCallback(() => setLogoVisible(true), []);
+
+  useEffect(() => {
+    const hide = () => setLogoVisible(false);
+    window.addEventListener('rpgon:replay-intro', hide);
+    return () => window.removeEventListener('rpgon:replay-intro', hide);
+  }, []);
 
   const hasServerAi = hasApiKey('openai') || hasApiKey('anthropic');
   const isLoggedIn = !!backendUser;
@@ -350,7 +361,8 @@ export default function LobbyPage() {
 
   return (
     <>
-    <IntroOverlay />
+    <IntroOverlay onVideoEnded={handleVideoEnded} />
+    {logoVisible && <VideoBackground src="/video/bg_video_1.mp4" />}
     <div className="flex flex-col items-center min-h-[calc(100vh-4rem)] px-6 py-6 relative z-10 overflow-hidden">
       {campaignNotFound && (
         <div className="fixed top-20 left-1/2 -translate-x-1/2 z-50 flex items-center gap-3 px-5 py-3 rounded-lg bg-error/15 border border-error/30 text-error text-sm font-label shadow-lg backdrop-blur-sm animate-slide-up">
@@ -411,18 +423,35 @@ export default function LobbyPage() {
       {/* Main content — fits viewport */}
       <div className="w-full max-w-5xl flex flex-col items-center relative z-10 animate-slide-up my-auto gap-6">
 
-        {/* Hero logo — big, centered */}
-        <img src={t('common.logoPath', '/nikczemnu_logo.png')} alt={t('lobby.title')} className="h-48 md:h-64 lg:h-72 w-auto drop-shadow-2xl" />
+        {/* Hero logo — big, centered; larger for logged-in users */}
+        <img
+          src={t('common.logoPath', '/nikczemnu_logo.png')}
+          alt={t('lobby.title')}
+          className={isLoggedIn
+            ? 'h-[22.5rem] md:h-[30rem] lg:h-[35rem] -translate-y-[60px] w-auto drop-shadow-2xl'
+            : 'h-60 md:h-80 lg:h-[22rem] w-auto drop-shadow-2xl'}
+          style={{ opacity: logoVisible ? 1 : 0, transition: 'opacity 2s ease-in' }}
+        />
 
-        <div className="flex items-center gap-3">
-          <div className="h-px w-12 bg-gradient-to-r from-transparent to-primary/40" />
-          <span className="material-symbols-outlined text-primary/40 text-sm">diamond</span>
-          <div className="h-px w-12 bg-gradient-to-l from-transparent to-primary/40" />
-        </div>
+        {!isLoggedIn && (
+          <>
+            <div
+              className="flex items-center gap-3"
+              style={{ opacity: logoVisible ? 1 : 0, transition: 'opacity 2s ease-in' }}
+            >
+              <div className="h-px w-12 bg-gradient-to-r from-transparent to-primary/40" />
+              <span className="material-symbols-outlined text-primary/40 text-sm">diamond</span>
+              <div className="h-px w-12 bg-gradient-to-l from-transparent to-primary/40" />
+            </div>
 
-        <p className="text-on-surface-variant font-body text-base max-w-md leading-relaxed text-center">
-          {t('lobby.subtitle')}
-        </p>
+            <p
+              className="text-on-surface-variant font-body text-base max-w-md leading-relaxed text-center"
+              style={{ opacity: logoVisible ? 1 : 0, transition: 'opacity 2s ease-in' }}
+            >
+              {t('lobby.subtitle')}
+            </p>
+          </>
+        )}
 
         {/* Not logged in — centered auth panel */}
         {!isLoggedIn && (
@@ -433,7 +462,7 @@ export default function LobbyPage() {
 
         {/* Logged in — single column: badge, then buttons */}
         {isLoggedIn && (
-          <div className="w-full max-w-2xl flex flex-col items-center gap-5">
+          <div className="w-full max-w-2xl flex flex-col items-center gap-5 relative z-20 -translate-y-[120px]">
             <AuthPanel />
 
             {!hasServerAi && (

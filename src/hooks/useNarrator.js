@@ -288,8 +288,12 @@ export function useNarrator({ viewerMode = false, shareToken = null, backendUrl 
         fullText,
       });
       const tickNoWords = () => {
-        if (!audio || audio.paused || audio.ended) {
+        if (!audio || audio.ended) {
           setHighlightInfo(null);
+          return;
+        }
+        if (audio.paused) {
+          highlightRafRef.current = requestAnimationFrame(tickNoWords);
           return;
         }
         const now = performance.now();
@@ -307,8 +311,12 @@ export function useNarrator({ viewerMode = false, shareToken = null, backendUrl 
     }
 
     const tick = () => {
-      if (!audio || audio.paused || audio.ended) {
+      if (!audio || audio.ended) {
         setHighlightInfo(null);
+        return;
+      }
+      if (audio.paused) {
+        highlightRafRef.current = requestAnimationFrame(tick);
         return;
       }
       const lastWordEnd = words.length > 0 ? Number(words[words.length - 1]?.end || 0) : 0;

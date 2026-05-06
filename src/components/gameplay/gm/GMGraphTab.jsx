@@ -138,7 +138,7 @@ export default function GMGraphTab({ gameState }) {
     return (
       <div className="flex flex-col items-center justify-center h-full gap-3 text-outline">
         <span className="material-symbols-outlined text-4xl">hub</span>
-        <p className="text-[11px] font-label uppercase tracking-widest">{t('gmModal.emptyGraph')}</p>
+        <p className="text-sm font-label uppercase tracking-widest">{t('gmModal.emptyGraph')}</p>
       </div>
     );
   }
@@ -148,7 +148,7 @@ export default function GMGraphTab({ gameState }) {
       <div className="flex-1 flex flex-col min-w-0">
         {/* Filter bar */}
         <div className="flex items-center gap-2 px-4 py-2 border-b border-outline-variant/10 shrink-0">
-          <span className="text-[10px] text-outline uppercase tracking-widest font-label mr-1">
+          <span className="text-xs text-outline uppercase tracking-widest font-label mr-1">
             {t('gmModal.filter')}:
           </span>
           {ENTITY_TYPES.map((type) => {
@@ -159,7 +159,7 @@ export default function GMGraphTab({ gameState }) {
               <button
                 key={type}
                 onClick={() => toggleFilter(type)}
-                className={`flex items-center gap-1 px-2 py-1 rounded-sm text-[10px] font-label uppercase tracking-wider border transition-all ${
+                className={`flex items-center gap-1 px-2 py-1 rounded-sm text-xs font-label uppercase tracking-wider border transition-all ${
                   filters[type]
                     ? 'border-outline-variant/20 bg-surface-container/60 text-on-surface'
                     : 'border-transparent bg-transparent text-outline/40 line-through'
@@ -362,7 +362,7 @@ export default function GMGraphTab({ gameState }) {
           </div>
 
           {/* Legend */}
-          <div className="absolute top-3 left-3 flex flex-wrap gap-2 text-[9px] text-on-surface-variant">
+          <div className="absolute top-3 left-3 flex flex-wrap gap-2 text-[10px] text-on-surface-variant">
             <span className="opacity-60">{t('gmModal.graphHint')}</span>
           </div>
         </div>

@@ -17,20 +17,20 @@ export default function GraphToolbar({
   const { t } = useTranslation();
 
   return (
-    <div className="flex flex-wrap items-center gap-2 px-3 py-2 border-t border-outline-variant/10 text-[10px]">
+    <div className="flex flex-wrap items-center gap-2.5 px-3 py-2.5 border-t border-outline-variant/10 text-xs">
       {/* Scale slider */}
-      <div className="flex items-center gap-1.5">
+      <div className="flex items-center gap-2" title={t('locationGraph.tooltips.scale')}>
         <span className="text-outline uppercase tracking-widest">{t('locationGraph.toolbar.scale')}</span>
         <input
           type="range" min={0} max={7} step={1}
           value={scaleFilter}
           onChange={(e) => onScaleChange(Number(e.target.value))}
-          className="w-16 h-1"
+          className="w-24 h-1.5"
         />
-        <span className="text-on-surface-variant w-3 text-center">{scaleFilter}</span>
+        <span className="text-on-surface-variant w-4 text-center">{scaleFilter}</span>
       </div>
 
-      <div className="w-px h-4 bg-outline-variant/20" />
+      <div className="w-px h-5 bg-outline-variant/20" />
 
       {/* Category filters */}
       <div className="flex items-center gap-1 flex-wrap">
@@ -40,7 +40,8 @@ export default function GraphToolbar({
             <button
               key={cat}
               onClick={() => onToggleFilter(cat)}
-              className={`px-1.5 py-0.5 rounded-sm transition-colors uppercase tracking-widest ${
+              title={t(`locationGraph.tooltips.${cat}`)}
+              className={`px-2 py-1 rounded-sm transition-colors uppercase tracking-widest ${
                 filters[cat] ? 'text-on-surface' : 'text-outline/40 line-through'
               }`}
               style={filters[cat] ? { backgroundColor: vis?.color + '22', color: vis?.color } : undefined}
@@ -54,47 +55,53 @@ export default function GraphToolbar({
       <div className="flex-1" />
 
       {/* Search */}
-      <div className="flex items-center gap-1 bg-white/5 rounded-sm px-2 py-0.5 border border-outline-variant/10">
-        <span className="material-symbols-outlined text-xs text-outline">search</span>
+      <div
+        className="flex items-center gap-1.5 bg-white/5 rounded-sm px-2.5 py-1 border border-outline-variant/10"
+        title={t('locationGraph.tooltips.search')}
+      >
+        <span className="material-symbols-outlined text-sm text-outline">search</span>
         <input
           ref={searchInputRef}
-          className="bg-transparent outline-none text-on-surface w-20 placeholder:text-outline/50"
+          className="bg-transparent outline-none text-on-surface w-28 placeholder:text-outline/50"
           placeholder={t('locationGraph.toolbar.search')}
           value={searchQuery}
           onChange={(e) => onSearch(e.target.value)}
         />
       </div>
 
-      <div className="w-px h-4 bg-outline-variant/20" />
+      <div className="w-px h-5 bg-outline-variant/20" />
 
       {/* Action buttons */}
       <button
         onClick={onAddNode}
-        className={`flex items-center gap-0.5 px-2 py-1 rounded-sm transition-colors uppercase tracking-widest ${
+        title={t('locationGraph.tooltips.addNode')}
+        className={`flex items-center gap-1 px-3 py-1.5 rounded-sm transition-colors uppercase tracking-widest ${
           addingNode ? 'bg-primary/30 text-primary' : 'hover:bg-white/5 text-on-surface-variant'
         }`}
       >
-        <span className="material-symbols-outlined text-xs">add_location</span>
+        <span className="material-symbols-outlined text-sm">add_location</span>
         {t('locationGraph.toolbar.addNode')}
       </button>
 
       <button
         onClick={onAddEdge}
-        className={`flex items-center gap-0.5 px-2 py-1 rounded-sm transition-colors uppercase tracking-widest ${
+        title={t('locationGraph.tooltips.addEdge')}
+        className={`flex items-center gap-1 px-3 py-1.5 rounded-sm transition-colors uppercase tracking-widest ${
           addingEdge ? 'bg-primary/30 text-primary' : 'hover:bg-white/5 text-on-surface-variant'
         }`}
       >
-        <span className="material-symbols-outlined text-xs">conversion_path</span>
+        <span className="material-symbols-outlined text-sm">conversion_path</span>
         {t('locationGraph.toolbar.addEdge')}
       </button>
 
       {/* Mode toggle */}
-      <div className="w-px h-4 bg-outline-variant/20" />
+      <div className="w-px h-5 bg-outline-variant/20" />
       <button
         onClick={onModeChange}
-        className="flex items-center gap-0.5 px-2 py-1 rounded-sm hover:bg-white/5 text-on-surface-variant uppercase tracking-widest"
+        title={t(`locationGraph.tooltips.${mode === 'gm' ? 'gm' : 'player'}`)}
+        className="flex items-center gap-1 px-3 py-1.5 rounded-sm hover:bg-white/5 text-on-surface-variant uppercase tracking-widest"
       >
-        <span className="material-symbols-outlined text-xs">
+        <span className="material-symbols-outlined text-sm">
           {mode === 'gm' ? 'shield_person' : 'person'}
         </span>
         {mode === 'gm' ? 'GM' : t('locationGraph.toolbar.player')}
@@ -102,10 +109,10 @@ export default function GraphToolbar({
 
       <button
         onClick={onValidate}
-        className="flex items-center gap-0.5 px-2 py-1 rounded-sm hover:bg-white/5 text-on-surface-variant uppercase tracking-widest"
-        title={t('locationGraph.toolbar.validate')}
+        title={t('locationGraph.tooltips.validate')}
+        className="flex items-center gap-1 px-3 py-1.5 rounded-sm hover:bg-white/5 text-on-surface-variant uppercase tracking-widest"
       >
-        <span className="material-symbols-outlined text-xs">verified</span>
+        <span className="material-symbols-outlined text-sm">verified</span>
       </button>
     </div>
   );

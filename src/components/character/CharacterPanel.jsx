@@ -12,6 +12,7 @@ import CharacterHistoryPanel from './CharacterHistoryPanel';
 import CustomSelect from '../ui/CustomSelect';
 import { translateSkill, translateAttribute } from '../../utils/rpgTranslate';
 import { SKILLS, DIFFICULTY_THRESHOLDS } from '../../data/rpgSystem';
+import SkillGainHistory from './SkillGainHistory';
 
 const SKILL_ICONS = {
   'Walka wrecz': 'sports_martial_arts',
@@ -61,7 +62,7 @@ function getSkillAttribute(skillName) {
   return entry?.attribute || null;
 }
 
-function SkillDetailPanel({ skillName, level, character, t }) {
+function SkillDetailPanel({ skillName, level, character, characterId, t }) {
   const attrKey = getSkillAttribute(skillName);
   const attrValue = attrKey ? (character.attributes?.[attrKey] || 0) : 0;
   const attrLabel = attrKey ? translateAttribute(attrKey, t) : '—';
@@ -107,6 +108,15 @@ function SkillDetailPanel({ skillName, level, character, t }) {
               </p>
             )}
           </div>
+
+          {characterId && (
+            <div className="mt-3 border-t border-outline-variant/10 pt-3">
+              <p className="text-on-surface text-xs font-label uppercase tracking-wider mb-1">
+                {t('advancement.skillHistory', 'Historia rozwoju')}
+              </p>
+              <SkillGainHistory characterId={characterId} skillName={skillName} />
+            </div>
+          )}
         </div>
       </div>
     </div>
@@ -116,6 +126,7 @@ function SkillDetailPanel({ skillName, level, character, t }) {
 function SkillsGrid({ character, t }) {
   const [expanded, setExpanded] = useState(false);
   const [selectedSkill, setSelectedSkill] = useState(null);
+  const characterId = character.backendId || character.id;
 
   const learned = Object.entries(character.skills || {})
     .filter(([, v]) => {
@@ -179,6 +190,7 @@ function SkillsGrid({ character, t }) {
             skillName={selectedSkill}
             level={(learned.find((s) => s.name === selectedSkill) || {}).level || 0}
             character={character}
+            characterId={characterId}
             t={t}
           />
         )}

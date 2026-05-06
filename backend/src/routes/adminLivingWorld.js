@@ -10,6 +10,9 @@
 //   - Audit trail UI (WorldNpcAttribution browsing)
 //   - Cost/analytics dashboard
 
+import { readdirSync, statSync } from 'node:fs';
+import { resolve, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { prisma } from '../lib/prisma.js';
 import { childLogger } from '../lib/logger.js';
 import { leaveParty } from '../services/livingWorld/companionService.js';
@@ -1282,6 +1285,51 @@ export async function adminLivingWorldRoutes(fastify) {
     await setModelOverrides(overrides);
     return { ok: true, overrides };
   });
+
+  // ── Available fonts (scan public/fonts/) ──
+
+  const __dirnameLW = fileURLToPath(new URL('.', import.meta.url));
+  const FONTS_DIR = findFontsDir(__dirnameLW);
+
+  fastify.get('/available-fonts', guard(), async () => {
+    let entries;
+    try {
+      entries = readdirSync(FONTS_DIR);
+    } catch {
+      return [];
+    }
+    const results = [];
+    for (const entry of entries) {
+      const entryPath = join(FONTS_DIR, entry);
+      if (!statSync(entryPath).isDirectory()) continue;
+      const files = collectTtfFiles(entryPath, entry);
+      if (files.length > 0) results.push({ name: entry, files });
+    }
+    return results;
+  });
+}
+
+function collectTtfFiles(dir, baseName, prefix = '') {
+  const results = [];
+  for (const item of readdirSync(dir)) {
+    const full = join(dir, item);
+    if (statSync(full).isDirectory()) {
+      results.push(...collectTtfFiles(full, baseName, prefix ? `${prefix}/${item}` : item));
+    } else if (item.endsWith('.ttf')) {
+      results.push(prefix ? `${prefix}/${item}` : item);
+    }
+  }
+  return results;
+}
+
+function findFontsDir(fromDir) {
+  // Docker/prod: fonts baked into public/dist/fonts by Vite build
+  const dockerPath = resolve(fromDir, '..', '..', 'public', 'dist', 'fonts');
+  // Host dev: repo root public/fonts
+  const hostPath = resolve(fromDir, '..', '..', '..', 'public', 'fonts');
+  try { statSync(dockerPath); return dockerPath; } catch { /* noop */ }
+  try { statSync(hostPath); return hostPath; } catch { /* noop */ }
+  return hostPath;
 }
 
 async function nextLoreOrder() {

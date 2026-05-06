@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next';
 import { useSettings } from '../../contexts/SettingsContext';
 import { useGlobalMusic } from '../../contexts/MusicContext';
 import { useModals } from '../../contexts/ModalContext';
+import { useDictationContext } from '../../contexts/DictationContext';
 import { useGameCampaign } from '../../stores/gameSelectors';
 import { getGameState } from '../../stores/gameStore';
 import { useMultiplayer } from '../../contexts/MultiplayerContext';
@@ -21,7 +22,8 @@ export default function Header() {
   const { t } = useTranslation();
   const { settings, backendUser } = useSettings();
   const music = useGlobalMusic();
-  const { openCharacterSheet, openTasksInfo, openSettings, openKeys, openImageConfig, openAudioConfig, openProfile, openAdminUsers, openLocationGraph } = useModals();
+  const { openCharacterSheet, openTasksInfo, openSettings, openKeys, openImageConfig, openAudioConfig, openProfile, openAdminUsers, openLocationGraph, openGmModal } = useModals();
+  const { dictation } = useDictationContext() ?? {};
   const campaign = useGameCampaign();
   const mp = useMultiplayer();
   const hasActiveGame = !!campaign || (mp.state.isMultiplayer && mp.state.phase === 'playing');
@@ -93,7 +95,7 @@ export default function Header() {
       </div>
       <div className="flex items-center gap-6">
         {backendUser && (
-          <nav className="hidden md:flex gap-1 items-center text-on-surface-variant font-medieval text-[15px] lowercase">
+          <nav className="hidden md:flex gap-1 items-center text-on-surface-variant font-body text-[15px] lowercase">
             {navLinks.map((link) =>
               link.action ? (
                 <button
@@ -179,6 +181,20 @@ export default function Header() {
                 {mpStatusLabel}
               </span>
             )}
+            {dictation?.supported && (
+              <Tooltip content={t(dictation.enabled ? 'gameplay.dictationDisable' : 'gameplay.dictationEnable')} placement="bottom" variant="compact" asChild>
+                <button
+                  type="button"
+                  onClick={dictation.toggleEnabled}
+                  aria-label={t(dictation.enabled ? 'gameplay.dictationDisable' : 'gameplay.dictationEnable')}
+                  className={`material-symbols-outlined transition-all active:scale-95 duration-200 cursor-pointer w-9 h-9 flex items-center justify-center rounded-full hover:bg-surface-container-high/40 ${
+                    dictation.enabled ? 'text-primary hover:text-tertiary' : 'text-on-surface-variant hover:text-tertiary'
+                  }`}
+                >
+                  {dictation.enabled ? 'mic' : 'mic_off'}
+                </button>
+              </Tooltip>
+            )}
             {hasActiveGame && !isMultiplayer && (
               <Tooltip content={saveStatus === 'saved' ? t('nav.campaignSaved') : t('nav.saveCampaign')} placement="bottom" variant="compact" asChild>
                 <button
@@ -263,13 +279,14 @@ export default function Header() {
             {backendUser?.isAdmin && (
               <>
                 <Tooltip content={t('admin.livingWorld')} placement="bottom" variant="compact" asChild>
-                  <Link
-                    to="/admin/living-world"
+                  <button
+                    type="button"
+                    onClick={openGmModal}
                     aria-label={t('admin.livingWorld')}
                     className="material-symbols-outlined text-on-surface-variant hover:text-tertiary transition-all active:scale-95 duration-200 cursor-pointer w-9 h-9 flex items-center justify-center rounded-full hover:bg-surface-container-high/40"
                   >
                     public
-                  </Link>
+                  </button>
                 </Tooltip>
                 <Tooltip content={t('admin.userManagement')} placement="bottom" variant="compact" asChild>
                   <button
@@ -293,12 +310,16 @@ export default function Header() {
                 settings
               </button>
             </Tooltip>
-            <Tooltip content={t('credits.title', 'Credits')} placement="bottom" variant="compact" asChild>
+            <Tooltip content={(backendUser.credits ?? 0) < 0 ? t('credits.negativeBalance') : t('credits.title', 'Credits')} placement="bottom" variant="compact" asChild>
               <button
                 type="button"
                 onClick={openProfile}
                 aria-label={t('nav.credits', 'Credits')}
-                className="flex items-center gap-1 px-2.5 h-9 rounded-full border border-primary/20 bg-surface-container-high text-xs font-label text-primary hover:border-primary/40 hover:shadow-[0_0_12px_rgba(197,154,255,0.2)] transition-all duration-300"
+                className={`flex items-center gap-1 px-2.5 h-9 rounded-full border text-xs font-label transition-all duration-300 ${
+                  (backendUser.credits ?? 0) < 0
+                    ? 'border-error/40 bg-error/10 text-error hover:border-error/60 animate-pulse'
+                    : 'border-primary/20 bg-surface-container-high text-primary hover:border-primary/40 hover:shadow-[0_0_12px_rgba(197,154,255,0.2)]'
+                }`}
               >
                 <span className="material-symbols-outlined text-sm">payments</span>
                 <span>${((backendUser.credits ?? 0) / 100).toFixed(2)}</span>

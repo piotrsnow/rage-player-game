@@ -1194,7 +1194,9 @@
     "footer": "Płatności obsługiwane przez Stripe. Kwoty w USD.",
     "billingPortal": "Rachunki i historia płatności",
     "billingPortalHint": "Otwiera bezpieczną stronę Stripe",
-    "billingPortalFailed": "Nie udało się otworzyć portalu płatności"
+    "billingPortalFailed": "Nie udało się otworzyć portalu płatności",
+    "insufficient": "Brak wystarczających kredytów. Doładuj konto.",
+    "negativeBalance": "Saldo ujemne — doładuj konto"
   },
   "sceneCost": {
     "title": "Koszt sceny",
@@ -1676,6 +1678,7 @@
     "recruitTitle": "Kogo chcesz zaprosić?",
     "recruitChance": "Szansa: {{chance}}%",
     "noRecruitableNpcs": "Brak NPC, z którymi masz wystarczająco dobre relacje.",
+    "teamSize": "Drużyna: {{current}}/{{max}}",
     "partyFull": "Drużyna pełna ({{current}}/{{max}})",
     "dismiss": "Pożegnaj",
     "dismissConfirm": "Czy na pewno chcesz pożegnać {{name}}?",
@@ -1816,6 +1819,12 @@
     "cannotDemoteSelf": "Nie możesz odebrać sobie roli admina",
     "noUsers": "Brak użytkowników"
   },
+  "adminBilling": {
+    "title": "Panel admina — billing",
+    "chargeCredits": "Naliczaj kredyty za sceny",
+    "fakeTopUpHint": "Testowe doładowanie (bez Stripe):",
+    "topUpSuccess": "Doładowano {{amount}}"
+  },
   "locationGraph": {
     "title": "Graf Lokacji",
     "hierarchy": "Hierarchia",
@@ -1884,6 +1893,47 @@
       "visited": "Odwiedzony",
       "mapped": "Zmapowany",
       "hidden": "Ukryty"
+    },
+    "tooltips": {
+      "scale": "Filtruj węzły wg skali — mniejsza = więcej szczegółów",
+      "addNode": "Kliknij na canvas aby umieścić nowy węzeł lokacji (skrót: +)",
+      "addEdge": "Wybierz węzeł źródłowy, potem docelowy (skrót: E)",
+      "gm": "Tryb GM — widoczne wszystkie węzły, edycja dozwolona",
+      "player": "Tryb Gracza — widoczne tylko odkryte lokacje",
+      "validate": "Sprawdź spójność grafu (izolowane węzły, cykle itp.)",
+      "search": "Szukaj lokacji po nazwie (skrót: Ctrl+F)",
+      "structural": "Relacje zawierania (kontynent → region → osada)",
+      "spatial": "Sąsiedztwo przestrzenne, widoczność, bliskość",
+      "movement": "Drogi, ścieżki, przejścia między lokacjami",
+      "access": "Zamknięte drzwi, bramy, wymagane klucze",
+      "perception": "Słyszalność, widoczność, zapachy między lokacjami",
+      "social": "Terytoria frakcji, wpływy polityczne",
+      "narrative": "Połączenia fabularne, quest-driven relacje",
+      "temporal": "Zmiany w czasie — dzień/noc, sezonowe dostępy"
     }
+  },
+  "intuition": {
+    "buttonLabel": "Intuicja",
+    "tier_excellent": "Błyskawiczny refleks!",
+    "tier_good": "Dobra reakcja",
+    "tier_mediocre": "Ledwo zdążyłeś...",
+    "tier_terrible": "Za wolno!",
+    "reactionTime": "{{ms}} ms",
+    "windowDuration": "okno: {{ms}} ms",
+    "actionLookAround": "Rozglądam się uważnie dookoła — coś przyciąga moją uwagę",
+    "actionThink": "Zatrzymuję się na chwilę i zastanawiam głęboko nad sytuacją",
+    "actionHunch": "Podążam za nagłym przeczuciem — coś mi mówi, że to ważne",
+    "flavor_look_around_excellent": "Twój wzrok wyłapuje każdy szczegół",
+    "flavor_look_around_good": "Zauważasz coś ciekawego",
+    "flavor_look_around_mediocre": "Rozglądasz się chaotycznie",
+    "flavor_look_around_terrible": "Gapisz się w przestrzeń jak cielę",
+    "flavor_think_excellent": "Genialna myśl przebija jak błyskawica",
+    "flavor_think_good": "Coś ci się układa w głowie",
+    "flavor_think_mediocre": "Myśli ci się plączą...",
+    "flavor_think_terrible": "W głowie ci się kręci od nadmiaru niczego",
+    "flavor_hunch_excellent": "Przeczucie uderza z mocą proroctwa",
+    "flavor_hunch_good": "Czujesz, że jesteś na tropie",
+    "flavor_hunch_mediocre": "Mgliste przeczucie, może coś, może nic",
+    "flavor_hunch_terrible": "Twoje przeczucia robią ci złośliwości"
   }
 }

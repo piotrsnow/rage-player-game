@@ -23,6 +23,7 @@ import {
   difficultyIcons,
 } from './creatorConstants';
 import { allowedTiersForLevel } from '../../../shared/domain/difficultyTier';
+import VideoBackground from '../ui/VideoBackground';
 import ChipGroup from './ChipGroup';
 import ModeToggle from './ModeToggle';
 import CharacterPicker from './CharacterPicker';
@@ -329,7 +330,8 @@ export default function CampaignCreatorPage() {
   }
 
   return (
-    <div className="max-w-5xl mx-auto px-6 py-12">
+    <div className="max-w-5xl mx-auto px-6 py-12 relative">
+      <VideoBackground src="/video/bg_video_1.mp4" />
       {isGenerating ? (
         <div className="relative flex flex-col items-center justify-center py-32 animate-fade-in overflow-hidden rounded-xl">
           {genVideoVisible && (

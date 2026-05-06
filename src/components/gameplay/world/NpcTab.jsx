@@ -20,24 +20,24 @@ function NpcRow({ npc, quests, characterVoiceMap, taggedVoices, hasVoicePool, ha
     <div data-entity-id={npc.id} className={`p-3 rounded-sm border transition-all ${npc.alive === false ? 'bg-error-container/10 border-error/15 opacity-60' : 'bg-surface-container/40 border-outline-variant/10'}`}>
       <div className="flex items-center justify-between mb-1.5">
         <div className="flex items-center gap-2 flex-wrap">
-          <span className="material-symbols-outlined text-sm text-primary">person</span>
-          <span className="text-sm font-bold text-on-surface">{npc.name}</span>
-          <GenderIcon gender={npc.gender} className="text-xs text-outline/80" />
+          <span className="material-symbols-outlined text-base text-primary">person</span>
+          <span className="text-base font-bold text-on-surface">{npc.name}</span>
+          <GenderIcon gender={npc.gender} className="text-sm text-outline/80" />
           {raceLabel && (
-            <span className="text-[10px] px-1.5 py-0.5 rounded-sm bg-surface-container/60 border border-outline-variant/15 text-on-surface-variant">
+            <span className="text-xs px-1.5 py-0.5 rounded-sm bg-surface-container/60 border border-outline-variant/15 text-on-surface-variant">
               {raceLabel}
             </span>
           )}
           {hasSheet && (
-            <span className="text-[10px] px-1.5 py-0.5 rounded-sm bg-primary/15 text-primary font-bold">
+            <span className="text-xs px-1.5 py-0.5 rounded-sm bg-primary/15 text-primary font-bold">
               {t('worldState.lvl')} {level}
             </span>
           )}
-          {npc.alive === false && <span className="text-[10px] text-error font-bold uppercase">{t('worldState.dead')}</span>}
+          {npc.alive === false && <span className="text-xs text-error font-bold uppercase">{t('worldState.dead')}</span>}
         </div>
         <div className="flex items-center gap-1.5">
           {npc.disposition != null && npc.disposition !== 0 && (
-            <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-sm ${
+            <span className={`text-xs font-bold px-1.5 py-0.5 rounded-sm ${
               npc.disposition > 0
                 ? 'bg-primary/15 text-primary'
                 : 'bg-error/15 text-error'
@@ -46,7 +46,7 @@ function NpcRow({ npc, quests, characterVoiceMap, taggedVoices, hasVoicePool, ha
             </span>
           )}
           {npc.attitude && (
-            <span className={`text-[10px] font-label uppercase tracking-wider px-2 py-0.5 rounded-sm ${
+            <span className={`text-xs font-label uppercase tracking-wider px-2 py-0.5 rounded-sm ${
               npc.attitude === 'friendly' ? 'bg-primary/15 text-primary' :
               npc.attitude === 'hostile' ? 'bg-error/15 text-error' :
               'bg-outline/10 text-outline'
@@ -54,7 +54,7 @@ function NpcRow({ npc, quests, characterVoiceMap, taggedVoices, hasVoicePool, ha
           )}
         </div>
       </div>
-      <div className="text-[11px] text-on-surface-variant space-y-0.5">
+      <div className="text-sm text-on-surface-variant space-y-0.5">
         {npc.role && <div><span className="text-outline">{t('worldState.role')}:</span> {npc.role}</div>}
         {npc.personality && <div><span className="text-outline">{t('worldState.personality')}:</span> {npc.personality}</div>}
         {npc.lastLocation && (
@@ -76,14 +76,14 @@ function NpcRow({ npc, quests, characterVoiceMap, taggedVoices, hasVoicePool, ha
           <button
             type="button"
             onClick={() => setShowCard((v) => !v)}
-            className="mt-2 w-full flex items-center justify-between px-2 py-1 rounded-sm border border-outline-variant/15 bg-surface-container/30 hover:bg-surface-container/60 transition-colors text-[11px] text-on-surface-variant"
+            className="mt-2 w-full flex items-center justify-between px-2 py-1 rounded-sm border border-outline-variant/15 bg-surface-container/30 hover:bg-surface-container/60 transition-colors text-sm text-on-surface-variant"
             aria-expanded={showCard}
           >
             <span className="flex items-center gap-1.5">
-              <span className="material-symbols-outlined text-xs text-primary">badge</span>
+              <span className="material-symbols-outlined text-sm text-primary">badge</span>
               {t('worldState.characterCard')}
             </span>
-            <span className="material-symbols-outlined text-xs">
+            <span className="material-symbols-outlined text-sm">
               {showCard ? 'expand_less' : 'expand_more'}
             </span>
           </button>
@@ -93,7 +93,7 @@ function NpcRow({ npc, quests, characterVoiceMap, taggedVoices, hasVoicePool, ha
 
       {relatedQuests.length > 0 && (
         <div className="flex flex-wrap items-center gap-1.5 mt-2 pt-2 border-t border-outline-variant/10">
-          <span className="text-[10px] text-outline">{t('worldState.relatedQuests')}:</span>
+          <span className="text-xs text-outline">{t('worldState.relatedQuests')}:</span>
           {relatedQuests.map((q) => (
             <CrossLinkChip
               key={q.id}
@@ -107,8 +107,8 @@ function NpcRow({ npc, quests, characterVoiceMap, taggedVoices, hasVoicePool, ha
 
       {hasVoicePool && (
         <div className="flex items-center gap-2 mt-2 pt-2 border-t border-outline-variant/10">
-          <span className="material-symbols-outlined text-xs text-outline">record_voice_over</span>
-          <span className="text-[10px] text-outline shrink-0">{t('worldState.voice')}:</span>
+          <span className="material-symbols-outlined text-sm text-outline">record_voice_over</span>
+          <span className="text-xs text-outline shrink-0">{t('worldState.voice')}:</span>
           <CustomSelect
             value={currentVoiceId || ''}
             onChange={(nextVoiceId) => handleVoiceChange(npc.name, npc.gender, nextVoiceId)}
@@ -120,7 +120,7 @@ function NpcRow({ npc, quests, characterVoiceMap, taggedVoices, hasVoicePool, ha
               })),
             ]}
             className="flex-1 min-w-0"
-            buttonClassName="text-[11px] py-1 px-2 border-outline-variant/15"
+            buttonClassName="text-sm py-1 px-2 border-outline-variant/15"
           />
         </div>
       )}
@@ -155,8 +155,8 @@ export default function NpcTab({ npcs, quests, characterVoiceMap, maleVoices, fe
   return (
     <div className="grid gap-3">
       {showVoicePoolHint && (
-        <div className="flex items-start gap-2 p-2 rounded-sm border border-warning/30 bg-warning-container/15 text-[11px] text-warning">
-          <span className="material-symbols-outlined text-sm leading-none mt-0.5">info</span>
+        <div className="flex items-start gap-2 p-2 rounded-sm border border-warning/30 bg-warning-container/15 text-sm text-warning">
+          <span className="material-symbols-outlined text-base leading-none mt-0.5">info</span>
           <span>{t('worldState.voicePoolMissing')}</span>
         </div>
       )}

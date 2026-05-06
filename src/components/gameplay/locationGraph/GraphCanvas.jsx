@@ -159,7 +159,7 @@ export default function GraphCanvas({
                 y={r + 14}
                 textAnchor="middle"
                 fill="rgba(255,255,255,0.85)"
-                fontSize={10}
+                fontSize={11}
                 fontWeight={isSelected ? 700 : 400}
                 pointerEvents="none"
               >

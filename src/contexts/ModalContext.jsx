@@ -18,12 +18,15 @@ export function ModalProvider({ children }) {
   // rather than a reference so the latest world.npcs entry is always read
   // fresh (disposition / stats can change between open and close).
   const [locationGraphOpen, setLocationGraphOpen] = useState(false);
+  const [gmModalOpen, setGmModalOpen] = useState(false);
   const [npcSheetName, setNpcSheetName] = useState(null);
 
   const openCharacterSheet = useCallback(() => setCharacterSheetOpen(true), []);
   const closeCharacterSheet = useCallback(() => setCharacterSheetOpen(false), []);
   const openLocationGraph = useCallback(() => setLocationGraphOpen(true), []);
   const closeLocationGraph = useCallback(() => setLocationGraphOpen(false), []);
+  const openGmModal = useCallback(() => setGmModalOpen(true), []);
+  const closeGmModal = useCallback(() => setGmModalOpen(false), []);
   const openWorldState = useCallback(() => setWorldStateOpen(true), []);
   const closeWorldState = useCallback(() => setWorldStateOpen(false), []);
   const openTasksInfo = useCallback(() => setTasksInfoOpen(true), []);
@@ -50,6 +53,7 @@ export function ModalProvider({ children }) {
       value={{
         characterSheetOpen,
         locationGraphOpen,
+        gmModalOpen,
         worldStateOpen,
         tasksInfoOpen,
         settingsOpen,
@@ -64,6 +68,8 @@ export function ModalProvider({ children }) {
         closeCharacterSheet,
         openLocationGraph,
         closeLocationGraph,
+        openGmModal,
+        closeGmModal,
         openWorldState,
         closeWorldState,
         openTasksInfo,

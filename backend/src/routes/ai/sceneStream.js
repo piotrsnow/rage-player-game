@@ -1,6 +1,7 @@
 import { prisma } from '../../lib/prisma.js';
 import { loadUserApiKeys } from '../../services/apiKeyService.js';
 import { generateSceneStream } from '../../services/sceneGenerator.js';
+import { computeSceneCostCents } from '../../services/billing.js';
 import { writeSseHead } from './sseBoilerplate.js';
 import { GENERATE_SCENE_SCHEMA } from './schemas.js';
 
@@ -46,6 +47,34 @@ export async function sceneStreamRoutes(fastify) {
 
     if (campaign.userId !== request.user.id) {
       return reply.code(403).send({ error: 'Not authorized' });
+    }
+
+    const serverSettings = await prisma.serverSettings.findUnique({
+      where: { id: 'singleton' },
+      select: { billingEnabled: true, sceneModelConfig: true },
+    });
+
+    if (serverSettings?.billingEnabled) {
+      const user = await prisma.user.findUnique({
+        where: { id: request.user.id },
+        select: { credits: true, settings: true },
+      });
+
+      const costCents = computeSceneCostCents(user.settings, serverSettings.sceneModelConfig);
+      const DEBIT_LIMIT = -99;
+
+      if ((user.credits - costCents) < DEBIT_LIMIT) {
+        return reply.code(402).send({
+          error: 'insufficient_credits',
+          credits: user.credits,
+          costCents,
+        });
+      }
+
+      await prisma.user.update({
+        where: { id: request.user.id },
+        data: { credits: { decrement: costCents } },
+      });
     }
 
     if (!writeSseHead(request, reply)) return;

@@ -1,5 +1,4 @@
 import WorldStateModal from './WorldStateModal';
-import GMModal from './gm/GMModal';
 import MultiplayerPanel from '../multiplayer/MultiplayerPanel';
 import AdvancementPanel from '../character/AdvancementPanel';
 import AchievementsPanel from '../character/AchievementsPanel';
@@ -31,9 +30,6 @@ export default function GameplayModals({
   // world
   worldModalOpen,
   onWorldModalClose,
-  // gm
-  gmModalOpen,
-  onGmModalClose,
   // mp
   mpPanelOpen,
   onMpPanelClose,
@@ -91,8 +87,6 @@ export default function GameplayModals({
           onClose={onWorldModalClose}
         />
       )}
-
-      {gmModalOpen && <GMModal onClose={onGmModalClose} />}
 
       {mpPanelOpen && <MultiplayerPanel onClose={onMpPanelClose} />}
 

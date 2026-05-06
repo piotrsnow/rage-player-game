@@ -40,25 +40,26 @@ function TreeNode({ node, selected, onSelect, depth }) {
   return (
     <div>
       <button
-        className={`flex items-center gap-1 w-full px-1 py-0.5 rounded-sm text-left transition-colors ${
+        className={`flex items-center gap-1.5 w-full px-1 py-1 rounded-sm text-left transition-colors ${
           isSelected ? 'bg-primary/20 text-primary' : 'hover:bg-white/5 text-on-surface-variant'
         }`}
         style={{ paddingLeft: `${depth * 12 + 4}px` }}
         onClick={() => onSelect({ type: 'node', id: node.id })}
+        title={`${node.name} (${vis.label})`}
         data-entity-id={node.id}
       >
         {hasChildren ? (
           <span
-            className="material-symbols-outlined text-[10px] text-outline cursor-pointer"
+            className="material-symbols-outlined text-xs text-outline cursor-pointer"
             onClick={(e) => { e.stopPropagation(); setExpanded(!expanded); }}
           >
             {expanded ? 'expand_more' : 'chevron_right'}
           </span>
         ) : (
-          <span className="w-[10px]" />
+          <span className="w-3" />
         )}
         <span
-          className="w-2 h-2 rounded-full flex-shrink-0"
+          className="w-2.5 h-2.5 rounded-full flex-shrink-0"
           style={{ backgroundColor: vis.color }}
         />
         <span className="truncate">{node.name}</span>

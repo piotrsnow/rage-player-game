@@ -27,14 +27,14 @@ export default function FactionsTab({ factions, t }) {
           <div key={id} className="p-3 rounded-sm bg-surface-container/40 border border-outline-variant/10">
             <div className="flex items-center justify-between mb-2">
               <div className="flex items-center gap-2">
-                <span className={`material-symbols-outlined text-sm ${textColor}`}>{def.icon}</span>
-                <span className="text-sm font-bold text-on-surface">{def.name}</span>
+                <span className={`material-symbols-outlined text-base ${textColor}`}>{def.icon}</span>
+                <span className="text-base font-bold text-on-surface">{def.name}</span>
               </div>
               <div className="flex items-center gap-2">
-                <span className={`text-[10px] font-bold px-2 py-0.5 rounded-sm ${bgColor}/15 ${textColor}`}>
+                <span className={`text-xs font-bold px-2 py-0.5 rounded-sm ${bgColor}/15 ${textColor}`}>
                   {tierData.label}
                 </span>
-                <span className={`text-[10px] font-bold tabular-nums ${textColor}`}>
+                <span className={`text-xs font-bold tabular-nums ${textColor}`}>
                   {rep > 0 ? '+' : ''}{rep}
                 </span>
               </div>
@@ -45,7 +45,7 @@ export default function FactionsTab({ factions, t }) {
                 style={{ width: `${pct}%` }}
               />
             </div>
-            <p className="text-[10px] text-on-surface-variant">{def.effects[tierData.tier]}</p>
+            <p className="text-xs text-on-surface-variant">{def.effects[tierData.tier]}</p>
           </div>
         );
       }).filter(Boolean)}

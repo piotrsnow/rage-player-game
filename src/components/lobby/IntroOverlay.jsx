@@ -3,7 +3,7 @@ import { useGlobalMusic } from '../../contexts/MusicContext';
 
 const STORAGE_KEY = 'rpgon_intro_seen';
 
-export default function IntroOverlay() {
+export default function IntroOverlay({ onVideoEnded } = {}) {
   const [visible, setVisible] = useState(
     () => !sessionStorage.getItem(STORAGE_KEY)
   );
@@ -19,6 +19,21 @@ export default function IntroOverlay() {
   }, [visible, setSuppressLobbyMusicForIntroVideo]);
 
   useEffect(() => {
+    const replay = () => {
+      sessionStorage.removeItem(STORAGE_KEY);
+      setVisible(true);
+      setFading(false);
+      setSkipVisible(false);
+      if (videoRef.current) {
+        videoRef.current.currentTime = 0;
+        videoRef.current.play().catch(() => {});
+      }
+    };
+    window.addEventListener('rpgon:replay-intro', replay);
+    return () => window.removeEventListener('rpgon:replay-intro', replay);
+  }, []);
+
+  useEffect(() => {
     if (!visible) return;
     const timer = setTimeout(() => setSkipVisible(true), 2000);
     return () => clearTimeout(timer);
@@ -27,7 +42,8 @@ export default function IntroOverlay() {
   const dismiss = useCallback(() => {
     if (fading) return;
     setFading(true);
-  }, [fading]);
+    onVideoEnded?.();
+  }, [fading, onVideoEnded]);
 
   const handleTransitionEnd = useCallback(() => {
     if (!fading) return;

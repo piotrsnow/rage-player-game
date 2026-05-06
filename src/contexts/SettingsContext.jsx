@@ -23,6 +23,19 @@ const EMPTY_BACKEND_KEYS = {
 
 const LOCAL_ONLY_KEYS = ['backendUrl', 'useBackend'];
 
+function inferWeight(filename) {
+  const lower = filename.toLowerCase();
+  if (lower.includes('thin')) return 100;
+  if (lower.includes('extralight')) return 200;
+  if (lower.includes('light')) return 300;
+  if (lower.includes('medium')) return 500;
+  if (lower.includes('semibold')) return 600;
+  if (lower.includes('extrabold')) return 800;
+  if (lower.includes('black')) return 900;
+  if (lower.includes('bold')) return 700;
+  return 400;
+}
+
 function clampCombatCommentaryFrequency(value) {
   const numeric = Number(value);
   if (!Number.isFinite(numeric)) return 3;
@@ -179,6 +192,7 @@ export function SettingsProvider({ children }) {
   const [backendKeys, setBackendKeys] = useState(EMPTY_BACKEND_KEYS);
   const [globalVoiceConfig, setGlobalVoiceConfig] = useState({});
   const [sceneModelConfig, setSceneModelConfig] = useState({});
+  const [fontConfig, setFontConfig] = useState(null);
   const [backendUser, setBackendUser] = useState(null);
   const [backendAuthChecking, setBackendAuthChecking] = useState(() => shouldCheckBackendSession(settings));
   const syncingFromBackendRef = useRef(false);
@@ -318,11 +332,88 @@ export function SettingsProvider({ children }) {
     return result;
   }, []);
 
+  const fetchFontConfig = useCallback(async () => {
+    if (!apiClient.isConnected()) return;
+    try {
+      const config = await apiClient.get('/font-config');
+      setFontConfig(config || null);
+    } catch {
+      // silent — defaults from CSS :root remain active
+    }
+  }, []);
+
+  function buildFontShadowCss(data) {
+    if (!data.shadowColor || (!data.shadowBlur && !data.shadowX && !data.shadowY && !data.shadowSpread)) return 'none';
+    const spread = data.shadowSpread || 0;
+    const bx = data.shadowX ?? 0, by = data.shadowY ?? 0, blur = data.shadowBlur ?? 0;
+    if (spread <= 0) return `${bx}px ${by}px ${blur}px ${data.shadowColor}`;
+    const layers = [];
+    const s = Math.ceil(spread);
+    for (let dx = -s; dx <= s; dx++) {
+      for (let dy = -s; dy <= s; dy++) {
+        if (dx * dx + dy * dy > spread * spread) continue;
+        layers.push(`${bx + dx}px ${by + dy}px ${blur}px ${data.shadowColor}`);
+      }
+    }
+    return layers.join(', ');
+  }
+
+  useEffect(() => {
+    if (!fontConfig) return;
+    const FALLBACKS = { body: 'cursive', headline: 'cursive', accent: 'sans-serif', mono: 'monospace' };
+    const root = document.documentElement;
+    const style = document.getElementById('dynamic-fonts') || (() => {
+      const el = document.createElement('style');
+      el.id = 'dynamic-fonts';
+      document.head.appendChild(el);
+      return el;
+    })();
+
+    const faces = [];
+    const fontNames = new Set();
+    for (const [, data] of Object.entries(fontConfig)) {
+      if (!data?.font || !data?.files?.length) continue;
+      const familyName = data.font;
+      fontNames.add(familyName);
+      for (const file of data.files) {
+        const weight = inferWeight(file);
+        const isItalic = /cursive|italic/i.test(file);
+        faces.push(
+          `@font-face { font-family: '${familyName}'; src: url('/fonts/${familyName}/${file}') format('truetype'); font-weight: ${weight}; font-style: ${isItalic ? 'italic' : 'normal'}; font-display: swap; }`
+        );
+      }
+    }
+    style.textContent = faces.join('\n');
+
+    const loadPromises = [...fontNames].map((name) =>
+      document.fonts.load(`400 16px '${name}'`).catch(() => {})
+    );
+
+    Promise.all(loadPromises).then(() => {
+      for (const [role, data] of Object.entries(fontConfig)) {
+        if (!data?.font) continue;
+        const fallback = FALLBACKS[role] || 'sans-serif';
+        root.style.setProperty(`--font-${role}`, `'${data.font}', ${fallback}`);
+        root.style.setProperty(`--font-${role}-color`, data.color || '');
+        root.style.setProperty(`--font-${role}-size`, String(data.sizeMultiplier ?? 1));
+        root.style.setProperty(`--font-${role}-letter-spacing`, data.letterSpacing ? `${data.letterSpacing}px` : 'normal');
+        root.style.setProperty(`--font-${role}-stretch`, data.fontStretch && data.fontStretch !== 100 ? `${data.fontStretch}%` : 'normal');
+        const shadow = buildFontShadowCss(data);
+        root.style.setProperty(`--font-${role}-shadow`, shadow);
+        const outline = (data.outlineWidth > 0 && data.outlineColor)
+          ? `${data.outlineWidth}px ${data.outlineColor}`
+          : '0';
+        root.style.setProperty(`--font-${role}-outline`, outline);
+      }
+    });
+  }, [fontConfig]);
+
   useEffect(() => {
     if (settings.backendUrl && settings.useBackend && backendUser) {
       fetchBackendKeys();
       fetchGlobalVoiceConfig();
       fetchSceneModelConfig();
+      fetchFontConfig();
       // Hydrate account settings whenever a user lands on this provider — on
       // cookie-bootstrap, login, and register. backendLogin/Register also
       // call this directly (after legacy migration); the duplicate is cheap
@@ -330,7 +421,7 @@ export function SettingsProvider({ children }) {
       loadFromAccountRef.current?.();
       gameData.loadAll().catch((err) => console.warn('[settings] Game data preload failed:', err.message));
     }
-  }, [settings.backendUrl, settings.useBackend, backendUser, fetchBackendKeys, fetchGlobalVoiceConfig, fetchSceneModelConfig]);
+  }, [settings.backendUrl, settings.useBackend, backendUser, fetchBackendKeys, fetchGlobalVoiceConfig, fetchSceneModelConfig, fetchFontConfig]);
 
   useEffect(() => {
     if (settings.language && i18n.language !== settings.language) {
@@ -486,6 +577,8 @@ export function SettingsProvider({ children }) {
     sceneModelConfig,
     fetchSceneModelConfig,
     updateSceneModelConfig,
+    fontConfig,
+    fetchFontConfig,
     loadFromAccount,
     backendUser,
     backendAuthChecking,

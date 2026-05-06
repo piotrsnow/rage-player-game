@@ -19,7 +19,7 @@ export default function VersionBadge() {
   }, [open]);
 
   return (
-    <div ref={ref} className="fixed bottom-3 left-3 z-50 pointer-events-auto flex items-end gap-3">
+    <div ref={ref} className="fixed bottom-3 left-3 z-50 pointer-events-auto flex items-center gap-3">
       <button
         onClick={() => setOpen((p) => !p)}
         className="text-[10px] font-mono text-on-surface-variant/40 hover:text-on-surface-variant/80 transition-colors"
@@ -31,6 +31,13 @@ export default function VersionBadge() {
         className="text-xs text-on-surface-variant/50 hover:text-primary transition-colors"
       >
         {t('privacy.linkLabel')}
+      </button>
+      <button
+        onClick={() => window.dispatchEvent(new CustomEvent('rpgon:replay-intro'))}
+        className="text-on-surface-variant/50 hover:text-primary transition-colors"
+        title={t('lobby.replayIntro', 'Odtwórz intro')}
+      >
+        <span className="material-symbols-outlined text-sm">videocam</span>
       </button>
 
       {open && (

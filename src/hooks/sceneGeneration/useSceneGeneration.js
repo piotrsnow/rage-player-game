@@ -335,7 +335,10 @@ export function useSceneGeneration({ ensureMissingInventoryImages, ensureMissing
           earlyImagePromise.finally(() => dispatch({ type: 'SET_GENERATING_IMAGE', payload: false }));
         }
         recordCompletedSceneGenTiming();
-        dispatch({ type: 'SET_ERROR', payload: err.message });
+        const errorMsg = err.message === 'insufficient_credits'
+          ? t('credits.insufficient')
+          : err.message;
+        dispatch({ type: 'SET_ERROR', payload: errorMsg });
         dispatch({ type: 'SET_GENERATING_SCENE', payload: false });
         stream.clearStreamingOutput();
         throw err;

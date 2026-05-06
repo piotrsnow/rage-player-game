@@ -130,20 +130,20 @@ export default function LocationGraphModal({ campaignId, onClose }) {
         <div className="flex items-center justify-between px-4 py-3 border-b border-outline-variant/10">
           <div className="flex items-center gap-2">
             <span className="material-symbols-outlined text-primary text-lg">hub</span>
-            <h2 className="text-xs font-bold text-on-surface uppercase tracking-widest">{t('locationGraph.title')}</h2>
+            <h2 className="text-sm font-bold text-on-surface uppercase tracking-widest">{t('locationGraph.title')}</h2>
           </div>
           <div className="flex items-center gap-2">
             {graph.loading && <span className="material-symbols-outlined text-sm text-primary animate-spin">progress_activity</span>}
-            <button onClick={onClose} aria-label={t('common.close')} className="material-symbols-outlined text-lg text-outline hover:text-on-surface transition-colors">close</button>
+            <button onClick={onClose} aria-label={t('common.close')} className="material-symbols-outlined text-xl text-outline hover:text-on-surface transition-colors">close</button>
           </div>
         </div>
 
         {/* Body — 3-column layout */}
         <div className="flex-1 flex min-h-0">
           {/* Left sidebar — tree */}
-          <div className="w-48 border-r border-outline-variant/10 flex-shrink-0 overflow-hidden flex flex-col">
+          <div className="w-56 border-r border-outline-variant/10 flex-shrink-0 overflow-hidden flex flex-col">
             <div className="px-3 py-2 border-b border-outline-variant/10">
-              <span className="text-[10px] font-label uppercase tracking-widest text-outline">{t('locationGraph.hierarchy')}</span>
+              <span className="text-xs font-label uppercase tracking-widest text-outline">{t('locationGraph.hierarchy')}</span>
             </div>
             <div className="flex-1 overflow-y-auto">
               <HierarchyTree
@@ -229,9 +229,9 @@ export default function LocationGraphModal({ campaignId, onClose }) {
           </div>
 
           {/* Right sidebar — inspector */}
-          <div className="w-56 border-l border-outline-variant/10 flex-shrink-0 overflow-hidden flex flex-col">
+          <div className="w-64 border-l border-outline-variant/10 flex-shrink-0 overflow-hidden flex flex-col">
             <div className="px-3 py-2 border-b border-outline-variant/10">
-              <span className="text-[10px] font-label uppercase tracking-widest text-outline">{t('locationGraph.inspector.title')}</span>
+              <span className="text-xs font-label uppercase tracking-widest text-outline">{t('locationGraph.inspector.title')}</span>
             </div>
             <div className="flex-1 overflow-y-auto">
               <InspectorPanel

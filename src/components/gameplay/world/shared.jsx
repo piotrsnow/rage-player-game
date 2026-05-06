@@ -30,9 +30,9 @@ export function CrossLinkChip({ icon, label, onClick }) {
   return (
     <button
       onClick={onClick}
-      className="inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] rounded-sm bg-primary/10 text-primary hover:bg-primary/20 transition-colors cursor-pointer"
+      className="inline-flex items-center gap-1 px-1.5 py-0.5 text-xs rounded-sm bg-primary/10 text-primary hover:bg-primary/20 transition-colors cursor-pointer"
     >
-      <span className="material-symbols-outlined text-[10px]">{icon}</span>
+      <span className="material-symbols-outlined text-xs">{icon}</span>
       <span className="truncate max-w-[120px]">{label}</span>
     </button>
   );
@@ -42,7 +42,7 @@ export function EmptyState({ icon, text }) {
   return (
     <div className="flex flex-col items-center justify-center py-12 gap-3 text-outline">
       <span className="material-symbols-outlined text-3xl">{icon}</span>
-      <p className="text-[11px] font-label uppercase tracking-widest">{text}</p>
+      <p className="text-sm font-label uppercase tracking-widest">{text}</p>
     </div>
   );
 }

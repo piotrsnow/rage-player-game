@@ -1,6 +1,7 @@
 import { useTranslation } from 'react-i18next';
 import QuickActionButton from './QuickActionButton';
 import ForceRollButton from './ForceRollButton';
+import IntuitionButton from './IntuitionButton';
 import { getSkillLevel } from '../../../data/rpgSystem.js';
 import { useGameSlice } from '../../../stores/gameSelectors';
 
@@ -32,6 +33,11 @@ export default function QuickActionsBar({
 
   return (
     <div className="flex items-center gap-1.5 shrink-0">
+      <IntuitionButton
+        disabled={disabled}
+        hasPendingAction={hasPendingAction}
+        onSuggestedAction={onSuggestedAction}
+      />
       {forceRollState && (
         <ForceRollButton
           state={forceRollState}

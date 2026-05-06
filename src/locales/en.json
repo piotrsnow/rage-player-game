@@ -1201,7 +1201,9 @@
     "footer": "Payments processed by Stripe. Amounts in USD.",
     "billingPortal": "Invoices & payment history",
     "billingPortalHint": "Opens a secure Stripe page",
-    "billingPortalFailed": "Could not open billing portal"
+    "billingPortalFailed": "Could not open billing portal",
+    "insufficient": "Insufficient credits. Please top up.",
+    "negativeBalance": "Negative balance — please top up"
   },
   "sceneCost": {
     "title": "Scene cost",
@@ -2028,6 +2030,7 @@
     "recruitTitle": "Who do you want to invite?",
     "recruitChance": "Chance: {{chance}}%",
     "noRecruitableNpcs": "No NPCs you're close enough with.",
+    "teamSize": "Team: {{current}}/{{max}}",
     "partyFull": "Party full ({{current}}/{{max}})",
     "dismiss": "Dismiss",
     "dismissConfirm": "Really part ways with {{name}}?",
@@ -2161,6 +2164,12 @@
     "cannotDemoteSelf": "Cannot remove your own admin role",
     "noUsers": "No users found"
   },
+  "adminBilling": {
+    "title": "Admin panel — billing",
+    "chargeCredits": "Charge credits for scenes",
+    "fakeTopUpHint": "Test top-up (no Stripe):",
+    "topUpSuccess": "Topped up {{amount}}"
+  },
   "locationGraph": {
     "title": "Location Graph",
     "hierarchy": "Hierarchy",
@@ -2229,6 +2238,47 @@
       "visited": "Visited",
       "mapped": "Mapped",
       "hidden": "Hidden"
+    },
+    "tooltips": {
+      "scale": "Filter nodes by scale — lower = more detail",
+      "addNode": "Click on canvas to place a new location node (shortcut: +)",
+      "addEdge": "Pick source node, then target (shortcut: E)",
+      "gm": "GM mode — all nodes visible, editing enabled",
+      "player": "Player mode — only discovered locations visible",
+      "validate": "Check graph consistency (isolated nodes, cycles, etc.)",
+      "search": "Search locations by name (shortcut: Ctrl+F)",
+      "structural": "Containment relations (continent → region → settlement)",
+      "spatial": "Spatial adjacency, visibility, proximity",
+      "movement": "Roads, paths, passages between locations",
+      "access": "Locked doors, gates, required keys",
+      "perception": "Audibility, visibility, smells between locations",
+      "social": "Faction territories, political influence",
+      "narrative": "Story-driven connections, quest-driven relations",
+      "temporal": "Time-based changes — day/night, seasonal access"
     }
+  },
+  "intuition": {
+    "buttonLabel": "Intuition",
+    "tier_excellent": "Lightning reflexes!",
+    "tier_good": "Good reaction",
+    "tier_mediocre": "Barely made it...",
+    "tier_terrible": "Too slow!",
+    "reactionTime": "{{ms}} ms",
+    "windowDuration": "window: {{ms}} ms",
+    "actionLookAround": "I look around carefully — something catches my eye",
+    "actionThink": "I stop for a moment and think deeply about the situation",
+    "actionHunch": "I follow a sudden hunch — something tells me this is important",
+    "flavor_look_around_excellent": "Your eyes catch every detail",
+    "flavor_look_around_good": "You notice something interesting",
+    "flavor_look_around_mediocre": "You look around chaotically",
+    "flavor_look_around_terrible": "You stare into space blankly",
+    "flavor_think_excellent": "A brilliant thought strikes like lightning",
+    "flavor_think_good": "Something clicks in your mind",
+    "flavor_think_mediocre": "Your thoughts are tangled...",
+    "flavor_think_terrible": "Your mind spins from an excess of nothing",
+    "flavor_hunch_excellent": "The hunch hits with the force of prophecy",
+    "flavor_hunch_good": "You feel you're on the right track",
+    "flavor_hunch_mediocre": "A vague hunch, maybe something, maybe nothing",
+    "flavor_hunch_terrible": "Your gut feelings are playing tricks on you"
   }
 }

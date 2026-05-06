@@ -21,8 +21,8 @@ export default function InspectorPanel({
 
   if (!selectedNode && !selectedEdge) {
     return (
-      <div className="flex flex-col items-center justify-center h-full text-outline text-[10px] uppercase tracking-widest gap-2 p-4">
-        <span className="material-symbols-outlined text-xl">info</span>
+      <div className="flex flex-col items-center justify-center h-full text-outline text-xs uppercase tracking-widest gap-2 p-4">
+        <span className="material-symbols-outlined text-2xl">info</span>
         {t('locationGraph.selectToInspect')}
       </div>
     );
@@ -62,13 +62,13 @@ function NodeInspector({ node, onUpdate, onDelete, mode, t }) {
   return (
     <div className="overflow-y-auto custom-scrollbar p-3 space-y-3 text-xs">
       <div className="flex items-center gap-2 pb-2 border-b border-outline-variant/10">
-        <span className="w-3 h-3 rounded-full" style={{ backgroundColor: vis.color }} />
-        <span className="font-bold text-on-surface text-sm truncate">{node.name}</span>
+        <span className="w-4 h-4 rounded-full flex-shrink-0" style={{ backgroundColor: vis.color }} />
+        <span className="font-bold text-on-surface text-base truncate">{node.name}</span>
       </div>
 
       <Field label={t('locationGraph.inspector.name')}>
         <input
-          className="bg-white/5 rounded-sm px-2 py-1 w-full text-on-surface border border-outline-variant/10 focus:border-primary/40 outline-none"
+          className="bg-white/5 rounded-sm px-2.5 py-1.5 w-full text-on-surface border border-outline-variant/10 focus:border-primary/40 outline-none"
           defaultValue={node.name}
           onBlur={(e) => handleField('name', e.target.value)}
         />
@@ -76,7 +76,7 @@ function NodeInspector({ node, onUpdate, onDelete, mode, t }) {
 
       <Field label={t('locationGraph.inspector.type')}>
         <select
-          className="bg-white/5 rounded-sm px-2 py-1 w-full text-on-surface border border-outline-variant/10"
+          className="bg-white/5 rounded-sm px-2.5 py-1.5 w-full text-on-surface border border-outline-variant/10"
           value={node.type || 'generic'}
           onChange={(e) => handleField('type', e.target.value)}
         >
@@ -89,7 +89,7 @@ function NodeInspector({ node, onUpdate, onDelete, mode, t }) {
 
       <Field label={t('locationGraph.inspector.tags')}>
         <input
-          className="bg-white/5 rounded-sm px-2 py-1 w-full text-on-surface border border-outline-variant/10 focus:border-primary/40 outline-none"
+          className="bg-white/5 rounded-sm px-2.5 py-1.5 w-full text-on-surface border border-outline-variant/10 focus:border-primary/40 outline-none"
           defaultValue={(node.tags || []).join(', ')}
           placeholder="tag1, tag2, ..."
           onBlur={(e) => handleField('tags', e.target.value.split(',').map((s) => s.trim()).filter(Boolean))}
@@ -98,7 +98,7 @@ function NodeInspector({ node, onUpdate, onDelete, mode, t }) {
 
       <Field label={t('locationGraph.inspector.atmosphere')}>
         <input
-          className="bg-white/5 rounded-sm px-2 py-1 w-full text-on-surface border border-outline-variant/10 focus:border-primary/40 outline-none"
+          className="bg-white/5 rounded-sm px-2.5 py-1.5 w-full text-on-surface border border-outline-variant/10 focus:border-primary/40 outline-none"
           defaultValue={node.atmosphere || ''}
           onBlur={(e) => handleField('atmosphere', e.target.value)}
         />
@@ -106,7 +106,7 @@ function NodeInspector({ node, onUpdate, onDelete, mode, t }) {
 
       <Field label={t('locationGraph.inspector.dangerLevel')}>
         <select
-          className="bg-white/5 rounded-sm px-2 py-1 w-full text-on-surface border border-outline-variant/10"
+          className="bg-white/5 rounded-sm px-2.5 py-1.5 w-full text-on-surface border border-outline-variant/10"
           value={node.dangerLevel || 'safe'}
           onChange={(e) => handleField('dangerLevel', e.target.value)}
         >
@@ -121,15 +121,15 @@ function NodeInspector({ node, onUpdate, onDelete, mode, t }) {
           value={node.scale ?? 5}
           onChange={(e) => handleField('scale', Number(e.target.value))}
         />
-        <span className="text-[10px] text-outline">{node.scale ?? 5}</span>
+        <span className="text-xs text-outline">{node.scale ?? 5}</span>
       </Field>
 
       {mode === 'gm' && (
         <button
           onClick={() => onDelete(node.id)}
-          className="flex items-center gap-1 w-full px-2 py-1.5 rounded-sm text-red-400 hover:bg-red-500/10 transition-colors text-[10px] uppercase tracking-widest"
+          className="flex items-center gap-1 w-full px-2 py-2 rounded-sm text-red-400 hover:bg-red-500/10 transition-colors text-xs uppercase tracking-widest"
         >
-          <span className="material-symbols-outlined text-sm">delete</span>
+          <span className="material-symbols-outlined text-base">delete</span>
           {t('locationGraph.inspector.deleteNode')}
         </button>
       )}
@@ -157,18 +157,18 @@ function EdgeInspector({ edge, allNodes, onUpdate, onDelete, mode, t }) {
     <div className="overflow-y-auto custom-scrollbar p-3 space-y-3 text-xs">
       <div className="flex items-center gap-2 pb-2 border-b border-outline-variant/10">
         <span className="w-6 h-0.5" style={{ backgroundColor: vis.color }} />
-        <span className="font-bold text-on-surface text-sm">{edge.edgeType}</span>
+        <span className="font-bold text-on-surface text-base">{edge.edgeType}</span>
       </div>
 
-      <div className="flex items-center gap-1 text-[10px] text-on-surface-variant">
+      <div className="flex items-center gap-1 text-xs text-on-surface-variant">
         <span>{fromNode?.name || edge.fromId}</span>
-        <span className="material-symbols-outlined text-[10px]">{edge.bidirectional ? 'swap_horiz' : 'arrow_forward'}</span>
+        <span className="material-symbols-outlined text-xs">{edge.bidirectional ? 'swap_horiz' : 'arrow_forward'}</span>
         <span>{toNode?.name || edge.toId}</span>
       </div>
 
       <Field label={t('locationGraph.inspector.edgeType')}>
         <select
-          className="bg-white/5 rounded-sm px-2 py-1 w-full text-on-surface border border-outline-variant/10"
+          className="bg-white/5 rounded-sm px-2.5 py-1.5 w-full text-on-surface border border-outline-variant/10"
           value={edge.edgeType}
           onChange={(e) => handleField('edgeType', e.target.value)}
         >
@@ -194,7 +194,7 @@ function EdgeInspector({ edge, allNodes, onUpdate, onDelete, mode, t }) {
 
       <Field label={t('locationGraph.inspector.discoveryState')}>
         <select
-          className="bg-white/5 rounded-sm px-2 py-1 w-full text-on-surface border border-outline-variant/10"
+          className="bg-white/5 rounded-sm px-2.5 py-1.5 w-full text-on-surface border border-outline-variant/10"
           value={edge.discoveryState || 'unknown'}
           onChange={(e) => handleField('discoveryState', e.target.value)}
         >
@@ -205,9 +205,9 @@ function EdgeInspector({ edge, allNodes, onUpdate, onDelete, mode, t }) {
       {mode === 'gm' && (
         <button
           onClick={() => onDelete(edge.id)}
-          className="flex items-center gap-1 w-full px-2 py-1.5 rounded-sm text-red-400 hover:bg-red-500/10 transition-colors text-[10px] uppercase tracking-widest"
+          className="flex items-center gap-1 w-full px-2 py-2 rounded-sm text-red-400 hover:bg-red-500/10 transition-colors text-xs uppercase tracking-widest"
         >
-          <span className="material-symbols-outlined text-sm">delete</span>
+          <span className="material-symbols-outlined text-base">delete</span>
           {t('locationGraph.inspector.deleteEdge')}
         </button>
       )}
@@ -218,7 +218,7 @@ function EdgeInspector({ edge, allNodes, onUpdate, onDelete, mode, t }) {
 function Field({ label, children }) {
   return (
     <div className="space-y-1">
-      <label className="text-[10px] font-label uppercase tracking-widest text-outline">{label}</label>
+      <label className="text-xs font-label uppercase tracking-widest text-outline">{label}</label>
       {children}
     </div>
   );

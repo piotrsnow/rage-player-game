@@ -7,7 +7,7 @@ import { resolveVoiceForCharacter } from '../../services/characterVoiceResolver'
 
 export function useSceneBackendStream() {
   const { state, dispatch } = useGame();
-  const { settings, voicePools } = useSettings();
+  const { settings, voicePools, loadBackendUser } = useSettings();
 
   const earlyDiceRollEmittedRef = useRef(false);
   const streamedDiceRollCountRef = useRef(0);
@@ -162,8 +162,10 @@ export function useSceneBackendStream() {
       },
     });
 
+    loadBackendUser().catch(() => {});
+
     return backendResult;
-  }, [state, settings, dispatch, dispatchDiceRollMessage]);
+  }, [state, settings, dispatch, dispatchDiceRollMessage, loadBackendUser]);
 
   const processServerDiceRolls = useCallback((result, resolved) => {
     const serverDiceRolls = Array.isArray(result.diceRolls) ? result.diceRolls

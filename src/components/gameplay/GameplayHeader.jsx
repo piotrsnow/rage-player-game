@@ -5,6 +5,7 @@ import { getGameState } from '../../stores/gameStore';
 import { useGameSlice } from '../../stores/gameSelectors';
 import CostBadge from '../ui/CostBadge';
 import LocationChip from '../ui/LocationChip';
+import Tooltip from '../ui/Tooltip';
 
 export default function GameplayHeader({
   readOnly,
@@ -20,8 +21,6 @@ export default function GameplayHeader({
   // character / party
   character,
   allCharacters,
-  displayCharacter,
-  isViewingCompanion,
   attrPoints,
   // navigation
   setViewingSceneIndex,
@@ -33,35 +32,26 @@ export default function GameplayHeader({
   settings,
   autoPlayScenes,
   setAutoPlayScenes,
-  // refresh/share
-  handleRefresh,
-  isRefreshing,
+  // share
   handleShare,
   shareCopied,
   shareLoading,
   // stats / costs
   aiCosts,
-  // autoplayer
-  autoPlayer,
-  onOpenAutoPlayerSettings,
   // modal openers
   onOpenAdvancement,
   onOpenMpPanel,
   onOpenSummaryModal,
   onOpenAchievements,
   onOpenWorldModal,
-  onOpenGmModal,
   // video
   videoPanelOpen,
   setVideoPanelOpen,
-  // dictation
-  dictation,
 }) {
   const { t } = useTranslation();
 
   if (scenes.length === 0) return null;
 
-  const contextDepth = settings.dmSettings?.contextDepth ?? 100;
   const currentAct = campaign?.structure?.currentAct || 1;
   const actName = campaign?.structure?.acts?.find((a) => a.number === currentAct)?.name;
 
@@ -240,177 +230,111 @@ export default function GameplayHeader({
               <span key={c.name}>{c.name} W:{c.wounds}/{c.maxWounds}</span>
             ))}
           </div>
-        ) : displayCharacter ? (
-          <div className="hidden lg:flex items-center gap-4 text-xs text-on-surface-variant">
-            <span>{displayCharacter.name}</span>
-            <span>{t(`species.${displayCharacter.species}`, { defaultValue: displayCharacter.species })}</span>
-            {isViewingCompanion && <span className="text-tertiary font-bold">(Companion)</span>}
-          </div>
         ) : null}
-        {!readOnly && dictation?.supported && (
-          <button
-            onClick={dictation.toggleEnabled}
-            title={t(dictation.enabled ? 'gameplay.dictationDisable' : 'gameplay.dictationEnable')}
-            aria-label={t(dictation.enabled ? 'gameplay.dictationDisable' : 'gameplay.dictationEnable')}
-            className={`material-symbols-outlined text-sm transition-colors ${
-              dictation.enabled ? 'text-primary hover:text-tertiary' : 'text-outline hover:text-primary'
-            }`}
-          >
-            {dictation.enabled ? 'mic' : 'mic_off'}
-          </button>
-        )}
-        <button
-          onClick={handleRefresh}
-          disabled={isRefreshing}
-          title={t('gameplay.refreshTooltip', 'Reload campaign')}
-          aria-label={t('gameplay.refresh', 'Refresh')}
-          className={`material-symbols-outlined text-sm transition-colors ${
-            isRefreshing ? 'text-primary animate-spin' : 'text-outline hover:text-primary'
-          }`}
-        >
-          {isRefreshing ? 'progress_activity' : 'refresh'}
-        </button>
         {!readOnly && (
           <>
-            {!isMultiplayer && currentScene && (!campaign?.status || campaign.status === 'active') && character?.status !== 'dead' && (
-              <div className="flex items-center gap-1.5">
+            <Tooltip content={isMultiplayer ? t('multiplayer.invitePlayers') : t('multiplayer.openMultiplayer')} placement="bottom" variant="compact" asChild>
+              <button
+                onClick={onOpenMpPanel}
+                aria-label={isMultiplayer ? t('multiplayer.invitePlayers') : t('multiplayer.openMultiplayer')}
+                className={`material-symbols-outlined text-sm transition-colors ${
+                  isMultiplayer ? 'text-primary hover:text-tertiary' : 'text-outline hover:text-primary'
+                }`}
+              >
+                {isMultiplayer ? 'group' : 'group_add'}
+              </button>
+            </Tooltip>
+            {isMultiplayer && (
+              <Tooltip content={t('webcam.videoChat')} placement="bottom" variant="compact" asChild>
                 <button
-                  onClick={autoPlayer.toggleAutoPlayer}
-                  title={t('autoPlayer.toggle')}
-                  aria-label={t('autoPlayer.toggle')}
-                  className={`relative w-8 h-[18px] rounded-full transition-colors duration-200 ${
-                    autoPlayer.isAutoPlaying ? 'bg-primary' : 'bg-outline/30'
+                  onClick={() => setVideoPanelOpen((v) => !v)}
+                  aria-label={t('webcam.videoChat')}
+                  className={`material-symbols-outlined text-sm transition-colors ${
+                    videoPanelOpen ? 'text-primary hover:text-tertiary' : 'text-outline hover:text-primary'
                   }`}
                 >
-                  <span
-                    className={`absolute top-[3px] left-[3px] w-3 h-3 rounded-full bg-on-primary transition-transform duration-200 ${
-                      autoPlayer.isAutoPlaying ? 'translate-x-[14px]' : 'translate-x-0'
-                    }`}
-                  />
+                  video_camera_front
                 </button>
-                {autoPlayer.isAutoPlaying && autoPlayer.isThinking && (
-                  <span className="material-symbols-outlined text-xs text-primary animate-spin">progress_activity</span>
-                )}
-                <span className="text-[9px] font-label uppercase tracking-widest text-on-surface-variant hidden xl:inline">
-                  {t('autoPlayer.title')}
-                </span>
-                {autoPlayer.isAutoPlaying && (
-                  <span className="text-[9px] text-outline tabular-nums">
-                    {autoPlayer.turnsPlayed}{autoPlayer.autoPlayerSettings.maxTurns > 0 ? `/${autoPlayer.autoPlayerSettings.maxTurns}` : ''}
-                  </span>
-                )}
-                <button
-                  onClick={onOpenAutoPlayerSettings}
-                  title={t('autoPlayer.settings')}
-                  aria-label={t('autoPlayer.settings')}
-                  className="material-symbols-outlined text-sm text-outline hover:text-primary transition-colors"
-                >
-                  tune
-                </button>
-              </div>
-            )}
-            <button
-              onClick={onOpenMpPanel}
-              title={isMultiplayer ? t('multiplayer.invitePlayers') : t('multiplayer.openMultiplayer')}
-              aria-label={isMultiplayer ? t('multiplayer.invitePlayers') : t('multiplayer.openMultiplayer')}
-              className={`material-symbols-outlined text-sm transition-colors ${
-                isMultiplayer ? 'text-primary hover:text-tertiary' : 'text-outline hover:text-primary'
-              }`}
-            >
-              {isMultiplayer ? 'group' : 'group_add'}
-            </button>
-            {isMultiplayer && (
-              <button
-                onClick={() => setVideoPanelOpen((v) => !v)}
-                title={t('webcam.videoChat')}
-                aria-label={t('webcam.videoChat')}
-                className={`material-symbols-outlined text-sm transition-colors ${
-                  videoPanelOpen ? 'text-primary hover:text-tertiary' : 'text-outline hover:text-primary'
-                }`}
-              >
-                video_camera_front
-              </button>
+              </Tooltip>
             )}
             {campaign?.backendId && apiClient.isConnected() && (
-              <button
-                onClick={handleShare}
-                disabled={shareLoading}
-                title={shareCopied ? t('gameplay.shareCopied') : t('gameplay.share')}
-                aria-label={t('gameplay.share')}
-                className={`material-symbols-outlined text-sm transition-colors ${
-                  shareCopied ? 'text-emerald-400' : shareLoading ? 'text-outline/50 animate-pulse' : 'text-outline hover:text-primary'
-                }`}
-              >
-                {shareCopied ? 'check' : 'share'}
-              </button>
+              <Tooltip content={shareCopied ? t('gameplay.shareCopied') : t('gameplay.share')} placement="bottom" variant="compact" asChild>
+                <button
+                  onClick={handleShare}
+                  disabled={shareLoading}
+                  aria-label={t('gameplay.share')}
+                  className={`material-symbols-outlined text-sm transition-colors ${
+                    shareCopied ? 'text-emerald-400' : shareLoading ? 'text-outline/50 animate-pulse' : 'text-outline hover:text-primary'
+                  }`}
+                >
+                  {shareCopied ? 'check' : 'share'}
+                </button>
+              </Tooltip>
             )}
-            <button
-              onClick={onOpenSummaryModal}
-              title={t('gameplay.summaryTitle', 'Story summary')}
-              aria-label={t('gameplay.summaryTitle', 'Story summary')}
-              className="material-symbols-outlined text-sm text-outline hover:text-primary transition-colors"
-            >
-              short_text
-            </button>
-            <button
-              onClick={onOpenAchievements}
-              title={t('achievements.title', 'Achievements')}
-              aria-label={t('achievements.title', 'Achievements')}
-              className="material-symbols-outlined text-sm text-outline hover:text-primary transition-colors"
-            >
-              emoji_events
-            </button>
-            <button
-              onClick={onOpenWorldModal}
-              title={t('worldState.title')}
-              aria-label={t('worldState.title')}
-              className="material-symbols-outlined text-sm text-outline hover:text-primary transition-colors"
-            >
-              public
-            </button>
-            <button
-              onClick={onOpenGmModal}
-              title={t('gmModal.title')}
-              aria-label={t('gmModal.title')}
-              className="material-symbols-outlined text-sm text-outline hover:text-primary transition-colors"
-            >
-              auto_stories
-            </button>
-            <button
-              onClick={() => {
-                if (isMultiplayer && mpGameState) {
-                  exportAsMarkdown({
-                    campaign: mpGameState.campaign,
-                    character,
-                    scenes: mpGameState.scenes,
-                    chatHistory: mpGameState.chatHistory,
-                    quests: mpGameState.quests,
-                    world: mpGameState.world,
-                  });
-                } else {
-                  exportAsMarkdown(getGameState());
-                }
-              }}
-              title={t('gameplay.exportLog')}
-              aria-label={t('gameplay.exportLog')}
-              className="material-symbols-outlined text-sm text-outline hover:text-primary transition-colors"
-            >
-              download
-            </button>
-            <button
-              onClick={() => {
-                if (isMultiplayer && mpGameState) {
-                  exportAsJson({ ...mpGameState, character });
-                } else {
-                  exportAsJson(getGameState());
-                }
-              }}
-              title={t('gameplay.exportCampaignJson')}
-              aria-label={t('gameplay.exportCampaignJson')}
-              className="material-symbols-outlined text-sm text-outline hover:text-primary transition-colors"
-            >
-              data_object
-            </button>
+            <Tooltip content={t('gameplay.summaryTitle', 'Story summary')} placement="bottom" variant="compact" asChild>
+              <button
+                onClick={onOpenSummaryModal}
+                aria-label={t('gameplay.summaryTitle', 'Story summary')}
+                className="material-symbols-outlined text-sm text-outline hover:text-primary transition-colors"
+              >
+                short_text
+              </button>
+            </Tooltip>
+            <Tooltip content={t('achievements.title', 'Achievements')} placement="bottom" variant="compact" asChild>
+              <button
+                onClick={onOpenAchievements}
+                aria-label={t('achievements.title', 'Achievements')}
+                className="material-symbols-outlined text-sm text-outline hover:text-primary transition-colors"
+              >
+                emoji_events
+              </button>
+            </Tooltip>
+            <Tooltip content={t('worldState.title')} placement="bottom" variant="compact" asChild>
+              <button
+                onClick={onOpenWorldModal}
+                aria-label={t('worldState.title')}
+                className="material-symbols-outlined text-sm text-outline hover:text-primary transition-colors"
+              >
+                auto_stories
+              </button>
+            </Tooltip>
+            <Tooltip content={t('gameplay.exportLog')} placement="bottom" variant="compact" asChild>
+              <button
+                onClick={() => {
+                  if (isMultiplayer && mpGameState) {
+                    exportAsMarkdown({
+                      campaign: mpGameState.campaign,
+                      character,
+                      scenes: mpGameState.scenes,
+                      chatHistory: mpGameState.chatHistory,
+                      quests: mpGameState.quests,
+                      world: mpGameState.world,
+                    });
+                  } else {
+                    exportAsMarkdown(getGameState());
+                  }
+                }}
+                aria-label={t('gameplay.exportLog')}
+                className="material-symbols-outlined text-sm text-outline hover:text-primary transition-colors"
+              >
+                download
+              </button>
+            </Tooltip>
+            <Tooltip content={t('gameplay.exportCampaignJson')} placement="bottom" variant="compact" asChild>
+              <button
+                onClick={() => {
+                  if (isMultiplayer && mpGameState) {
+                    exportAsJson({ ...mpGameState, character });
+                  } else {
+                    exportAsJson(getGameState());
+                  }
+                }}
+                aria-label={t('gameplay.exportCampaignJson')}
+                className="material-symbols-outlined text-sm text-outline hover:text-primary transition-colors"
+              >
+                data_object
+              </button>
+            </Tooltip>
           </>
         )}
       </div>
