@@ -255,6 +255,7 @@ export async function generateYassatoCameoScene({
     const callPromise = callAIJson({
       provider,
       modelTier: 'nano',
+      taskCategory: 'sceneGeneration',
       systemPrompt: system,
       userPrompt: user,
       maxTokens: 500,

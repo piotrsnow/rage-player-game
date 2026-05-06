@@ -1,9 +1,11 @@
 import { useState, useRef, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { APP_VERSION } from '../../version';
+import { useModals } from '../../contexts/ModalContext';
 
 export default function VersionBadge() {
   const { t } = useTranslation();
+  const { openPrivacy } = useModals();
   const [open, setOpen] = useState(false);
   const ref = useRef(null);
 
@@ -17,12 +19,18 @@ export default function VersionBadge() {
   }, [open]);
 
   return (
-    <div ref={ref} className="fixed bottom-3 left-3 z-50 pointer-events-auto">
+    <div ref={ref} className="fixed bottom-3 left-3 z-50 pointer-events-auto flex items-end gap-3">
       <button
         onClick={() => setOpen((p) => !p)}
         className="text-[10px] font-mono text-on-surface-variant/40 hover:text-on-surface-variant/80 transition-colors"
       >
         v{APP_VERSION}
+      </button>
+      <button
+        onClick={openPrivacy}
+        className="text-xs text-on-surface-variant/50 hover:text-primary transition-colors"
+      >
+        {t('privacy.linkLabel')}
       </button>
 
       {open && (

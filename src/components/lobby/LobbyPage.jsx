@@ -432,103 +432,46 @@ export default function LobbyPage() {
           </div>
         )}
 
-        {/* Logged in — two-column: left = auth + buttons, right = campaigns */}
+        {/* Logged in — single column: badge, then buttons */}
         {isLoggedIn && (
-          <div className="w-full grid grid-cols-1 lg:grid-cols-[1fr_1.2fr] gap-6 items-stretch">
+          <div className="w-full max-w-2xl flex flex-col items-center gap-5">
+            <AuthPanel
+              campaigns={campaigns}
+              onLoadCampaign={handleLoad}
+              loadingCampaignId={loadingCampaignId}
+              showDeleteConfirm={showDeleteConfirm}
+              onDeleteCampaign={(id) =>
+                showDeleteConfirm === id ? handleDelete(id) : setShowDeleteConfirm(id)
+              }
+              onShowAllCampaigns={() => setShowAllCampaigns(true)}
+            />
 
-            {/* Left — auth, buttons, warnings */}
-            <div className="flex flex-col items-center lg:items-start gap-5">
-              <div className="w-full max-w-sm">
-                <AuthPanel />
+            {!hasServerAi && (
+              <div
+                onClick={openSettings}
+                data-testid="api-key-warning"
+                className="w-full glass-panel-elevated p-3 rounded-sm border-l-2 border-tertiary cursor-pointer hover:border-tertiary/80 transition-all hover:translate-y-[-1px] hover:shadow-[0_12px_40px_rgba(0,0,0,0.4)]"
+              >
+                <div className="flex items-start gap-2">
+                  <span className="material-symbols-outlined text-tertiary mt-0.5 text-sm">key</span>
+                  <p className="text-on-surface-variant text-xs leading-snug">
+                    {t('lobby.apiKeyRequired', 'Server AI configuration required')}
+                  </p>
+                </div>
               </div>
+            )}
 
-              <div className="hidden lg:block flex-1" />
-
-              {!hasServerAi && (
-                <div
-                  onClick={openSettings}
-                  data-testid="api-key-warning"
-                  className="w-full max-w-sm glass-panel-elevated p-4 rounded-sm border-l-2 border-tertiary cursor-pointer hover:border-tertiary/80 transition-all hover:translate-y-[-1px] hover:shadow-[0_12px_40px_rgba(0,0,0,0.4)]"
-                >
-                  <div className="flex items-start gap-3">
-                    <span className="material-symbols-outlined text-tertiary mt-0.5">key</span>
-                    <div>
-                      <p className="font-headline text-tertiary text-sm mb-1">{t('lobby.apiKeyRequired', 'Server AI configuration required')}</p>
-                      <p className="text-on-surface-variant text-xs">
-                        {t('lobby.apiKeyDescription', 'Connect backend and configure provider API keys in backend environment variables.')}
-                      </p>
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {!hasCampaigns && hasServerAi && (
-                <div className="text-center lg:text-left text-on-surface-variant">
-                  <span className="material-symbols-outlined text-4xl text-outline/20 mb-2 block animate-float-slow">
-                    auto_stories
-                  </span>
-                  <p className="text-sm mb-1">{t('lobby.noCampaigns')}</p>
-                  <p className="text-xs text-outline">{t('lobby.noCampaignsHint', 'Create your first adventure above')}</p>
-                </div>
-              )}
-
-              <div className="flex flex-row gap-4 items-center">
-                <Button size="lg" onClick={() => navigate('/create')}>
-                  {t('lobby.newCampaign')}
+            <div className="flex flex-row gap-4 items-center w-full">
+              <Button size="lg" className="flex-1" onClick={() => navigate('/create')}>
+                {t('lobby.newCampaign')}
+              </Button>
+              {hasCampaigns && (
+                <Button size="lg" variant="secondary" className="flex-1" onClick={() => setShowAllCampaigns(true)}>
+                  {t('lobby.continueCampaign')}
                 </Button>
-                {hasCampaigns && (
-                  <Button size="lg" variant="secondary" onClick={handleContinue}>
-                    {t('lobby.continueCampaign')}
-                  </Button>
-                )}
-              </div>
+              )}
             </div>
-
-          {/* Right — recent campaigns */}
-          {isLoggedIn && hasCampaigns && (
-            <div className="animate-slide-up" style={{ animationDelay: '0.1s' }}>
-              <GlassCard elevated className="p-5" data-testid="saved-campaigns">
-                <h3 className="font-headline text-tertiary text-base mb-3 flex items-center gap-2">
-                  <span className="material-symbols-outlined text-primary-dim text-lg">save</span>
-                  {t('lobby.recentCampaigns', 'Ostatnie kampanie')}
-                  {syncing && (
-                    <span className="text-xs text-outline font-label flex items-center gap-1">
-                      <span className="material-symbols-outlined text-sm animate-spin">sync</span>
-                      {t('lobby.syncing', 'Syncing...')}
-                    </span>
-                  )}
-                  <span className="ml-auto text-xs text-outline font-label">{campaigns.length}</span>
-                </h3>
-                <div className="space-y-1">
-                  {recentCampaigns.map((c, i) => (
-                    <CampaignCard
-                      key={c.id || i}
-                      campaign={c}
-                      loading={loadingCampaignId === c.id}
-                      disabled={!!loadingCampaignId}
-                      onLoad={() => handleLoad(c)}
-                      onDelete={() =>
-                        showDeleteConfirm === c.id
-                          ? handleDelete(c.id)
-                          : setShowDeleteConfirm(c.id)
-                      }
-                    />
-                  ))}
-                </div>
-                {hasMoreCampaigns && (
-                  <button
-                    type="button"
-                    onClick={() => setShowAllCampaigns(true)}
-                    className="mt-3 w-full flex items-center justify-center gap-2 py-2 text-sm text-primary hover:text-tertiary font-label uppercase tracking-wider transition-colors hover:bg-primary/5 rounded-sm"
-                  >
-                    <span className="material-symbols-outlined text-base">expand_more</span>
-                    {t('lobby.showAllCampaigns', 'Wszystkie kampanie')} ({campaigns.length})
-                  </button>
-                )}
-              </GlassCard>
-            </div>
-          )}
-        </div>
+          </div>
         )}
       </div>
 

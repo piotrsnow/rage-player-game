@@ -1,13 +1,14 @@
 import { requireServerApiKey } from './apiKeyService.js';
 import { parseProviderError } from './aiErrors.js';
 import { config } from '../config.js';
+import { resolveModelForTask } from './serverConfig.js';
 import { pickStartSpawn } from './livingWorld/startSpawnPicker.js';
 import { rememberStartSpawn, attachInitialLocations } from './livingWorld/startSpawnCache.js';
 
 export async function generateCampaignStream(settings, { provider = 'openai', model = null, language = 'en', userApiKeys = null, userId = null } = {}, onEvent) {
   const resolvedProvider = provider === 'anthropic' ? 'anthropic' : 'openai';
   const apiKey = requireServerApiKey(resolvedProvider, userApiKeys, resolvedProvider === 'anthropic' ? 'Anthropic' : 'OpenAI');
-  const resolvedModel = model || config.aiModels.premium[resolvedProvider];
+  const resolvedModel = model || await resolveModelForTask('campaignGeneration', resolvedProvider) || config.aiModels.premium[resolvedProvider];
 
   // Round B (Phase 3) — pick a canonical start-spawn trio BEFORE prompt
   // assembly. The picker returns null when no canonical world is seeded

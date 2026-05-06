@@ -141,7 +141,9 @@ export default function RecruitModal({ scenes, world, party, dispatch, onClose }
   const { state, autoSave } = useGame();
   const { settings } = useSettings();
 
-  const imageProvider = settings.imageProvider || 'openai';
+  const imageProvider = ['dalle', 'gpt-image', 'stability', 'gemini', 'sd-webui'].includes(settings.sceneImageTier)
+    ? settings.sceneImageTier
+    : (settings.imageProvider || 'dalle');
   const imageStyle = settings.dmSettings?.imageStyle || 'painting';
   const darkPalette = settings.dmSettings?.darkPalette || false;
   const imageSeriousness = settings.dmSettings?.narratorSeriousness ?? null;

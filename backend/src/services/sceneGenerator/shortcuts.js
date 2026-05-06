@@ -2,6 +2,7 @@ import { prisma } from '../../lib/prisma.js';
 import { childLogger } from '../../lib/logger.js';
 import { config } from '../../config.js';
 import { requireServerApiKey } from '../apiKeyService.js';
+import { resolveModelForTask } from '../serverConfig.js';
 import { selectBestiaryEncounter } from '../../data/equipment/index.js';
 
 const log = childLogger({ module: 'sceneGenerator' });
@@ -31,13 +32,16 @@ async function generateShortNarrative(instruction, playerAction, provider = 'ope
     apiKey = requireServerApiKey(provider === 'anthropic' ? 'anthropic' : 'openai');
   } catch { return instruction; }
 
+  const resolvedProvider = provider === 'anthropic' ? 'anthropic' : 'openai';
+  const overrideModel = await resolveModelForTask('sceneGeneration', resolvedProvider);
+
   try {
-    if (provider === 'anthropic') {
+    if (resolvedProvider === 'anthropic') {
       const resp = await fetch('https://api.anthropic.com/v1/messages', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' },
         body: JSON.stringify({
-          model: config.aiModels.standard.anthropic,
+          model: overrideModel || config.aiModels.standard.anthropic,
           max_tokens: 200,
           messages: [{ role: 'user', content: `${instruction}\n\nAkcja gracza: "${playerAction}"\n\nOdpowiedz TYLKO narracją, bez JSON.` }],
         }),
@@ -51,7 +55,7 @@ async function generateShortNarrative(instruction, playerAction, provider = 'ope
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
         body: JSON.stringify({
-          model: config.aiModels.standard.openai,
+          model: overrideModel || config.aiModels.standard.openai,
           messages: [{ role: 'user', content: `${instruction}\n\nAkcja gracza: "${playerAction}"\n\nOdpowiedz TYLKO narracją, bez JSON.` }],
           max_tokens: 200,
           temperature: 0.8,

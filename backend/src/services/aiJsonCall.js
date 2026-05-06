@@ -1,6 +1,7 @@
 import { requireServerApiKey } from './apiKeyService.js';
 import { parseProviderError } from './aiErrors.js';
 import { config } from '../config.js';
+import { resolveModelForTask } from './serverConfig.js';
 
 // Small helper for non-streaming, single-shot AI JSON calls. Used by the
 // "simple" AI endpoints (combat commentary, verify objective, recap stages)
@@ -13,6 +14,7 @@ export async function callAIJson({
   provider = 'openai',
   modelTier = 'premium',
   model = null,
+  taskCategory = null,
   systemPrompt,
   userPrompt,
   maxTokens = 1000,
@@ -25,7 +27,13 @@ export async function callAIJson({
     userApiKeys,
     resolvedProvider === 'anthropic' ? 'Anthropic' : 'OpenAI',
   );
-  const resolvedModel = model || config.aiModels[modelTier][resolvedProvider];
+  let resolvedModel = model;
+  if (!resolvedModel && taskCategory) {
+    resolvedModel = await resolveModelForTask(taskCategory, resolvedProvider);
+  }
+  if (!resolvedModel) {
+    resolvedModel = config.aiModels[modelTier]?.[resolvedProvider] || config.aiModels.premium[resolvedProvider];
+  }
 
   if (resolvedProvider === 'openai') {
     return callOpenAI({ apiKey, model: resolvedModel, systemPrompt, userPrompt, maxTokens, temperature });

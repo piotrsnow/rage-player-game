@@ -1,6 +1,7 @@
 import { requireServerApiKey } from './apiKeyService.js';
 import { parseProviderError } from './aiErrors.js';
 import { config } from '../config.js';
+import { resolveModelForTask } from './serverConfig.js';
 
 const KEYWORDS_MAX_LENGTH = 800;
 
@@ -42,7 +43,8 @@ export async function enhanceImagePrompt({
     userApiKeys,
     resolvedProvider === 'anthropic' ? 'Anthropic' : 'OpenAI',
   );
-  const resolvedModel = model || config.aiModels.standard[resolvedProvider];
+  const overrideModel = await resolveModelForTask('imagePrompt', resolvedProvider);
+  const resolvedModel = model || overrideModel || config.aiModels.standard[resolvedProvider];
 
   const systemPrompt = [
     'You write concise, vivid visual scene descriptions for AI image generators.',

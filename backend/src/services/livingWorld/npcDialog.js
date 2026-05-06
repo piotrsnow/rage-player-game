@@ -78,6 +78,7 @@ export async function generate({
     const { text } = await callAIJson({
       provider,
       modelTier: 'standard',
+      taskCategory: 'auxiliary',
       systemPrompt,
       userPrompt: playerMessage,
       maxTokens: 400,

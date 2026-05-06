@@ -2,10 +2,8 @@ import { useTranslation } from 'react-i18next';
 import { useSettings } from '../../contexts/SettingsContext';
 import { useModalA11y } from '../../hooks/useModalA11y';
 import { useMediaCacheStats } from '../../hooks/useMediaCacheStats';
-import { useConfigImportExport } from '../../hooks/useConfigImportExport';
 import BackendServerSection from './sections/BackendServerSection';
 import SceneCostSection from './sections/SceneCostSection';
-import ConfigBackupSection from './sections/ConfigBackupSection';
 import CreditsSection from './sections/CreditsSection';
 
 export default function UserProfileModal({ onClose }) {
@@ -14,8 +12,9 @@ export default function UserProfileModal({ onClose }) {
   const {
     settings,
     updateSettings,
-    importSettings,
     backendUser,
+    backendKeys,
+    sceneModelConfig,
     backendAuthChecking,
     backendLogout,
   } = useSettings();
@@ -23,10 +22,6 @@ export default function UserProfileModal({ onClose }) {
   const { cacheStats } = useMediaCacheStats({
     useBackend: settings.useBackend,
     backendUrl: settings.backendUrl,
-  });
-
-  const { fileInputRef, importStatus, exportConfig, importConfig } = useConfigImportExport({
-    importSettings,
   });
 
   return (
@@ -67,19 +62,17 @@ export default function UserProfileModal({ onClose }) {
                   backendLogout={backendLogout}
                   cacheStats={cacheStats}
                 />
-
-                <ConfigBackupSection
-                  fileInputRef={fileInputRef}
-                  importStatus={importStatus}
-                  onExport={exportConfig}
-                  onImport={importConfig}
-                />
               </section>
 
               <section className="space-y-6">
                 <CreditsSection />
 
-                <SceneCostSection settings={settings} updateSettings={updateSettings} />
+                <SceneCostSection
+                  settings={settings}
+                  updateSettings={updateSettings}
+                  sceneModelConfig={sceneModelConfig}
+                  backendKeys={backendKeys}
+                />
               </section>
             </div>
           </div>

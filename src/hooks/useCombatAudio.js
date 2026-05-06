@@ -23,6 +23,8 @@ function getVolume(level) {
   return Math.max(0, Math.min(1, (level ?? 70) / 100));
 }
 
+const KNOWN_TTS_PROVIDERS = ['elevenlabs', 'xtts'];
+
 export function useCombatAudio(combat) {
   const { settings, hasApiKey, voicePools } = useSettings();
   const campaign = useGameCampaign();
@@ -40,8 +42,12 @@ export function useCombatAudio(combat) {
   const battleCryCooldownRef = useRef(new Map());
   const battleCryIndexRef = useRef(new Map());
 
+  const activeTtsProvider = KNOWN_TTS_PROVIDERS.includes(settings.sceneTtsTier)
+    ? settings.sceneTtsTier
+    : (settings.ttsProvider || 'elevenlabs');
+
   const enabled = settings.sfxEnabled;
-  const ttsEnabled = enabled && hasApiKey('elevenlabs');
+  const ttsEnabled = enabled && hasApiKey(activeTtsProvider);
   const campaignId = campaign?.id || campaign?.backendId || null;
 
   const flushPendingUrls = useCallback(() => {
@@ -178,7 +184,7 @@ export function useCombatAudio(combat) {
         maleVoices: voicePools.maleVoices || [],
         femaleVoices: voicePools.femaleVoices || [],
         narratorVoiceId: voicePools.narratorVoiceId || null,
-        ttsProvider: settings.ttsProvider || 'elevenlabs',
+        ttsProvider: activeTtsProvider,
       },
       dispatch
     );
@@ -245,7 +251,7 @@ export function useCombatAudio(combat) {
             maleVoices: voicePools.maleVoices || [],
             femaleVoices: voicePools.femaleVoices || [],
             narratorVoiceId: voicePools.narratorVoiceId || null,
-            ttsProvider: settings.ttsProvider || 'elevenlabs',
+            ttsProvider: activeTtsProvider,
           },
           dispatch
         );
@@ -276,7 +282,7 @@ export function useCombatAudio(combat) {
     settings.language,
     voicePools.maleVoices,
     voicePools.narratorVoiceId,
-    settings.ttsProvider,
+    activeTtsProvider,
     ttsEnabled,
   ]);
 

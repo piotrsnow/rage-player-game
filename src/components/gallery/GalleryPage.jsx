@@ -41,7 +41,9 @@ export default function GalleryPage() {
   const repairReplaySceneImage = useCallback(async (scene, sceneIndex) => {
     if (!selected?.gameState?.campaign || !scene?.narrative) return false;
 
-    const provider = settings.imageProvider || 'dalle';
+    const provider = ['dalle', 'gpt-image', 'stability', 'gemini', 'sd-webui'].includes(settings.sceneImageTier)
+      ? settings.sceneImageTier
+      : (settings.imageProvider || 'dalle');
     const keyProvider = provider === 'stability'
       ? 'stability'
       : provider === 'gemini'

@@ -8,6 +8,16 @@ import { shortId } from '../utils/ids';
 
 const ITEM_IMAGE_RETRY_COOLDOWN_MS = 60000;
 
+const KNOWN_IMAGE_PROVIDERS = ['dalle', 'gpt-image', 'stability', 'gemini', 'sd-webui'];
+
+const IMAGE_KEY_MAP = {
+  dalle: 'openai',
+  'gpt-image': 'openai',
+  stability: 'stability',
+  gemini: 'gemini',
+  'sd-webui': 'sd-webui',
+};
+
 export function useImageGeneration() {
   const { state, dispatch, autoSave } = useGame();
   const { settings, hasApiKey } = useSettings();
@@ -15,19 +25,19 @@ export function useImageGeneration() {
   const itemImageGenerationLocksRef = useRef(new Set());
   const itemImageFailureTimestampsRef = useRef(new Map());
 
-  const { sceneVisualization, imageProvider, itemImagesEnabled, sdWebuiModel = '', sdWebuiSeed = null } = settings;
+  // Derive image provider from sceneImageTier (user's SceneCost pick).
+  // Falls back to legacy imageProvider for old settings.
+  const imageProvider = KNOWN_IMAGE_PROVIDERS.includes(settings.sceneImageTier)
+    ? settings.sceneImageTier
+    : (settings.imageProvider || 'dalle');
+
+  const { itemImagesEnabled, sdWebuiModel = '', sdWebuiSeed = null } = settings;
   const imageStyle = settings.dmSettings?.imageStyle || 'painting';
   const darkPalette = settings.dmSettings?.darkPalette || false;
   const imageSeriousness = settings.dmSettings?.narratorSeriousness ?? null;
-  const imageGenEnabled = sceneVisualization === 'image';
+  const imageGenEnabled = settings.sceneImageTier !== 'none' && KNOWN_IMAGE_PROVIDERS.includes(settings.sceneImageTier);
   const itemImageGenEnabled = itemImagesEnabled !== false;
-  const imgKeyProvider = imageProvider === 'stability'
-    ? 'stability'
-    : imageProvider === 'gemini'
-      ? 'gemini'
-      : imageProvider === 'sd-webui'
-        ? 'sd-webui'
-        : 'openai';
+  const imgKeyProvider = IMAGE_KEY_MAP[imageProvider] || 'openai';
   // Image keys are env-only on the backend — FE just passes an empty
   // string (imageService ignores it). `hasApiKey(provider)` below is the
   // real gate for whether generation is allowed.

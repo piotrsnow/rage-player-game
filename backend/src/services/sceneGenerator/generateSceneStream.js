@@ -32,6 +32,7 @@ import { handleDungeonEntry } from '../livingWorld/dungeonEntry.js';
 import { reconcileCloneBatch } from '../livingWorld/cloneReconciliation.js';
 import { pickQuestGiver } from '../livingWorld/questGoalAssigner.js';
 import { enqueuePostSceneWork } from '../cloudTasks.js';
+import { resolveModelForTask } from '../serverConfig.js';
 import { processStateChanges as processAchievementEvents } from '../../../../shared/domain/achievementTracker.js';
 import { computeCombatCharXp } from '../../../../shared/domain/combatXp.js';
 import {
@@ -76,6 +77,8 @@ export async function generateSceneStream(campaignId, playerAction, options = {}
   // SSE error; nano calls fall back silently (heuristic intent, skip summary).
   const llmPremiumTimeoutMs = Number(dmSettings?.llmPremiumTimeoutMs) || 45000;
   const llmNanoTimeoutMs = Number(dmSettings?.llmNanoTimeoutMs) || 15000;
+
+  const effectiveModel = model || await resolveModelForTask('sceneGeneration', provider) || null;
 
   try {
     // 1. Load campaign data (DB → hydrated coreState)
@@ -287,7 +290,7 @@ export async function generateSceneStream(campaignId, playerAction, options = {}
     try {
       sceneResult = await runTwoStagePipelineStreaming(
         systemPromptParts, userPrompt, contextBlocks,
-        { provider, model, apiKey: providerApiKey, signal: premiumController.signal },
+        { provider, model: effectiveModel, apiKey: providerApiKey, signal: premiumController.signal },
         (text) => onEvent({ type: 'chunk', text }),
       );
     } finally {
@@ -327,7 +330,7 @@ export async function generateSceneStream(campaignId, playerAction, options = {}
       try {
         sceneResult = await runTwoStagePipelineStreaming(
           systemPromptParts, retryUserPrompt, contextBlocks,
-          { provider, model, apiKey: providerApiKey, signal: retryController.signal },
+          { provider, model: effectiveModel, apiKey: providerApiKey, signal: retryController.signal },
           null, // silent retry — FE clears its buffer on the 'retry' event above
         );
       } catch (err) {

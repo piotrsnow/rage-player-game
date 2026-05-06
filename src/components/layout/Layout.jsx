@@ -23,6 +23,7 @@ import ImageConfigModal from '../settings/ImageConfigModal';
 import AudioConfigModal from '../settings/AudioConfigModal';
 import UserProfileModal from '../settings/UserProfileModal';
 import UserManagementModal from '../admin/UserManagementModal';
+import PrivacyPolicyModal from '../settings/PrivacyPolicyModal';
 import WorldStateModal from '../gameplay/WorldStateModal';
 import TasksInfoModal from '../gameplay/TasksInfoModal';
 
@@ -46,6 +47,8 @@ function ModalLayer() {
     closeProfile,
     adminUsersOpen,
     closeAdminUsers,
+    privacyOpen,
+    closePrivacy,
   } = useModals();
   const soloWorld = useGameWorld();
   const soloQuests = useGameQuests();
@@ -66,7 +69,7 @@ function ModalLayer() {
           characterVoiceMap={characterVoiceMap}
           maleVoices={voicePools.maleVoices}
           femaleVoices={voicePools.femaleVoices}
-          ttsProvider={settings.ttsProvider || 'elevenlabs'}
+          ttsProvider={['elevenlabs', 'xtts'].includes(settings.sceneTtsTier) ? settings.sceneTtsTier : (settings.ttsProvider || 'elevenlabs')}
           dispatch={dispatch}
           autoSave={autoSave}
           onClose={closeWorldState}
@@ -88,6 +91,7 @@ function ModalLayer() {
       {audioConfigOpen && <AudioConfigModal onClose={closeAudioConfig} />}
       {profileOpen && <UserProfileModal onClose={closeProfile} />}
       {adminUsersOpen && <UserManagementModal onClose={closeAdminUsers} />}
+      {privacyOpen && <PrivacyPolicyModal onClose={closePrivacy} />}
     </>
   );
 }

@@ -39,6 +39,7 @@ import { creditsRoutes, creditsWebhookRoute } from './routes/credits.js';
 import { playgroundRoutes } from './routes/playground.js';
 import { topicHistoryRoutes } from './routes/topicHistory.js';
 import { voiceSettingsRoutes } from './routes/voiceSettings.js';
+import { sceneModelConfigRoutes } from './routes/sceneModelConfig.js';
 import { mapStudioRoutes } from './routes/mapStudio/index.js';
 import { seedWorld } from './scripts/seedWorld.js';
 import {
@@ -197,6 +198,14 @@ await fastify.register(async function voiceSettingsScope(app) {
   });
   app.register(voiceSettingsRoutes);
 }, { prefix: '/v1/voice-settings' });
+
+// Scene model config — admin-set enablement + per-scene pricing for TTS/image providers.
+await fastify.register(async function sceneModelConfigScope(app) {
+  app.addHook('onRoute', (routeOptions) => {
+    routeOptions.config = { ...routeOptions.config, rateLimit: { max: 30, timeWindow: '1 minute' } };
+  });
+  app.register(sceneModelConfigRoutes);
+}, { prefix: '/v1/scene-model-config' });
 
 // Living World (Phase 2) — companion CAS, C2 dialog. Auth-gated, rate-limited like data routes.
 await fastify.register(async function livingWorldScope(app) {

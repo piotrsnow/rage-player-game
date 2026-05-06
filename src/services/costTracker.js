@@ -23,13 +23,30 @@ const PRICING = {
 };
 
 const SCENE_BASE_COST = 0.05;
-const TTS_TIER_COST = { none: 0, local: 0.02, best: 0.10 };
-const IMAGE_TIER_COST = { none: 0, good: 0.10, local: 0.02 };
 
-export function calculateSceneCost(settings) {
+// Legacy fallback costs for old tier IDs (before admin-configurable pricing).
+const LEGACY_TTS_COST = { local: 0.02, best: 0.10 };
+const LEGACY_IMAGE_COST = { good: 0.10, local: 0.02 };
+
+export function calculateSceneCost(settings, sceneModelConfig) {
   const base = SCENE_BASE_COST;
-  const tts = TTS_TIER_COST[settings.sceneTtsTier] || 0;
-  const image = IMAGE_TIER_COST[settings.sceneImageTier] || 0;
+  const ttsTier = settings.sceneTtsTier || 'none';
+  const imageTier = settings.sceneImageTier || 'none';
+
+  let tts = 0;
+  if (ttsTier !== 'none') {
+    tts = sceneModelConfig?.tts?.[ttsTier]?.pricePerScene
+      ?? LEGACY_TTS_COST[ttsTier]
+      ?? 0;
+  }
+
+  let image = 0;
+  if (imageTier !== 'none') {
+    image = sceneModelConfig?.image?.[imageTier]?.pricePerScene
+      ?? LEGACY_IMAGE_COST[imageTier]
+      ?? 0;
+  }
+
   return { type: 'scene', cost: base + tts + image, base, tts, image, timestamp: Date.now() };
 }
 

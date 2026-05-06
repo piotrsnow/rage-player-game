@@ -76,6 +76,7 @@ export async function translateImagePromptToEnglish({ text, userApiKeys = null }
     callAIJson({
       provider: 'openai',
       modelTier: 'nano',
+      taskCategory: 'imagePrompt',
       systemPrompt,
       userPrompt,
       maxTokens: 400,
