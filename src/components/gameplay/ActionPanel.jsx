@@ -61,6 +61,7 @@ export default function ActionPanel({
   dispatch = null,
   dictation = null,
   campaignId = null,
+  onIncidentCorrectionsApplied = null,
 }) {
   const [customAction, setCustomAction] = useState('');
   const [combatPickerOpen, setCombatPickerOpen] = useState(false);
@@ -480,8 +481,8 @@ export default function ActionPanel({
       {incidentOpen && campaignId && createPortal(
         <IncidentModal
           campaignId={campaignId}
-          dispatch={dispatch}
           onClose={() => setIncidentOpen(false)}
+          onCorrectionsApplied={onIncidentCorrectionsApplied}
         />,
         document.body
       )}

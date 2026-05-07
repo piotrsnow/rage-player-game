@@ -4,12 +4,15 @@ import AdvancementPanel from '../character/AdvancementPanel';
 import AchievementsPanel from '../character/AchievementsPanel';
 import AutoPlayerPanel from './AutoPlayerPanel';
 import SummaryModal from './SummaryModal';
+import SystemLogsModal from './SystemLogsModal';
 import FloatingVideoPanel from '../multiplayer/FloatingVideoPanel';
 import NpcSheetModal from './chat/NpcSheetModal';
 import {
   useGameWorld,
   useGameQuests,
   useGameAchievements,
+  useGameChatHistory,
+  useGameScenes,
   useGameSlice,
 } from '../../stores/gameSelectors';
 import { useModals } from '../../contexts/ModalContext';
@@ -39,6 +42,9 @@ export default function GameplayModals({
   // achievements
   achievementsOpen,
   onAchievementsClose,
+  // system logs (event log grouped by scene)
+  systemLogsOpen,
+  onSystemLogsClose,
   // auto-player
   autoPlayerSettingsOpen,
   onAutoPlayerSettingsClose,
@@ -56,6 +62,8 @@ export default function GameplayModals({
   const soloWorld = useGameWorld();
   const soloQuests = useGameQuests();
   const soloAchievements = useGameAchievements();
+  const soloChatHistory = useGameChatHistory();
+  const soloScenes = useGameScenes();
   const characterVoiceMap = useGameSlice((s) => s.characterVoiceMap);
   const { npcSheetName, closeNpcSheet } = useModals();
 
@@ -111,6 +119,14 @@ export default function GameplayModals({
           characterName={character?.name}
           isGeneratingScene={isGeneratingScene}
           onClose={onAutoPlayerSettingsClose}
+        />
+      )}
+
+      {systemLogsOpen && (
+        <SystemLogsModal
+          chatHistory={isMultiplayer ? (mpGameState?.chatHistory || []) : soloChatHistory}
+          scenes={isMultiplayer ? (mpGameState?.scenes || []) : soloScenes}
+          onClose={onSystemLogsClose}
         />
       )}
 

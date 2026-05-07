@@ -214,7 +214,7 @@ export default function Header() {
   return (
     <header
       ref={headerRef}
-      className="fixed top-0 w-full z-50 flex justify-between items-center px-6 h-16 backdrop-blur-md border-b border-primary/[0.12] relative overflow-visible"
+      className="fixed top-0 w-full z-50 flex justify-between items-center px-6 h-16 backdrop-blur-md border-b border-primary/[0.12] overflow-visible"
       style={HEADER_CHROME_STYLE}
     >
       {isPlayRoute && (

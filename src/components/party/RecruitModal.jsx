@@ -38,7 +38,7 @@ function NpcCard({ npc, partySize, onAttempt, lastResult, isGenerating }) {
   const partyFull = partySize >= MAX_COMPANIONS;
   const tier = getDispositionTier(npc.disposition);
   const dispositionPct = Math.max(0, Math.min(100, ((npc.disposition || 0) + 50) / 100 * 100));
-  const recruitable = npc.canRecruit;
+  const recruitable = npc.canRecruit && !lastResult?.success;
 
   return (
     <div className={`flex items-center gap-4 px-4 py-3 rounded-lg border transition-all ${
@@ -138,6 +138,7 @@ export default function RecruitModal({ scenes, world, party, dispatch, onClose }
   const [results, setResults] = useState({});
   const [generatingIds, setGeneratingIds] = useState(new Set());
   const generationTriggered = useRef(false);
+  const successIds = useRef(new Set());
   const { state, autoSave } = useGame();
   const { settings } = useSettings();
 
@@ -200,11 +201,13 @@ export default function RecruitModal({ scenes, world, party, dispatch, onClose }
   }, [triggerPortraitGeneration]);
 
   const handleAttempt = (npc) => {
+    if (npc?.id && successIds.current.has(npc.id)) return;
     const chance = calculateRecruitChance(npc.disposition || 0);
     const roll = rollD100();
     const success = roll <= chance;
     if (success) {
       const criticalSuccess = roll <= 5;
+      if (npc.id) successIds.current.add(npc.id);
       dispatch({
         type: 'RECRUIT_NPC_SUCCESS',
         payload: { npcId: npc.id, npcName: npc.name, criticalSuccess },

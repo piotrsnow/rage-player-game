@@ -755,6 +755,15 @@
   animation: holoCountShimmer 4s ease-in-out infinite;
 }
 
+@keyframes pulseSubtle {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.85; }
+}
+
+.animate-pulse-subtle {
+  animation: pulseSubtle 2s ease-in-out infinite;
+}
+
 .animate-shimmer {
   animation: shimmer 2s ease-in-out infinite;
 }

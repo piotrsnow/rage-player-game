@@ -29,45 +29,7 @@ const TechnicalDetailsBlock = memo(function TechnicalDetailsBlock({ details, t }
   );
 });
 
-function buildCorrectionsPayload(corrections) {
-  if (!corrections) return null;
-  const payload = {};
-
-  if (corrections.currentLocation) {
-    payload.currentLocation = corrections.currentLocation;
-  }
-  if (Array.isArray(corrections.items) && corrections.items.length > 0) {
-    payload.items = corrections.items;
-  }
-  if (typeof corrections.gold === 'number' && corrections.gold !== 0) {
-    payload.gold = corrections.gold;
-  }
-  if (typeof corrections.hp === 'number' && corrections.hp !== 0) {
-    payload.hp = corrections.hp;
-  }
-  if (typeof corrections.xp === 'number' && corrections.xp !== 0) {
-    payload.xp = corrections.xp;
-  }
-  if (Array.isArray(corrections.npcs) && corrections.npcs.length > 0) {
-    payload.npcs = corrections.npcs;
-  }
-  if (typeof corrections.attributePoints === 'number' && corrections.attributePoints > 0) {
-    payload.attributePoints = corrections.attributePoints;
-  }
-  if (typeof corrections.manaMaxChange === 'number' && corrections.manaMaxChange !== 0) {
-    payload.manaMaxChange = corrections.manaMaxChange;
-  }
-  if (corrections.learnSpell) {
-    payload.learnSpell = corrections.learnSpell;
-  }
-  if (corrections.addScroll) {
-    payload.addScroll = corrections.addScroll;
-  }
-
-  return Object.keys(payload).length > 0 ? payload : null;
-}
-
-export default function IncidentModal({ campaignId, dispatch, onClose }) {
+export default function IncidentModal({ campaignId, onClose, onCorrectionsApplied }) {
   const { t } = useTranslation();
   const modalRef = useModalA11y(onClose);
   const [view, setView] = useState('form'); // 'form' | 'verdict' | 'history'
@@ -75,25 +37,25 @@ export default function IncidentModal({ campaignId, dispatch, onClose }) {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState(null);
   const [result, setResult] = useState(null);
-  const [correctionsApplied, setCorrectionsApplied] = useState(false);
+  const [refetchTriggered, setRefetchTriggered] = useState(false);
   const [history, setHistory] = useState(null);
   const [loadingHistory, setLoadingHistory] = useState(false);
 
-  // Apply corrections when verdict arrives and player is right
+  // Server applied corrections atomically — we just refetch campaign state
+  // so the FE store mirrors the new world. Single fire per result.
   useEffect(() => {
-    if (!result || !result.isPlayerRight || correctionsApplied || !dispatch) return;
-    const payload = buildCorrectionsPayload(result.corrections);
-    if (payload) {
-      dispatch({ type: 'APPLY_STATE_CHANGES', payload });
-      setCorrectionsApplied(true);
+    if (!result || !result.appliedStateChanges || refetchTriggered) return;
+    if (typeof onCorrectionsApplied === 'function') {
+      onCorrectionsApplied();
     }
-  }, [result, correctionsApplied, dispatch]);
+    setRefetchTriggered(true);
+  }, [result, refetchTriggered, onCorrectionsApplied]);
 
   const handleSubmit = useCallback(async () => {
     if (!complaint.trim() || complaint.trim().length < 10 || submitting) return;
     setSubmitting(true);
     setError(null);
-    setCorrectionsApplied(false);
+    setRefetchTriggered(false);
     try {
       const data = await apiClient.post(`/ai/campaigns/${campaignId}/incidents`, {
         complaint: complaint.trim(),
@@ -126,7 +88,7 @@ export default function IncidentModal({ campaignId, dispatch, onClose }) {
     setComplaint('');
     setResult(null);
     setError(null);
-    setCorrectionsApplied(false);
+    setRefetchTriggered(false);
   }, []);
 
   return (
@@ -250,11 +212,21 @@ export default function IncidentModal({ campaignId, dispatch, onClose }) {
                 </div>
               )}
 
-              {/* Corrections summary */}
-              {result.isPlayerRight && correctionsApplied && (
-                <div className="text-[11px] text-green-300/70 flex items-center gap-1.5">
-                  <span className="material-symbols-outlined text-xs">sync</span>
-                  {t('gameplay.incidentCorrected')}
+              {/* Corrections summary — list of human-readable changes the AI applied */}
+              {result.isPlayerRight && Array.isArray(result.correctionSummary) && result.correctionSummary.length > 0 && (
+                <div className="border border-green-400/20 rounded-sm bg-green-500/5 px-3 py-2.5 space-y-1.5">
+                  <div className="flex items-center gap-1.5 text-[11px] font-label uppercase tracking-widest text-green-300">
+                    <span className="material-symbols-outlined text-xs">check_circle</span>
+                    {t('gameplay.incidentCorrectionsApplied')}
+                  </div>
+                  <ul className="text-xs text-on-surface/80 space-y-1 ml-2">
+                    {result.correctionSummary.map((line, i) => (
+                      <li key={i} className="leading-relaxed flex gap-1.5">
+                        <span className="text-green-400/70 shrink-0">•</span>
+                        <span>{line}</span>
+                      </li>
+                    ))}
+                  </ul>
                 </div>
               )}
 
@@ -312,6 +284,16 @@ export default function IncidentModal({ campaignId, dispatch, onClose }) {
                   <p className="text-xs text-on-surface/70 leading-relaxed italic">
                     {inc.aiVerdict}
                   </p>
+                  {inc.isPlayerRight && Array.isArray(inc.corrections?.summary) && inc.corrections.summary.length > 0 && (
+                    <ul className="text-[11px] text-on-surface/70 space-y-0.5 ml-1">
+                      {inc.corrections.summary.map((line, i) => (
+                        <li key={i} className="leading-relaxed flex gap-1.5">
+                          <span className="text-green-400/60 shrink-0">•</span>
+                          <span>{line}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
                   {inc.narrativeComment && (
                     <div className="bg-primary/5 border border-primary/10 rounded-sm px-2.5 py-2 group/seg">
                       <div className="flex items-start gap-2">

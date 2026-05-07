@@ -26,6 +26,7 @@ import { useDictationContext } from '../../contexts/DictationContext';
 import { useNarrator } from '../../hooks/useNarrator';
 import { useGlobalMusic } from '../../contexts/MusicContext';
 import { apiClient } from '../../services/apiClient';
+import { storage } from '../../services/storage';
 import ScenePanel from './ScenePanel';
 import ActionPanel from './ActionPanel';
 import ChatPanel from './ChatPanel';
@@ -192,6 +193,7 @@ export default function GameplayPage({ readOnly = false, shareToken = null, onRe
   const [worldModalOpen, setWorldModalOpen] = useState(false);
   const [mpPanelOpen, setMpPanelOpen] = useState(false);
   const [achievementsOpen, setAchievementsOpen] = useState(false);
+  const [systemLogsOpen, setSystemLogsOpen] = useState(false);
   const [videoPanelOpen, setVideoPanelOpen] = useState(false);
   const [autoPlayerSettingsOpen, setAutoPlayerSettingsOpen] = useState(false);
   const [viewingSceneIndex, setViewingSceneIndex] = useState(null);
@@ -509,6 +511,24 @@ export default function GameplayPage({ readOnly = false, shareToken = null, onRe
 
   useCampaignLoader({ campaign, isMultiplayer, readOnly, urlCampaignId, dispatch, navigate });
 
+  // After an incident is rozpatrzone pozytywnie the backend already mutated
+  // character + npcs + quests + codex/knowledge atomically. Refetch the
+  // campaign blob so the FE store mirrors the corrected world (mapa, panel
+  // postaci, lista NPC, kodeks). Same code path as useCampaignLoader uses.
+  const handleIncidentCorrectionsApplied = useCallback(() => {
+    const cid = sCampaign?.backendId || urlCampaignId;
+    if (!cid || isMultiplayer) return;
+    storage.loadCampaign(cid)
+      .then((data) => {
+        if (data) {
+          dispatch({ type: 'LOAD_CAMPAIGN', payload: data });
+          storage.saveLocalSnapshot(data);
+        }
+      })
+      .catch(() => { /* non-fatal — modal still shows the verdict */ });
+    // sCampaign?.backendId is the resolved id; urlCampaignId is the URL fallback
+  }, [sCampaign?.backendId, urlCampaignId, isMultiplayer, dispatch]);
+
   const actions = useGameplayActions({
     dispatch,
     autoSave,
@@ -642,6 +662,7 @@ export default function GameplayPage({ readOnly = false, shareToken = null, onRe
           onOpenAdvancement={() => actions.handleAdvancementOpen(character)}
           onOpenMpPanel={() => setMpPanelOpen(true)}
           onOpenSummaryModal={recap.openSummaryModal}
+          onOpenSystemLogs={() => setSystemLogsOpen(true)}
           onOpenAchievements={() => setAchievementsOpen(true)}
           onOpenWorldModal={() => setWorldModalOpen(true)}
           videoPanelOpen={videoPanelOpen}
@@ -782,6 +803,7 @@ export default function GameplayPage({ readOnly = false, shareToken = null, onRe
               dispatch={dispatch}
               dictation={dictation}
               campaignId={sCampaign?.backendId || urlCampaignId || null}
+              onIncidentCorrectionsApplied={handleIncidentCorrectionsApplied}
             />
           </div>
         )}
@@ -1028,6 +1050,8 @@ export default function GameplayPage({ readOnly = false, shareToken = null, onRe
         onAdvancementClose={actions.handleAdvancementClose}
         achievementsOpen={achievementsOpen}
         onAchievementsClose={() => setAchievementsOpen(false)}
+        systemLogsOpen={systemLogsOpen}
+        onSystemLogsClose={() => setSystemLogsOpen(false)}
         autoPlayerSettingsOpen={autoPlayerSettingsOpen}
         onAutoPlayerSettingsClose={() => setAutoPlayerSettingsOpen(false)}
         autoPlayer={autoPlayer}

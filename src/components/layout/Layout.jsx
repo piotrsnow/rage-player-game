@@ -156,7 +156,7 @@ export default function Layout() {
           <Header />
           <Sidebar />
           <main
-            className={`pt-0 pb-24 lg:pb-0 min-h-screen ${isPlaying
+            className={`pt-16 pb-24 lg:pb-0 min-h-screen ${isPlaying
               ? 'overflow-x-hidden overflow-y-hidden overscroll-y-none lg:pl-[320px]'
               : ''}`}
             style={isPlaying && uwBonus.sidebar > 0 ? { paddingLeft: 320 + uwBonus.sidebar } : undefined}

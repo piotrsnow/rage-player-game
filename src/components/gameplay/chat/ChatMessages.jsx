@@ -204,6 +204,23 @@ const SUBTYPE_STYLES = {
   character_levelup: { icon: 'stars',      color: 'text-amber-300',   line: 'to-amber-400/45' },
   achievement_unlock: { icon: 'emoji_events', color: 'text-amber-400', line: 'to-amber-400/40' },
   location_discovered: { icon: 'explore', color: 'text-teal-300', line: 'to-teal-300/30' },
+  location_changed:    { icon: 'place', color: 'text-teal-300', line: 'to-teal-300/30' },
+  spell_learned:       { icon: 'auto_stories', color: 'text-purple-300', line: 'to-purple-300/30' },
+  scroll_gained:       { icon: 'description', color: 'text-amber-300', line: 'to-amber-300/30' },
+  scroll_consumed:     { icon: 'description', color: 'text-orange-300', line: 'to-orange-300/30' },
+  status_change:       { icon: 'medical_information', color: 'text-red-400', line: 'to-red-400/30' },
+  combat_start:        { icon: 'swords', color: 'text-red-500', line: 'to-red-500/30' },
+  campaign_end:        { icon: 'auto_stories', color: 'text-amber-400', line: 'to-amber-400/40' },
+  npc_met:             { icon: 'person_add', color: 'text-sky-300', line: 'to-sky-300/30' },
+  npc_died:            { icon: 'skull', color: 'text-red-400', line: 'to-red-400/30' },
+  npc_disposition:     { icon: 'mood', color: 'text-pink-300', line: 'to-pink-300/30' },
+  faction_change:      { icon: 'groups', color: 'text-indigo-300', line: 'to-indigo-300/30' },
+  attribute_change:    { icon: 'fitness_center', color: 'text-amber-300', line: 'to-amber-300/30' },
+  mana_max:            { icon: 'auto_fix_high', color: 'text-purple-300', line: 'to-purple-300/30' },
+  skill_badge:         { icon: 'military_tech', color: 'text-violet-300', line: 'to-violet-300/30' },
+  effect_added:        { icon: 'whatshot', color: 'text-cyan-300', line: 'to-cyan-300/30' },
+  crafting_failed:     { icon: 'cancel', color: 'text-red-400', line: 'to-red-400/30' },
+  alchemy_failed:      { icon: 'cancel', color: 'text-red-400', line: 'to-red-400/30' },
 };
 
 /** Rich inline colors for skill / character XP system lines (matches `stateChangeMessages` shapes). */

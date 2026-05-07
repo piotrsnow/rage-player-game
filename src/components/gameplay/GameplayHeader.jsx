@@ -43,6 +43,7 @@ export default function GameplayHeader({
   onOpenAdvancement,
   onOpenMpPanel,
   onOpenSummaryModal,
+  onOpenSystemLogs,
   onOpenAchievements,
   onOpenWorldModal,
   // video
@@ -292,6 +293,15 @@ export default function GameplayHeader({
                 className="material-symbols-outlined text-sm text-outline hover:text-primary transition-colors"
               >
                 short_text
+              </button>
+            </Tooltip>
+            <Tooltip content={t('gameplay.systemLogsTitle', 'Event log')} placement="bottom" variant="compact" asChild>
+              <button
+                onClick={onOpenSystemLogs}
+                aria-label={t('gameplay.systemLogsTitle', 'Event log')}
+                className="material-symbols-outlined text-sm text-outline hover:text-primary transition-colors"
+              >
+                receipt_long
               </button>
             </Tooltip>
             <Tooltip content={t('achievements.title', 'Achievements')} placement="bottom" variant="compact" asChild>
