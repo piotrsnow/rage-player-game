@@ -76,14 +76,16 @@ export default function SidebarPartyList({ party = [], activeCharacterId, isMult
         )}
       </div>
 
-      {openMember && (
-        <PartyMemberModal
-          member={openMember}
-          onClose={() => setOpenMemberId(null)}
-          onManageCompanion={(id, updates) => dispatch({ type: 'UPDATE_PARTY_MEMBER', payload: { id, updates } })}
-          dispatch={dispatch}
-        />
-      )}
+      {openMember &&
+        createPortal(
+          <PartyMemberModal
+            member={openMember}
+            onClose={() => setOpenMemberId(null)}
+            onManageCompanion={(id, updates) => dispatch({ type: 'UPDATE_PARTY_MEMBER', payload: { id, updates } })}
+            dispatch={dispatch}
+          />,
+          document.body,
+        )}
 
       {recruitOpen && createPortal(
         <RecruitModal

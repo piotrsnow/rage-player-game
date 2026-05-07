@@ -3,9 +3,14 @@
 //   - world.mapState         → graph nodes query
 //   - world.mapConnections   → graph movement edges
 //   - world.exploredLocations → DiscoveryState = visited on graph nodes
+//   - world.currentLocation (string) → world.currentLocationRef ({ kind, id })
+//   - world.knowledgeBase.locations → graph node metadata (visitCount, npcsEncountered)
+//   - npc.lastLocation (string) → npc.locationRef ({ kind, id })
 // They remain populated for backward-compat reads but are no longer the
 // source of truth. The LocationEdge table + graphExtractor pipeline owns
 // spatial connectivity. See backend/src/services/locationGraph/.
+// Faza 3a — wprowadzone composite refs jako nowy primary path; legacy stringi
+// zachowane do czasu Fazy 8 cleanup.
 
 import { calculateMaxWounds } from '../../services/gameState';
 import { DEFAULT_CHARACTER_AGE, normalizeCharacterAge } from '../../services/characterAge';
@@ -166,6 +171,9 @@ export const initialState = {
     mapState: [],
     mapConnections: [],
     currentLocation: '',
+    // Faza 3a — composite ref do node grafu lokacji ({ kind: 'world'|'campaign', id: UUID } | null).
+    // Preferowany primary path; `currentLocation` (string) zachowane jako legacy do Fazy 8.
+    currentLocationRef: null,
     timeState: { day: 1, timeOfDay: 'morning', hour: 6, season: 'unknown' },
     activeEffects: [],
     compressedHistory: '',

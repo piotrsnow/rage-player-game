@@ -93,6 +93,7 @@ export async function syncNPCsToNormalized(campaignId, npcs) {
         lastLocation: npc.lastLocation || null,
         factionId: npc.factionId || null,
         notes: npc.notes || null,
+        portraitUrl: npc.portraitUrl || null,
       },
     }));
   if (valid.length === 0) return;
@@ -395,6 +396,7 @@ export async function reconstructFromNormalized(campaignId, coreState, { current
   });
   if (dbNpcs.length > 0) {
     coreState.world.npcs = dbNpcs.map((n) => ({
+      id: `npc_${n.npcId}`,
       name: n.name,
       gender: n.gender,
       role: n.role,
@@ -409,6 +411,7 @@ export async function reconstructFromNormalized(campaignId, coreState, { current
       creatureKind: n.creatureKind,
       level: n.level,
       stats: n.stats && typeof n.stats === 'object' ? n.stats : {},
+      portraitUrl: n.portraitUrl || null,
       relationships: (n.relationships || []).map((r) => ({
         npcName: r.targetRef,
         type: r.relation,

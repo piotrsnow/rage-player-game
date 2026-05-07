@@ -477,8 +477,8 @@ rage-player-game/
 │   │   ├── magicEngine.js              # Mana-based spellcasting
 │   │   ├── stateValidator.js           # AI state-change validation (+ shared/domain helpers)
 │   │   ├── storage.js                  # Campaign save/load/queue
-│   │   ├── apiClient.js                # JWT + refresh + CSRF + idempotency
-│   │   └── fieldMap/                   # A* pathfinding + tile rules + chunk generator
+│   │   └── apiClient.js                # JWT + refresh + CSRF + idempotency
+│   │   # Faza 5 — fieldMap/ (A*/chunks/biomy) usunięty. Lokacje jedynie przez Location Graph.
 │   ├── components/
 │   │   ├── gameplay/                   # GameplayPage + ScenePanel/ChatPanel/CombatPanel/ActionPanel/...
 │   │   │   ├── chat/                   # ChatMessageParts, ChatMessages, DiceRollMessage

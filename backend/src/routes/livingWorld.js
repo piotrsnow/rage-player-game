@@ -27,7 +27,7 @@ import {
   updateEdge,
   deactivateEdge,
 } from '../services/locationGraph/graphService.js';
-import { EDGE_TYPES } from '../../../shared/domain/locationGraph.js';
+import { EDGE_TYPES, safeValidateTacticalGrid } from '../../../shared/domain/locationGraph.js';
 import { slugifyLocationName } from '../services/locationRefs.js';
 
 const log = childLogger({ module: 'livingWorldRoutes' });
@@ -517,6 +517,10 @@ export async function livingWorldRoutes(fastify) {
           parentId: { type: 'string', format: 'uuid' },
           shape: { type: ['string', 'null'], maxLength: 40 },
           icon: { type: ['string', 'null'], maxLength: 60 },
+          // Faza 0 — nowe pola metadane na nodzie.
+          biome: { type: ['string', 'null'], maxLength: 40 },
+          anchorType: { type: ['string', 'null'], maxLength: 40 },
+          tacticalGrid: { type: ['object', 'null'] },
         },
       },
     },
@@ -541,6 +545,9 @@ export async function livingWorldRoutes(fastify) {
           parentLocationId: b.parentId || null,
           nodeShape: b.shape || null,
           nodeIcon: b.icon || null,
+          biome: b.biome || null,
+          anchorType: b.anchorType || null,
+          tacticalGrid: b.tacticalGrid ?? null,
         },
       });
     } catch (err) {
@@ -605,6 +612,11 @@ export async function livingWorldRoutes(fastify) {
           scale: { type: 'integer', minimum: 0, maximum: 7 },
           shape: { type: ['string', 'null'], maxLength: 40 },
           icon: { type: ['string', 'null'], maxLength: 60 },
+          // Faza 0 — nowe pola metadane na nodzie.
+          biome: { type: ['string', 'null'], maxLength: 40 },
+          anchorType: { type: ['string', 'null'], maxLength: 40 },
+          tacticalGrid: { type: ['object', 'null'] },
+          dungeonState: { type: ['object', 'null'] },
         },
       },
     },
@@ -629,6 +641,21 @@ export async function livingWorldRoutes(fastify) {
       if (b.scale !== undefined) data.scale = b.scale;
       if (b.shape !== undefined) data.nodeShape = b.shape || null;
       if (b.icon !== undefined) data.nodeIcon = b.icon || null;
+      // Faza 0 — opcjonalna walidacja tacticalGrid przed zapisem.
+      if (b.biome !== undefined) data.biome = b.biome || null;
+      if (b.anchorType !== undefined) data.anchorType = b.anchorType || null;
+      if (b.tacticalGrid !== undefined) {
+        if (b.tacticalGrid === null) {
+          data.tacticalGrid = null;
+        } else {
+          const r = safeValidateTacticalGrid(b.tacticalGrid);
+          if (!r.success) {
+            return reply.code(400).send({ error: 'invalid_tactical_grid', detail: r.error?.errors });
+          }
+          data.tacticalGrid = b.tacticalGrid;
+        }
+      }
+      if (b.dungeonState !== undefined) data.dungeonState = b.dungeonState ?? null;
       if (Object.keys(data).length > 0) {
         updated = await prisma.campaignLocation.update({ where: { id: nodeId }, data });
       }

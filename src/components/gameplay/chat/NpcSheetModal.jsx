@@ -1,6 +1,8 @@
 import { useTranslation } from 'react-i18next';
 import { useModalA11y } from '../../../hooks/useModalA11y';
 import { GenderIcon } from '../../../utils/genderIcon';
+import { speciesIcon } from '../../../utils/speciesIcons';
+import { apiClient } from '../../../services/apiClient';
 import NpcStatCard from '../world/NpcStatCard';
 
 /**
@@ -13,6 +15,7 @@ export default function NpcSheetModal({ npc, onClose }) {
   const modalRef = useModalA11y(onClose);
   if (!npc) return null;
 
+  const portraitUrl = npc.portraitUrl ? apiClient.resolveMediaUrl(npc.portraitUrl) : null;
   const raceLabel = npc.race
     ? t(`worldState.races.${npc.race}`, npc.race)
     : npc.creatureKind || t('worldState.races.none');
@@ -35,6 +38,20 @@ export default function NpcSheetModal({ npc, onClose }) {
         </div>
 
         <div className="flex-1 overflow-y-auto custom-scrollbar p-4 space-y-2">
+          <div className="w-20 h-20 rounded-lg overflow-hidden border border-outline-variant/25 bg-surface-container relative mx-auto mb-2">
+            {portraitUrl ? (
+              <img
+                src={portraitUrl}
+                alt={npc.name}
+                className="w-full h-full object-cover"
+                onError={(e) => { e.currentTarget.style.display = 'none'; }}
+              />
+            ) : (
+              <div className="absolute inset-0 flex items-center justify-center">
+                <span className="material-symbols-outlined text-3xl text-on-surface-variant/50">{speciesIcon(npc.race)}</span>
+              </div>
+            )}
+          </div>
           <div className="text-[11px] text-on-surface-variant space-y-1">
             {npc.role && <div><span className="text-outline">{t('worldState.role')}:</span> {npc.role}</div>}
             {npc.personality && <div><span className="text-outline">{t('worldState.personality')}:</span> {npc.personality}</div>}

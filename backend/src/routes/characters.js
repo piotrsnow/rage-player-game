@@ -114,6 +114,7 @@ function snapshotFromBody(body) {
     lockedCampaignId: body.lockedCampaignId ?? null,
     lockedCampaignName: body.lockedCampaignName ?? null,
     lockedLocation: body.lockedLocation ?? null,
+    skillBadges: Array.isArray(body.skillBadges) ? body.skillBadges : [],
   };
 }
 
@@ -133,6 +134,7 @@ function mergeUpdateBody(existingSnapshot, body) {
     'attributes', 'mana', 'spells', 'money', 'statuses', 'needs',
     'customAttackPresets', 'knownTitles', 'activeDungeonState',
     'skills', 'inventory', 'materialBag', 'equipped',
+    'skillBadges',
   ];
   for (const key of passthrough) {
     if (body[key] !== undefined) merged[key] = body[key];
@@ -177,6 +179,7 @@ const CHARACTER_BODY_SCHEMA = {
     lockedCampaignId: { type: ['string', 'null'], maxLength: 100 },
     lockedCampaignName: { type: ['string', 'null'], maxLength: 200 },
     lockedLocation: { type: ['string', 'null'], maxLength: 200 },
+    skillBadges: { type: 'array', maxItems: 500 },
   },
 };
 

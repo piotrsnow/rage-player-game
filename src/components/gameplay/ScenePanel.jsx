@@ -8,7 +8,6 @@ import EffectEngine from '../../effects/EffectEngine';
 import resolveEffects from '../../effects/resolveEffects';
 import LoadingSpinner from '../ui/LoadingSpinner';
 import SceneCanvas from './SceneCanvas';
-import FieldMapCanvas from './FieldMapCanvas';
 import OverlayDiceCard from './scene/OverlayDiceCard';
 import HighlightedNarrative, { splitIntoSentences } from './scene/HighlightedNarrative';
 
@@ -88,7 +87,6 @@ export default function ScenePanel({
   const { t } = useTranslation();
   const { settings, updateSettings } = useSettings();
   const campaign = useGameCampaign();
-  const fieldMap = useGameSlice((s) => s.world?.fieldMap);
   const dispatch = useGameDispatch();
 
   const lastSentenceRef = useRef(null);
@@ -369,21 +367,6 @@ export default function ScenePanel({
         </Suspense>
       ) : (settings.sceneVisualization || 'image') === 'canvas' ? (
         <SceneCanvas scene={scene} />
-      ) : (settings.sceneVisualization || 'image') === 'map' ? (
-        <div className="w-full h-full bg-gradient-to-br from-surface-container-high via-surface-container to-surface-container-lowest">
-          {fieldMap ? (
-            <FieldMapCanvas
-              onFieldTurnReady={onFieldTurnReady}
-              scene={scene}
-              world={world}
-              characterName={characterName}
-            />
-          ) : (
-            <div className="w-full h-full flex items-center justify-center">
-              <LoadingSpinner size="md" text={t('common.loading')} />
-            </div>
-          )}
-        </div>
       ) : (settings.sceneVisualization || 'image') === 'image' && displayedSrc ? (
         <img
           key={displayedSrc}

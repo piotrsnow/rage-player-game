@@ -553,18 +553,8 @@ export default function GameplayPage({ readOnly = false, shareToken = null, onRe
     dispatch,
   });
 
-  useEffect(() => {
-    if ((settings.sceneVisualization || 'image') !== 'map') return;
-    if (sWorld?.fieldMap) return;
-    if (!sCampaign) return;
-    dispatch({
-      type: 'INIT_FIELD_MAP',
-      payload: {
-        seed: sCampaign.id ? hashCode(sCampaign.id) : Date.now(),
-        activeBiome: 'plains',
-      },
-    });
-  }, [settings.sceneVisualization, sWorld?.fieldMap, sCampaign, dispatch]);
+  // Faza 5 — fieldMap removed; sceneVisualization='map' jest no-op (UI fallback
+  // do obrazka). Cała procedural-terrain warstwa zastąpiona Location Graph.
 
   const MAX_CONSECUTIVE_IDLE_EVENTS = 2;
 
@@ -771,7 +761,19 @@ export default function GameplayPage({ readOnly = false, shareToken = null, onRe
               onAction={handleAction}
               disabled={isGeneratingScene}
               autoPlayerTypingText={autoPlayer.typingText}
-              npcs={((isMultiplayer ? mpGameState?.world?.npcs : sWorld?.npcs) || []).filter((npc) => npc.alive !== false && npc.lastLocation === (isMultiplayer ? mpGameState?.world?.currentLocation : sWorld?.currentLocation))}
+              npcs={(() => {
+                const npcsList = (isMultiplayer ? mpGameState?.world?.npcs : sWorld?.npcs) || [];
+                const currentRef = isMultiplayer ? mpGameState?.world?.currentLocationRef : sWorld?.currentLocationRef;
+                const currentName = isMultiplayer ? mpGameState?.world?.currentLocation : sWorld?.currentLocation;
+                return npcsList.filter((npc) => {
+                  if (npc.alive === false) return false;
+                  // Faza 3b — preferuj composite ref match. Fallback: legacy string.
+                  if (currentRef && npc.locationRef) {
+                    return npc.locationRef.kind === currentRef.kind && npc.locationRef.id === currentRef.id;
+                  }
+                  return npc.lastLocation === currentName;
+                });
+              })()}
               character={character}
               dilemma={currentScene.dilemma}
               lastChosenAction={lastChosenAction}

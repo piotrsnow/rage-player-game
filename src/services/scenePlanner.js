@@ -87,20 +87,86 @@ const MOOD_MAPPING = {
 };
 
 /**
- * Detect location type from a free-form location string.
- * @param {string} locationStr
+ * Map node.locationType (Prisma LocationType) → scene anchor key.
+ * Wszystkie typy które nie pasują wprost do anchor catalogu spadają do
+ * keyword detection na nazwie/tagach.
+ */
+const LOCATION_TYPE_TO_ANCHOR = {
+  hamlet: 'village',
+  village: 'village',
+  town: 'city_street',
+  city: 'city_street',
+  capital: 'castle',
+  dungeon: 'dungeon',
+  dungeon_room: 'dungeon',
+  forest: 'forest',
+  wilderness: 'forest',
+  mountain: 'mountain',
+  ruin: 'ruins',
+  camp: 'camp',
+  cave: 'cave',
+  interior: 'tavern', // generic interior — heuristic
+  campaignPlace: 'generic',
+  region: 'forest',
+  area: 'forest',
+  district: 'city_street',
+  site: 'generic',
+  room: 'tavern',
+  point: 'generic',
+  abstract: 'generic',
+  generic: 'generic',
+};
+
+/**
+ * Detect location type for scene anchoring.
+ *
+ * Faza 1: przyjmuje node grafu LUB string-name (legacy fallback).
+ *
+ * Priorytet:
+ *  1. node.anchorType (explicit override) — Faza 0 dodała pole do grafu.
+ *  2. LOCATION_TYPE_TO_ANCHOR[node.locationType] — Prisma LocationType mapping.
+ *  3. Keyword detection na node.name + node.tags (jeśli node) lub na stringu (legacy).
+ *  4. Fallback 'generic'.
+ *
+ * @param {object|string|null} nodeOrName Graph node lub legacy free-form string.
  * @returns {string}
  */
-function detectLocationType(locationStr) {
-  if (!locationStr) return 'generic';
-  const lower = locationStr.toLowerCase();
+export function detectLocationType(nodeOrName) {
+  if (!nodeOrName) return 'generic';
 
+  // Node-based path (preferred po Fazie 1).
+  if (typeof nodeOrName === 'object') {
+    const node = nodeOrName;
+    if (node.anchorType && typeof node.anchorType === 'string') {
+      return node.anchorType;
+    }
+    if (node.locationType && LOCATION_TYPE_TO_ANCHOR[node.locationType]) {
+      const mapped = LOCATION_TYPE_TO_ANCHOR[node.locationType];
+      if (mapped !== 'generic') return mapped;
+    }
+    // Fall through to keyword scan over name + tags.
+    const haystack = [
+      node.name || '',
+      node.canonicalName || '',
+      node.displayName || '',
+      ...(Array.isArray(node.tags) ? node.tags : []),
+    ].join(' ').toLowerCase();
+    for (const [type, keywords] of Object.entries(LOCATION_KEYWORDS)) {
+      for (const kw of keywords) {
+        if (haystack.includes(kw)) return type;
+      }
+    }
+    return 'generic';
+  }
+
+  // Legacy string path (do usunięcia w Fazie 3a, gdy world.currentLocation
+  // string znika ze state).
+  const lower = String(nodeOrName).toLowerCase();
   for (const [type, keywords] of Object.entries(LOCATION_KEYWORDS)) {
     for (const kw of keywords) {
       if (lower.includes(kw)) return type;
     }
   }
-
   return 'generic';
 }
 
@@ -334,10 +400,11 @@ function extractSceneObjects(scene) {
  * @param {object} state
  * @param {object} [options]
  * @param {string|null} [options.prevLocationType] - Previous scene's location type for transition selection
+ * @param {object|null} [options.currentNode] - Faza 1: graph node z `useCurrentLocationNode()`. Preferowane źródło anchor type. Fallback: world.currentLocation (string, legacy).
  * @returns {import('./sceneCommandSchema').SceneCommand}
  */
 export function planScene(scene, state, options = {}) {
-  const { prevLocationType = null, catalogVersion = 0 } = options;
+  const { prevLocationType = null, catalogVersion = 0, currentNode = null } = options;
   if (!scene) {
     return {
       sceneCommand: parseSceneCommand({ sceneId: 'empty', environment: {}, characters: [], objects: [], camera: {}, transitions: [] }),
@@ -347,7 +414,8 @@ export function planScene(scene, state, options = {}) {
   }
 
   const world = state.world || {};
-  const locationType = detectLocationType(world.currentLocation);
+  // Faza 1: preferuj graph node, fallback na string.
+  const locationType = detectLocationType(currentNode || world.currentLocation);
   const timeOfDay = resolveTimeOfDay(world.timeState);
   const weather = resolveWeather(world.weather);
   const mood = resolveMood(scene.atmosphere);

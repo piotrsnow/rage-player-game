@@ -107,13 +107,29 @@ export const characterHandlers = {
   },
 
   REDEEM_SKILL_BADGE: (draft, action) => {
-    const { index } = action.payload;
+    const { index, reward: providedReward } = action.payload;
     const char = draft.character;
     if (!char || !Array.isArray(char.skillBadges)) return;
     const badge = char.skillBadges[index];
     if (!badge || badge.redeemed) return;
+
+    const rewards = ['attribute', 'mana', 'wounds'];
+    const reward = rewards.includes(providedReward)
+      ? providedReward
+      : rewards[Math.floor(Math.random() * rewards.length)];
+
+    if (reward === 'attribute') {
+      char.attributePoints = (char.attributePoints || 0) + 1;
+    } else if (reward === 'mana') {
+      const mana = char.mana || { current: 0, max: 0 };
+      char.mana = { ...mana, max: (mana.max || 0) + 1, current: (mana.current || 0) + 1 };
+    } else if (reward === 'wounds') {
+      char.maxWounds = (char.maxWounds || 0) + 1;
+    }
+
     badge.redeemed = true;
-    char.attributePoints = (char.attributePoints || 0) + 1;
+    badge.reward = reward;
+    badge.redeemedAt = new Date().toISOString();
   },
 
   SET_CHARACTER_LOCAL_ID: (draft, action) => {

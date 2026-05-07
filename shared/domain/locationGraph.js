@@ -1,4 +1,11 @@
 import { z } from 'zod';
+import {
+  TacticalGridSchema,
+  defaultTacticalGrid,
+  validateTacticalGrid,
+  safeValidateTacticalGrid,
+  TILE_TYPES,
+} from './tacticalGrid.js';
 
 // ── Edge categories ──────────────────────────────────────────────────
 export const EDGE_CATEGORIES = {
@@ -91,6 +98,58 @@ export function isValidDiscoveryPromotion(from, to) {
   return toIdx >= fromIdx;
 }
 
+// ── Composite location ref (Faza 0) ──────────────────────────────────
+// Polymorphic ref używany wszędzie zamiast string-name lokacji:
+//   - state: world.currentLocationRef, npc.locationRef, quest.locationRef
+//   - AI schemas (po resolve przez aiResolver.js)
+//   - WorldEvent.locationKind/locationId
+
+export const LOCATION_KINDS = ['world', 'campaign'];
+
+export const LocationKindSchema = z.enum(LOCATION_KINDS);
+
+export const LocationRefSchema = z.object({
+  kind: LocationKindSchema,
+  id: z.string().uuid(),
+});
+
+/** Helper: porównanie composite refs (null-safe). */
+export function refsEqual(a, b) {
+  if (!a || !b) return a === b;
+  return a.kind === b.kind && a.id === b.id;
+}
+
+/** Helper: serializacja "kind:id" (np. do AI prompt context). */
+export function refToString(ref) {
+  if (!ref) return null;
+  return `${ref.kind}:${ref.id}`;
+}
+
+/** Helper: parsowanie "kind:id" → ref. Zwraca null przy błędzie. */
+export function parseRef(str) {
+  if (typeof str !== 'string') return null;
+  const m = str.match(/^(world|campaign):([0-9a-f-]{36})$/i);
+  if (!m) return null;
+  return { kind: m[1], id: m[2] };
+}
+
+// ── Modification log entry ───────────────────────────────────────────
+// Wpis w `node.modificationsLog[]`. Replace `world.mapState[].modifications[]`.
+export const ModificationLogEntrySchema = z.object({
+  timestamp: z.string().datetime(),
+  sceneId: z.string().optional(),
+  type: z.string().min(1).max(40), // np. 'visited', 'liberated', 'ai-redirect', 'description-change'
+  summary: z.string().max(500),
+}).passthrough();
+
+// ── Dungeon room state ───────────────────────────────────────────────
+// `node.dungeonState`. Replace AI `dungeonRoom: {entryCleared, ...}` dispatch.
+export const DungeonStateSchema = z.object({
+  entryCleared: z.boolean().optional(),
+  trapSprung: z.boolean().optional(),
+  lootTaken: z.boolean().optional(),
+}).passthrough();
+
 // ── Zod schemas for graph extraction output ──────────────────────────
 
 export const NewNodeEntrySchema = z.object({
@@ -101,6 +160,10 @@ export const NewNodeEntrySchema = z.object({
   description: z.string().max(500).optional().default(''),
   tags: z.array(z.string().max(40)).max(10).optional().default([]),
   reason: z.string().max(200).optional().default(''),
+  // Faza 0 — opcjonalne metadane node, które AI może podpowiedzieć.
+  biome: z.string().max(40).optional(),
+  anchorType: z.string().max(40).optional(),
+  tacticalGrid: TacticalGridSchema.optional(),
 }).passthrough();
 
 export const NewEdgeEntrySchema = z.object({
@@ -141,3 +204,37 @@ export const GraphUpdateSchema = z.object({
   discoveryChanges: z.array(DiscoveryChangeSchema).max(20).optional().default([]),
   summary: z.string().max(500).optional().default('No spatial changes'),
 }).passthrough();
+
+// ── Location Node Schema (full node returned from graphService) ──────
+// Faza 0 — rozszerzony o tacticalGrid, biome, anchorType, visitCount,
+// npcsEncountered, modificationsLog, dungeonState, liberatedAt.
+export const LocationNodeSchema = z.object({
+  id: z.string().uuid(),
+  kind: LocationKindSchema,
+  name: z.string(),
+  canonicalName: z.string().optional(),
+  displayName: z.string().nullable().optional(),
+  description: z.string().optional().default(''),
+  locationType: z.string().optional(),
+  scale: z.number().int().min(0).max(7).optional(),
+  tags: z.array(z.string()).optional().default([]),
+  atmosphere: z.string().nullable().optional(),
+  dangerLevel: z.enum(['safe', 'low', 'moderate', 'dangerous', 'deadly']).optional(),
+  regionX: z.number().optional(),
+  regionY: z.number().optional(),
+  discoveryState: z.enum(['unknown', 'rumored', 'known', 'visited', 'mapped', 'hidden', 'heard_about']).optional(),
+  nodeShape: z.string().nullable().optional(),
+  nodeIcon: z.string().nullable().optional(),
+  // Faza 0 — nowe pola
+  tacticalGrid: TacticalGridSchema.nullable().optional(),
+  biome: z.string().nullable().optional(),
+  anchorType: z.string().nullable().optional(),
+  visitCount: z.number().int().min(0).optional().default(0),
+  npcsEncountered: z.array(z.string()).optional().default([]),
+  modificationsLog: z.array(ModificationLogEntrySchema).optional().default([]),
+  dungeonState: DungeonStateSchema.nullable().optional(),
+  liberatedAt: z.string().datetime().nullable().optional(),
+}).passthrough();
+
+// Re-export tacticalGrid helpers for convenience.
+export { TacticalGridSchema, defaultTacticalGrid, validateTacticalGrid, safeValidateTacticalGrid, TILE_TYPES };

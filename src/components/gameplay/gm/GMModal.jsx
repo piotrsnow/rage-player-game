@@ -15,14 +15,15 @@ const NpcListTab = lazy(() => import('../../admin/adminLivingWorld/tabs/NpcListT
 const LocationListTab = lazy(() => import('../../admin/adminLivingWorld/tabs/LocationListTab'));
 const EventTimelineTab = lazy(() => import('../../admin/adminLivingWorld/tabs/EventTimelineTab'));
 const ReputationListTab = lazy(() => import('../../admin/adminLivingWorld/tabs/ReputationListTab'));
-const MapTab = lazy(() => import('../../admin/adminLivingWorld/tabs/MapTab'));
+// Faza 6 — admin MapTab usunięty (tile-based viz). Lokacje admin zarządza
+// przez LocationGraphModal (`graph` tab) + LocationListTab.
 const AdminWorldLoreTab = lazy(() => import('../../admin/AdminWorldLoreTab'));
 const PromotionsTab = lazy(() => import('../../admin/adminLivingWorld/tabs/PromotionsTab'));
 const CanonGraphTab = lazy(() => import('../../admin/adminLivingWorld/tabs/CanonGraphTab'));
 const FontConfigTab = lazy(() => import('../../admin/adminLivingWorld/tabs/FontConfigTab'));
 
 const GAME_TABS = ['graph', 'entities', 'quests', 'journal', 'assets', 'overview'];
-const ADMIN_TABS = ['admin-npcs', 'admin-locations', 'admin-events', 'admin-reputation', 'admin-map', 'admin-lore', 'admin-promotions', 'admin-canon', 'admin-fonts'];
+const ADMIN_TABS = ['admin-npcs', 'admin-locations', 'admin-events', 'admin-reputation', 'admin-lore', 'admin-promotions', 'admin-canon', 'admin-fonts'];
 
 const TAB_ICONS = {
   graph: 'hub',
@@ -35,7 +36,6 @@ const TAB_ICONS = {
   'admin-locations': 'location_on',
   'admin-events': 'timeline',
   'admin-reputation': 'military_tech',
-  'admin-map': 'map',
   'admin-lore': 'auto_stories',
   'admin-promotions': 'approval',
   'admin-canon': 'account_tree',
@@ -47,7 +47,6 @@ const TAB_LABELS = {
   'admin-locations': 'Locations',
   'admin-events': 'Events',
   'admin-reputation': 'Reputation',
-  'admin-map': 'Map',
   'admin-lore': 'Lore',
   'admin-promotions': 'Promotions',
   'admin-canon': 'Canon',
@@ -59,7 +58,6 @@ const ADMIN_TAB_COMPONENTS = {
   'admin-locations': LocationListTab,
   'admin-events': EventTimelineTab,
   'admin-reputation': ReputationListTab,
-  'admin-map': MapTab,
   'admin-lore': AdminWorldLoreTab,
   'admin-promotions': PromotionsTab,
   'admin-canon': CanonGraphTab,

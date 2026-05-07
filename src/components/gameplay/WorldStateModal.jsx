@@ -3,14 +3,16 @@ import { useTranslation } from 'react-i18next';
 import { useModalA11y } from '../../hooks/useModalA11y';
 import QuestsTab from './world/QuestsTab';
 import NpcTab from './world/NpcTab';
-import MapTab from './world/MapTab';
 import TimeTab from './world/TimeTab';
 import EffectsTab from './world/EffectsTab';
 import JournalTab from './world/JournalTab';
 import FactionsTab from './world/FactionsTab';
 
-const TABS = ['npcs', 'map', 'quests', 'factions', 'time', 'effects', 'journal'];
-const TAB_ICONS = { npcs: 'group', map: 'map', quests: 'assignment', factions: 'groups', time: 'schedule', effects: 'auto_fix_high', journal: 'menu_book' };
+// Faza 6 — MapTab usunięty. Mapa świata otwiera się przez LocationGraphModal
+// (przycisk w GM topbarze / komendzie). WorldStateModal zostaje dla
+// NPCów/questów/czasu/efektów/journala/fakcji.
+const TABS = ['npcs', 'quests', 'factions', 'time', 'effects', 'journal'];
+const TAB_ICONS = { npcs: 'group', quests: 'assignment', factions: 'groups', time: 'schedule', effects: 'auto_fix_high', journal: 'menu_book' };
 
 export default function WorldStateModal({ world, quests, characterVoiceMap, maleVoices, femaleVoices, ttsProvider, dispatch, autoSave, campaignId, currentSceneId, onTravel, onEnterSub, onClose }) {
   const { t } = useTranslation();
@@ -87,9 +89,6 @@ export default function WorldStateModal({ world, quests, characterVoiceMap, male
         <div ref={contentRef} className="flex-1 overflow-y-auto custom-scrollbar p-6">
           {activeTab === 'npcs' && (
             <NpcTab npcs={npcs} quests={quests} characterVoiceMap={characterVoiceMap} maleVoices={maleVoices} femaleVoices={femaleVoices} ttsProvider={ttsProvider} dispatch={dispatch} autoSave={autoSave} navigateTo={navigateTo} t={t} />
-          )}
-          {activeTab === 'map' && (
-            <MapTab campaignId={campaignId} currentSceneId={currentSceneId} currentLocation={currentLocation} onTravel={onTravel} onEnterSub={onEnterSub} t={t} />
           )}
           {activeTab === 'quests' && (
             <QuestsTab quests={quests} npcs={npcs} navigateTo={navigateTo} t={t} />

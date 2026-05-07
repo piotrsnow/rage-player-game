@@ -272,6 +272,8 @@ export function useSceneGeneration({ ensureMissingInventoryImages, ensureMissing
           result, state, dispatch,
           authoritativeCharacterSnapshot, ensureMissingInventoryImages, ensureMissingNpcPortraits, t,
           newlyUnlockedAchievements, updatedAchievementState,
+          campaignId: backendCampaignId || null,
+          sceneIndex: serverSceneIndex,
         });
 
         recordCompletedSceneGenTiming();

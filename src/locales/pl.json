@@ -559,7 +559,19 @@
     "historyScene": "Scena {{index}}",
     "historySummary": "Podsumowanie",
     "favoriteScenes": "Ulubione sceny",
-    "favoriteScenesEmpty": "Brak ulubionych scen. Oznacz scenę serduszkiem podczas gry."
+    "favoriteScenesEmpty": "Brak ulubionych scen. Oznacz scenę serduszkiem podczas gry.",
+    "skillBadges": "Odznaki",
+    "badgesHint2": "Każda odznaka po kliknięciu daje losową nagrodę: +1 punkt cechy, +1 max many lub +1 max obrażeń.",
+    "badgeEarnedFor": "Za niestandardową umiejętność użytą w grze",
+    "badgeClickRedeem": "Kliknij aby odebrać losową nagrodę",
+    "badgeReceived": "Otrzymano: {{reward}}",
+    "badgeFromScene": "Ze sceny #{{index}}",
+    "badgeReward_attribute": "+1 punkt cechy",
+    "badgeReward_mana": "+1 max many",
+    "badgeReward_wounds": "+1 max obrażeń",
+    "badgeRewardFlash_attribute": "+1 punkt cechy!",
+    "badgeRewardFlash_mana": "+1 max many!",
+    "badgeRewardFlash_wounds": "+1 max obrażeń!"
   },
   "codex": {
     "title": "Kodeks",

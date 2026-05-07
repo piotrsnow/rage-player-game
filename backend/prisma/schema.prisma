@@ -173,10 +173,10 @@ model Character {
   badgeLegend    String?
   badgeSnark     String?
   badgeUpdatedAt DateTime? @db.Timestamptz
-  fame          Int    @default(0)
-  infamy        Int    @default(0)
-  knownTitles   Json   @default("[]")
-  skillBadges   Json   @default("[]")
+  fame           Int       @default(0)
+  infamy         Int       @default(0)
+  knownTitles    Json      @default("[]")
+  skillBadges    Json      @default("[]")
 
   createdAt DateTime @default(now()) @db.Timestamptz
   updatedAt DateTime @updatedAt @db.Timestamptz
@@ -212,20 +212,20 @@ model CharacterSkill {
 }
 
 model CharacterSkillGain {
-  id           String    @id @default(uuid(7)) @db.Uuid
-  characterId  String    @db.Uuid
+  id           String   @id @default(uuid(7)) @db.Uuid
+  characterId  String   @db.Uuid
   skillName    String
   xpGained     Int
   oldLevel     Int
   newLevel     Int
-  playerAction String?   @db.Text
-  narrative    String?   @db.Text
+  playerAction String?  @db.Text
+  narrative    String?  @db.Text
   diceRollInfo Json?
   sceneIndex   Int?
-  campaignId   String?   @db.Uuid
-  createdAt    DateTime  @default(now()) @db.Timestamptz
+  campaignId   String?  @db.Uuid
+  createdAt    DateTime @default(now()) @db.Timestamptz
 
-  character    Character @relation(fields: [characterId], references: [id], onDelete: Cascade)
+  character Character @relation(fields: [characterId], references: [id], onDelete: Cascade)
 
   @@index([characterId, skillName, createdAt])
   @@index([characterId])
@@ -296,16 +296,14 @@ model Campaign {
   boundsMinY Float?
   boundsMaxY Float?
 
-  // F5 — flavor name of the player's current location (AI-emitted free text).
-  // Lifted out of coreState.world.currentLocation on save; synthesized back into
-  // the FE shape on read via reconstructFromNormalized.
+  // DEPRECATED (Faza 3a) — flavor name lifted z coreState.world.currentLocation.
+  // Faza 0 zachowuje kolumnę aby nie złamać callsite'ów (campaignSerialize,
+  // campaignSync, livingWorld, public/crud routes). Usunięcie + cleanup
+  // callsite'ów wraz z migracją state na composite ref w Fazie 3a.
   currentLocationName String?
 
-  // F5b — polymorphic FK to either WorldLocation (canonical) or CampaignLocation
-  // (campaign-scoped). `kind` discriminates: "world" | "campaign". No DB FK
-  // constraint — resolved app-side via locationRefs.lookupLocationByKindId.
-  // Both columns nullable: AI may emit a name we can't resolve (kind=null,id=null,
-  // currentLocationName='the inn') and that's fine — flavor name carries.
+  // Composite ref: `currentLocationKind` + `currentLocationId` (polymorphic
+  // FK do WorldLocation lub CampaignLocation). Po Fazie 3a — jedyny ref.
   currentLocationKind String?
   currentLocationId   String? @db.Uuid
 
@@ -319,7 +317,7 @@ model Campaign {
 
   // One-shot narrative injection from incident system. Scene gen reads it,
   // injects into user prompt, then clears it after generation.
-  pendingSlip     String?
+  pendingSlip String?
 
   createdAt DateTime @default(now()) @db.Timestamptz
   updatedAt DateTime @updatedAt @db.Timestamptz
@@ -389,8 +387,8 @@ model CampaignScene {
   embedding        Unsupported("vector(1536)")?
   createdAt        DateTime                     @default(now()) @db.Timestamptz
 
-  campaign       Campaign        @relation(fields: [campaignId], references: [id], onDelete: Cascade)
-  favoritedBy    FavoriteScene[]
+  campaign    Campaign        @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  favoritedBy FavoriteScene[]
 
   @@index([campaignId, sceneIndex])
 }
@@ -413,10 +411,10 @@ model FavoriteScene {
 }
 
 model CampaignIncident {
-  id              String   @id @default(uuid(7)) @db.Uuid
-  campaignId      String   @db.Uuid
-  userId          String   @db.Uuid
-  sceneIndex      Int
+  id               String   @id @default(uuid(7)) @db.Uuid
+  campaignId       String   @db.Uuid
+  userId           String   @db.Uuid
+  sceneIndex       Int
   playerComplaint  String   @db.Text
   aiVerdict        String   @db.Text
   isPlayerRight    Boolean
@@ -463,10 +461,12 @@ model CampaignNPC {
   attitude                  String    @default("neutral")
   disposition               Int       @default(0)
   alive                     Boolean   @default(true)
-  // F5b — flavor string + polymorphic FK pair (kind+id resolves to either
-  // WorldLocation or CampaignLocation). lastLocation stays as a display cache
-  // for AI-emitted names that don't resolve to any row.
+  // DEPRECATED (Faza 3a) — flavor name fallback (npr. AI-emitted "the inn"
+  // bez resolved node). Faza 0 zachowuje kolumnę aby nie złamać callsite'ów
+  // (campaignSync, intentClassifier/nanoSelector, aiContextTools/handlers/npc).
+  // Usunięcie wraz z BE cleanup w Fazie 3a.
   lastLocation              String?
+  // Composite ref do grafu (polymorphic). Po Fazie 3a — jedyny ref.
   lastLocationKind          String?
   lastLocationId            String?   @db.Uuid
   factionId                 String?
@@ -492,6 +492,7 @@ model CampaignNPC {
   creatureKind String?
   level        Int     @default(1)
   stats        Json    @default("{}")
+  portraitUrl  String?
 
   embeddingText String?
   embedding     Unsupported("vector(1536)")?
@@ -557,6 +558,11 @@ model CampaignQuest {
   completionCondition String?
   questGiverId        String?
   turnInNpcId         String?
+  // Faza 0 — composite ref do grafu (kind+id). `locationId` zachowuje nazwę
+  // dla zgodności call-site, ale teraz musi być parą z `locationKind`. AI
+  // emituje nazwę → BE resolver (aiResolver.js) mapuje na composite ref
+  // przed apply state.
+  locationKind        String?
   locationId          String?
   reward              Json?
   status              String    @default("active")
@@ -704,6 +710,22 @@ model WorldLocation {
   nodeShape      String?
   nodeIcon       String?
 
+  // Faza 0 — graf jako jedyne źródło prawdy o lokacjach.
+  // tacticalGrid: 12×12 (lub inny WxH) tile grid do walki; tiles[y][x] = 'P'|'F'|'W'|'D'|'S'.
+  // anchorType: explicit override mapowania na sceneAnchors (tavern|forest|dungeon|...).
+  // biome: po wywaleniu fieldMap zachowuje semantykę biomu.
+  // visitCount + npcsEncountered + modificationsLog: replace world.knowledgeBase.locations[].
+  // dungeonState: per-room flags (entryCleared, trapSprung, lootTaken).
+  // liberatedAt: timestamp gdy locationLiberated boolean ustawiony przez AI promotion.
+  tacticalGrid     Json?
+  biome            String?
+  anchorType       String?
+  visitCount       Int       @default(0)
+  npcsEncountered  Json      @default("[]")
+  modificationsLog Json      @default("[]")
+  dungeonState     Json?
+  liberatedAt      DateTime? @db.Timestamptz
+
   embeddingText String?
   embedding     Unsupported("vector(1536)")?
 
@@ -727,9 +749,15 @@ model WorldLocation {
   @@index([regionX, regionY])
 }
 
-// F5b — renamed from WorldLocationEdge. Roads connect two CANONICAL WorldLocations
-// only; campaign-created CampaignLocation rows are off-graph (no auto-Road on
-// creation). Travel graph (Dijkstra in travelGraph.js) walks Road edges only.
+// DEPRECATED (Faza 0) — Road jest zaszeregowany do usunięcia w Fazie 8.
+// Wszystkie movement-edges migrują do polymorphic `LocationEdge` (category=
+// 'movement') przez one-shot dev script `migrate-roads-to-edges.js`. Po
+// migracji: travel graph (Dijkstra) operuje na LocationEdge, Road table dropped.
+//
+// Historical: F5b — renamed from WorldLocationEdge. Roads connect two CANONICAL
+// WorldLocations only; campaign-created CampaignLocation rows are off-graph
+// (no auto-Road on creation). Travel graph (Dijkstra in travelGraph.js) walks
+// Road edges only.
 //
 // Graph system: `relationType` discriminates edge semantics (road, path, door,
 // stairs, tunnel, bridge, portal, secret_path, visible_from, audible_from,
@@ -749,17 +777,17 @@ model Road {
   gateHint       String?
 
   // Graph system — rich relation taxonomy
-  relationType   String      @default("road")
-  bidirectional  Boolean     @default(true)
-  metadata       Json        @default("{}")
-  visibility     String      @default("visible") // visible | hidden | secret | legendary
-  risk           String?                          // none | low | moderate | high | extreme
-  travelTime     Float?                           // minutes (optional, derived from distance/terrain if absent)
-  weight         Float?                           // Dijkstra cost override (default = distance)
-  edgeDescription String?    @map("description")  // "Wąska ścieżka wzdłuż klifu"
-  confidence     Float?                           // 0-1, for rumor-based edges
+  relationType    String  @default("road")
+  bidirectional   Boolean @default(true)
+  metadata        Json    @default("{}")
+  visibility      String  @default("visible") // visible | hidden | secret | legendary
+  risk            String? // none | low | moderate | high | extreme
+  travelTime      Float? // minutes (optional, derived from distance/terrain if absent)
+  weight          Float? // Dijkstra cost override (default = distance)
+  edgeDescription String? @map("description") // "Wąska ścieżka wzdłuż klifu"
+  confidence      Float? // 0-1, for rumor-based edges
 
-  createdAt      DateTime    @default(now()) @db.Timestamptz
+  createdAt DateTime @default(now()) @db.Timestamptz
 
   from                WorldLocation           @relation("fromLoc", fields: [fromLocationId], references: [id], onDelete: Cascade)
   to                  WorldLocation           @relation("toLoc", fields: [toLocationId], references: [id], onDelete: Cascade)
@@ -779,23 +807,23 @@ model Road {
 // Cascades with the campaign. relationType uses the same taxonomy as Road
 // (validated app-side via RELATION_TYPES in edgeRelations.js).
 model CampaignEdge {
-  id            String       @id @default(uuid(7)) @db.Uuid
-  campaignId    String       @db.Uuid
-  fromKind      String                              // "world" | "campaign"
-  fromId        String       @db.Uuid
-  toKind        String                              // "world" | "campaign"
-  toId          String       @db.Uuid
-  relationType  String       @default("path")
-  bidirectional Boolean      @default(true)
-  distance      Float?
-  difficulty    DangerLevel?
-  metadata      Json         @default("{}")
-  visibility    String       @default("visible")    // visible | hidden | secret
-  risk          String?                              // none | low | moderate | high | extreme
-  travelTime    Float?                               // minutes
-  edgeDescription String?    @map("description")
-  confidence    Float?                               // 0-1 for rumor-based edges
-  createdAt     DateTime     @default(now()) @db.Timestamptz
+  id              String       @id @default(uuid(7)) @db.Uuid
+  campaignId      String       @db.Uuid
+  fromKind        String // "world" | "campaign"
+  fromId          String       @db.Uuid
+  toKind          String // "world" | "campaign"
+  toId            String       @db.Uuid
+  relationType    String       @default("path")
+  bidirectional   Boolean      @default(true)
+  distance        Float?
+  difficulty      DangerLevel?
+  metadata        Json         @default("{}")
+  visibility      String       @default("visible") // visible | hidden | secret
+  risk            String? // none | low | moderate | high | extreme
+  travelTime      Float? // minutes
+  edgeDescription String?      @map("description")
+  confidence      Float? // 0-1 for rumor-based edges
+  createdAt       DateTime     @default(now()) @db.Timestamptz
 
   campaign Campaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
 
@@ -845,6 +873,17 @@ model CampaignLocation {
   nodeShape          String?
   nodeIcon           String?
 
+  // Faza 0 — graf jako jedyne źródło prawdy. Kopia pól z WorldLocation
+  // by per-campaign sandbox lokacje miały te same możliwości metadane.
+  tacticalGrid     Json?
+  biome            String?
+  anchorType       String?
+  visitCount       Int       @default(0)
+  npcsEncountered  Json      @default("[]")
+  modificationsLog Json      @default("[]")
+  dungeonState     Json?
+  liberatedAt      DateTime? @db.Timestamptz
+
   embeddingText String?
   embedding     Unsupported("vector(1536)")?
 
@@ -864,23 +903,23 @@ model CampaignLocation {
 // kind+id pairs. Supplements Road (which stays for Dijkstra travel) with
 // richer spatial, perception, social, narrative, and temporal relations.
 model LocationEdge {
-  id              String   @id @default(uuid(7)) @db.Uuid
-  fromKind        String
-  fromId          String   @db.Uuid
-  toKind          String
-  toId            String   @db.Uuid
-  edgeType        String
-  category        String
-  bidirectional   Boolean  @default(true)
-  weight          Float    @default(1.0)
-  metadata        Json     @default("{}")
-  discoveryState  String   @default("unknown")
-  confidence      Float    @default(1.0)
-  campaignId      String?  @db.Uuid
-  createdBy       String   @default("system")
-  isActive        Boolean  @default(true)
-  createdAt       DateTime @default(now()) @db.Timestamptz
-  updatedAt       DateTime @updatedAt @db.Timestamptz
+  id             String   @id @default(uuid(7)) @db.Uuid
+  fromKind       String
+  fromId         String   @db.Uuid
+  toKind         String
+  toId           String   @db.Uuid
+  edgeType       String
+  category       String
+  bidirectional  Boolean  @default(true)
+  weight         Float    @default(1.0)
+  metadata       Json     @default("{}")
+  discoveryState String   @default("unknown")
+  confidence     Float    @default(1.0)
+  campaignId     String?  @db.Uuid
+  createdBy      String   @default("system")
+  isActive       Boolean  @default(true)
+  createdAt      DateTime @default(now()) @db.Timestamptz
+  updatedAt      DateTime @updatedAt @db.Timestamptz
 
   campaign Campaign? @relation(fields: [campaignId], references: [id], onDelete: Cascade)
 
@@ -960,7 +999,15 @@ model WorldNPC {
 model WorldEvent {
   id              BigInt   @id @default(autoincrement())
   worldNpcId      String?  @db.Uuid
+  // Legacy — ref tylko do canonical WorldLocation. Po Fazie 4.5 callsite
+  // używają composite ref (locationKind+locationId). worldLocationId zostaje
+  // dla kompatybilności z istniejącymi indeksami i raportami.
   worldLocationId String?  @db.Uuid
+  // Faza 0 — composite ref polymorphic do node grafu (WorldLocation lub
+  // CampaignLocation). Używany w nowym pipeline (locationLiberated,
+  // dungeonComplete, party meetings).
+  locationKind    String?
+  locationId      String?  @db.Uuid
   campaignId      String?  @db.Uuid
   userId          String?  @db.Uuid
   eventType       String
@@ -971,6 +1018,7 @@ model WorldEvent {
 
   @@index([worldNpcId, createdAt])
   @@index([worldLocationId, createdAt])
+  @@index([locationKind, locationId, createdAt])
   @@index([campaignId, createdAt])
   @@index([eventType])
   @@index([eventType, visibility, createdAt])
@@ -1401,16 +1449,16 @@ model Wanted3D {
 // ── Map Studio (dev tool — no auth, pseudo-user) ────────────────────
 
 model TilesetPack {
-  id               String   @id @default(uuid(7)) @db.Uuid
-  userId           String   @db.Uuid
-  name             String
-  projectTilesize  Int      @default(24)
-  scaleAlgo        String   @default("nearest")
-  origin           Json     @default("{}")
-  traitVocab       Json     @default("{}")
-  schemaVersion    Int      @default(1)
-  createdAt        DateTime @default(now()) @db.Timestamptz
-  updatedAt        DateTime @updatedAt @db.Timestamptz
+  id              String   @id @default(uuid(7)) @db.Uuid
+  userId          String   @db.Uuid
+  name            String
+  projectTilesize Int      @default(24)
+  scaleAlgo       String   @default("nearest")
+  origin          Json     @default("{}")
+  traitVocab      Json     @default("{}")
+  schemaVersion   Int      @default(1)
+  createdAt       DateTime @default(now()) @db.Timestamptz
+  updatedAt       DateTime @updatedAt @db.Timestamptz
 
   tilesets        Tileset[]
   connectionRules ConnectionRule[]
@@ -1419,46 +1467,46 @@ model TilesetPack {
 }
 
 model Tileset {
-  id                String   @id @default(uuid(7)) @db.Uuid
-  packId            String   @db.Uuid
-  name              String
-  imageKey          String
-  imageWidth        Int      @default(0)
-  imageHeight       Int      @default(0)
-  nativeTilesize    Int      @default(16)
-  regions           Json     @default("[]")
-  sliceMode         String   @default("whole")
-  atlas             Json     @default("{}")
-  renderedVariants  Json     @default("{}")
-  createdAt         DateTime @default(now()) @db.Timestamptz
-  updatedAt         DateTime @updatedAt @db.Timestamptz
+  id               String   @id @default(uuid(7)) @db.Uuid
+  packId           String   @db.Uuid
+  name             String
+  imageKey         String
+  imageWidth       Int      @default(0)
+  imageHeight      Int      @default(0)
+  nativeTilesize   Int      @default(16)
+  regions          Json     @default("[]")
+  sliceMode        String   @default("whole")
+  atlas            Json     @default("{}")
+  renderedVariants Json     @default("{}")
+  createdAt        DateTime @default(now()) @db.Timestamptz
+  updatedAt        DateTime @updatedAt @db.Timestamptz
 
-  pack            TilesetPack     @relation(fields: [packId], references: [id], onDelete: Cascade)
-  tiles           Tile[]
-  autotileGroups  AutotileGroup[]
+  pack           TilesetPack     @relation(fields: [packId], references: [id], onDelete: Cascade)
+  tiles          Tile[]
+  autotileGroups AutotileGroup[]
 
   @@index([packId])
 }
 
 model Tile {
-  id               String   @id @default(uuid(7)) @db.Uuid
-  tilesetId        String   @db.Uuid
-  regionId         String   @default("")
-  localId          Int
-  col              Int      @default(0)
-  row              Int      @default(0)
-  nativeSize       Int      @default(16)
-  atoms            Json     @default("[]")
-  traits           Json     @default("{}")
-  tags             Json     @default("[]")
-  autotileGroupId  String?  @db.Uuid
-  autotileRole     String?
-  notes            String   @default("")
-  createdAt        DateTime @default(now()) @db.Timestamptz
-  updatedAt        DateTime @updatedAt @db.Timestamptz
+  id              String   @id @default(uuid(7)) @db.Uuid
+  tilesetId       String   @db.Uuid
+  regionId        String   @default("")
+  localId         Int
+  col             Int      @default(0)
+  row             Int      @default(0)
+  nativeSize      Int      @default(16)
+  atoms           Json     @default("[]")
+  traits          Json     @default("{}")
+  tags            Json     @default("[]")
+  autotileGroupId String?  @db.Uuid
+  autotileRole    String?
+  notes           String   @default("")
+  createdAt       DateTime @default(now()) @db.Timestamptz
+  updatedAt       DateTime @updatedAt @db.Timestamptz
 
-  tileset        Tileset        @relation(fields: [tilesetId], references: [id], onDelete: Cascade)
-  autotileGroup  AutotileGroup? @relation(fields: [autotileGroupId], references: [id], onDelete: SetNull)
+  tileset       Tileset        @relation(fields: [tilesetId], references: [id], onDelete: Cascade)
+  autotileGroup AutotileGroup? @relation(fields: [autotileGroupId], references: [id], onDelete: SetNull)
 
   @@unique([tilesetId, localId])
   @@index([tilesetId])
@@ -1466,19 +1514,19 @@ model Tile {
 }
 
 model AutotileGroup {
-  id          String   @id @default(uuid(7)) @db.Uuid
-  tilesetId   String   @db.Uuid
-  regionId    String   @default("")
-  name        String
-  layout      String   @default("blob_47")
-  originCol   Int      @default(0)
-  originRow   Int      @default(0)
-  cols        Int?
-  rows        Int?
-  cells       Json     @default("{}")
-  traits      Json     @default("{}")
-  createdAt   DateTime @default(now()) @db.Timestamptz
-  updatedAt   DateTime @updatedAt @db.Timestamptz
+  id        String   @id @default(uuid(7)) @db.Uuid
+  tilesetId String   @db.Uuid
+  regionId  String   @default("")
+  name      String
+  layout    String   @default("blob_47")
+  originCol Int      @default(0)
+  originRow Int      @default(0)
+  cols      Int?
+  rows      Int?
+  cells     Json     @default("{}")
+  traits    Json     @default("{}")
+  createdAt DateTime @default(now()) @db.Timestamptz
+  updatedAt DateTime @updatedAt @db.Timestamptz
 
   tileset Tileset @relation(fields: [tilesetId], references: [id], onDelete: Cascade)
   tiles   Tile[]
@@ -1575,18 +1623,18 @@ model ServerSettings {
 // ═══════════════════════════════════════════════════════════════════════
 
 model LlmCallLog {
-  id         String   @id @default(uuid(7)) @db.Uuid
-  userId     String   @db.Uuid
+  id         String    @id @default(uuid(7)) @db.Uuid
+  userId     String    @db.Uuid
   type       String
-  label      String   @default("")
+  label      String    @default("")
   provider   String?
   model      String?
-  status     String   @default("pending")
+  status     String    @default("pending")
   durationMs Int?
   error      String?
   request    Json?
   response   Json?
-  startedAt  DateTime @default(now()) @db.Timestamptz
+  startedAt  DateTime  @default(now()) @db.Timestamptz
   finishedAt DateTime? @db.Timestamptz
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)

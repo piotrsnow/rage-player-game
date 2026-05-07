@@ -174,6 +174,113 @@ export async function lookupEdgeFamiliarity(fromKind, fromId, toKind, toId, { ca
   };
 }
 
+// ── Faza 0 — node metadata helpers ────────────────────────────────────
+//
+// Operacje typu "incrementuj visitCount" / "dopisz wpis do modificationsLog"
+// realizujemy w osobnych helperach by callsite (FE state changes, AI pipeline,
+// dungeonEntry) nie pisał ręcznie struktur Prisma.
+
+/**
+ * Resolve node by composite ref. Returns row + _kind discriminator or null.
+ */
+export async function getNodeByRef(kind, id) {
+  if (kind === LOCATION_KIND_WORLD) {
+    const row = await prisma.worldLocation.findUnique({ where: { id } });
+    return row ? { ...row, _kind: 'world' } : null;
+  }
+  if (kind === LOCATION_KIND_CAMPAIGN) {
+    const row = await prisma.campaignLocation.findUnique({ where: { id } });
+    return row ? { ...row, _kind: 'campaign' } : null;
+  }
+  return null;
+}
+
+/**
+ * Bump visitCount on a node (idempotent if scene already counted).
+ * Use from scene apply when world.currentLocationRef changes.
+ */
+export async function bumpVisitCount(kind, id) {
+  if (kind === LOCATION_KIND_WORLD) {
+    return prisma.worldLocation.update({
+      where: { id },
+      data: { visitCount: { increment: 1 } },
+    });
+  }
+  if (kind === LOCATION_KIND_CAMPAIGN) {
+    return prisma.campaignLocation.update({
+      where: { id },
+      data: { visitCount: { increment: 1 } },
+    });
+  }
+  throw new Error(`bumpVisitCount: unknown kind ${kind}`);
+}
+
+/**
+ * Append a modification log entry on a node.
+ * @param {string} kind 'world' | 'campaign'
+ * @param {string} id node UUID
+ * @param {object} entry { timestamp, sceneId?, type, summary }
+ */
+export async function appendModificationLog(kind, id, entry) {
+  const node = await getNodeByRef(kind, id);
+  if (!node) return null;
+  const entries = Array.isArray(node.modificationsLog) ? [...node.modificationsLog] : [];
+  entries.push({
+    timestamp: entry.timestamp || new Date().toISOString(),
+    sceneId: entry.sceneId,
+    type: entry.type,
+    summary: entry.summary,
+  });
+  // Cap at 50 entries per node (FIFO).
+  while (entries.length > 50) entries.shift();
+  if (kind === LOCATION_KIND_WORLD) {
+    return prisma.worldLocation.update({ where: { id }, data: { modificationsLog: entries } });
+  }
+  return prisma.campaignLocation.update({ where: { id }, data: { modificationsLog: entries } });
+}
+
+/**
+ * Add NPC ID to npcsEncountered on a node (dedup).
+ */
+export async function recordNpcEncounter(kind, id, npcId) {
+  const node = await getNodeByRef(kind, id);
+  if (!node) return null;
+  const list = Array.isArray(node.npcsEncountered) ? node.npcsEncountered : [];
+  if (list.includes(npcId)) return node;
+  const next = [...list, npcId];
+  if (kind === LOCATION_KIND_WORLD) {
+    return prisma.worldLocation.update({ where: { id }, data: { npcsEncountered: next } });
+  }
+  return prisma.campaignLocation.update({ where: { id }, data: { npcsEncountered: next } });
+}
+
+/**
+ * Mark node as liberated (sets liberatedAt timestamp). Triggered by
+ * `locationLiberated: true` from AI scene apply.
+ */
+export async function markLiberated(kind, id, when = new Date()) {
+  if (kind === LOCATION_KIND_WORLD) {
+    return prisma.worldLocation.update({ where: { id }, data: { liberatedAt: when } });
+  }
+  if (kind === LOCATION_KIND_CAMPAIGN) {
+    return prisma.campaignLocation.update({ where: { id }, data: { liberatedAt: when } });
+  }
+  throw new Error(`markLiberated: unknown kind ${kind}`);
+}
+
+/**
+ * Set/clear dungeonState (entryCleared/trapSprung/lootTaken flags) on a node.
+ */
+export async function setDungeonState(kind, id, state) {
+  if (kind === LOCATION_KIND_WORLD) {
+    return prisma.worldLocation.update({ where: { id }, data: { dungeonState: state } });
+  }
+  if (kind === LOCATION_KIND_CAMPAIGN) {
+    return prisma.campaignLocation.update({ where: { id }, data: { dungeonState: state } });
+  }
+  throw new Error(`setDungeonState: unknown kind ${kind}`);
+}
+
 /**
  * Find NPCs at a specific location (CampaignNPC).
  */

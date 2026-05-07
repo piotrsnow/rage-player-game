@@ -16,7 +16,7 @@ const DEFAULTS = { ...STATE_CHANGE_LIMITS };
 
 const RARITY_GATES = { common: 0, uncommon: 0, rare: 16, exotic: 31 };
 
-export function validateStateChanges(stateChanges, currentState, config = {}) {
+export function validateStateChanges(stateChanges, currentState, config = {}, context = {}) {
   if (!stateChanges || typeof stateChanges !== 'object') {
     return { validated: stateChanges, warnings: [], corrections: [] };
   }
@@ -26,6 +26,8 @@ export function validateStateChanges(stateChanges, currentState, config = {}) {
   const corrections = [];
   const validated = { ...stateChanges };
   const character = currentState?.character;
+  const badgeCampaignId = context?.campaignId ?? null;
+  const badgeSceneIndex = Number.isInteger(context?.sceneIndex) ? context.sceneIndex : null;
   coerceItemAliases(validated);
 
   if (validated.xp !== undefined && validated.xp !== null) {
@@ -121,7 +123,13 @@ export function validateStateChanges(stateChanges, currentState, config = {}) {
     for (const [skillName, xpVal] of Object.entries(validated.skillProgress)) {
       const canon = normalizeSkillName(skillName);
       if (!canon) {
-        badges.push({ name: skillName, earnedAt: new Date().toISOString(), redeemed: false });
+        badges.push({
+          name: skillName,
+          earnedAt: new Date().toISOString(),
+          redeemed: false,
+          campaignId: badgeCampaignId,
+          sceneIndex: badgeSceneIndex,
+        });
         continue;
       }
       if (typeof xpVal !== 'number' || xpVal <= 0) {

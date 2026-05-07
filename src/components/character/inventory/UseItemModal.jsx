@@ -47,13 +47,19 @@ export default function UseItemModal({ item, character, npcs = [], items = [], o
 
   const handleSubmit = () => {
     if (!canSubmit) return;
-    let targetLabel = null;
-    if (target.type === 'self') targetLabel = character?.name || null;
-    else if (target.type === 'npc') targetLabel = npcs.find((n) => n.id === target.id)?.name || null;
-    else if (target.type === 'item') targetLabel = items.find((i) => i.id === target.id)?.name || null;
-
-    const targetTag = targetLabel ? ` [CEL: ${targetLabel}]` : '';
-    const actionText = `[UŻYCIE PRZEDMIOTU: ${item.name}]${targetTag} ${trimmed}`;
+    let actionText;
+    if (target.type === 'item') {
+      const otherName = items.find((i) => i.id === target.id)?.name || null;
+      actionText = otherName
+        ? `[ŁĄCZENIE PRZEDMIOTÓW: ${item.name} + ${otherName}] ${trimmed}`
+        : `[UŻYCIE PRZEDMIOTU: ${item.name}] ${trimmed}`;
+    } else {
+      let targetLabel = null;
+      if (target.type === 'self') targetLabel = character?.name || null;
+      else if (target.type === 'npc') targetLabel = npcs.find((n) => n.id === target.id)?.name || null;
+      const targetTag = targetLabel ? ` [CEL: ${targetLabel}]` : '';
+      actionText = `[UŻYCIE PRZEDMIOTU: ${item.name}]${targetTag} ${trimmed}`;
+    }
     onSubmit(actionText);
   };
 

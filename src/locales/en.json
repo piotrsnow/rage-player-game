@@ -564,7 +564,19 @@
     "historyScene": "Scene {{index}}",
     "historySummary": "Summary",
     "favoriteScenes": "Favorite Scenes",
-    "favoriteScenesEmpty": "No favorite scenes yet. Tap the heart on a scene to bookmark it."
+    "favoriteScenesEmpty": "No favorite scenes yet. Tap the heart on a scene to bookmark it.",
+    "skillBadges": "Badges",
+    "badgesHint2": "Each badge, when clicked, grants a random reward: +1 attribute point, +1 max mana or +1 max wounds.",
+    "badgeEarnedFor": "For a non-standard skill used in play",
+    "badgeClickRedeem": "Click to claim a random reward",
+    "badgeReceived": "Received: {{reward}}",
+    "badgeFromScene": "From scene #{{index}}",
+    "badgeReward_attribute": "+1 attribute point",
+    "badgeReward_mana": "+1 max mana",
+    "badgeReward_wounds": "+1 max wounds",
+    "badgeRewardFlash_attribute": "+1 attribute point!",
+    "badgeRewardFlash_mana": "+1 max mana!",
+    "badgeRewardFlash_wounds": "+1 max wounds!"
   },
   "codex": {
     "title": "Codex",

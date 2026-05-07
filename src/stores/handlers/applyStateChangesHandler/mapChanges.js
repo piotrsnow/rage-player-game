@@ -37,7 +37,29 @@ export function applyMapChanges(draft, changes) {
   }
 }
 
+/**
+ * Parse composite ref string "kind:UUID" → { kind, id } or null.
+ */
+function parseCompositeRef(value) {
+  if (!value) return null;
+  if (typeof value === 'object' && value.kind && value.id) {
+    return { kind: value.kind, id: value.id };
+  }
+  if (typeof value !== 'string') return null;
+  const m = value.match(/^(world|campaign):([0-9a-f-]{36})$/i);
+  if (!m) return null;
+  return { kind: m[1].toLowerCase(), id: m[2] };
+}
+
 export function applyCurrentLocation(draft, changes) {
+  // Faza 3a — preferowane źródło: composite ref. AI/BE może zwrócić
+  // `currentLocationRef` (string "kind:UUID" lub object). Legacy `currentLocation`
+  // (free-text string) zachowane jako fallback do Fazy 8.
+  const ref = parseCompositeRef(changes.currentLocationRef);
+  if (ref) {
+    draft.world.currentLocationRef = ref;
+  }
+
   if (!changes.currentLocation) return;
 
   if (!draft.world.exploredLocations) draft.world.exploredLocations = [];

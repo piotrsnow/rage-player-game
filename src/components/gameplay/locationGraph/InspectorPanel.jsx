@@ -142,6 +142,40 @@ function NodeInspector({ node, occupants = [], onUpdate, onDelete, mode, t }) {
         />
       </Field>
 
+      {/* Faza 0 — biome / anchorType / tacticalGrid (GM mode only).
+          biome: hint dla scenePlanner po Fazie 1 (zastąpi keyword detection).
+          anchorType: explicit override mapowania na sceneAnchors.
+          tacticalGrid: pełny editor pojawia się w Fazie 7 (na razie info-only). */}
+      {mode === 'gm' && (
+        <>
+          <Field label={t('locationGraph.inspector.biome', { defaultValue: 'Biom' })}>
+            <input
+              className="bg-white/5 rounded-sm px-2.5 py-1.5 w-full text-on-surface border border-outline-variant/10 focus:border-primary/40 outline-none"
+              defaultValue={node.biome || ''}
+              placeholder="forest, plains, mountain, urban, dungeon..."
+              onBlur={(e) => handleField('biome', e.target.value || null)}
+            />
+          </Field>
+
+          <Field label={t('locationGraph.inspector.anchorType', { defaultValue: 'Anchor (3D scene)' })}>
+            <input
+              className="bg-white/5 rounded-sm px-2.5 py-1.5 w-full text-on-surface border border-outline-variant/10 focus:border-primary/40 outline-none"
+              defaultValue={node.anchorType || ''}
+              placeholder="tavern, forest, dungeon, road, castle..."
+              onBlur={(e) => handleField('anchorType', e.target.value || null)}
+            />
+          </Field>
+
+          <Field label={t('locationGraph.inspector.tacticalGrid', { defaultValue: 'Siatka taktyczna' })}>
+            <div className="text-[11px] text-outline">
+              {node.tacticalGrid
+                ? `${node.tacticalGrid.width}×${node.tacticalGrid.height} ${t('locationGraph.inspector.gridSet', { defaultValue: '(zdefiniowana)' })}`
+                : t('locationGraph.inspector.gridDefault', { defaultValue: 'Brak — walka użyje domyślnej siatki 12×12' })}
+            </div>
+          </Field>
+        </>
+      )}
+
       {occupants.length > 0 && (
         <div className="space-y-1.5 pt-1 border-t border-outline-variant/10">
           <span className="text-xs font-label uppercase tracking-widest text-outline">

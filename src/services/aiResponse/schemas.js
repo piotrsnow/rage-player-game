@@ -164,7 +164,12 @@ const QuestSchema = z.object({
   objectives: z.array(QuestObjectiveSchema).optional().default([]),
   questGiverId: z.string().nullable().optional(),
   turnInNpcId: z.string().nullable().optional(),
+  // Faza 2 — `locationId` legacy (do Fazy 3a zachowane). `locationRef`
+  // (composite "world:UUID" / "campaign:UUID") jest preferowane; BE resolver
+  // (aiResolver.js) mapuje legacy locationId stringi na composite ref przed
+  // dispatch. Po Fazie 3a zostaje tylko `locationRef`.
   locationId: z.string().nullable().optional(),
+  locationRef: z.string().regex(/^(world|campaign):[0-9a-f-]{36}$/i).nullable().optional(),
   prerequisiteQuestIds: z.array(z.string()).optional().default([]),
   reward: QuestRewardSchema,
   type: z.enum(['main', 'side', 'personal']).optional().default('side'),
@@ -288,7 +293,12 @@ const StateChangesSchema = z.object({
   timeAdvance: TimeAdvanceSchema,
   activeEffects: z.array(z.any()).optional().default([]),
   moneyChange: z.any().nullable().optional(),
+  // Faza 2 — `currentLocation` (string) zachowane do Fazy 3a (legacy callsite'y).
+  // `currentLocationRef` (composite ref string) jest preferowane; BE resolver
+  // (aiResolver.js) próbuje zresolwować legacy `currentLocation` na composite
+  // ref przed dispatch state. Po Fazie 3a zostaje tylko `currentLocationRef`.
   currentLocation: z.string().nullable().optional(),
+  currentLocationRef: z.string().regex(/^(world|campaign):[0-9a-f-]{36}$/i).nullable().optional(),
   factionChanges: z.any().nullable().optional(),
   combatUpdate: z.object({
     active: z.boolean(),
@@ -305,7 +315,9 @@ const StateChangesSchema = z.object({
       weapons: z.array(z.string()).optional().default(['Hand Weapon']),
     }).passthrough()).optional().default([]),
     enemyHints: z.object({
+      // Faza 2 — `location` legacy; `locationRef` (composite) preferowane.
       location: z.string().optional(),
+      locationRef: z.string().regex(/^(world|campaign):[0-9a-f-]{36}$/i).nullable().optional(),
       budget: z.number().optional(),
       maxDifficulty: z.string().optional(),
       count: z.number().optional(),
@@ -345,6 +357,9 @@ const StateChangesSchema = z.object({
   dungeonComplete: z.object({
     name: z.string().min(1),
     summary: z.string().max(400),
+    // Faza 2 — composite ref do dungeon node (po resolve przez aiResolver).
+    // BE używa go aby ustawić `node.liberatedAt` i `WorldEvent.locationKind/Id`.
+    nodeRef: z.string().regex(/^(world|campaign):[0-9a-f-]{36}$/i).nullable().optional(),
   }).passthrough().nullable().optional(),
   // Round B (Phase 4b) — hearsay mentions. BE's `processLocationMentions`
   // enforces policy (NPC must already know the location) + caps at 20 to
@@ -352,6 +367,9 @@ const StateChangesSchema = z.object({
   // arrays before dispatch.
   locationMentioned: z.array(z.object({
     locationName: z.string().min(1),
+    // Faza 2 — composite ref po resolve przez aiResolver.resolveLocationRef
+    // (BE wstrzykuje to pole przed dispatch; AI zwykle nie wypełnia).
+    locationRef: z.string().regex(/^(world|campaign):[0-9a-f-]{36}$/i).nullable().optional(),
     byNpcId: z.string().min(1).optional(),
     npcId: z.string().min(1).optional(),
     byNpc: z.string().min(1).optional(),

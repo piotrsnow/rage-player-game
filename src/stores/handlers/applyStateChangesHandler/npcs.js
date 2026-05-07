@@ -4,6 +4,21 @@ import { npcToCompanion } from '../../../services/partyRecruitment';
 import { MAX_COMPANIONS } from '../partyHandlers';
 
 /**
+ * Faza 3a — parse composite ref string "kind:UUID" → { kind, id } or null.
+ * Akceptuje też istniejący object { kind, id }.
+ */
+function parseLocationRef(value) {
+  if (!value) return null;
+  if (typeof value === 'object' && value.kind && value.id) {
+    return { kind: value.kind, id: value.id };
+  }
+  if (typeof value !== 'string') return null;
+  const m = value.match(/^(world|campaign):([0-9a-f-]{36})$/i);
+  if (!m) return null;
+  return { kind: m[1].toLowerCase(), id: m[2] };
+}
+
+/**
  * Introduce or update NPCs in `draft.world.npcs`. Introduce adds a fresh row
  * with a generated id; update merges incoming fields into an existing NPC
  * (case-insensitive name match). "introduce + existing" is treated as a soft
@@ -22,6 +37,8 @@ export function applyNpcs(draft, changes) {
     );
 
     if (incoming.action === 'introduce' && idx < 0) {
+      // Faza 3a — preferowane: locationRef (composite). Fallback: location string.
+      const incomingRef = parseLocationRef(incoming.locationRef);
       const npcEntry = {
         id: `npc_${Date.now()}_${shortId(5)}`,
         name: incoming.name,
@@ -30,6 +47,7 @@ export function applyNpcs(draft, changes) {
         personality: incoming.personality || '',
         attitude: incoming.attitude || 'neutral',
         lastLocation: incoming.location || '',
+        locationRef: incomingRef,
         alive: true,
         notes: incoming.notes || '',
         disposition: typeof incoming.disposition === 'number' ? incoming.disposition : 0,
@@ -55,6 +73,11 @@ export function applyNpcs(draft, changes) {
     if (incoming.personality) npc.personality = incoming.personality;
     if (incoming.attitude) npc.attitude = incoming.attitude;
     if (incoming.location) npc.lastLocation = incoming.location;
+    // Faza 3a — preferowane: composite ref. AI-emitted lub BE-resolved.
+    {
+      const incomingRef = parseLocationRef(incoming.locationRef);
+      if (incomingRef) npc.locationRef = incomingRef;
+    }
     if (incoming.notes) npc.notes = incoming.notes;
     if (typeof incoming.race === 'string') npc.race = incoming.race;
     if (typeof incoming.creatureKind === 'string') npc.creatureKind = incoming.creatureKind;

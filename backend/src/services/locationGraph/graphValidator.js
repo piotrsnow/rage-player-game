@@ -1,5 +1,10 @@
 import { prisma } from '../../lib/prisma.js';
-import { EDGE_TYPES, EDGE_CATEGORY_NAMES, isValidDiscoveryPromotion } from '../../../../shared/domain/locationGraph.js';
+import {
+  EDGE_TYPES,
+  EDGE_CATEGORY_NAMES,
+  isValidDiscoveryPromotion,
+  safeValidateTacticalGrid,
+} from '../../../../shared/domain/locationGraph.js';
 import { LOCATION_KIND_WORLD, LOCATION_KIND_CAMPAIGN } from '../locationRefs.js';
 import { createEdge, updateEdge } from './graphService.js';
 import { childLogger } from '../../lib/logger.js';
@@ -17,6 +22,19 @@ export function validateGraphUpdate(update) {
   for (const node of update.newNodes || []) {
     if (!node.name || node.name.length < 2) {
       warnings.push(`Node "${node.name}" has an invalid name`);
+    }
+    // Faza 0 — walidacja opcjonalnych metadane na nodzie.
+    if (node.tacticalGrid !== undefined && node.tacticalGrid !== null) {
+      const r = safeValidateTacticalGrid(node.tacticalGrid);
+      if (!r.success) {
+        warnings.push(`Node "${node.name}" tacticalGrid invalid: ${r.error?.errors?.[0]?.message || 'unknown'}`);
+      }
+    }
+    if (node.biome !== undefined && node.biome !== null && typeof node.biome !== 'string') {
+      warnings.push(`Node "${node.name}" biome must be a string`);
+    }
+    if (node.anchorType !== undefined && node.anchorType !== null && typeof node.anchorType !== 'string') {
+      warnings.push(`Node "${node.name}" anchorType must be a string`);
     }
   }
 
@@ -55,19 +73,26 @@ export async function applyGraphUpdate(update, { campaignId }) {
     try {
       const parentRef = node.parentName ? nameIndex.get(normalize(node.parentName)) : null;
       const slug = normalize(node.name);
-      const row = await prisma.campaignLocation.create({
-        data: {
-          campaignId,
-          name: node.name,
-          canonicalSlug: slug,
-          description: node.description || '',
-          locationType: mapNodeType(node.type),
-          tags: node.tags || [],
-          scale: node.scale ?? 5,
-          parentLocationKind: parentRef?.kind || null,
-          parentLocationId: parentRef?.id || null,
-        },
-      });
+      // Faza 0 — propagujemy nowe metadane (biome, anchorType, tacticalGrid)
+      // gdy AI je podpowiedziało.
+      const data = {
+        campaignId,
+        name: node.name,
+        canonicalSlug: slug,
+        description: node.description || '',
+        locationType: mapNodeType(node.type),
+        tags: node.tags || [],
+        scale: node.scale ?? 5,
+        parentLocationKind: parentRef?.kind || null,
+        parentLocationId: parentRef?.id || null,
+      };
+      if (node.biome) data.biome = node.biome;
+      if (node.anchorType) data.anchorType = node.anchorType;
+      if (node.tacticalGrid) {
+        const r = safeValidateTacticalGrid(node.tacticalGrid);
+        if (r.success) data.tacticalGrid = node.tacticalGrid;
+      }
+      const row = await prisma.campaignLocation.create({ data });
       nameIndex.set(slug, { kind: LOCATION_KIND_CAMPAIGN, id: row.id });
       applied.nodes++;
     } catch (err) {

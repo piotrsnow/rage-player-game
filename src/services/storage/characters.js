@@ -165,6 +165,7 @@ export async function saveCharacter(character) {
         campaignCount: character.campaignCount || 0,
         voiceId: character.voiceId || '',
         voiceName: character.voiceName || '',
+        skillBadges: Array.isArray(character.skillBadges) ? character.skillBadges : [],
       };
 
       let saved;

@@ -42,8 +42,13 @@ export function injectCombatFallback(result, state, playerAction, isFirstScene, 
   if (hasCombatUpdate) return;
 
   const currentLocation = state.world?.currentLocation || '';
+  const currentRef = state.world?.currentLocationRef || null;
   const fallbackNpc = (state.world?.npcs || []).find((npc) => {
     if (!npc?.name || npc.alive === false) return false;
+    // Faza 3a — preferuj match po composite ref. Fallback: string.
+    if (currentRef && npc.locationRef) {
+      return npc.locationRef.kind === currentRef.kind && npc.locationRef.id === currentRef.id;
+    }
     if (!currentLocation) return true;
     return String(npc.lastLocation || '').trim().toLowerCase() === String(currentLocation).trim().toLowerCase();
   });
@@ -155,6 +160,7 @@ export function applySceneStateChanges({
   result, state, dispatch,
   authoritativeCharacterSnapshot, ensureMissingInventoryImages, ensureMissingNpcPortraits, t,
   newlyUnlockedAchievements = [], updatedAchievementState = null,
+  campaignId = null, sceneIndex = null,
 }) {
   if (!result.stateChanges || Object.keys(result.stateChanges).length === 0) return;
 
@@ -170,7 +176,12 @@ export function applySceneStateChanges({
   );
   const newlyIntroducedNames = [...introducedNpcNames].filter((name) => !existingNpcNames.has(name));
 
-  const { validated, warnings, corrections } = validateStateChanges(result.stateChanges, state);
+  const { validated, warnings, corrections } = validateStateChanges(
+    result.stateChanges,
+    state,
+    {},
+    { campaignId, sceneIndex },
+  );
   result.stateChanges = validated;
 
   const previousFactions = { ...(state.world?.factions || {}) };
