@@ -64,6 +64,7 @@ export const config = {
     sceneWidth: parseInt(process.env.SD_WEBUI_SCENE_WIDTH || '1344', 10),
     sceneHeight: parseInt(process.env.SD_WEBUI_SCENE_HEIGHT || '512', 10),
     hiresFix: process.env.SD_WEBUI_HIRES_FIX === '1',
+    ipaModel: process.env.SD_WEBUI_IPA_MODEL || '',
   },
 
   xttsUrl: process.env.XTTS_URL || '',

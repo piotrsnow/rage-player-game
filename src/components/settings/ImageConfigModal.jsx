@@ -8,6 +8,50 @@ import ImagePlaygroundSection from './sections/ImagePlaygroundSection';
 import EffectIntensitySection from './sections/EffectIntensitySection';
 import Toggle from '../ui/Toggle';
 
+const RESOLUTION_OPTIONS = [
+  { value: 0.125, label: 'x1/8' },
+  { value: 0.25,  label: 'x1/4' },
+  { value: 0.5,   label: 'x1/2' },
+  { value: 1,     label: 'x1' },
+];
+
+function roundTo8(v) {
+  return Math.max(256, Math.round(v / 8) * 8);
+}
+
+function ResolutionMultiplierSection({ settings, updateSettings }) {
+  const { t } = useTranslation();
+  const current = settings.imageResolutionMultiplier ?? 1;
+  const baseW = 1344;
+  const baseH = 512;
+  const effectiveW = roundTo8(baseW * current);
+  const effectiveH = roundTo8(baseH * current);
+
+  return (
+    <div className="bg-surface-container-high/60 backdrop-blur-xl p-6 rounded-sm">
+      <p className="font-headline text-tertiary mb-1">{t('imageConfig.resolution.title')}</p>
+      <p className="text-xs text-on-surface-variant/70 mb-4">
+        {t('imageConfig.resolution.hint', { width: effectiveW, height: effectiveH })}
+      </p>
+      <div className="flex gap-2">
+        {RESOLUTION_OPTIONS.map((opt) => (
+          <button
+            key={opt.value}
+            onClick={() => updateSettings({ imageResolutionMultiplier: opt.value })}
+            className={`px-4 py-2 rounded-sm text-sm font-label transition-all ${
+              current === opt.value
+                ? 'bg-primary/20 text-primary ring-1 ring-primary/40'
+                : 'bg-surface-container-highest/40 text-on-surface-variant hover:bg-surface-container-highest/60'
+            }`}
+          >
+            {opt.label}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 const IMAGE_PROVIDERS = [
   { id: 'dalle', icon: 'auto_awesome', label: 'DALL-E 3', keyId: 'openai' },
   { id: 'gpt-image', icon: 'brush', label: 'GPT Image', keyId: 'openai' },
@@ -66,6 +110,13 @@ export default function ImageConfigModal({ onClose }) {
                 updateSettings={updateSettings}
                 updateDMSettings={updateDMSettings}
               />
+
+              {showImageProvider && (
+                <ResolutionMultiplierSection
+                  settings={settings}
+                  updateSettings={updateSettings}
+                />
+              )}
 
               {showImageProvider && isAdmin && (
                 <div className="relative bg-[#1a0c1e]/80 rounded-sm ring-1 ring-[#4a1838]/40">

@@ -18,7 +18,43 @@ const ALL_LINES = [
   '[memory]   Compressing 15 campaign facts into HNSW index...    OK',
   '[npc-ai]   Teaching merchants to overcharge adventurers...',
   '[docker]   Container rpgon-backend healthy                     ✓',
+  '[alchemy]  Brewing 12 volatile potions...                      OK',
+  '[map]      Tessellating hex grid (1024x1024)...                OK',
+  '[shader]   Compiling volumetric fog pass...                    OK',
+  '[dungeon]  Seeding procedural catacombs (depth: 7)...          OK',
+  '[ai-ctx]   Warming nano intent classifier...                   OK',
+  '[tts]      Connecting to bardic speech synthesis...             OK',
+  '[physics]  Bootstrapping ragdoll constraints...                OK',
+  '[save]     Verifying campaign checksum integrity...             OK',
+  '[guild]    Registering 8 faction reputation graphs...           OK',
+  '[weather]  Simulating 30-day forecast for Yeralden...           OK',
+  '[trade]    Populating merchant inventories (438 items)...       OK',
+  '[bestiary] Indexing 127 creature stat blocks...                 OK',
+  '[road]     Computing Dijkstra shortest paths...                 OK',
+  '[crafting] Loading 64 recipe schematics...                     OK',
+  '[socket]   Opening WebSocket tunnel to multiverse...            OK',
+  '[terrain]  Generating heightmap normals...                      OK',
+  '[journal]  Rebuilding adventure log index...                    OK',
+  '[spell]    Validating 9 arcane skill trees...                   OK',
+  '[npc-ai]   Assigning personality quirks to 47 NPCs...',
+  '[lore]     Injecting 12 world lore sections...                  OK',
+  '[docker]   Warming up sidecar containers...                     OK',
+  '[quest]    Linking prerequisite chains (depth: 3)...            OK',
+  '[embed]    Building HNSW index (ef=200, M=16)...               OK',
+  '[crown]    Minting 10,000 Zlote Korony into treasury...         OK',
+  '[karma]    Calibrating moral consequence engine...              OK',
+  '[portal]   Stabilizing interdimensional gateway...              OK',
+  '[rumor]    Distributing hearsay across 6 taverns...             OK',
+  '[scroll]   Transcribing ancient spell scrolls...                OK',
+  '[arena]    Scheduling gladiator tournament brackets...           OK',
+  '[rng]      Seeding entropy pool (source: cosmic noise)...       OK',
+  '[tavern]   Hiring suspicious bartender (loyalty: 12%)...',
+  '[vault]    Encrypting player secrets (AES-256-GCM)...           OK',
+  '[mount]    Saddling 3 griffons for fast travel...               OK',
+  '[docker]   All services nominal                                ✓',
 ];
+
+const STATUS_RE = /^(.+?)\s{2,}(OK|done|✓)$/;
 
 function shuffle(arr) {
   const a = [...arr];
@@ -62,21 +98,28 @@ export default function BootLog({ done = false }) {
   return (
     <div
       ref={scrollRef}
-      className="w-full max-w-lg max-h-48 overflow-y-auto rounded-lg border border-[rgba(197,154,255,0.1)]
-                 bg-[rgba(14,14,16,0.7)] px-4 py-3 font-mono text-[11px] leading-relaxed
+      className="w-[52rem] h-[26rem] overflow-y-auto rounded-lg border border-[rgba(197,154,255,0.1)]
+                 bg-[rgba(14,14,16,0.7)] px-8 py-6 font-mono text-[16px] leading-relaxed
                  custom-scrollbar select-none"
     >
-      {lines.map((line, i) => (
-        <div
-          key={i}
-          className="animate-fade-in whitespace-pre"
-          style={{ color: line.endsWith('✓') ? '#7ee787' : 'rgba(180,180,190,0.75)' }}
-        >
-          {line}
-        </div>
-      ))}
+      {lines.map((line, i) => {
+        const m = line.match(STATUS_RE);
+        if (m) {
+          return (
+            <div key={i} className="animate-fade-in flex justify-between gap-4" style={{ color: 'rgba(180,180,190,0.75)' }}>
+              <span>{m[1]}</span>
+              <span className="shrink-0" style={m[2] === '✓' ? { color: '#7ee787' } : undefined}>{m[2]}</span>
+            </div>
+          );
+        }
+        return (
+          <div key={i} className="animate-fade-in" style={{ color: 'rgba(180,180,190,0.75)' }}>
+            {line}
+          </div>
+        );
+      })}
       {!done && lines.length < poolRef.current.length && (
-        <span className="inline-block w-1.5 h-3.5 bg-[rgba(180,180,190,0.6)] animate-cursor-blink ml-0.5 align-middle" />
+        <span className="inline-block w-3 h-7 bg-[rgba(180,180,190,0.6)] animate-cursor-blink ml-1 align-middle" />
       )}
     </div>
   );

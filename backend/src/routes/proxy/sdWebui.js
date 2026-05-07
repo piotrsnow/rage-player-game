@@ -16,6 +16,48 @@ const GENERATE_TIMEOUT_MS = 180_000;
 
 const DEFAULT_NEGATIVE_PROMPT = 'blurry, lowres, worst quality, low quality, jpeg artifacts, text, watermark, signature, username, deformed, distorted, disfigured, bad anatomy, wrong anatomy, extra limbs, missing limbs, extra fingers, fewer fingers, mutated hands, poorly drawn hands, poorly drawn face, deformed face, bad proportions, out of frame, duplicate, cropped';
 
+// ---------------------------------------------------------------------------
+// IP-Adapter (ControlNet extension) — face-preserving portrait generation
+// ---------------------------------------------------------------------------
+
+let cachedIpaModel = undefined; // undefined = not yet probed
+
+const IPA_MODEL_RE = /ip[_-]?adapter.*face/i;
+
+async function probeIpaModel(baseUrl) {
+  if (config.sdWebui.ipaModel) return config.sdWebui.ipaModel;
+  if (cachedIpaModel !== undefined) return cachedIpaModel;
+  try {
+    const res = await fetchWithTimeout(
+      `${baseUrl}/controlnet/model_list`, { method: 'GET' }, 10_000,
+    );
+    if (!res.ok) { cachedIpaModel = null; return null; }
+    const data = await res.json();
+    const models = data.model_list || [];
+    const match = models.find((m) => IPA_MODEL_RE.test(m));
+    cachedIpaModel = match || null;
+    if (!match) {
+      console.warn('[sd-webui] No IP-Adapter face model found among ControlNet models. Portrait generation will fall back to plain img2img. Install an IP-Adapter model (e.g. ip-adapter-plus-face_sdxl_vit-h) into models/ControlNet/.');
+    }
+    return cachedIpaModel;
+  } catch {
+    cachedIpaModel = null;
+    return null;
+  }
+}
+
+function buildIpAdapterUnit(imageBase64, weight, modelName) {
+  return {
+    enabled: true,
+    module: 'ip-adapter_clip_sdxl',
+    model: modelName,
+    image: imageBase64,
+    weight: Math.max(0, Math.min(1.5, weight)),
+    resize_mode: 'Just Resize',
+    control_mode: 'My prompt is more important',
+  };
+}
+
 // SDXL leans hard on "Renaissance" / "heroic composition" / "sweeping vista"
 // style scaffolding — even when the scene is a tavern or forest, those cues
 // push the model toward castles, cathedrals, and fortress ruins. The style
@@ -59,12 +101,11 @@ const GENERATE_BODY_SCHEMA = {
     steps: { type: 'integer', minimum: 1, maximum: 150 },
     cfg: { type: 'number', minimum: 1, maximum: 30 },
     sampler: { type: 'string', maxLength: 64 },
-    // Seed: 0..2^32-1. Absent/null → backend rolls a random one per request
-    // (each call is unique → cache is effectively bypassed). Explicit value →
-    // deterministic output for the same prompt+model, cache hits are correct.
     seed: { type: 'integer', minimum: 0, maximum: 4294967295 },
     campaignId: { type: 'string', pattern: UUID_PATTERN },
     forceNew: { type: 'boolean' },
+    portraitBase64: { type: 'string', maxLength: 5_000_000 },
+    ipaWeight: { type: 'number', minimum: 0, maximum: 1.5 },
   },
 };
 
@@ -204,6 +245,8 @@ export async function sdWebuiProxyRoutes(fastify) {
       seed: bodySeed,
       campaignId,
       forceNew = false,
+      portraitBase64 = null,
+      ipaWeight: rawIpaWeight,
     } = request.body;
 
     // Parameter resolution chain: explicit body value > per-model preset >
@@ -264,15 +307,24 @@ export async function sdWebuiProxyRoutes(fastify) {
       save_images: true,
     };
 
-    // Opt-in hires fix (SD_WEBUI_HIRES_FIX=1) — ~2x generation time but
-    // fixes blurry faces in wide scene framing. Skip for /portrait (768x1024
-    // already gives faces ~1/3 of the frame, hires pass adds little there).
     if (config.sdWebui.hiresFix) {
       payload.enable_hr = true;
       payload.hr_scale = 1.5;
       payload.hr_upscaler = 'R-ESRGAN 4x+';
       payload.hr_second_pass_steps = Math.max(4, Math.round(steps * 0.7));
       payload.denoising_strength = 0.3;
+    }
+
+    if (portraitBase64) {
+      const ipaModelName = await probeIpaModel(baseUrl);
+      if (ipaModelName) {
+        const sceneWeight = rawIpaWeight ?? 0.35;
+        payload.alwayson_scripts = {
+          controlnet: {
+            args: [buildIpAdapterUnit(portraitBase64, sceneWeight, ipaModelName)],
+          },
+        };
+      }
     }
 
     let res;
@@ -324,6 +376,7 @@ export async function sdWebuiProxyRoutes(fastify) {
     let strength = '0.55';
     let model = '';
     let seedRaw = null;
+    let ipaWeightRaw = null;
 
     for await (const part of parts) {
       if (part.type === 'file' && part.fieldname === 'image') {
@@ -334,6 +387,7 @@ export async function sdWebuiProxyRoutes(fastify) {
         if (part.fieldname === 'strength') strength = part.value;
         if (part.fieldname === 'model') model = part.value;
         if (part.fieldname === 'seed') seedRaw = part.value;
+        if (part.fieldname === 'ipaWeight') ipaWeightRaw = part.value;
       }
     }
 
@@ -348,10 +402,6 @@ export async function sdWebuiProxyRoutes(fastify) {
     const coerced = coerceSeed(seedRaw);
     const seed = coerced === null ? randomSeed() : coerced;
 
-    // Portrait dims come from the per-model preset (832x1216 = SDXL-native
-    // 2:3 portrait bucket) instead of the legacy 768x1024 which sits
-    // off-bucket and hurts Starlight/Painter's quality. For unknown models we
-    // keep the old 768x1024 — safe across non-SDXL checkpoints too.
     const preset = getModelPreset(model);
     const width = preset?.portraitWidth ?? 768;
     const height = preset?.portraitHeight ?? 1024;
@@ -360,9 +410,42 @@ export async function sdWebuiProxyRoutes(fastify) {
     const cfg = preset?.cfg ?? config.sdWebui.cfg;
     const negativePrompt = mergeNegatives(rawNegativePrompt, preset, prompt);
 
+    const ipaModelName = imageBuffer ? await probeIpaModel(baseUrl) : null;
+    const useIpa = !!imageBuffer && !!ipaModelName;
+
     let res;
     try {
-      if (imageBuffer) {
+      if (useIpa) {
+        const initImage = imageBuffer.toString('base64');
+        const ipaWeight = ipaWeightRaw != null ? Math.max(0, Math.min(1.5, parseFloat(ipaWeightRaw) || 0.7)) : 0.7;
+        const payload = {
+          prompt,
+          negative_prompt: negativePrompt,
+          width,
+          height,
+          steps,
+          cfg_scale: cfg,
+          sampler_name: sampler,
+          seed,
+          n_iter: 1,
+          batch_size: 1,
+          save_images: true,
+          alwayson_scripts: {
+            controlnet: {
+              args: [buildIpAdapterUnit(initImage, ipaWeight, ipaModelName)],
+            },
+          },
+        };
+        res = await fetchWithTimeout(
+          `${baseUrl}/sdapi/v1/txt2img`,
+          {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload),
+          },
+          GENERATE_TIMEOUT_MS,
+        );
+      } else if (imageBuffer) {
         const initImage = imageBuffer.toString('base64');
         const payload = {
           init_images: [initImage],
@@ -433,6 +516,7 @@ export async function sdWebuiProxyRoutes(fastify) {
       model: model || null,
       seed,
       hasInit: !!imageBuffer,
+      ipa: useIpa || undefined,
     };
     const result = await persistGeneratedImage({
       userId: request.user.id,
@@ -441,5 +525,29 @@ export async function sdWebuiProxyRoutes(fastify) {
       cacheParams,
     });
     return { ...result, seed };
+  });
+
+  fastify.get('/controlnet/models', async (_request, reply) => {
+    const baseUrl = requireSdUrl(reply);
+    if (!baseUrl) return;
+
+    try {
+      const res = await fetchWithTimeout(
+        `${baseUrl}/controlnet/model_list`, { method: 'GET' }, 10_000,
+      );
+      if (!res.ok) {
+        return reply.code(502).send({ error: `controlnet model_list failed: ${res.status}` });
+      }
+      const data = await res.json();
+      const models = data.model_list || [];
+      const ipaModels = models.filter((m) => IPA_MODEL_RE.test(m));
+      const activeIpa = await probeIpaModel(baseUrl);
+      return { models, ipaModels, activeIpa };
+    } catch (err) {
+      return reply.code(503).send({
+        error: `sd-webui unreachable: ${err.message}`,
+        code: 'SD_WEBUI_OFFLINE',
+      });
+    }
   });
 }

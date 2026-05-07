@@ -19,6 +19,7 @@ export default function QuickActionsBar({
   onToggleTrainerPicker,
   onToggleRecruitPicker,
   onOpenIncident,
+  onOpenSelfQuest,
   recruitableCount = 0,
   partyHasSlot = true,
   forceRollState = null,
@@ -74,6 +75,16 @@ export default function QuickActionsBar({
         disabled={disabled || hasPendingAction}
         tone="tertiary"
       />
+      {onOpenSelfQuest && (
+        <QuickActionButton
+          icon="add_task"
+          label={t('gameplay.selfQuestButton')}
+          description={t('gameplay.selfQuestHint')}
+          onClick={onOpenSelfQuest}
+          disabled={disabled || hasPendingAction}
+          tone="secondary"
+        />
+      )}
       <QuickActionButton
         icon="swords"
         label={t('gameplay.initiateCombat')}

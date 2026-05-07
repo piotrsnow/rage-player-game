@@ -166,6 +166,10 @@
   "imageConfig": {
     "title": "Image Configuration",
     "subtitle": "Configure how scenes are displayed, the art style and the image generation provider.",
+    "resolution": {
+      "title": "Image resolution",
+      "hint": "Effective resolution: {{width}}×{{height}} px"
+    },
     "promptLlm": {
       "title": "AI Prompt Generation",
       "desc": "A smaller LLM composes the image prompt based on the scene",
@@ -398,6 +402,18 @@
     "incidentCorrected": "Game state has been corrected",
     "incidentCorrectionsApplied": "Corrections applied:",
     "incidentSlipWarning": "Next scene might be... a bit slippery",
+    "selfQuestButton": "Challenge",
+    "selfQuestTitle": "Personal Challenge",
+    "selfQuestHint": "Describe a goal or challenge related to what you recently encountered in the game. The AI will evaluate if it fits the narrative.",
+    "selfQuestPlaceholder": "E.g. I want to find the missing merchant I met at the tavern...",
+    "selfQuestSubmit": "Submit",
+    "selfQuestLoading": "AI evaluating...",
+    "selfQuestApproved": "Challenge accepted!",
+    "selfQuestRejected": "Challenge rejected",
+    "selfQuestRetry": "Try again",
+    "selfQuestConfirm": "Accept",
+    "selfQuestCancel": "Cancel",
+    "selfQuestError": "Failed to submit challenge",
     "forceRoll": {
       "button": "Force roll",
       "descriptionOff": "Force a dice roll on this action. Left click: enable. Double click: favorable (+30). Right click: unfavorable (−30).",

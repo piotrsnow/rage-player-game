@@ -6,11 +6,6 @@ import { apiClient, toCanonicalStoragePath } from '../../services/apiClient';
 import { imageService } from '../../services/imageGen';
 import WebcamCapture from '../ui/WebcamCapture';
 
-// Raised across the board: with plain img2img (no ControlNet/IP-Adapter) the
-// reference photo dominates at low denoise — you get "me in a filter" instead
-// of a fantasy portrait. Sweet spot for "fantasy character with my face" on
-// SDXL img2img is 0.7–0.85; below 0.5 the original photo bleeds through too
-// much (modern clothes, indoor bg, phone-photo lighting).
 const STRENGTH_PRESETS = [
   { value: 0.55, labelKey: 'charCreator.strengthSubtle' },
   { value: 0.7, labelKey: 'charCreator.strengthBalanced' },
@@ -33,7 +28,7 @@ const EMOTIONS_DEFAULT = Object.freeze({
   nostalgia: 23,
 });
 const EMOTIONS_MAX_SUM = 200;
-const LIKENESS_DEFAULT = 25;
+const LIKENESS_DEFAULT = 60;
 
 // Proportional rebalance: when a single slider is raised past the headroom,
 // shrink every other slider by the same ratio so the combined sum stays <= 200.
@@ -169,6 +164,7 @@ export default function PortraitGenerator({ species, age, gender, careerName, ge
     abortRef.current = false;
 
     try {
+      const ipaWeight = isSdWebui && photoBlob ? (likeness / 100) * 1.2 : undefined;
       const result = await imageService.generatePortrait(
         canUseReferenceImage ? photoBlob : null,
         { species, age, gender, careerName, genre },
@@ -179,7 +175,7 @@ export default function PortraitGenerator({ species, age, gender, careerName, ge
         settings.dmSettings?.darkPalette || false,
         settings.dmSettings?.narratorSeriousness ?? null,
         settings.sdWebuiModel || null,
-        { likeness, emotions },
+        { likeness, emotions, ipaWeight },
         Number.isInteger(settings.sdWebuiSeed) ? settings.sdWebuiSeed : null,
       );
       if (!abortRef.current) {
@@ -454,7 +450,7 @@ export default function PortraitGenerator({ species, age, gender, careerName, ge
 
       {(photoBlob || !requiresReferenceImage) && (
         <div className="w-full max-w-[280px] space-y-3">
-          {requiresReferenceImage && (
+          {requiresReferenceImage && !isSdWebui && (
             <div>
               <div className="flex items-center justify-between mb-1.5">
                 <span className="text-[10px] font-label uppercase tracking-wider text-on-surface-variant">

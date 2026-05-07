@@ -543,14 +543,13 @@ export function buildPortraitPrompt(species, gender, age, careerName, genre = 'F
     : '';
 
   if (isSdWebui) {
-    // Subject-first compact form. Fantasy anchors (img2img bleed guard) stay
-    // as a weighted prefix — they're technical not stylistic and SD reads the
-    // :weight syntax. Age/gender are already baked into the subject string,
-    // so we skip the extra tags for those.
-    const sdAnchor = hasReferenceImage ? '(fantasy character:1.3), (fantasy armor:1.2), ' : '';
-    const sdSubject = `${sdAnchor}close-up portrait of a ${genderLabel} ${speciesDesc}${ageDirective}${career}, head and shoulders`;
+    // With IP-Adapter active the reference photo feeds through a separate
+    // conditioning pathway — no init image bleed, so fantasy anchors and
+    // likeness tags in the prompt are unnecessary. When IP-Adapter is NOT
+    // available the backend falls back to img2img and these tags are still
+    // harmless, so we simply skip them unconditionally for cleaner prompts.
+    const sdSubject = `close-up portrait of a ${genderLabel} ${speciesDesc}${ageDirective}${career}, head and shoulders`;
     const extraTags = [
-      getSdLikenessTag(hasReferenceImage, extras.likeness),
       ...getSdEmotionTags(extras.emotions),
     ].filter(Boolean);
     return buildSdPrompt({

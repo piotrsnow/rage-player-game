@@ -38,7 +38,7 @@ export default function StoryPromptSection({
             value={storyPrompt}
             onChange={(e) => onStoryPromptChange(e.target.value)}
             placeholder={isGuest ? t('multiplayer.waitingForHost', 'Waiting for host to set the story...') : t('creator.storyPlaceholder')}
-            rows={4}
+            rows={6}
             readOnly={isGuest}
             className={`w-full bg-transparent border-0 border-b border-outline-variant/20 focus:border-primary/50 focus:ring-0 text-on-surface text-sm py-3 px-1 resize-none placeholder:text-on-surface-variant/60 custom-scrollbar font-body ${
               isGuest ? 'opacity-70 cursor-default' : ''

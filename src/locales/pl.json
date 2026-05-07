@@ -162,6 +162,10 @@
   "imageConfig": {
     "title": "Konfiguracja Obrazów",
     "subtitle": "Ustaw sposób wyświetlania scen, styl grafiki oraz dostawcę generowania obrazów.",
+    "resolution": {
+      "title": "Rozdzielczość obrazu",
+      "hint": "Efektywna rozdzielczość: {{width}}×{{height}} px"
+    },
     "promptLlm": {
       "title": "Generowanie promptu przez AI",
       "desc": "Mniejszy model LLM układa prompt do generowania obrazu na podstawie sceny",
@@ -393,6 +397,18 @@
     "incidentCorrected": "Stan gry został skorygowany",
     "incidentCorrectionsApplied": "Naprawiono:",
     "incidentSlipWarning": "Następna scena może być... nieco śliska",
+    "selfQuestButton": "Wyzwanie",
+    "selfQuestTitle": "Osobiste wyzwanie",
+    "selfQuestHint": "Opisz cel lub wyzwanie powiązane z tym, co ostatnio spotkałeś w grze. AI oceni, czy pasuje do fabuły.",
+    "selfQuestPlaceholder": "Np. Chcę odnaleźć zaginionego kupca, którego spotkałem w karczmie...",
+    "selfQuestSubmit": "Wyślij",
+    "selfQuestLoading": "AI ocenia...",
+    "selfQuestApproved": "Wyzwanie przyjęte!",
+    "selfQuestRejected": "Wyzwanie odrzucone",
+    "selfQuestRetry": "Spróbuj ponownie",
+    "selfQuestConfirm": "Przyjmij",
+    "selfQuestCancel": "Anuluj",
+    "selfQuestError": "Nie udało się przesłać wyzwania",
     "forceRoll": {
       "button": "Wymuś rzut",
       "descriptionOff": "Wymusza rzut na tej akcji. Lewy klik: włącz. Dwuklik: sprzyjające okoliczności (+30). Prawy klik: niesprzyjające (−30).",

@@ -79,6 +79,7 @@ services:
       SD_WEBUI_HIRES_FIX: "${SD_WEBUI_HIRES_FIX:-}"
       SD_WEBUI_SCENE_WIDTH: "${SD_WEBUI_SCENE_WIDTH:-}"
       SD_WEBUI_SCENE_HEIGHT: "${SD_WEBUI_SCENE_HEIGHT:-}"
+      SD_WEBUI_IPA_MODEL: "${SD_WEBUI_IPA_MODEL:-}"
       # XTTS Voice Studio — local TTS. From inside the container use
       # http://xtts:5050 (when xtts service is running) or
       # http://host.docker.internal:5050 (when running natively on host).

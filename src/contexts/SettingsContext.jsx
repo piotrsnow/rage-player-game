@@ -118,6 +118,7 @@ const defaultSettings = {
   // null = random seed per request; number = fixed (reproducible, cacheable).
   // Toggled from SdWebuiModelPicker via double-click on the seed field.
   sdWebuiSeed: null,
+  imageResolutionMultiplier: 1,
   imagePromptLlmEnabled: false,
   imagePromptLlmProvider: 'openai',
   imagePromptLlmModel: '',
@@ -132,6 +133,7 @@ const defaultSettings = {
   effectIntensity: 'medium',
   sfxEnabled: true,
   sfxVolume: 70,
+  dialogueVolume: 80,
   musicVolume: 40,
   localMusicEnabled: true,
   typewriterMode: 'fullscreen',

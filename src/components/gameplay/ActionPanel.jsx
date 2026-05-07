@@ -16,6 +16,7 @@ import TeammateTypingPanels from './action/TeammateTypingPanels';
 import QuickActionsBar from './action/QuickActionsBar';
 import CustomActionForm from './action/CustomActionForm';
 import IncidentModal from './action/IncidentModal';
+import SelfQuestModal from './action/SelfQuestModal';
 import { useGameSlice } from '../../stores/gameSelectors';
 import {
   getRecentNpcsForRecruitment,
@@ -69,6 +70,7 @@ export default function ActionPanel({
   const [trainerPickerOpen, setTrainerPickerOpen] = useState(false);
   const [recruitPickerOpen, setRecruitPickerOpen] = useState(false);
   const [incidentOpen, setIncidentOpen] = useState(false);
+  const [selfQuestOpen, setSelfQuestOpen] = useState(false);
   const [forceRoll, setForceRoll] = useState(FORCE_ROLL_INITIAL);
 
   const scenes = useGameSlice((s) => s.scenes);
@@ -487,6 +489,15 @@ export default function ActionPanel({
         document.body
       )}
 
+      {selfQuestOpen && campaignId && dispatch && createPortal(
+        <SelfQuestModal
+          campaignId={campaignId}
+          onClose={() => setSelfQuestOpen(false)}
+          onQuestAccepted={(quest) => dispatch({ type: 'ADD_QUEST', payload: quest })}
+        />,
+        document.body
+      )}
+
       {/* Row 2: Utility buttons + Input */}
       {(!hasPendingAction || !isMultiplayer) && (
         <div className="flex items-center gap-2">
@@ -504,6 +515,7 @@ export default function ActionPanel({
             onToggleTrainerPicker={() => setTrainerPickerOpen((v) => !v)}
             onToggleRecruitPicker={() => setRecruitPickerOpen((v) => !v)}
             onOpenIncident={campaignId ? () => setIncidentOpen(true) : undefined}
+            onOpenSelfQuest={campaignId && dispatch ? () => setSelfQuestOpen(true) : undefined}
             recruitableCount={recruitableNpcs.length}
             partyHasSlot={partyHasSlot}
             forceRollState={isMultiplayer ? null : forceRoll}

@@ -5,6 +5,7 @@ import { sceneRoutes } from './scenes.js';
 import { keyTestRoutes } from './keyTest.js';
 import { llmCallLogRoutes } from './llmCallLog.js';
 import { incidentRoutes } from './incidents.js';
+import { selfQuestRoutes } from './selfQuest.js';
 import { setLlmCallUserId } from '../../services/llmCallLogger.js';
 
 /**
@@ -28,4 +29,5 @@ export async function aiRoutes(fastify) {
   await fastify.register(keyTestRoutes);
   await fastify.register(llmCallLogRoutes);
   await fastify.register(incidentRoutes);
+  await fastify.register(selfQuestRoutes);
 }

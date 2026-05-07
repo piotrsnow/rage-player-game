@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useLayoutEffect, useCallback } from 'react';
 import { createPortal } from 'react-dom';
-import { Link, useLocation } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { useSettings } from '../../contexts/SettingsContext';
 import { useGlobalMusic } from '../../contexts/MusicContext';
@@ -10,6 +10,7 @@ import { useGameCampaign } from '../../stores/gameSelectors';
 import { getGameState } from '../../stores/gameStore';
 import { useMultiplayer } from '../../contexts/MultiplayerContext';
 import { storage } from '../../services/storage';
+import { peekEntryIntent, consumeEntryIntent } from '../../services/entryIntent';
 import Tooltip from '../ui/Tooltip';
 import { APP_VERSION } from '../../version';
 
@@ -76,7 +77,9 @@ const HEADER_CHROME_STYLE = {
 
 export default function Header() {
   const location = useLocation();
+  const navigate = useNavigate();
   const { t } = useTranslation();
+  const [entryRoute, setEntryRoute] = useState(() => peekEntryIntent());
   const { settings, updateSettings, backendUser } = useSettings();
   const music = useGlobalMusic();
   const { openCharacterSheet, openTasksInfo, openSettings, openKeys, openImageConfig, openAudioConfig, openProfile, openAdminUsers, openLocationGraph, openGmModal, openPrivacy } = useModals();
@@ -121,6 +124,8 @@ export default function Header() {
   const clearPlayLogoVignette = useCallback(() => setLogoHoverVignette(null), []);
   const [volumeOpen, setVolumeOpen] = useState(false);
   const volumeRef = useRef(null);
+  const [isMuted, setIsMuted] = useState(false);
+  const preMuteVolumesRef = useRef(null);
   const [saveStatus, setSaveStatus] = useState('idle');
   const saveTimeoutRef = useRef(null);
 
@@ -157,6 +162,9 @@ export default function Header() {
   ].filter(Boolean);
 
   const vol = settings.musicVolume ?? 40;
+  const dlgVol = settings.dialogueVolume ?? 80;
+  const maxVol = Math.max(vol, dlgVol);
+  const volumeIcon = isMuted ? 'volume_off' : maxVol === 0 ? 'volume_off' : maxVol < 40 ? 'volume_down' : 'volume_up';
   const isPlayRoute = location.pathname.startsWith('/play');
 
   useEffect(() => {
@@ -337,6 +345,21 @@ export default function Header() {
           </nav>
         )}
 
+        {entryRoute && (
+          <button
+            type="button"
+            onClick={() => {
+              const route = consumeEntryIntent();
+              setEntryRoute(null);
+              if (route) navigate(route);
+            }}
+            className="flex items-center gap-1.5 px-4 py-2 text-sm font-label lowercase rounded-sm border border-primary/40 text-primary animate-pulse hover:bg-primary/10 transition-colors duration-200"
+          >
+            <span className="material-symbols-outlined text-base">play_arrow</span>
+            Przejdź do kampanii
+          </button>
+        )}
+
         {settings.localMusicEnabled && music.hasMusic && (
           <div className="flex items-center gap-2">
             <Tooltip content={music.isPlaying ? t('common.pause', 'Pause') : t('common.play', 'Play')} placement="bottom" variant="compact" asChild>
@@ -359,22 +382,65 @@ export default function Header() {
               <Tooltip content={t('settings.musicVolume', 'Volume')} placement="bottom" variant="compact" asChild>
                 <button
                   onClick={() => setVolumeOpen((v) => !v)}
+                  onContextMenu={(e) => {
+                    e.preventDefault();
+                    if (!isMuted) {
+                      preMuteVolumesRef.current = { musicVolume: vol, dialogueVolume: dlgVol, sfxVolume: settings.sfxVolume ?? 70 };
+                      updateSettings({ musicVolume: 0, dialogueVolume: 0, sfxVolume: 0 });
+                      music.setVolume(0);
+                      setIsMuted(true);
+                    } else {
+                      const saved = preMuteVolumesRef.current || {};
+                      const restored = {
+                        musicVolume: saved.musicVolume || 25,
+                        dialogueVolume: saved.dialogueVolume || 25,
+                        sfxVolume: saved.sfxVolume || 25,
+                      };
+                      updateSettings(restored);
+                      music.setVolume(restored.musicVolume);
+                      setIsMuted(false);
+                      preMuteVolumesRef.current = null;
+                    }
+                  }}
                   className="material-symbols-outlined text-base text-on-surface-variant hover:text-primary transition-colors active:scale-95 duration-200 w-8 h-8 flex items-center justify-center rounded-full hover:bg-surface-container-high/40"
                 >
-                  {vol === 0 ? 'volume_off' : vol < 40 ? 'volume_down' : 'volume_up'}
+                  {volumeIcon}
                 </button>
               </Tooltip>
               {volumeOpen && (
-                <div className="absolute right-0 top-full mt-2 px-3 py-2 rounded-sm bg-surface-container-high/95 backdrop-blur-xl border border-outline-variant/15 shadow-xl flex items-center gap-2 animate-scale-in">
-                  <input
-                    type="range"
-                    min="0"
-                    max="100"
-                    value={vol}
-                    onChange={(e) => music.setVolume(Number(e.target.value))}
-                    className="w-24 h-1 accent-primary cursor-pointer"
-                  />
-                  <span className="text-[10px] text-on-surface-variant font-mono w-7 text-right">{vol}%</span>
+                <div className="absolute right-0 top-full mt-2 px-3 py-2.5 rounded-sm bg-surface-container-high/95 backdrop-blur-xl border border-outline-variant/15 shadow-xl space-y-2 animate-scale-in w-52">
+                  <div className="flex items-center gap-2">
+                    <span className="material-symbols-outlined text-xs text-on-surface-variant/70 shrink-0">music_note</span>
+                    <input
+                      type="range"
+                      min="0"
+                      max="100"
+                      value={vol}
+                      onChange={(e) => {
+                        const v = Number(e.target.value);
+                        music.setVolume(v);
+                        if (isMuted && v > 0) { setIsMuted(false); preMuteVolumesRef.current = null; }
+                      }}
+                      className="flex-1 h-1 accent-primary cursor-pointer"
+                    />
+                    <span className="text-[10px] text-on-surface-variant font-mono w-7 text-right">{vol}%</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="material-symbols-outlined text-xs text-on-surface-variant/70 shrink-0">record_voice_over</span>
+                    <input
+                      type="range"
+                      min="0"
+                      max="100"
+                      value={dlgVol}
+                      onChange={(e) => {
+                        const v = Number(e.target.value);
+                        updateSettings({ dialogueVolume: v });
+                        if (isMuted && v > 0) { setIsMuted(false); preMuteVolumesRef.current = null; }
+                      }}
+                      className="flex-1 h-1 accent-primary cursor-pointer"
+                    />
+                    <span className="text-[10px] text-on-surface-variant font-mono w-7 text-right">{dlgVol}%</span>
+                  </div>
                 </div>
               )}
             </div>

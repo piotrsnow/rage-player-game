@@ -32,7 +32,7 @@ export function useImageGeneration() {
     ? settings.sceneImageTier
     : (settings.imageProvider || 'dalle');
 
-  const { itemImagesEnabled, sdWebuiModel = '', sdWebuiSeed = null } = settings;
+  const { itemImagesEnabled, sdWebuiModel = '', sdWebuiSeed = null, imageResolutionMultiplier = 1 } = settings;
   const imageStyle = settings.dmSettings?.imageStyle || 'painting';
   const darkPalette = settings.dmSettings?.darkPalette || false;
   const imageSeriousness = settings.dmSettings?.narratorSeriousness ?? null;
@@ -75,6 +75,7 @@ export function useImageGeneration() {
           sdModel: sdWebuiModel,
           sdSeed: Number.isInteger(sdWebuiSeed) ? sdWebuiSeed : null,
           forceNew,
+          resolutionMultiplier: imageResolutionMultiplier,
         });
         if (!result?.url) return null;
 
@@ -109,7 +110,7 @@ export function useImageGeneration() {
         activeLocks.delete(itemId);
       }
     },
-    [state.campaign?.genre, state.campaign?.tone, state.campaign?.backendId, imageProvider, imageStyle, darkPalette, imageSeriousness, itemImageGenEnabled, sdWebuiModel, sdWebuiSeed, dispatch, autoSave]
+    [state.campaign?.genre, state.campaign?.tone, state.campaign?.backendId, imageProvider, imageStyle, darkPalette, imageSeriousness, itemImageGenEnabled, sdWebuiModel, sdWebuiSeed, imageResolutionMultiplier, dispatch, autoSave]
   );
 
   const npcPortraitGenerationLocksRef = useRef(new Set());
@@ -213,7 +214,7 @@ export function useImageGeneration() {
           darkPalette,
           state.character?.age,
           state.character?.gender,
-          { forceNew: Boolean(options.forceNew), sdModel: sdWebuiModel, sdSeed: Number.isInteger(sdWebuiSeed) ? sdWebuiSeed : null },
+          { forceNew: Boolean(options.forceNew), sdModel: sdWebuiModel, sdSeed: Number.isInteger(sdWebuiSeed) ? sdWebuiSeed : null, resolutionMultiplier: imageResolutionMultiplier },
           imageSeriousness,
           state.character?.portraitUrl || null
         );
@@ -235,7 +236,7 @@ export function useImageGeneration() {
         dispatch({ type: 'SET_GENERATING_IMAGE', payload: false });
       }
     },
-    [state.scenes, state.campaign?.genre, state.campaign?.tone, state.campaign?.backendId, state.character?.age, state.character?.gender, state.character?.portraitUrl, imageGenEnabled, imageApiKey, imageProvider, imageStyle, darkPalette, imageSeriousness, sdWebuiModel, sdWebuiSeed, hasApiKey, imgKeyProvider, dispatch, autoSave]
+    [state.scenes, state.campaign?.genre, state.campaign?.tone, state.campaign?.backendId, state.character?.age, state.character?.gender, state.character?.portraitUrl, imageGenEnabled, imageApiKey, imageProvider, imageStyle, darkPalette, imageSeriousness, sdWebuiModel, sdWebuiSeed, imageResolutionMultiplier, hasApiKey, imgKeyProvider, dispatch, autoSave]
   );
 
   const backfillCampaignRef = useRef(null);

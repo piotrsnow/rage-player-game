@@ -12,6 +12,7 @@ export const TASK_CATEGORIES = [
   'intentClassification',
   'memoryExtraction',
   'imagePrompt',
+  'storyPrompt',
   'auxiliary',
 ];
 

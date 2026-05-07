@@ -33,7 +33,11 @@ function canonicalUrl(url) {
 // can override individual fields later without backend changes. `kind` picks
 // portrait vs scene bucket dimensions; omit width/height if the caller
 // already set them explicitly.
-function applyPresetToPayload(payload, sdModel, kind = 'scene') {
+function roundTo8(v) {
+  return Math.max(256, Math.round(v / 8) * 8);
+}
+
+function applyPresetToPayload(payload, sdModel, kind = 'scene', resolutionMultiplier = 1) {
   const preset = getModelPreset(sdModel);
   if (!preset) return;
   if (payload.sampler == null) payload.sampler = preset.sampler;
@@ -48,17 +52,36 @@ function applyPresetToPayload(payload, sdModel, kind = 'scene') {
   if (payload.negativePrompt == null && preset.negative) {
     payload.negativePrompt = preset.negative;
   }
+  if (kind !== 'portrait' && resolutionMultiplier !== 1 && resolutionMultiplier > 0) {
+    payload.width = roundTo8(payload.width * resolutionMultiplier);
+    payload.height = roundTo8(payload.height * resolutionMultiplier);
+  }
 }
 
-async function generateSceneViaProxy(prompt, provider, campaignId, { forceNew = false, portraitUrl = null, sdModel = null, sdSeed = null, shape = 'scene', negativePrompt = null } = {}) {
+async function fetchPortraitAsBase64(portraitUrl) {
+  try {
+    const res = await fetch(apiClient.resolveMediaUrl(portraitUrl));
+    if (!res.ok) return null;
+    const blob = await res.blob();
+    return new Promise((resolve) => {
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        const dataUrl = reader.result;
+        resolve(dataUrl.split(',')[1] || null);
+      };
+      reader.onerror = () => resolve(null);
+      reader.readAsDataURL(blob);
+    });
+  } catch {
+    return null;
+  }
+}
+
+async function generateSceneViaProxy(prompt, provider, campaignId, { forceNew = false, portraitUrl = null, sdModel = null, sdSeed = null, shape = 'scene', negativePrompt = null, resolutionMultiplier = 1 } = {}) {
   const body = { prompt };
   if (campaignId) body.campaignId = campaignId;
   if (forceNew) body.forceNew = true;
 
-  // `shape: 'square'` is used for inventory item artwork — we want a clean
-  // centered icon-style render, not a 16:9 scene. Each provider exposes the
-  // aspect differently (size string vs aspectRatio vs explicit w/h), so the
-  // mapping happens per branch below.
   const isSquare = shape === 'square';
 
   if (provider === 'stability') {
@@ -79,11 +102,15 @@ async function generateSceneViaProxy(prompt, provider, campaignId, { forceNew = 
       payload.width = 1024;
       payload.height = 1024;
     }
-    applyPresetToPayload(payload, sdModel, 'scene');
+    applyPresetToPayload(payload, sdModel, 'scene', resolutionMultiplier);
     if (negativePrompt) {
       payload.negativePrompt = payload.negativePrompt
         ? `${negativePrompt}, ${payload.negativePrompt}`
         : negativePrompt;
+    }
+    if (portraitUrl) {
+      const b64 = await fetchPortraitAsBase64(portraitUrl);
+      if (b64) payload.portraitBase64 = b64;
     }
     const data = await apiClient.post('/proxy/sd-webui/generate', payload);
     return canonicalUrl(data.url);
@@ -157,15 +184,14 @@ async function generatePortraitViaGeminiImg2ImgProxy(imageBlob, prompt) {
   return canonicalUrl(data.url);
 }
 
-async function generatePortraitViaSdWebuiProxy(imageBlob, prompt, strength, sdModel, sdSeed) {
+async function generatePortraitViaSdWebuiProxy(imageBlob, prompt, strength, sdModel, sdSeed, ipaWeight = null) {
   const formData = new FormData();
   if (imageBlob) formData.append('image', imageBlob, 'photo.jpg');
   formData.append('prompt', prompt);
   formData.append('strength', String(strength ?? 0.55));
   if (sdModel) formData.append('model', sdModel);
   if (Number.isInteger(sdSeed)) formData.append('seed', String(sdSeed));
-  // Extra negative only makes sense when a real photo is the init image —
-  // suppresses modern-photo bleed-through (clothes, indoor bg, phone grain).
+  if (imageBlob && ipaWeight != null) formData.append('ipaWeight', String(ipaWeight));
   if (imageBlob) formData.append('negativePrompt', REFERENCE_PHOTO_NEGATIVE);
 
   const data = await apiClient.request('/proxy/sd-webui/portrait', {
@@ -177,27 +203,24 @@ async function generatePortraitViaSdWebuiProxy(imageBlob, prompt, strength, sdMo
 
 export const imageService = {
   async generateSceneImage(narrative, genre, tone, _apiKeyIgnored, provider = 'dalle', imagePrompt = null, campaignId = null, imageStyle = 'painting', darkPalette = false, characterAge = null, characterGender = null, options = {}, seriousness = null, portraitUrl = null) {
-    const hasPortrait = provider === 'gpt-image' && !!portraitUrl;
+    const hasGptPortrait = provider === 'gpt-image' && !!portraitUrl;
+    const hasSdPortrait = provider === 'sd-webui' && !!portraitUrl;
     const sdModel = provider === 'sd-webui' ? (options?.sdModel || null) : null;
 
     let prompt;
     if (options?.preBuiltPrompt) {
       prompt = options.preBuiltPrompt;
     } else {
-      // Translate the user-content fragments to English before they get
-      // embedded into the English template. Image models perform best on
-      // English prompts; PL characters bleed in from LLM slip-ups and from
-      // the narrative fallback when the model omitted `imagePrompt`.
       const [enImagePrompt, enNarrative] = await Promise.all([
         ensureEnglish(imagePrompt),
         imagePrompt ? Promise.resolve(narrative || '') : ensureEnglish((narrative || '').substring(0, 300)),
       ]);
-      prompt = buildImagePrompt(enNarrative, genre, tone, enImagePrompt, provider, imageStyle, darkPalette, characterAge, characterGender, seriousness, hasPortrait, sdModel);
+      prompt = buildImagePrompt(enNarrative, genre, tone, enImagePrompt, provider, imageStyle, darkPalette, characterAge, characterGender, seriousness, hasGptPortrait, sdModel);
     }
 
     const url = await generateSceneViaProxy(prompt, provider, campaignId, {
       ...options,
-      portraitUrl: hasPortrait ? portraitUrl : null,
+      portraitUrl: (hasGptPortrait || hasSdPortrait) ? portraitUrl : null,
       negativePrompt: options?.preBuiltNegativePrompt || options?.negativePrompt || null,
     });
     return { url, prompt };
@@ -224,7 +247,8 @@ export const imageService = {
         ? await generatePortraitViaGeminiImg2ImgProxy(imageBlob, prompt)
         : await generatePortraitViaGeminiProxy(prompt);
     } else if (provider === 'sd-webui') {
-      url = await generatePortraitViaSdWebuiProxy(imageBlob, prompt, strength, sdModel, sdSeed);
+      const ipaWeight = extras?.ipaWeight ?? null;
+      url = await generatePortraitViaSdWebuiProxy(imageBlob, prompt, strength, sdModel, sdSeed, ipaWeight);
     } else {
       if (imageBlob) {
         url = await generatePortraitViaStabilityProxy(imageBlob, prompt, strength);
@@ -236,7 +260,7 @@ export const imageService = {
     return { url, prompt };
   },
 
-  async generatePlaygroundImage({ prompt, provider = 'dalle', sdModel = null, sdSeed = null, referenceBlob = null, strength = 0.55 } = {}) {
+  async generatePlaygroundImage({ prompt, provider = 'dalle', sdModel = null, sdSeed = null, referenceBlob = null, strength = 0.55, resolutionMultiplier = 1 } = {}) {
     const rawPrompt = typeof prompt === 'string' ? prompt.trim() : '';
     if (!rawPrompt) throw new Error('Prompt is required');
 
@@ -260,7 +284,7 @@ export const imageService = {
       const payload = { prompt: rawPrompt };
       if (sdModel) payload.model = sdModel;
       if (Number.isInteger(sdSeed)) payload.seed = sdSeed;
-      applyPresetToPayload(payload, sdModel, 'scene');
+      applyPresetToPayload(payload, sdModel, 'scene', resolutionMultiplier);
       const data = await apiClient.post('/proxy/sd-webui/generate', payload);
       return canonicalUrl(data.url);
     }
@@ -272,7 +296,7 @@ export const imageService = {
     return canonicalUrl(data.url);
   },
 
-  async generateItemImage(item, { genre, tone, provider = 'dalle', imageStyle = 'painting', darkPalette = false, seriousness = null, campaignId = null, sdModel = null, sdSeed = null, forceNew = false } = {}) {
+  async generateItemImage(item, { genre, tone, provider = 'dalle', imageStyle = 'painting', darkPalette = false, seriousness = null, campaignId = null, sdModel = null, sdSeed = null, forceNew = false, resolutionMultiplier = 1 } = {}) {
     // Item name/description are generated by the LLM in the campaign language
     // (PL for Polish campaigns). Translate both before embedding. type/rarity
     // come from an English enum in the system prompt.
@@ -293,7 +317,7 @@ export const imageService = {
     const itemNegative = provider === 'sd-webui'
       ? 'person, human, character, hand, hands, fingers, holding, wielding, figure, body, face, portrait, full body, half body'
       : null;
-    const url = await generateSceneViaProxy(prompt, provider, campaignId, { sdModel, sdSeed, forceNew, shape: 'square', negativePrompt: itemNegative });
+    const url = await generateSceneViaProxy(prompt, provider, campaignId, { sdModel, sdSeed, forceNew, shape: 'square', negativePrompt: itemNegative, resolutionMultiplier });
     return { url, prompt };
   },
 };
