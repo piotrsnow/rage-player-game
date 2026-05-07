@@ -77,7 +77,9 @@ async function fetchPortraitAsBase64(portraitUrl) {
   }
 }
 
-async function generateSceneViaProxy(prompt, provider, campaignId, { forceNew = false, portraitUrl = null, sdModel = null, sdSeed = null, shape = 'scene', negativePrompt = null, resolutionMultiplier = 1 } = {}) {
+const IPA_WEIGHT_BY_MODE = { speed: 0.15, balanced: 0.35, quality: 0.65 };
+
+async function generateSceneViaProxy(prompt, provider, campaignId, { forceNew = false, portraitUrl = null, sdModel = null, sdSeed = null, shape = 'scene', negativePrompt = null, resolutionMultiplier = 1, ipaMode = 'balanced' } = {}) {
   const body = { prompt };
   if (campaignId) body.campaignId = campaignId;
   if (forceNew) body.forceNew = true;
@@ -108,9 +110,13 @@ async function generateSceneViaProxy(prompt, provider, campaignId, { forceNew = 
         ? `${negativePrompt}, ${payload.negativePrompt}`
         : negativePrompt;
     }
-    if (portraitUrl) {
+    if (portraitUrl && ipaMode !== 'off') {
       const b64 = await fetchPortraitAsBase64(portraitUrl);
-      if (b64) payload.portraitBase64 = b64;
+      if (b64) {
+        payload.portraitBase64 = b64;
+        const weight = IPA_WEIGHT_BY_MODE[ipaMode];
+        if (weight != null) payload.ipaWeight = weight;
+      }
     }
     const data = await apiClient.post('/proxy/sd-webui/generate', payload);
     return canonicalUrl(data.url);

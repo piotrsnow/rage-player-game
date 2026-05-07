@@ -32,7 +32,7 @@ export function useImageGeneration() {
     ? settings.sceneImageTier
     : (settings.imageProvider || 'dalle');
 
-  const { itemImagesEnabled, sdWebuiModel = '', sdWebuiSeed = null, imageResolutionMultiplier = 1 } = settings;
+  const { itemImagesEnabled, sdWebuiModel = '', sdWebuiSeed = null, sdWebuiIpaMode = 'balanced', imageResolutionMultiplier = 1 } = settings;
   const imageStyle = settings.dmSettings?.imageStyle || 'painting';
   const darkPalette = settings.dmSettings?.darkPalette || false;
   const imageSeriousness = settings.dmSettings?.narratorSeriousness ?? null;
@@ -214,7 +214,7 @@ export function useImageGeneration() {
           darkPalette,
           state.character?.age,
           state.character?.gender,
-          { forceNew: Boolean(options.forceNew), sdModel: sdWebuiModel, sdSeed: Number.isInteger(sdWebuiSeed) ? sdWebuiSeed : null, resolutionMultiplier: imageResolutionMultiplier },
+          { forceNew: Boolean(options.forceNew), sdModel: sdWebuiModel, sdSeed: Number.isInteger(sdWebuiSeed) ? sdWebuiSeed : null, resolutionMultiplier: imageResolutionMultiplier, ipaMode: sdWebuiIpaMode },
           imageSeriousness,
           state.character?.portraitUrl || null
         );
@@ -236,7 +236,7 @@ export function useImageGeneration() {
         dispatch({ type: 'SET_GENERATING_IMAGE', payload: false });
       }
     },
-    [state.scenes, state.campaign?.genre, state.campaign?.tone, state.campaign?.backendId, state.character?.age, state.character?.gender, state.character?.portraitUrl, imageGenEnabled, imageApiKey, imageProvider, imageStyle, darkPalette, imageSeriousness, sdWebuiModel, sdWebuiSeed, imageResolutionMultiplier, hasApiKey, imgKeyProvider, dispatch, autoSave]
+    [state.scenes, state.campaign?.genre, state.campaign?.tone, state.campaign?.backendId, state.character?.age, state.character?.gender, state.character?.portraitUrl, imageGenEnabled, imageApiKey, imageProvider, imageStyle, darkPalette, imageSeriousness, sdWebuiModel, sdWebuiSeed, sdWebuiIpaMode, imageResolutionMultiplier, hasApiKey, imgKeyProvider, dispatch, autoSave]
   );
 
   const backfillCampaignRef = useRef(null);

@@ -6,6 +6,7 @@ import SceneVisualizationSection from './sections/SceneVisualizationSection';
 import ImagePromptLlmSection from './sections/ImagePromptLlmSection';
 import ImagePlaygroundSection from './sections/ImagePlaygroundSection';
 import EffectIntensitySection from './sections/EffectIntensitySection';
+import IpAdapterSection from './sections/IpAdapterSection';
 import Toggle from '../ui/Toggle';
 
 const RESOLUTION_OPTIONS = [
@@ -113,6 +114,13 @@ export default function ImageConfigModal({ onClose }) {
 
               {showImageProvider && (
                 <ResolutionMultiplierSection
+                  settings={settings}
+                  updateSettings={updateSettings}
+                />
+              )}
+
+              {showImageProvider && settings.imageProvider === 'sd-webui' && (
+                <IpAdapterSection
                   settings={settings}
                   updateSettings={updateSettings}
                 />

@@ -166,6 +166,18 @@
       "title": "Rozdzielczość obrazu",
       "hint": "Efektywna rozdzielczość: {{width}}×{{height}} px"
     },
+    "ipAdapter": {
+      "title": "IP-Adapter (spójność twarzy)",
+      "subtitle": "Kontroluje, czy i jak silnie portret postaci wpływa na generowane sceny. Wyższe ustawienia dają lepsze podobieństwo, ale wydłużają generowanie.",
+      "off": "Wyłączony",
+      "offHint": "brak narzutu",
+      "speed": "Szybki",
+      "speedHint": "~+20% czasu",
+      "balanced": "Zbalansowany",
+      "balancedHint": "~+40% czasu",
+      "quality": "Jakość",
+      "qualityHint": "~+80% czasu"
+    },
     "promptLlm": {
       "title": "Generowanie promptu przez AI",
       "desc": "Mniejszy model LLM układa prompt do generowania obrazu na podstawie sceny",

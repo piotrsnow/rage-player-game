@@ -170,6 +170,18 @@
       "title": "Image resolution",
       "hint": "Effective resolution: {{width}}×{{height}} px"
     },
+    "ipAdapter": {
+      "title": "IP-Adapter (face consistency)",
+      "subtitle": "Controls whether and how strongly the character portrait influences generated scenes. Higher settings improve likeness but increase generation time.",
+      "off": "Off",
+      "offHint": "no overhead",
+      "speed": "Speed",
+      "speedHint": "~+20% time",
+      "balanced": "Balanced",
+      "balancedHint": "~+40% time",
+      "quality": "Quality",
+      "qualityHint": "~+80% time"
+    },
     "promptLlm": {
       "title": "AI Prompt Generation",
       "desc": "A smaller LLM composes the image prompt based on the scene",

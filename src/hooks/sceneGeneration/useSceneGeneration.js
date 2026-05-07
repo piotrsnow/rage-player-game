@@ -41,7 +41,7 @@ export function useSceneGeneration({ ensureMissingInventoryImages, ensureMissing
   });
   const [sceneGenStartTime, setSceneGenStartTime] = useState(null);
 
-  const { aiProvider, language, needsSystemEnabled, aiModelTier = 'premium', sdWebuiModel = '', sdWebuiSeed = null, imageResolutionMultiplier = 1 } = settings;
+  const { aiProvider, language, needsSystemEnabled, aiModelTier = 'premium', sdWebuiModel = '', sdWebuiSeed = null, sdWebuiIpaMode = 'balanced', imageResolutionMultiplier = 1 } = settings;
 
   const stream = useSceneBackendStream();
 
@@ -96,7 +96,7 @@ export function useSceneGeneration({ ensureMissingInventoryImages, ensureMissing
               return imageService.generateSceneImage(
                 '', state.campaign?.genre, state.campaign?.tone, imageApiKey, imageProvider,
                 speculativeDesc, state.campaign?.backendId, imageStyle, darkPalette,
-                state.character?.age, state.character?.gender, { sdModel: sdWebuiModel, sdSeed: Number.isInteger(sdWebuiSeed) ? sdWebuiSeed : null, resolutionMultiplier: imageResolutionMultiplier }, imageSeriousness,
+                state.character?.age, state.character?.gender, { sdModel: sdWebuiModel, sdSeed: Number.isInteger(sdWebuiSeed) ? sdWebuiSeed : null, resolutionMultiplier: imageResolutionMultiplier, ipaMode: sdWebuiIpaMode }, imageSeriousness,
                 state.character?.portraitUrl || null
               );
             }).then((result) => result?.url || null)
@@ -321,7 +321,7 @@ export function useSceneGeneration({ ensureMissingInventoryImages, ensureMissing
             const { url: imageUrl, prompt: fullImagePrompt } = await imageService.generateSceneImage(
               result.narrative, state.campaign?.genre, state.campaign?.tone, imageApiKey, imageProvider,
               result.imagePrompt, state.campaign?.backendId, imageStyle, darkPalette,
-              state.character?.age, state.character?.gender, { sdModel: sdWebuiModel, sdSeed: Number.isInteger(sdWebuiSeed) ? sdWebuiSeed : null, resolutionMultiplier: imageResolutionMultiplier, ...llmPromptOpts }, imageSeriousness,
+              state.character?.age, state.character?.gender, { sdModel: sdWebuiModel, sdSeed: Number.isInteger(sdWebuiSeed) ? sdWebuiSeed : null, resolutionMultiplier: imageResolutionMultiplier, ipaMode: sdWebuiIpaMode, ...llmPromptOpts }, imageSeriousness,
               state.character?.portraitUrl || null
             );
             dispatch({ type: 'UPDATE_SCENE_IMAGE', payload: { sceneId, image: imageUrl, fullImagePrompt } });
