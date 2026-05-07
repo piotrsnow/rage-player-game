@@ -23,6 +23,7 @@ export default function TypewriterActionOverlay({
   canManuallySkip = false,
   waitForDice = false,
   onSkipDice,
+  mode = 'fullscreen',
 }) {
   const [displayedChars, setDisplayedChars] = useState(0);
   const [phase, setPhase] = useState('typing');
@@ -161,15 +162,19 @@ export default function TypewriterActionOverlay({
 
   const progress = text.length > 0 ? displayedChars / text.length : 0;
 
+  const isImage = mode === 'image';
+
   return (
     <div
-      className={`fixed inset-0 z-[70] flex items-center justify-center ${
+      className={`${isImage ? 'absolute' : 'fixed'} inset-0 ${isImage ? 'z-[10]' : 'z-[70]'} flex items-center justify-center ${
         phase === 'fading' ? 'animate-typewriter-fade-out' : ''
       } ${(phase === 'holding' || canManuallySkip) ? 'cursor-pointer' : ''}`}
       style={{
-        background: 'radial-gradient(ellipse at center, rgba(0,0,0,0.8) 0%, rgba(0,0,0,0.7) 100%)',
-        backdropFilter: 'blur(6px)',
-        paddingBottom: '160px',
+        background: isImage
+          ? 'radial-gradient(ellipse at center, rgba(0,0,0,0.7) 0%, rgba(0,0,0,0.6) 100%)'
+          : 'radial-gradient(ellipse at center, rgba(0,0,0,0.8) 0%, rgba(0,0,0,0.7) 100%)',
+        backdropFilter: isImage ? 'blur(3px)' : 'blur(6px)',
+        paddingBottom: isImage ? '40px' : '160px',
         ...(effectiveFastFinish && phase === 'fading' ? { animationDuration: '250ms' } : null),
       }}
       onClick={() => {
@@ -194,7 +199,7 @@ export default function TypewriterActionOverlay({
       />
 
       <div
-        className="relative max-w-2xl w-full mx-4 animate-typewriter-zoom-out"
+        className={`relative w-full mx-4 animate-typewriter-zoom-out ${isImage ? 'max-w-md' : 'max-w-2xl'}`}
         style={{ animationDuration: `${Math.max(typingDurationMs, 800)}ms` }}
       >
         {/* Top ornament line */}
@@ -222,7 +227,7 @@ export default function TypewriterActionOverlay({
           {/* Subtle noise texture */}
           <div className="absolute inset-0 opacity-[0.03] pointer-events-none" style={{ backgroundImage: 'url("data:image/svg+xml,%3Csvg viewBox=\'0 0 256 256\' xmlns=\'http://www.w3.org/2000/svg\'%3E%3Cfilter id=\'n\'%3E%3CfeTurbulence type=\'fractalNoise\' baseFrequency=\'0.9\' numOctaves=\'4\' stitchTiles=\'stitch\'/%3E%3C/filter%3E%3Crect width=\'100%25\' height=\'100%25\' filter=\'url(%23n)\'/%3E%3C/svg%3E")' }} />
 
-          <p className="relative font-mono text-lg leading-relaxed whitespace-pre-wrap min-h-[1.75rem] tracking-wide text-center">
+          <p className={`relative font-mono leading-relaxed whitespace-pre-wrap min-h-[1.75rem] tracking-wide text-center ${isImage ? 'text-sm' : 'text-lg'}`}>
             {text.split('').slice(0, displayedChars).map((char, i) => (
               <span
                 key={i}

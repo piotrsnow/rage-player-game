@@ -30,7 +30,7 @@ function getOutcomeBorder(dr) {
   return dr.success ? 'border-emerald-500/40' : 'border-rose-500/40';
 }
 
-export default function DiceRollAnimationOverlay({ diceRoll, onDismiss, holdOpen = false }) {
+export default function DiceRollAnimationOverlay({ diceRoll, onDismiss, holdOpen = false, mode = 'fullscreen' }) {
   const { t } = useTranslation();
   const [phase, setPhase] = useState('rolling');
   const onDismissRef = useRef(onDismiss);
@@ -89,12 +89,14 @@ export default function DiceRollAnimationOverlay({ diceRoll, onDismiss, holdOpen
       ? t(`stats.${dr.characteristic}Long`)
       : '';
 
+  const isImage = mode === 'image';
+
   return (
     <div
-      className={`fixed inset-0 z-[80] pointer-events-none flex flex-col items-center justify-center transition-opacity duration-500 ${
+      className={`${isImage ? 'absolute' : 'fixed'} inset-0 ${isImage ? 'z-[12]' : 'z-[80]'} pointer-events-none flex flex-col items-center justify-center transition-opacity duration-500 ${
         phase === 'fading' ? 'opacity-0' : 'opacity-100'
       }`}
-      style={{ paddingTop: '430px' }}
+      style={{ paddingTop: isImage ? '120px' : '430px' }}
     >
       {/* 3D Dice roller area — fades out once roll completes, slightly before result card appears */}
       <div className={`relative w-[260px] h-[200px] -mt-16 animate-dice-fly-in transition-all ease-out ${

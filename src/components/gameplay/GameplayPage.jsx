@@ -730,12 +730,14 @@ export default function GameplayPage({ readOnly = false, shareToken = null, onRe
               canManuallySkip={canManuallySkipOverlay}
               waitForDice={diceIsActive}
               onSkipDice={clearDiceAnimation}
+              mode={settings.typewriterMode || 'fullscreen'}
             />
           )}
-          {mergedDiceRoll && diceAfterTypewriter && (
+          {overlayText && mergedDiceRoll && diceAfterTypewriter && (
             <DiceRollAnimationOverlay
               diceRoll={mergedDiceRoll}
               onDismiss={clearDiceAnimation}
+              mode={settings.typewriterMode || 'fullscreen'}
             />
           )}
           {sLocalDiceRoll && (

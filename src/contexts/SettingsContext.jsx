@@ -134,6 +134,7 @@ const defaultSettings = {
   sfxVolume: 70,
   musicVolume: 40,
   localMusicEnabled: true,
+  typewriterMode: 'fullscreen',
   needsSystemEnabled: false,
   backendUrl: 'http://localhost:3001',
   useBackend: false,

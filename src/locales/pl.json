@@ -854,6 +854,10 @@
     "canvasEffectsDesc": "Cząsteczki, mgła, efekty pogodowe na scenach",
     "itemImages": "Obrazki Przedmiotów",
     "itemImagesDesc": "Automatyczne generowanie grafiki dla nowych przedmiotów w ekwipunku",
+    "typewriterMode": "Tryb maszyny do pisania",
+    "typewriterModeDesc": "Czy animacja tekstu zasłania cały ekran czy tylko obraz sceny",
+    "typewriterFullscreen": "Pełny ekran",
+    "typewriterImageOnly": "Tylko obraz",
     "effectIntensityTitle": "Intensywność Efektów",
     "effectIntensityDesc": "Kontroluje gęstość cząsteczek, przezroczystość mgły i ogólną siłę efektów wizualnych",
     "effectLevels": {

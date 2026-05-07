@@ -859,6 +859,10 @@
     "canvasEffectsDesc": "Particles, fog, weather overlays on scenes",
     "itemImages": "Item Images",
     "itemImagesDesc": "Automatic image generation for new inventory items",
+    "typewriterMode": "Typewriter mode",
+    "typewriterModeDesc": "Whether the typing animation covers the full screen or just the scene image",
+    "typewriterFullscreen": "Fullscreen",
+    "typewriterImageOnly": "Image only",
     "effectIntensityTitle": "Effect Intensity",
     "effectIntensityDesc": "Controls particle density, fog opacity, and overall visual effect strength",
     "effectLevels": {
