@@ -178,6 +178,19 @@
       "quality": "Jakość",
       "qualityHint": "~+80% czasu"
     },
+    "qualityLine": {
+      "title": "Jakość obrazu",
+      "ipa": "IP-Adapter",
+      "speed": "Szybki",
+      "speedHint_ipaOff": "336×128",
+      "speedHint_ipaOn": "336×128 +IPA",
+      "balanced": "Zbalansowany",
+      "balancedHint_ipaOff": "672×256",
+      "balancedHint_ipaOn": "672×256 +IPA",
+      "quality": "Jakość",
+      "qualityHint_ipaOff": "1344×512",
+      "qualityHint_ipaOn": "1344×512 +IPA"
+    },
     "promptLlm": {
       "title": "Generowanie promptu przez AI",
       "desc": "Mniejszy model LLM układa prompt do generowania obrazu na podstawie sceny",

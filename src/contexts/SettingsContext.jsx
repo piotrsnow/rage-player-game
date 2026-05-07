@@ -119,6 +119,8 @@ const defaultSettings = {
   // Toggled from SdWebuiModelPicker via double-click on the seed field.
   sdWebuiSeed: null,
   sdWebuiIpaMode: 'balanced',
+  sdWebuiIpaEnabled: true,
+  sdWebuiQualityPreset: 'balanced',
   imageResolutionMultiplier: 1,
   imagePromptLlmEnabled: false,
   imagePromptLlmProvider: 'openai',

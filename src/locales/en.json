@@ -182,6 +182,19 @@
       "quality": "Quality",
       "qualityHint": "~+80% time"
     },
+    "qualityLine": {
+      "title": "Image quality",
+      "ipa": "IP-Adapter",
+      "speed": "Speed",
+      "speedHint_ipaOff": "336×128",
+      "speedHint_ipaOn": "336×128 +IPA",
+      "balanced": "Balanced",
+      "balancedHint_ipaOff": "672×256",
+      "balancedHint_ipaOn": "672×256 +IPA",
+      "quality": "Quality",
+      "qualityHint_ipaOff": "1344×512",
+      "qualityHint_ipaOn": "1344×512 +IPA"
+    },
     "promptLlm": {
       "title": "AI Prompt Generation",
       "desc": "A smaller LLM composes the image prompt based on the scene",

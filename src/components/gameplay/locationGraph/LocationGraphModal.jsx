@@ -291,7 +291,7 @@ export default function LocationGraphModal({ campaignId, onClose }) {
               </div>
 
               {/* Right sidebar — graph inspector */}
-              <div className="w-64 border-l border-outline-variant/15 flex-shrink-0 overflow-hidden flex flex-col">
+              <div className="w-96 border-l border-outline-variant/15 flex-shrink-0 overflow-hidden flex flex-col">
                 <div className="px-4 py-2 border-b border-outline-variant/15">
                   <span className="text-xs font-label uppercase tracking-widest text-outline">{t('locationGraph.inspector.title')}</span>
                 </div>
@@ -367,7 +367,7 @@ export default function LocationGraphModal({ campaignId, onClose }) {
               />
 
               {/* Right sidebar — entity inspector */}
-              <div className="w-64 border-l border-outline-variant/15 flex-shrink-0 overflow-hidden flex flex-col">
+              <div className="w-96 border-l border-outline-variant/15 flex-shrink-0 overflow-hidden flex flex-col">
                 <div className="px-4 py-2 border-b border-outline-variant/15">
                   <span className="text-xs font-label uppercase tracking-widest text-outline">
                     {t('locationGraph.entityBrowser.inspectorTitle')}

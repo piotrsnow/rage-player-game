@@ -32,7 +32,12 @@ export function useImageGeneration() {
     ? settings.sceneImageTier
     : (settings.imageProvider || 'dalle');
 
-  const { itemImagesEnabled, sdWebuiModel = '', sdWebuiSeed = null, sdWebuiIpaMode = 'balanced', imageResolutionMultiplier = 1 } = settings;
+  const { itemImagesEnabled, sdWebuiModel = '', sdWebuiSeed = null } = settings;
+  const QUALITY_RES = { speed: 0.25, balanced: 0.5, quality: 1 };
+  const sdWebuiQualityPreset = settings.sdWebuiQualityPreset || 'balanced';
+  const sdWebuiIpaEnabled = settings.sdWebuiIpaEnabled ?? (settings.sdWebuiIpaMode !== 'off');
+  const sdWebuiIpaMode = sdWebuiIpaEnabled ? sdWebuiQualityPreset : 'off';
+  const imageResolutionMultiplier = QUALITY_RES[sdWebuiQualityPreset] ?? 0.5;
   const imageStyle = settings.dmSettings?.imageStyle || 'painting';
   const darkPalette = settings.dmSettings?.darkPalette || false;
   const imageSeriousness = settings.dmSettings?.narratorSeriousness ?? null;
@@ -236,7 +241,7 @@ export function useImageGeneration() {
         dispatch({ type: 'SET_GENERATING_IMAGE', payload: false });
       }
     },
-    [state.scenes, state.campaign?.genre, state.campaign?.tone, state.campaign?.backendId, state.character?.age, state.character?.gender, state.character?.portraitUrl, imageGenEnabled, imageApiKey, imageProvider, imageStyle, darkPalette, imageSeriousness, sdWebuiModel, sdWebuiSeed, sdWebuiIpaMode, imageResolutionMultiplier, hasApiKey, imgKeyProvider, dispatch, autoSave]
+    [state.scenes, state.campaign?.genre, state.campaign?.tone, state.campaign?.backendId, state.character?.age, state.character?.gender, state.character?.portraitUrl, imageGenEnabled, imageApiKey, imageProvider, imageStyle, darkPalette, imageSeriousness, sdWebuiModel, sdWebuiSeed, sdWebuiIpaMode, imageResolutionMultiplier, sdWebuiIpaEnabled, sdWebuiQualityPreset, hasApiKey, imgKeyProvider, dispatch, autoSave]
   );
 
   const backfillCampaignRef = useRef(null);

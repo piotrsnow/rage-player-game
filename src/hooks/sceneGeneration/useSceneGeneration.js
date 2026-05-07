@@ -41,7 +41,12 @@ export function useSceneGeneration({ ensureMissingInventoryImages, ensureMissing
   });
   const [sceneGenStartTime, setSceneGenStartTime] = useState(null);
 
-  const { aiProvider, language, needsSystemEnabled, aiModelTier = 'premium', sdWebuiModel = '', sdWebuiSeed = null, sdWebuiIpaMode = 'balanced', imageResolutionMultiplier = 1 } = settings;
+  const { aiProvider, language, needsSystemEnabled, aiModelTier = 'premium', sdWebuiModel = '', sdWebuiSeed = null } = settings;
+  const QUALITY_RES = { speed: 0.25, balanced: 0.5, quality: 1 };
+  const sdWebuiQualityPreset = settings.sdWebuiQualityPreset || 'balanced';
+  const sdWebuiIpaEnabled = settings.sdWebuiIpaEnabled ?? (settings.sdWebuiIpaMode !== 'off');
+  const sdWebuiIpaMode = sdWebuiIpaEnabled ? sdWebuiQualityPreset : 'off';
+  const imageResolutionMultiplier = QUALITY_RES[sdWebuiQualityPreset] ?? 0.5;
 
   const stream = useSceneBackendStream();
 
