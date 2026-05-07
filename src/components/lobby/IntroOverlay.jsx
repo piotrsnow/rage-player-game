@@ -30,11 +30,8 @@ export default function IntroOverlay({ onVideoEnded } = {}) {
       if (err?.name === 'NotAllowedError') {
         blockAutoplayRef.current = true;
         setNeedsTapForAudio(true);
-        try {
-          v.pause();
-        } catch {
-          /* ignore */
-        }
+        v.muted = true;
+        v.play().catch(() => {});
       }
     });
   }, []);
@@ -78,7 +75,6 @@ export default function IntroOverlay({ onVideoEnded } = {}) {
     setNeedsTapForAudio(false);
     v.muted = false;
     v.volume = 1;
-    v.play().catch(() => {});
   }, []);
 
   const dismiss = useCallback(() => {
@@ -112,6 +108,7 @@ export default function IntroOverlay({ onVideoEnded } = {}) {
         className="absolute inset-0 h-full w-full object-cover"
         src="/video/krzemuch_intro.mp4"
         autoPlay
+        muted
         playsInline
         onLoadedData={attemptPlayWithSound}
         onEnded={dismiss}

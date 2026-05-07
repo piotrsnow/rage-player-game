@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useLayoutEffect, useCallback } from 'react';
+import { useState, useRef, useEffect, useLayoutEffect, useCallback, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
@@ -8,10 +8,13 @@ import { useModals } from '../../contexts/ModalContext';
 import { useDictationContext } from '../../contexts/DictationContext';
 import { useGameCampaign } from '../../stores/gameSelectors';
 import { getGameState } from '../../stores/gameStore';
+import { useAiCallLogStore } from '../../stores/aiCallLogStore';
 import { useMultiplayer } from '../../contexts/MultiplayerContext';
 import { storage } from '../../services/storage';
 import { peekEntryIntent, consumeEntryIntent } from '../../services/entryIntent';
 import Tooltip from '../ui/Tooltip';
+import FullCallLogModal from './FullCallLogModal';
+import AiCallLogModal from './AiCallLogModal';
 import { APP_VERSION } from '../../version';
 
 function HeaderVersionPopover({ wrapperClassName = '', wrapperStyle }) {
@@ -85,6 +88,13 @@ export default function Header() {
   const { openCharacterSheet, openTasksInfo, openSettings, openKeys, openImageConfig, openAudioConfig, openProfile, openAdminUsers, openLocationGraph, openGmModal, openPrivacy } = useModals();
   const { dictation } = useDictationContext() ?? {};
   const campaign = useGameCampaign();
+  const aiLogSidebarVisible = useAiCallLogStore((s) => s.sidebarVisible);
+  const aiFullLogOpen = useAiCallLogStore((s) => s.fullLogOpen);
+  const aiLogs = useAiCallLogStore((s) => s.logs);
+  const aiBackendLogs = useAiCallLogStore((s) => s.backendLogs);
+  const toggleAiSidebar = useAiCallLogStore((s) => s.toggleSidebarVisible);
+  const openAiFullLog = useAiCallLogStore((s) => s.openFullLog);
+  const closeAiFullLog = useAiCallLogStore((s) => s.closeFullLog);
   const mp = useMultiplayer();
   const hasActiveGame = !!campaign || (mp.state.isMultiplayer && mp.state.phase === 'playing');
   const showMpStatus = mp.state.isMultiplayer;
@@ -128,6 +138,19 @@ export default function Header() {
   const preMuteVolumesRef = useRef(null);
   const [saveStatus, setSaveStatus] = useState('idle');
   const saveTimeoutRef = useRef(null);
+
+  const aiMergedLogs = useMemo(() => {
+    const clientIds = new Set(aiLogs.map((l) => l.id));
+    const combined = [...aiLogs];
+    for (const bl of aiBackendLogs) {
+      if (!clientIds.has(bl.id)) combined.push(bl);
+    }
+    combined.sort((a, b) => b.startedAt - a.startedAt);
+    return combined.slice(0, 100);
+  }, [aiLogs, aiBackendLogs]);
+  const aiPendingCount = useMemo(() => aiLogs.filter((l) => l.status === 'pending').length, [aiLogs]);
+  const [aiDetailId, setAiDetailId] = useState(null);
+  const aiDetailEntry = useMemo(() => aiMergedLogs.find((l) => l.id === aiDetailId) || null, [aiMergedLogs, aiDetailId]);
 
   const handleSaveCampaign = useCallback(async () => {
     const snapshot = getGameState();
@@ -220,6 +243,7 @@ export default function Header() {
   );
 
   return (
+    <>
     <header
       ref={headerRef}
       className="fixed top-0 w-full z-50 flex justify-between items-center px-6 h-16 backdrop-blur-md border-b border-primary/[0.12] overflow-visible"
@@ -579,6 +603,22 @@ export default function Header() {
                 </Tooltip>
               </>
             )}
+            <Tooltip content="LLM Calls" placement="bottom" variant="compact" asChild>
+              <button
+                type="button"
+                onClick={openAiFullLog}
+                onContextMenu={(e) => { e.preventDefault(); toggleAiSidebar(); }}
+                aria-label="LLM Calls"
+                className={`relative material-symbols-outlined transition-all active:scale-95 duration-200 cursor-pointer w-9 h-9 flex items-center justify-center rounded-full hover:bg-surface-container-high/40 ${
+                  aiLogSidebarVisible ? 'text-primary' : 'text-on-surface-variant hover:text-tertiary'
+                }`}
+              >
+                terminal
+                {aiPendingCount > 0 && (
+                  <span className="absolute top-1 right-1 w-2 h-2 rounded-full bg-tertiary animate-pulse" />
+                )}
+              </button>
+            </Tooltip>
             <Tooltip content={t('nav.appZoomTooltip', { percent: appZoom })} placement="bottom" variant="compact" asChild>
               <button
                 type="button"
@@ -639,5 +679,12 @@ export default function Header() {
         )}
       </div>
     </header>
+    {aiFullLogOpen && (
+      <FullCallLogModal logs={aiMergedLogs} onClose={closeAiFullLog} onOpenEntry={setAiDetailId} />
+    )}
+    {aiDetailEntry && (
+      <AiCallLogModal entry={aiDetailEntry} onClose={() => setAiDetailId(null)} />
+    )}
+    </>
   );
 }

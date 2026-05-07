@@ -14,6 +14,7 @@ import { useMultiplayer } from '../../contexts/MultiplayerContext';
 import { useSettings } from '../../contexts/SettingsContext';
 import { useAI } from '../../hooks/useAI';
 import { apiClient } from '../../services/apiClient';
+import { useAiCallLogStore } from '../../stores/aiCallLogStore';
 import StatusBar from '../ui/StatusBar';
 import NeedsPanel from '../gameplay/NeedsPanel';
 import SidebarPartyList from './SidebarPartyList';
@@ -35,6 +36,7 @@ export default function Sidebar() {
   const { generateScene } = useAI();
   const [activeNeedKey, setActiveNeedKey] = useState(null);
 
+  const aiLogVisible = useAiCallLogStore((s) => s.sidebarVisible);
   const isMultiplayer = mp.state.isMultiplayer && mp.state.phase === 'playing';
   const character = isMultiplayer
     ? (mp.state.gameState?.characters?.find((c) => c.odId === mp.state.myOdId) || mp.state.gameState?.characters?.[0])
@@ -100,7 +102,7 @@ Opisz bardzo konkretne konsekwencje tej decyzji dla fabuły: relacji, zasobów, 
 
   return (
     <aside
-      className="hidden lg:flex flex-col h-screen w-[320px] fixed left-0 top-0 z-40 backdrop-blur-xl sidebar-ambient sidebar-torn-edge sidebar-play-metallic pt-16 overflow-x-hidden overflow-y-auto custom-scrollbar overscroll-y-contain"
+      className="hidden lg:flex flex-col h-screen w-[320px] fixed left-0 top-0 z-40 backdrop-blur-xl sidebar-ambient sidebar-torn-edge sidebar-play-metallic pt-16 overflow-hidden"
       style={uwBonus.sidebar > 0 ? { width: 320 + uwBonus.sidebar } : undefined}
     >
       <div className="px-6 mb-8">
@@ -119,7 +121,7 @@ Opisz bardzo konkretne konsekwencje tej decyzji dla fabuły: relacji, zasobów, 
             <span className="material-symbols-outlined text-tertiary text-xl">shield</span>
           </div>
           <div className="min-w-0">
-            <div className="font-headline text-tertiary text-sm font-bold truncate">{character.name}</div>
+            <div className="font-headline text-tertiary text-lg font-bold truncate leading-tight">{character.name}</div>
             <div className="text-[10px] text-on-surface-variant uppercase tracking-widest truncate">
               {t(`species.${character.species}`, { defaultValue: character.species })}
             </div>
@@ -141,7 +143,7 @@ Opisz bardzo konkretne konsekwencje tej decyzji dla fabuły: relacji, zasobów, 
           />
         </div>
         <SidebarPartyList party={party} activeCharacterId={activeId} isMultiplayer={isMultiplayer} />
-        <SidebarAiCallLog />
+        {aiLogVisible && <SidebarAiCallLog />}
       </div>
     </aside>
   );

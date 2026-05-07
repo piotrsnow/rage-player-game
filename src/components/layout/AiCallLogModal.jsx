@@ -23,6 +23,67 @@ function safeStringify(value) {
   }
 }
 
+function HighlightedContent({ text, isJson }) {
+  if (!text || text === '—') return <span className="text-outline">{text}</span>;
+
+  if (isJson) {
+    const parts = text.split(/("(?:[^"\\]|\\.)*")\s*:/g);
+    const elements = [];
+    for (let i = 0; i < parts.length; i++) {
+      if (i % 2 === 1) {
+        elements.push(<span key={i} className="text-primary font-semibold">{parts[i]}:</span>);
+      } else {
+        elements.push(...colorizeValues(parts[i], `v${i}`));
+      }
+    }
+    return <>{elements}</>;
+  }
+
+  const lines = text.split('\n');
+  return (
+    <>
+      {lines.map((line, i) => {
+        const kvMatch = line.match(/^(\s*"?[\w.]+["']?\s*:\s*)(.+)$/);
+        if (kvMatch) {
+          return (
+            <span key={i}>
+              <span className="text-primary font-semibold">{kvMatch[1]}</span>
+              <span className="text-on-surface">{kvMatch[2]}</span>
+              {'\n'}
+            </span>
+          );
+        }
+        return <span key={i}>{line}{'\n'}</span>;
+      })}
+    </>
+  );
+}
+
+function colorizeValues(chunk, keyPrefix) {
+  const elements = [];
+  const regex = /("(?:[^"\\]|\\.)*")|(true|false|null)|([-+]?\d+\.?\d*(?:[eE][+-]?\d+)?)/g;
+  let last = 0;
+  let match;
+  let idx = 0;
+  while ((match = regex.exec(chunk)) !== null) {
+    if (match.index > last) {
+      elements.push(<span key={`${keyPrefix}-${idx++}`}>{chunk.slice(last, match.index)}</span>);
+    }
+    if (match[1]) {
+      elements.push(<span key={`${keyPrefix}-${idx++}`} className="text-tertiary">{match[1]}</span>);
+    } else if (match[2]) {
+      elements.push(<span key={`${keyPrefix}-${idx++}`} className="text-secondary font-bold">{match[2]}</span>);
+    } else if (match[3]) {
+      elements.push(<span key={`${keyPrefix}-${idx++}`} className="text-secondary">{match[3]}</span>);
+    }
+    last = regex.lastIndex;
+  }
+  if (last < chunk.length) {
+    elements.push(<span key={`${keyPrefix}-${idx++}`}>{chunk.slice(last)}</span>);
+  }
+  return elements;
+}
+
 function extractSimpleRequest(entry) {
   const r = entry?.request;
   if (r == null) return { text: '' };
@@ -165,22 +226,22 @@ export default function AiCallLogModal({ entry, onClose }) {
           </button>
         </div>
 
-        <div className="px-4 py-2 border-b border-outline-variant/10 grid grid-cols-2 sm:grid-cols-4 gap-2 text-[10px] uppercase tracking-widest text-on-surface-variant">
+        <div className="px-4 py-2.5 border-b border-outline-variant/10 grid grid-cols-2 sm:grid-cols-4 gap-2 text-[11px] uppercase tracking-widest text-on-surface-variant">
           <div>
             <div className="opacity-60">Provider</div>
-            <div className="text-on-surface normal-case tracking-normal">{entry.provider || '—'}</div>
+            <div className="text-on-surface normal-case tracking-normal font-medium">{entry.provider || '—'}</div>
           </div>
           <div>
             <div className="opacity-60">Model</div>
-            <div className="text-on-surface normal-case tracking-normal">{entry.model || 'default'}</div>
+            <div className="text-on-surface normal-case tracking-normal font-medium">{entry.model || 'default'}</div>
           </div>
           <div>
             <div className="opacity-60">Started</div>
-            <div className="text-on-surface normal-case tracking-normal">{formatTime(entry.startedAt)}</div>
+            <div className="text-on-surface normal-case tracking-normal font-medium">{formatTime(entry.startedAt)}</div>
           </div>
           <div>
             <div className="opacity-60">Duration</div>
-            <div className="text-on-surface normal-case tracking-normal">
+            <div className="text-on-surface normal-case tracking-normal font-medium">
               {entry.status === 'pending' ? 'in progress…' : formatDuration(entry.durationMs)}
             </div>
           </div>
@@ -213,76 +274,78 @@ export default function AiCallLogModal({ entry, onClose }) {
           {tab === 'simple' ? (
             <>
               <section>
-                <div className="flex items-center justify-between mb-1">
-                  <h3 className="text-[10px] font-label uppercase tracking-widest text-primary">Request</h3>
+                <div className="flex items-center justify-between mb-2">
+                  <h3 className="text-xs font-label uppercase tracking-widest text-primary font-bold">Request</h3>
                   <button
                     onClick={() => handleCopy('req', simpleReq.text)}
-                    className="text-[10px] uppercase tracking-widest text-on-surface-variant hover:text-primary transition-colors"
+                    className="text-[11px] uppercase tracking-widest text-on-surface-variant hover:text-primary transition-colors"
                   >
                     {copiedKey === 'req' ? 'copied' : 'copy'}
                   </button>
                 </div>
-                <pre className="text-[12px] leading-relaxed bg-surface-container-low/60 border border-outline-variant/15 rounded-sm p-3 whitespace-pre-wrap break-words text-on-surface max-h-[40vh] overflow-y-auto custom-scrollbar">
-{simpleReq.text || '—'}
+                <pre className="text-sm leading-relaxed bg-surface-container-low/60 border border-outline-variant/15 rounded-sm p-4 whitespace-pre-wrap break-words text-on-surface max-h-[40vh] overflow-y-auto custom-scrollbar">
+                  <HighlightedContent text={simpleReq.text || '—'} />
                 </pre>
               </section>
 
               <section>
-                <div className="flex items-center justify-between mb-1">
-                  <h3 className={`text-[10px] font-label uppercase tracking-widest ${entry.error ? 'text-error' : 'text-tertiary'}`}>
+                <div className="flex items-center justify-between mb-2">
+                  <h3 className={`text-xs font-label uppercase tracking-widest font-bold ${entry.error ? 'text-error' : 'text-tertiary'}`}>
                     {entry.error ? 'Error' : 'Response'}
                   </h3>
                   {!entry.error && simpleRes && (
                     <button
                       onClick={() => handleCopy('res', simpleRes.text)}
-                      className="text-[10px] uppercase tracking-widest text-on-surface-variant hover:text-primary transition-colors"
+                      className="text-[11px] uppercase tracking-widest text-on-surface-variant hover:text-primary transition-colors"
                     >
                       {copiedKey === 'res' ? 'copied' : 'copy'}
                     </button>
                   )}
                 </div>
-                <pre className={`text-[12px] leading-relaxed bg-surface-container-low/60 border rounded-sm p-3 whitespace-pre-wrap break-words max-h-[50vh] overflow-y-auto custom-scrollbar ${entry.error ? 'border-error/30 text-error' : 'border-outline-variant/15 text-on-surface'}`}>
-{entry.status === 'pending'
-  ? 'Waiting for response…'
-  : entry.error
-    ? entry.error
-    : (simpleRes?.text || '—')}
+                <pre className={`text-sm leading-relaxed bg-surface-container-low/60 border rounded-sm p-4 whitespace-pre-wrap break-words max-h-[50vh] overflow-y-auto custom-scrollbar ${entry.error ? 'border-error/30 text-error' : 'border-outline-variant/15 text-on-surface'}`}>
+                  {entry.status === 'pending'
+                    ? <span className="text-tertiary italic">Waiting for response…</span>
+                    : entry.error
+                      ? <span className="text-error font-medium">{entry.error}</span>
+                      : <HighlightedContent text={simpleRes?.text || '—'} />}
                 </pre>
               </section>
             </>
           ) : (
             <>
               <section>
-                <div className="flex items-center justify-between mb-1">
-                  <h3 className="text-[10px] font-label uppercase tracking-widest text-primary">Request</h3>
+                <div className="flex items-center justify-between mb-2">
+                  <h3 className="text-xs font-label uppercase tracking-widest text-primary font-bold">Request</h3>
                   <button
                     onClick={() => handleCopy('req', requestText)}
-                    className="text-[10px] uppercase tracking-widest text-on-surface-variant hover:text-primary transition-colors"
+                    className="text-[11px] uppercase tracking-widest text-on-surface-variant hover:text-primary transition-colors"
                   >
                     {copiedKey === 'req' ? 'copied' : 'copy'}
                   </button>
                 </div>
-                <pre className="text-[11px] leading-relaxed bg-surface-container-low/60 border border-outline-variant/15 rounded-sm p-3 whitespace-pre-wrap break-words text-on-surface max-h-[40vh] overflow-y-auto custom-scrollbar">
-{requestText || '—'}
+                <pre className="text-[13px] leading-relaxed bg-surface-container-low/60 border border-outline-variant/15 rounded-sm p-4 whitespace-pre-wrap break-words text-on-surface max-h-[40vh] overflow-y-auto custom-scrollbar">
+                  <HighlightedContent text={requestText || '—'} isJson />
                 </pre>
               </section>
 
               <section>
-                <div className="flex items-center justify-between mb-1">
-                  <h3 className={`text-[10px] font-label uppercase tracking-widest ${entry.error ? 'text-error' : 'text-tertiary'}`}>
+                <div className="flex items-center justify-between mb-2">
+                  <h3 className={`text-xs font-label uppercase tracking-widest font-bold ${entry.error ? 'text-error' : 'text-tertiary'}`}>
                     {entry.error ? 'Error' : 'Response'}
                   </h3>
                   {!entry.error && (
                     <button
                       onClick={() => handleCopy('res', responseText)}
-                      className="text-[10px] uppercase tracking-widest text-on-surface-variant hover:text-primary transition-colors"
+                      className="text-[11px] uppercase tracking-widest text-on-surface-variant hover:text-primary transition-colors"
                     >
                       {copiedKey === 'res' ? 'copied' : 'copy'}
                     </button>
                   )}
                 </div>
-                <pre className={`text-[11px] leading-relaxed bg-surface-container-low/60 border rounded-sm p-3 whitespace-pre-wrap break-words max-h-[50vh] overflow-y-auto custom-scrollbar ${entry.error ? 'border-error/30 text-error' : 'border-outline-variant/15 text-on-surface'}`}>
-{entry.status === 'pending' ? 'Waiting for response…' : (responseText || '—')}
+                <pre className={`text-[13px] leading-relaxed bg-surface-container-low/60 border rounded-sm p-4 whitespace-pre-wrap break-words max-h-[50vh] overflow-y-auto custom-scrollbar ${entry.error ? 'border-error/30 text-error' : 'border-outline-variant/15 text-on-surface'}`}>
+                  {entry.status === 'pending'
+                    ? <span className="text-tertiary italic">Waiting for response…</span>
+                    : <HighlightedContent text={responseText || '—'} isJson />}
                 </pre>
               </section>
             </>
