@@ -174,7 +174,7 @@ export default function TypewriterActionOverlay({
           ? 'radial-gradient(ellipse at center, rgba(0,0,0,0.7) 0%, rgba(0,0,0,0.6) 100%)'
           : 'radial-gradient(ellipse at center, rgba(0,0,0,0.8) 0%, rgba(0,0,0,0.7) 100%)',
         backdropFilter: isImage ? 'blur(3px)' : 'blur(6px)',
-        paddingBottom: isImage ? '40px' : '160px',
+        paddingBottom: isImage ? '190px' : '160px',
         ...(effectiveFastFinish && phase === 'fading' ? { animationDuration: '250ms' } : null),
       }}
       onClick={() => {

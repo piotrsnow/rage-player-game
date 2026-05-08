@@ -207,7 +207,34 @@ async function generatePortraitViaSdWebuiProxy(imageBlob, prompt, strength, sdMo
   return canonicalUrl(data.url);
 }
 
-export const imageService = {
+// --- Image request queue: max 1 concurrent, 1s cooldown ---
+const _imgQueue = [];
+let _imgQueueBusy = false;
+
+function enqueueImageRequest(fn) {
+  return new Promise((resolve, reject) => {
+    _imgQueue.push({ fn, resolve, reject });
+    if (!_imgQueueBusy) _drainImageQueue();
+  });
+}
+
+async function _drainImageQueue() {
+  _imgQueueBusy = true;
+  while (_imgQueue.length > 0) {
+    const { fn, resolve, reject } = _imgQueue.shift();
+    try {
+      resolve(await fn());
+    } catch (err) {
+      reject(err);
+    }
+    if (_imgQueue.length > 0) {
+      await new Promise(r => setTimeout(r, 1000));
+    }
+  }
+  _imgQueueBusy = false;
+}
+
+const _imageServiceImpl = {
   async generateSceneImage(narrative, genre, tone, _apiKeyIgnored, provider = 'dalle', imagePrompt = null, campaignId = null, imageStyle = 'painting', darkPalette = false, characterAge = null, characterGender = null, options = {}, seriousness = null, portraitUrl = null) {
     const hasGptPortrait = provider === 'gpt-image' && !!portraitUrl;
     const hasSdPortrait = provider === 'sd-webui' && !!portraitUrl;
@@ -332,5 +359,20 @@ export const imageService = {
     }
     const url = await generateSceneViaProxy(prompt, provider, campaignId, { sdModel, sdSeed, forceNew, shape: 'square', negativePrompt: itemNegative, resolutionMultiplier });
     return { url, prompt };
+  },
+};
+
+export const imageService = {
+  generateSceneImage(...args) {
+    return enqueueImageRequest(() => _imageServiceImpl.generateSceneImage(...args));
+  },
+  generatePortrait(...args) {
+    return enqueueImageRequest(() => _imageServiceImpl.generatePortrait(...args));
+  },
+  generatePlaygroundImage(...args) {
+    return enqueueImageRequest(() => _imageServiceImpl.generatePlaygroundImage(...args));
+  },
+  generateItemImage(...args) {
+    return enqueueImageRequest(() => _imageServiceImpl.generateItemImage(...args));
   },
 };
