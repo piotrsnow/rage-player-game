@@ -93,15 +93,14 @@ export default function MapTab({ campaignId, onTravel }) {
   }
 
   return (
-    <div className="h-full min-h-[420px] flex flex-col lg:flex-row gap-3">
-      <div className="relative flex-1 min-h-[320px] rounded border border-outline-variant/20 bg-surface/40 overflow-hidden">
+    <div className="h-full min-h-[600px] flex flex-col lg:flex-row gap-3">
+      <div className="relative flex-1 min-h-[500px] rounded border border-outline-variant/20 bg-surface/40 overflow-hidden">
         <GraphCanvas
           nodes={nodes}
           edges={edges}
           occupants={graph.occupants}
           selected={selected}
           onSelect={setSelected}
-          mode="player"
           positionOverrides={positionOverrides}
           onNodeDragEnd={handleNodeDragEnd}
           highlightedNodeId={currentNode?.id || null}

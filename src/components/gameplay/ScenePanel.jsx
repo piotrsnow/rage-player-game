@@ -555,7 +555,7 @@ export default function ScenePanel({
         <button
           type="button"
           onClick={momentumDice.onDiceClick}
-          className="absolute w-20 h-20 flex items-center justify-center rounded-xl cursor-pointer animate-scale-in group transition-all duration-150"
+          className="absolute w-28 h-28 flex items-center justify-center rounded-xl cursor-pointer animate-scale-in group transition-all duration-150"
           style={{
             zIndex: 10,
             top: `${(momentumDice.position?.top ?? 0.5) * 100}%`,
@@ -565,7 +565,7 @@ export default function ScenePanel({
         >
           <span className="absolute inset-0 rounded-xl bg-amber-400/0 group-hover:bg-amber-400/20 transition-colors duration-150" />
           <span
-            className="material-symbols-outlined text-[68px] text-amber-300/90 group-hover:text-white group-hover:scale-125 transition-all duration-150 drop-shadow-lg"
+            className="material-symbols-outlined text-[92px] text-amber-300/90 group-hover:text-white group-hover:scale-125 transition-all duration-150 drop-shadow-lg"
             style={{
               filter: 'drop-shadow(0 0 18px rgba(251,191,36,0.6)) drop-shadow(0 0 40px rgba(251,191,36,0.25))',
             }}

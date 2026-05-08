@@ -59,7 +59,9 @@ export default function WorldStateModal({ world, quests, characterVoiceMap, male
       <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} />
       <div
         ref={modalRef}
-        className="relative w-full max-w-5xl max-h-[90vh] bg-surface-container-highest/80 backdrop-blur-2xl border border-outline-variant/15 rounded-sm flex flex-col shadow-2xl animate-fade-in"
+        className={`relative w-full max-h-[90vh] bg-surface-container-highest/80 backdrop-blur-2xl border border-outline-variant/15 rounded-sm flex flex-col shadow-2xl animate-fade-in ${
+          activeTab === 'map' ? 'max-w-[80vw] h-[88vh]' : 'max-w-5xl'
+        }`}
       >
         <div className="flex items-center justify-between px-6 py-4 border-b border-outline-variant/15">
           <h2 className="font-headline text-xl text-tertiary flex items-center gap-2">

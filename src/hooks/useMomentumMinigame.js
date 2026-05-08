@@ -13,9 +13,11 @@ function randomPosition() {
 }
 
 function getMomentumDelta(ratio) {
-  if (ratio <= 0.4) return 3;
-  if (ratio <= 0.65) return 1;
-  if (ratio <= 0.85) return -1;
+  if (ratio <= 0.5) return 3;
+  if (ratio <= 0.6) return 2;
+  if (ratio <= 0.7) return 1;
+  if (ratio <= 0.8) return -1;
+  if (ratio <= 0.9) return -2;
   return -3;
 }
 

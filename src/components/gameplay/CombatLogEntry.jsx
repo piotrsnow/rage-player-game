@@ -355,9 +355,9 @@ function getRollOutcomeStyles(item) {
     border: 'border-pink-700/35',
   };
   if (item.success) return {
-    accent: 'text-pink-400',
-    badge: 'bg-pink-500/15 text-pink-300 border-pink-400/25',
-    border: 'border-pink-400/30',
+    accent: 'text-sky-300',
+    badge: 'bg-sky-500/15 text-sky-200 border-sky-400/25',
+    border: 'border-sky-400/30',
   };
   return {
     accent: 'text-rose-400',
@@ -440,7 +440,7 @@ function RollBox({ item, t }) {
       <div className="flex items-center justify-center gap-1.5 mt-2.5 flex-wrap">
         <span className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[13px] font-bold ${
           margin >= 0
-            ? 'text-pink-300 bg-pink-400/12 border-pink-400/25'
+            ? 'text-sky-200 bg-sky-400/12 border-sky-400/25'
             : 'text-rose-300 bg-pink-600/12 border-pink-600/25'
         }`}>
           <span className="material-symbols-outlined text-[14px] leading-none">fitness_center</span>

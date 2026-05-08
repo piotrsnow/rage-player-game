@@ -21,11 +21,11 @@ function getOutcomeStyles(dr) {
     glowColor: 'rgba(190,24,93,0.12)',
   };
   if (dr.success) return {
-    accent: 'text-pink-400',
-    glow: 'from-pink-500/10 via-transparent to-pink-500/10',
-    border: 'border-pink-400/35',
-    badge: 'bg-pink-500/15 text-pink-300 border-pink-400/25',
-    glowColor: 'rgba(236,72,153,0.09)',
+    accent: 'text-sky-300',
+    glow: 'from-sky-400/10 via-transparent to-sky-400/10',
+    border: 'border-sky-400/35',
+    badge: 'bg-sky-500/15 text-sky-200 border-sky-400/25',
+    glowColor: 'rgba(56,189,248,0.09)',
   };
   return {
     accent: 'text-rose-400',
@@ -193,7 +193,7 @@ function CardContent({ nd, styles, modifierLines, expanded, t, showCharacter }) 
         {margin != null && (
           <div className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 ${
             margin >= 0
-              ? 'text-pink-300 bg-pink-400/12 border-pink-400/25'
+              ? 'text-sky-200 bg-sky-400/12 border-sky-400/25'
               : 'text-rose-300 bg-pink-600/12 border-pink-600/25'
           }`}>
             <span className="material-symbols-outlined text-[14px] leading-none">fitness_center</span>

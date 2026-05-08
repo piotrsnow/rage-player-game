@@ -103,14 +103,12 @@ function NodeInspector({ node, occupants = [], onUpdate, onDelete, mode, campaig
         </span>
       </div>
 
-      {isAdmin && (
-        <CollapsibleSection
-          title={t('locationGraph.inspector.sectionImage', { defaultValue: 'Obrazek' })}
-          icon="image"
-        >
-          <NodeImageSection node={node} campaignId={campaignId} onUpdate={handleField} />
-        </CollapsibleSection>
-      )}
+      <CollapsibleSection
+        title={t('locationGraph.inspector.sectionImage', { defaultValue: 'Obrazek' })}
+        icon="image"
+      >
+        <NodeImageSection node={node} campaignId={campaignId} onUpdate={handleField} isAdmin={isAdmin} />
+      </CollapsibleSection>
 
       <CollapsibleSection
         title={t('locationGraph.inspector.sectionBasic', { defaultValue: 'Podstawowe' })}
@@ -483,7 +481,7 @@ function IconPicker({ value, onChange }) {
 
 const SCALE_PX = [32, 32, 48, 48, 64, 80, 96, 128];
 
-function NodeImageSection({ node, campaignId, onUpdate }) {
+function NodeImageSection({ node, campaignId, onUpdate, isAdmin }) {
   const { t } = useTranslation();
   const fileRef = useRef(null);
   const [generating, setGenerating] = useState(false);
@@ -561,34 +559,40 @@ function NodeImageSection({ node, campaignId, onUpdate }) {
             className="max-w-[180px] w-full rounded-lg border border-outline-variant/15 bg-black/20"
             style={{ imageRendering: 'pixelated' }}
           />
-          <button
-            type="button"
-            onClick={() => onUpdate('nodeImageUrl', null)}
-            className="absolute top-1 right-1 w-5 h-5 rounded-full bg-red-500/80 text-white text-xs flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
-          >
-            ×
-          </button>
+          {isAdmin && (
+            <button
+              type="button"
+              onClick={() => onUpdate('nodeImageUrl', null)}
+              className="absolute top-1 right-1 w-5 h-5 rounded-full bg-red-500/80 text-white text-xs flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+            >
+              ×
+            </button>
+          )}
         </div>
       )}
 
       <div className="flex gap-1.5 flex-wrap">
-        <button
-          type="button"
-          onClick={() => fileRef.current?.click()}
-          disabled={uploading}
-          className="flex items-center gap-1 px-2 py-1 rounded bg-white/5 border border-outline-variant/10 hover:bg-white/10 transition-colors text-on-surface-variant text-xs disabled:opacity-50"
-        >
-          <span className="material-symbols-outlined text-sm">upload</span>
-          {uploading ? '...' : t('locationGraph.inspector.upload', { defaultValue: 'Wgraj' })}
-        </button>
-        <button
-          type="button"
-          onClick={openPicker}
-          className="flex items-center gap-1 px-2 py-1 rounded bg-white/5 border border-outline-variant/10 hover:bg-white/10 transition-colors text-on-surface-variant text-xs"
-        >
-          <span className="material-symbols-outlined text-sm">photo_library</span>
-          {t('locationGraph.inspector.pick', { defaultValue: 'Wybierz' })}
-        </button>
+        {isAdmin && (
+          <>
+            <button
+              type="button"
+              onClick={() => fileRef.current?.click()}
+              disabled={uploading}
+              className="flex items-center gap-1 px-2 py-1 rounded bg-white/5 border border-outline-variant/10 hover:bg-white/10 transition-colors text-on-surface-variant text-xs disabled:opacity-50"
+            >
+              <span className="material-symbols-outlined text-sm">upload</span>
+              {uploading ? '...' : t('locationGraph.inspector.upload', { defaultValue: 'Wgraj' })}
+            </button>
+            <button
+              type="button"
+              onClick={openPicker}
+              className="flex items-center gap-1 px-2 py-1 rounded bg-white/5 border border-outline-variant/10 hover:bg-white/10 transition-colors text-on-surface-variant text-xs"
+            >
+              <span className="material-symbols-outlined text-sm">photo_library</span>
+              {t('locationGraph.inspector.pick', { defaultValue: 'Wybierz' })}
+            </button>
+          </>
+        )}
         <button
           type="button"
           onClick={handleGenerate}
@@ -603,7 +607,7 @@ function NodeImageSection({ node, campaignId, onUpdate }) {
         </button>
       </div>
 
-      <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={handleUpload} />
+      {isAdmin && <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={handleUpload} />}
 
       <input
         className="bg-white/5 rounded px-2.5 py-1.5 w-full text-on-surface text-xs border border-outline-variant/10 focus:border-primary/40 outline-none"
@@ -613,7 +617,7 @@ function NodeImageSection({ node, campaignId, onUpdate }) {
         onChange={(e) => setCustomPrompt(e.target.value)}
       />
 
-      {showPicker && (
+      {isAdmin && showPicker && (
         <div className="space-y-1.5">
           <div className="flex items-center justify-between">
             <span className="text-[10px] text-outline uppercase tracking-widest">

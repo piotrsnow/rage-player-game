@@ -244,7 +244,6 @@ export default function LocationGraphModal({ campaignId, onClose }) {
                     onCanvasClick={handleCanvasClick}
                     addingEdge={addingEdge}
                     onEdgeSourceClick={handleEdgeSourceClick}
-                    mode={graph.mode}
                     positionOverrides={positionOverrides}
                     onNodeDragEnd={handleNodeDragEnd}
                     snapToGrid={snapToGrid}

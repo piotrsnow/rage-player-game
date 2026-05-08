@@ -844,7 +844,7 @@ export async function livingWorldRoutes(fastify) {
     return reply.send({ images });
   });
 
-  // POST /campaigns/:id/location-graph/nodes/:nodeId/generate-sprite — PixelLab (admin-only)
+  // POST /campaigns/:id/location-graph/nodes/:nodeId/generate-sprite — PixelLab
   fastify.post('/campaigns/:id/location-graph/nodes/:nodeId/generate-sprite', {
     schema: {
       params: {
@@ -864,9 +864,6 @@ export async function livingWorldRoutes(fastify) {
       },
     },
   }, async (request, reply) => {
-    if (!request.user.isAdmin) {
-      return reply.code(403).send({ error: 'Admin only' });
-    }
     if (!config.pixellabApiKey) {
       return reply.code(503).send({ error: 'PIXELLAB_API_KEY not configured' });
     }

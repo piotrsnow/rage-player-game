@@ -778,7 +778,7 @@ export default function GameplayPage({ readOnly = false, shareToken = null, onRe
         </div>
         )}
 
-        {isGeneratingScene && !readOnly && (
+        {isGeneratingScene && !readOnly && !(overlayText && isPlayerActionOverlayActive) && (
           <div className="shrink-0 px-4 md:px-6 pb-2">
             <SceneGenerationProgress
               startTime={isMultiplayer ? mpSceneGenStartTime : sceneGenStartTime}

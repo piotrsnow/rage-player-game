@@ -4,21 +4,20 @@ import { getNodeVisual, getEdgeVisual, getNodeRadius } from './graphVisuals.js';
 import { SHAPE_PATHS } from './nodeShapes.js';
 import { apiClient } from '../../../services/apiClient.js';
 
-const LAYOUT_W = 800;
-const LAYOUT_H = 600;
+const LAYOUT_W = 1200;
+const LAYOUT_H = 900;
 const GRID_STEP = 40;
 
 export default function GraphCanvas({
   nodes, edges, occupants = [], selected, onSelect, onDoubleClickNode,
   addingNode, onCanvasClick, addingEdge, onEdgeSourceClick,
-  mode,
   positionOverrides, onNodeDragEnd, snapToGrid,
   highlightedNodeId = null, highlightedAdjacentIds = null,
 }) {
   const svgRef = useRef(null);
   const containerRef = useRef(null);
   const [pan, setPan] = useState({ x: 0, y: 0 });
-  const [zoom, setZoom] = useState(1);
+  const [zoom, setZoom] = useState(1.5);
   const [dragStart, setDragStart] = useState(null);
   const [size, setSize] = useState({ w: LAYOUT_W, h: LAYOUT_H });
 
@@ -187,7 +186,6 @@ export default function GraphCanvas({
   }, [draggingNodeId, dragNodePos, onNodeDragEnd]);
 
   const handleNodeMouseDown = useCallback((nodeId, e) => {
-    if (mode !== 'gm') return;
     if (addingEdge || addingNode) return;
     e.stopPropagation();
     const layoutPos = clientToLayout(e.clientX, e.clientY);
@@ -197,7 +195,7 @@ export default function GraphCanvas({
     didDragRef.current = false;
     setDraggingNodeId(nodeId);
     setDragNodePos(nodePos);
-  }, [mode, addingEdge, addingNode, clientToLayout, positions]);
+  }, [addingEdge, addingNode, clientToLayout, positions]);
 
   const handleSvgClick = useCallback((e) => {
     if (addingNode && (e.target === svgRef.current || e.target.closest('[data-bg]'))) {
@@ -307,13 +305,9 @@ export default function GraphCanvas({
           const locOccupants = occupantsByLocation.get(node.id) || [];
           const isHighlightedCurrent = highlightedNodeId === node.id;
           const isHighlightedAdjacent = highlightedAdjacentIds?.has?.(node.id) && !isHighlightedCurrent;
-          const nodeCursor = addingEdge
+          const nodeCursor = addingEdge || addingNode
             ? 'crosshair'
-            : addingNode
-              ? 'crosshair'
-              : mode === 'gm'
-                ? 'move'
-                : 'pointer';
+            : 'move';
           const shapeName = vis.shape || 'circle';
           const shapeGen = SHAPE_PATHS[shapeName];
           const useCircle = !shapeGen;

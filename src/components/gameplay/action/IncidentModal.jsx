@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect, memo } from 'react';
+import { useState, useCallback, useEffect, useRef, memo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useModalA11y } from '../../../hooks/useModalA11y';
 import { apiClient } from '../../../services/apiClient';
@@ -40,6 +40,11 @@ export default function IncidentModal({ campaignId, onClose, onCorrectionsApplie
   const [refetchTriggered, setRefetchTriggered] = useState(false);
   const [history, setHistory] = useState(null);
   const [loadingHistory, setLoadingHistory] = useState(false);
+  const textareaRef = useRef(null);
+
+  useEffect(() => {
+    if (view === 'form') textareaRef.current?.focus();
+  }, [view]);
 
   // Server applied corrections atomically — we just refetch campaign state
   // so the FE store mirrors the new world. Single fire per result.
@@ -68,6 +73,13 @@ export default function IncidentModal({ campaignId, onClose, onCorrectionsApplie
       setSubmitting(false);
     }
   }, [complaint, submitting, campaignId]);
+
+  const handleKeyDown = useCallback((e) => {
+    if (e.key === 'Enter' && e.shiftKey) {
+      e.preventDefault();
+      handleSubmit();
+    }
+  }, [handleSubmit]);
 
   const loadHistory = useCallback(async () => {
     if (loadingHistory) return;
@@ -136,8 +148,10 @@ export default function IncidentModal({ campaignId, onClose, onCorrectionsApplie
           {view === 'form' && (
             <div className="space-y-4">
               <textarea
+                ref={textareaRef}
                 value={complaint}
                 onChange={(e) => setComplaint(e.target.value)}
+                onKeyDown={handleKeyDown}
                 placeholder={t('gameplay.incidentPlaceholder')}
                 disabled={submitting}
                 rows={5}
