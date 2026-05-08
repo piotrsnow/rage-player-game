@@ -291,8 +291,8 @@ export default function LocationGraphModal({ campaignId, onClose }) {
               </div>
 
               {/* Right sidebar — graph inspector */}
-              <div className="w-96 border-l border-outline-variant/15 flex-shrink-0 overflow-hidden flex flex-col">
-                <div className="px-4 py-2 border-b border-outline-variant/15">
+              <div className="w-[28rem] border-l border-outline-variant/15 flex-shrink-0 overflow-hidden flex flex-col">
+                <div className="px-6 py-2 border-b border-outline-variant/15">
                   <span className="text-xs font-label uppercase tracking-widest text-outline">{t('locationGraph.inspector.title')}</span>
                 </div>
                 <div className="flex-1 overflow-y-auto">
@@ -306,6 +306,7 @@ export default function LocationGraphModal({ campaignId, onClose }) {
                     onDeleteNode={handleDeleteNode}
                     onDeleteEdge={handleDeleteEdge}
                     mode={graph.mode}
+                    campaignId={campaignId}
                   />
                 </div>
               </div>
@@ -367,8 +368,8 @@ export default function LocationGraphModal({ campaignId, onClose }) {
               />
 
               {/* Right sidebar — entity inspector */}
-              <div className="w-96 border-l border-outline-variant/15 flex-shrink-0 overflow-hidden flex flex-col">
-                <div className="px-4 py-2 border-b border-outline-variant/15">
+              <div className="w-[28rem] border-l border-outline-variant/15 flex-shrink-0 overflow-hidden flex flex-col">
+                <div className="px-6 py-2 border-b border-outline-variant/15">
                   <span className="text-xs font-label uppercase tracking-widest text-outline">
                     {t('locationGraph.entityBrowser.inspectorTitle')}
                   </span>

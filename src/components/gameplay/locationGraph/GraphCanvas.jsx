@@ -258,22 +258,73 @@ export default function GraphCanvas({
                   <animate attributeName="r" values={`${r + 3};${r + 6};${r + 3}`} dur="1.5s" repeatCount="indefinite" />
                 </circle>
               )}
-              {useCircle ? (
-                <circle
-                  r={r}
-                  fill={vis.color}
-                  stroke={isSelected ? '#fbbf24' : 'rgba(255,255,255,0.15)'}
-                  strokeWidth={isSelected ? 2 : 1}
-                  opacity={node.discoveryState === 'rumored' ? 0.4 : 1}
-                />
+              {node.nodeImageUrl ? (
+                <>
+                  <defs>
+                    <clipPath id={`clip-${node.id}`}>
+                      {useCircle
+                        ? <circle r={r} />
+                        : <path d={shapeGen(r)} />}
+                    </clipPath>
+                  </defs>
+                  <image
+                    href={node.nodeImageUrl}
+                    x={-r}
+                    y={-r}
+                    width={r * 2}
+                    height={r * 2}
+                    clipPath={`url(#clip-${node.id})`}
+                    preserveAspectRatio="xMidYMid slice"
+                    opacity={node.discoveryState === 'rumored' ? 0.4 : 1}
+                    style={{ imageRendering: 'pixelated' }}
+                  />
+                  {useCircle ? (
+                    <circle
+                      r={r}
+                      fill="none"
+                      stroke={isSelected ? '#fbbf24' : 'rgba(255,255,255,0.25)'}
+                      strokeWidth={isSelected ? 2 : 1}
+                    />
+                  ) : (
+                    <path
+                      d={shapeGen(r)}
+                      fill="none"
+                      stroke={isSelected ? '#fbbf24' : 'rgba(255,255,255,0.25)'}
+                      strokeWidth={isSelected ? 2 : 1}
+                    />
+                  )}
+                </>
               ) : (
-                <path
-                  d={shapeGen(r)}
-                  fill={vis.color}
-                  stroke={isSelected ? '#fbbf24' : 'rgba(255,255,255,0.15)'}
-                  strokeWidth={isSelected ? 2 : 1}
-                  opacity={node.discoveryState === 'rumored' ? 0.4 : 1}
-                />
+                <>
+                  {useCircle ? (
+                    <circle
+                      r={r}
+                      fill={vis.color}
+                      stroke={isSelected ? '#fbbf24' : 'rgba(255,255,255,0.15)'}
+                      strokeWidth={isSelected ? 2 : 1}
+                      opacity={node.discoveryState === 'rumored' ? 0.4 : 1}
+                    />
+                  ) : (
+                    <path
+                      d={shapeGen(r)}
+                      fill={vis.color}
+                      stroke={isSelected ? '#fbbf24' : 'rgba(255,255,255,0.15)'}
+                      strokeWidth={isSelected ? 2 : 1}
+                      opacity={node.discoveryState === 'rumored' ? 0.4 : 1}
+                    />
+                  )}
+                  <text
+                    y={1}
+                    textAnchor="middle"
+                    dominantBaseline="central"
+                    fill="white"
+                    fontSize={r * 0.7}
+                    fontFamily="Material Symbols Outlined"
+                    pointerEvents="none"
+                  >
+                    {vis.icon}
+                  </text>
+                </>
               )}
               <text
                 y={r + 14}
@@ -284,17 +335,6 @@ export default function GraphCanvas({
                 pointerEvents="none"
               >
                 {truncate(node.name, 18)}
-              </text>
-              <text
-                y={1}
-                textAnchor="middle"
-                dominantBaseline="central"
-                fill="white"
-                fontSize={r * 0.7}
-                fontFamily="Material Symbols Outlined"
-                pointerEvents="none"
-              >
-                {vis.icon}
               </text>
 
               {locOccupants.map((occ, i) => {

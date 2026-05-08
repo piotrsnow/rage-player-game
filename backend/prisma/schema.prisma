@@ -709,6 +709,7 @@ model WorldLocation {
   scale          Int     @default(5)
   nodeShape      String?
   nodeIcon       String?
+  nodeImageUrl   String?
 
   // Faza 0 — graf jako jedyne źródło prawdy o lokacjach.
   // tacticalGrid: 12×12 (lub inny WxH) tile grid do walki; tiles[y][x] = 'P'|'F'|'W'|'D'|'S'.
@@ -872,6 +873,7 @@ model CampaignLocation {
   scale              Int          @default(5)
   nodeShape          String?
   nodeIcon           String?
+  nodeImageUrl       String?
 
   // Faza 0 — graf jako jedyne źródło prawdy. Kopia pól z WorldLocation
   // by per-campaign sandbox lokacje miały te same możliwości metadane.

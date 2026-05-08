@@ -65,6 +65,7 @@ services:
       STABILITY_API_KEY: "${STABILITY_API_KEY:-}"
       GEMINI_API_KEY: "${GEMINI_API_KEY:-}"
       MESHY_API_KEY: "${MESHY_API_KEY:-}"
+      PIXELLAB_API_KEY: "${PIXELLAB_API_KEY:-}"
       # Bootstrap admin email — auto-promotes matching user to isAdmin
       ADMIN_EMAIL: "${ADMIN_EMAIL:-}"
       # Stable Diffusion WebUI (Automatic1111) — local REST. From inside the

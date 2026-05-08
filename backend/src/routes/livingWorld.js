@@ -29,6 +29,9 @@ import {
 } from '../services/locationGraph/graphService.js';
 import { EDGE_TYPES, safeValidateTacticalGrid } from '../../../shared/domain/locationGraph.js';
 import { slugifyLocationName } from '../services/locationRefs.js';
+import { generatePixelSprite, scaleToSpriteSize } from '../services/pixelLabClient.js';
+import { createMediaStore } from '../services/mediaStore.js';
+import { config } from '../config.js';
 
 const log = childLogger({ module: 'livingWorldRoutes' });
 
@@ -354,6 +357,7 @@ export async function livingWorldRoutes(fastify) {
         regionY: node.regionY ?? 0,
         nodeShape: node.nodeShape || null,
         nodeIcon: node.nodeIcon || null,
+        nodeImageUrl: node.nodeImageUrl || null,
       });
       seenNodeIds.add(node.id);
     }
@@ -366,7 +370,7 @@ export async function livingWorldRoutes(fastify) {
       select: {
         id: true, name: true, locationType: true, scale: true, tags: true,
         atmosphere: true, dangerLevel: true, regionX: true, regionY: true,
-        nodeShape: true, nodeIcon: true,
+        nodeShape: true, nodeIcon: true, nodeImageUrl: true,
       },
     });
     for (const node of orphanCampaignLocs) {
@@ -383,6 +387,7 @@ export async function livingWorldRoutes(fastify) {
         regionY: node.regionY ?? 0,
         nodeShape: node.nodeShape || null,
         nodeIcon: node.nodeIcon || null,
+        nodeImageUrl: node.nodeImageUrl || null,
       });
     }
 
@@ -517,6 +522,7 @@ export async function livingWorldRoutes(fastify) {
           parentId: { type: 'string', format: 'uuid' },
           shape: { type: ['string', 'null'], maxLength: 40 },
           icon: { type: ['string', 'null'], maxLength: 60 },
+          nodeImageUrl: { type: ['string', 'null'], maxLength: 500 },
           // Faza 0 — nowe pola metadane na nodzie.
           biome: { type: ['string', 'null'], maxLength: 40 },
           anchorType: { type: ['string', 'null'], maxLength: 40 },
@@ -545,6 +551,7 @@ export async function livingWorldRoutes(fastify) {
           parentLocationId: b.parentId || null,
           nodeShape: b.shape || null,
           nodeIcon: b.icon || null,
+          nodeImageUrl: b.nodeImageUrl || null,
           biome: b.biome || null,
           anchorType: b.anchorType || null,
           tacticalGrid: b.tacticalGrid ?? null,
@@ -612,6 +619,7 @@ export async function livingWorldRoutes(fastify) {
           scale: { type: 'integer', minimum: 0, maximum: 7 },
           shape: { type: ['string', 'null'], maxLength: 40 },
           icon: { type: ['string', 'null'], maxLength: 60 },
+          nodeImageUrl: { type: ['string', 'null'], maxLength: 500 },
           // Faza 0 — nowe pola metadane na nodzie.
           biome: { type: ['string', 'null'], maxLength: 40 },
           anchorType: { type: ['string', 'null'], maxLength: 40 },
@@ -641,6 +649,7 @@ export async function livingWorldRoutes(fastify) {
       if (b.scale !== undefined) data.scale = b.scale;
       if (b.shape !== undefined) data.nodeShape = b.shape || null;
       if (b.icon !== undefined) data.nodeIcon = b.icon || null;
+      if (b.nodeImageUrl !== undefined) data.nodeImageUrl = b.nodeImageUrl || null;
       // Faza 0 — opcjonalna walidacja tacticalGrid przed zapisem.
       if (b.biome !== undefined) data.biome = b.biome || null;
       if (b.anchorType !== undefined) data.anchorType = b.anchorType || null;
@@ -704,6 +713,126 @@ export async function livingWorldRoutes(fastify) {
       });
     }
     return reply.send({ ok: true });
+  });
+
+  // GET /campaigns/:id/location-graph/node-images — list existing node images
+  fastify.get('/campaigns/:id/location-graph/node-images', {
+    schema: { params: campaignIdParam },
+  }, async (request, reply) => {
+    const campaign = await assertCampaignOwnership(request, reply, request.params.id);
+    if (!campaign) return;
+
+    const rows = await prisma.campaignLocation.findMany({
+      where: { campaignId: request.params.id, nodeImageUrl: { not: null } },
+      select: { id: true, name: true, nodeImageUrl: true },
+      orderBy: { updatedAt: 'desc' },
+    });
+
+    const worldRows = await prisma.$queryRaw`
+      SELECT DISTINCT wl."nodeImageUrl", wl."canonicalName" AS name
+      FROM "WorldLocation" wl
+      INNER JOIN "LocationEdge" le
+        ON ((le."fromKind" = 'world' AND le."fromId" = wl.id) OR (le."toKind" = 'world' AND le."toId" = wl.id))
+        AND (le."campaignId" IS NULL OR le."campaignId" = ${request.params.id}::uuid)
+        AND le."isActive" = true
+      WHERE wl."nodeImageUrl" IS NOT NULL
+    `;
+
+    const seen = new Set(rows.map((r) => r.nodeImageUrl));
+    const images = rows.map((r) => ({ url: r.nodeImageUrl, name: r.name }));
+    for (const w of worldRows) {
+      if (!seen.has(w.nodeImageUrl)) {
+        images.push({ url: w.nodeImageUrl, name: w.name });
+        seen.add(w.nodeImageUrl);
+      }
+    }
+
+    return reply.send({ images });
+  });
+
+  // POST /campaigns/:id/location-graph/nodes/:nodeId/generate-sprite — PixelLab (admin-only)
+  fastify.post('/campaigns/:id/location-graph/nodes/:nodeId/generate-sprite', {
+    schema: {
+      params: {
+        type: 'object',
+        required: ['id', 'nodeId'],
+        properties: {
+          id: { type: 'string', format: 'uuid' },
+          nodeId: { type: 'string', format: 'uuid' },
+        },
+      },
+      body: {
+        type: 'object',
+        additionalProperties: false,
+        properties: {
+          prompt: { type: 'string', maxLength: 300 },
+        },
+      },
+    },
+  }, async (request, reply) => {
+    if (!request.user.isAdmin) {
+      return reply.code(403).send({ error: 'Admin only' });
+    }
+    if (!config.pixellabApiKey) {
+      return reply.code(503).send({ error: 'PIXELLAB_API_KEY not configured' });
+    }
+
+    const campaign = await assertCampaignOwnership(request, reply, request.params.id);
+    if (!campaign) return;
+
+    const loc = await prisma.campaignLocation.findFirst({
+      where: { id: request.params.nodeId, campaignId: request.params.id },
+      select: { id: true, name: true, description: true, locationType: true, scale: true },
+    });
+    if (!loc) return reply.code(404).send({ error: 'Node not found' });
+
+    const { width, height } = scaleToSpriteSize(loc.scale ?? 5);
+    const prompt = request.body?.prompt
+      || `top-down pixel art icon of ${loc.name}, ${loc.description || ''}, ${loc.locationType || 'generic'} style, fantasy RPG`.trim();
+
+    const result = await generatePixelSprite({
+      apiKey: config.pixellabApiKey,
+      description: prompt,
+      width,
+      height,
+    });
+
+    const b64 = result.image.base64;
+    const raw = b64.includes(',') ? b64.split(',')[1] : b64;
+    const buffer = Buffer.from(raw, 'base64');
+    const store = createMediaStore(config);
+    const storagePath = `campaigns/${request.params.id}/node-sprites/${loc.id}.png`;
+    const storeResult = await store.put(storagePath, buffer, 'image/png');
+
+    const key = `node-sprite:${loc.id}`;
+    await prisma.mediaAsset.upsert({
+      where: { key },
+      create: {
+        userId: request.user.id,
+        campaignId: request.params.id,
+        key,
+        type: 'node-sprite',
+        contentType: 'image/png',
+        size: buffer.length,
+        backend: config.mediaBackend,
+        path: storagePath,
+        metadata: { prompt, width, height },
+      },
+      update: {
+        size: buffer.length,
+        path: storagePath,
+        metadata: { prompt, width, height },
+        lastAccessedAt: new Date(),
+      },
+    });
+
+    const nodeImageUrl = storeResult.url;
+    await prisma.campaignLocation.update({
+      where: { id: loc.id },
+      data: { nodeImageUrl },
+    });
+
+    return reply.send({ ok: true, nodeImageUrl, size: { width, height } });
   });
 
   // POST /campaigns/:id/location-graph/edges

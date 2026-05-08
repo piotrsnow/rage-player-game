@@ -31,6 +31,8 @@ export const config = {
   googleApplicationCredentials: process.env.GOOGLE_APPLICATION_CREDENTIALS || '',
   gcpServiceAccountKey: process.env.GCP_SERVICE_ACCOUNT_KEY || '',
 
+  pixellabApiKey: process.env.PIXELLAB_API_KEY || '',
+
   apiKeys: {
     openai: process.env.OPENAI_API_KEY || '',
     anthropic: process.env.ANTHROPIC_API_KEY || '',

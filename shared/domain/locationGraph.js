@@ -225,6 +225,7 @@ export const LocationNodeSchema = z.object({
   discoveryState: z.enum(['unknown', 'rumored', 'known', 'visited', 'mapped', 'hidden', 'heard_about']).optional(),
   nodeShape: z.string().nullable().optional(),
   nodeIcon: z.string().nullable().optional(),
+  nodeImageUrl: z.string().nullable().optional(),
   // Faza 0 — nowe pola
   tacticalGrid: TacticalGridSchema.nullable().optional(),
   biome: z.string().nullable().optional(),
