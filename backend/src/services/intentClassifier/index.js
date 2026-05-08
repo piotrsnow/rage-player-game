@@ -14,13 +14,19 @@ import { buildAvailableSummary, selectContextWithNano } from './nanoSelector.js'
 export { classifyIntentHeuristic, detectTravelIntent, detectDungeonNavigateIntent } from './heuristics.js';
 export { buildAvailableSummary, selectContextWithNano } from './nanoSelector.js';
 
+function formatEntityTagsForNano(entityTags) {
+  if (!Array.isArray(entityTags) || entityTags.length === 0) return '';
+  const lines = entityTags.map((t) => `${t.kind}:${t.name}`);
+  return `\nEntity tags: ${lines.join(', ')}`;
+}
+
 /**
  * Classify intent and determine what context to expand.
  *
  * @param {string} playerAction - The player's action text
  * @param {object} coreState - Campaign core state
  * @param {object} availableData - { dbNpcs, dbQuests, dbCodex, prevScene }
- * @param {object} options - { isFirstScene, provider, timeoutMs }
+ * @param {object} options - { isFirstScene, provider, timeoutMs, entityTags }
  * @returns {Promise<object>} Selection result for assembleContext()
  */
 export async function classifyIntent(playerAction, coreState, availableData, options = {}) {
@@ -30,10 +36,17 @@ export async function classifyIntent(playerAction, coreState, availableData, opt
   }
 
   const availableSummary = buildAvailableSummary(coreState, availableData);
-  const nanoResult = await selectContextWithNano(playerAction, availableSummary, {
+  const tagSuffix = formatEntityTagsForNano(options.entityTags);
+  const enrichedAction = tagSuffix ? `${playerAction}${tagSuffix}` : playerAction;
+
+  const nanoResult = await selectContextWithNano(enrichedAction, availableSummary, {
     provider: options.provider || 'openai',
     timeoutMs: options.timeoutMs,
   });
 
-  return { ...nanoResult, _intent: 'freeform' };
+  const result = { ...nanoResult, _intent: 'freeform' };
+  if (Array.isArray(options.entityTags) && options.entityTags.length > 0) {
+    result._entityTags = options.entityTags;
+  }
+  return result;
 }

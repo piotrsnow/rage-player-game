@@ -798,13 +798,24 @@ export async function livingWorldRoutes(fastify) {
     const campaign = await assertCampaignOwnership(request, reply, request.params.id);
     if (!campaign) return;
 
-    const loc = await prisma.campaignLocation.findFirst({
+    let loc = await prisma.campaignLocation.findFirst({
       where: { id: request.params.nodeId, campaignId: request.params.id },
       select: {
         id: true, name: true, description: true, locationType: true,
         scale: true, tags: true, atmosphere: true, biome: true, dangerLevel: true,
       },
     });
+    let isWorldNode = false;
+    if (!loc) {
+      loc = await prisma.worldLocation.findFirst({
+        where: { id: request.params.nodeId },
+        select: {
+          id: true, canonicalName: true, description: true, locationType: true,
+          scale: true, tags: true, atmosphere: true, biome: true, dangerLevel: true,
+        },
+      });
+      if (loc) { loc.name = loc.canonicalName; isWorldNode = true; }
+    }
     if (!loc) return reply.code(404).send({ error: 'Node not found' });
 
     const { width, height } = scaleToSpriteSize(loc.scale ?? 5);
@@ -849,10 +860,17 @@ export async function livingWorldRoutes(fastify) {
     });
 
     const nodeImageUrl = storeResult.url;
-    await prisma.campaignLocation.update({
-      where: { id: loc.id },
-      data: { nodeImageUrl },
-    });
+    if (isWorldNode) {
+      await prisma.worldLocation.update({
+        where: { id: loc.id },
+        data: { nodeImageUrl },
+      });
+    } else {
+      await prisma.campaignLocation.update({
+        where: { id: loc.id },
+        data: { nodeImageUrl },
+      });
+    }
 
     return reply.send({ ok: true, nodeImageUrl, size: { width, height } });
   });

@@ -163,7 +163,7 @@ export default function CombatToken({
   const tooltipContent = buildTooltipContent(c, myCombatant, t);
 
   return (
-    <Tooltip content={tooltipContent} placement="top" offset={12} asChild>
+    <Tooltip content={tooltipContent} placement="top" offset={12} asChild hideOnClick>
       <div
         className={classNames}
         style={{ left: x, top: y }}

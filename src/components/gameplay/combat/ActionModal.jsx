@@ -52,12 +52,14 @@ export default function ActionModal({
   onClose,
   onPersistCustomAttack,
   onRemoveCustomAttack,
+  onRegenerateSprite,
   t,
   targetYard,
 }) {
   const [selectedManoeuvre, setSelectedManoeuvre] = useState(null);
   const [customDescription, setCustomDescription] = useState('');
   const [showSaved, setShowSaved] = useState(false);
+  const [regenerating, setRegenerating] = useState(false);
   const modalRef = useRef(null);
 
   const filteredManoeuvres = useMemo(
@@ -116,6 +118,16 @@ export default function ActionModal({
     }
   };
 
+  const handleRegenerateSprite = async () => {
+    if (!target || !onRegenerateSprite || regenerating) return;
+    setRegenerating(true);
+    try {
+      await onRegenerateSprite(target);
+    } finally {
+      setRegenerating(false);
+    }
+  };
+
   const modalStyle = useMemo(() => {
     if (!anchorRect) return { top: '50%', left: '50%', transform: 'translate(-50%, -50%)' };
     const pad = 12;
@@ -156,12 +168,32 @@ export default function ActionModal({
             </span>
           )}
         </div>
-        <button
-          onClick={onClose}
-          className="text-outline-variant hover:text-on-surface transition-colors p-0.5"
-        >
-          <span className="material-symbols-outlined text-sm">close</span>
-        </button>
+        <div className="flex items-center gap-0.5">
+          {target && onRegenerateSprite && (
+            <Tooltip
+              content={t('combat.regenerateSprite', 'Nowy sprite')}
+              variant="compact"
+              placement="bottom"
+              asChild
+            >
+              <button
+                onClick={handleRegenerateSprite}
+                disabled={regenerating}
+                className="text-outline-variant hover:text-primary transition-colors p-0.5 disabled:opacity-40"
+              >
+                <span className={`material-symbols-outlined text-sm ${regenerating ? 'animate-spin' : ''}`}>
+                  refresh
+                </span>
+              </button>
+            </Tooltip>
+          )}
+          <button
+            onClick={onClose}
+            className="text-outline-variant hover:text-on-surface transition-colors p-0.5"
+          >
+            <span className="material-symbols-outlined text-sm">close</span>
+          </button>
+        </div>
       </div>
 
       {/* Ground: move + flee */}

@@ -75,6 +75,7 @@ export default function IntroOverlay({ onVideoEnded } = {}) {
     setNeedsTapForAudio(false);
     v.muted = false;
     v.volume = 1;
+    v.play().catch(() => {});
   }, []);
 
   const dismiss = useCallback(() => {
@@ -96,11 +97,12 @@ export default function IntroOverlay({ onVideoEnded } = {}) {
 
   return (
     <div
-      className="fixed inset-0 z-[5] pointer-events-none"
+      className={`fixed inset-0 z-[5] ${needsTapForAudio ? 'cursor-pointer' : 'pointer-events-none'}`}
       style={{
         opacity: fading ? 0 : 1,
         transition: 'opacity 0.8s ease-out',
       }}
+      onClick={needsTapForAudio ? unlockAudioFromGesture : undefined}
       onTransitionEnd={handleTransitionEnd}
     >
       <video

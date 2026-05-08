@@ -428,6 +428,8 @@
     "dispositionBonus": "Przychylność {{bonus}}",
     "skillBonus": "{{skill}} {{bonus}}",
     "momentumActive": "Momentum {{bonus}}",
+    "momentumMinigameActive": "Złap kostkę na obrazku!",
+    "momentumClickHint": "Kliknij, aby zagrać w mini-grę z momentum",
     "exportLog": "Pobierz Log Rozgrywki",
     "exportCampaignJson": "Pobierz Kampanię (JSON)",
     "generatingMusic": "Generowanie muzyki...",
@@ -2104,29 +2106,5 @@
       "snapToGrid": "Przyciągaj węzły do siatki podczas przeciągania",
       "resetLayout": "Resetuj ręczne rozmieszczenie węzłów do automatycznego układu"
     }
-  },
-  "intuition": {
-    "buttonLabel": "Intuicja",
-    "tier_excellent": "Błyskawiczny refleks!",
-    "tier_good": "Dobra reakcja",
-    "tier_mediocre": "Ledwo zdążyłeś...",
-    "tier_terrible": "Za wolno!",
-    "reactionTime": "{{ms}} ms",
-    "windowDuration": "okno: {{ms}} ms",
-    "actionLookAround": "Rozglądam się uważnie dookoła — coś przyciąga moją uwagę",
-    "actionThink": "Zatrzymuję się na chwilę i zastanawiam głęboko nad sytuacją",
-    "actionHunch": "Podążam za nagłym przeczuciem — coś mi mówi, że to ważne",
-    "flavor_look_around_excellent": "Twój wzrok wyłapuje każdy szczegół",
-    "flavor_look_around_good": "Zauważasz coś ciekawego",
-    "flavor_look_around_mediocre": "Rozglądasz się chaotycznie",
-    "flavor_look_around_terrible": "Gapisz się w przestrzeń jak cielę",
-    "flavor_think_excellent": "Genialna myśl przebija jak błyskawica",
-    "flavor_think_good": "Coś ci się układa w głowie",
-    "flavor_think_mediocre": "Myśli ci się plączą...",
-    "flavor_think_terrible": "W głowie ci się kręci od nadmiaru niczego",
-    "flavor_hunch_excellent": "Przeczucie uderza z mocą proroctwa",
-    "flavor_hunch_good": "Czujesz, że jesteś na tropie",
-    "flavor_hunch_mediocre": "Mgliste przeczucie, może coś, może nic",
-    "flavor_hunch_terrible": "Twoje przeczucia robią ci złośliwości"
   }
 }

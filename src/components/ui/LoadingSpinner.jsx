@@ -1,29 +1,57 @@
 export default function LoadingSpinner({ size = 'md', text }) {
-  const sizeClasses = {
-    sm: 'w-5 h-5',
-    md: 'w-8 h-8',
-    lg: 'w-12 h-12',
-  };
+  const edge = { sm: 20, md: 32, lg: 120 }[size];
+  const half = edge / 2;
+  const dot = Math.round(edge * 0.14);
 
-  const innerSizeClasses = {
-    sm: 'w-3 h-3',
-    md: 'w-5 h-5',
-    lg: 'w-8 h-8',
+  const faces = [
+    { rotate: 'rotateY(0deg)', dots: 1 },
+    { rotate: 'rotateY(180deg)', dots: 6 },
+    { rotate: 'rotateY(90deg)', dots: 2 },
+    { rotate: 'rotateY(-90deg)', dots: 5 },
+    { rotate: 'rotateX(90deg)', dots: 3 },
+    { rotate: 'rotateX(-90deg)', dots: 4 },
+  ];
+
+  const dotPositions = {
+    1: [[50, 50]],
+    2: [[25, 25], [75, 75]],
+    3: [[25, 25], [50, 50], [75, 75]],
+    4: [[25, 25], [75, 25], [25, 75], [75, 75]],
+    5: [[25, 25], [75, 25], [50, 50], [25, 75], [75, 75]],
+    6: [[25, 25], [75, 25], [25, 50], [75, 50], [25, 75], [75, 75]],
   };
 
   return (
-    <div className="flex flex-col items-center gap-3">
-      <div className={`${sizeClasses[size]} relative`}>
-        <div className={`${sizeClasses[size]} absolute inset-0 border-2 border-primary/20 border-t-primary rounded-full animate-spin`}
-          style={{ filter: 'drop-shadow(0 0 4px rgba(197, 154, 255, 0.4))' }}
-        />
-        <div
-          className={`${innerSizeClasses[size]} absolute inset-0 m-auto border-2 border-tertiary/15 border-b-tertiary rounded-full`}
-          style={{ animation: 'spinReverse 1.2s linear infinite' }}
-        />
+    <div className="flex flex-col items-center gap-16 select-none" aria-busy="true">
+      <div
+        className="dice-scene"
+        style={{ width: edge, height: edge }}
+      >
+        <div className="dice-cube" style={{ width: edge, height: edge }}>
+          {faces.map(({ rotate, dots }, i) => (
+            <div
+              key={i}
+              className="dice-face"
+              style={{ transform: `${rotate} translateZ(${half}px)`, width: edge, height: edge }}
+            >
+              {dotPositions[dots].map(([x, y], j) => (
+                <span
+                  key={j}
+                  className="dice-dot"
+                  style={{
+                    width: dot,
+                    height: dot,
+                    left: `${x}%`,
+                    top: `${y}%`,
+                  }}
+                />
+              ))}
+            </div>
+          ))}
+        </div>
       </div>
       {text && (
-        <p className="text-on-surface-variant text-xs uppercase tracking-widest font-label animate-shimmer">
+        <p className="text-on-surface-variant text-xs uppercase tracking-widest font-label animate-shimmer pointer-events-none">
           {text}
         </p>
       )}

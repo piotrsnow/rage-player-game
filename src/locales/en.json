@@ -438,6 +438,8 @@
     "momentumBonus": "Momentum {{bonus}}",
     "dispositionBonus": "Disposition {{bonus}}",
     "momentumActive": "Momentum {{bonus}} on next roll",
+    "momentumMinigameActive": "Catch the dice on the image!",
+    "momentumClickHint": "Click to play the momentum minigame",
     "exportLog": "Download Game Log",
     "exportCampaignJson": "Download Campaign (JSON)",
     "generatingMusic": "Generating music...",
@@ -2452,29 +2454,5 @@
       "snapToGrid": "Snap nodes to grid when dragging",
       "resetLayout": "Reset manual node positions to automatic layout"
     }
-  },
-  "intuition": {
-    "buttonLabel": "Intuition",
-    "tier_excellent": "Lightning reflexes!",
-    "tier_good": "Good reaction",
-    "tier_mediocre": "Barely made it...",
-    "tier_terrible": "Too slow!",
-    "reactionTime": "{{ms}} ms",
-    "windowDuration": "window: {{ms}} ms",
-    "actionLookAround": "I look around carefully — something catches my eye",
-    "actionThink": "I stop for a moment and think deeply about the situation",
-    "actionHunch": "I follow a sudden hunch — something tells me this is important",
-    "flavor_look_around_excellent": "Your eyes catch every detail",
-    "flavor_look_around_good": "You notice something interesting",
-    "flavor_look_around_mediocre": "You look around chaotically",
-    "flavor_look_around_terrible": "You stare into space blankly",
-    "flavor_think_excellent": "A brilliant thought strikes like lightning",
-    "flavor_think_good": "Something clicks in your mind",
-    "flavor_think_mediocre": "Your thoughts are tangled...",
-    "flavor_think_terrible": "Your mind spins from an excess of nothing",
-    "flavor_hunch_excellent": "The hunch hits with the force of prophecy",
-    "flavor_hunch_good": "You feel you're on the right track",
-    "flavor_hunch_mediocre": "A vague hunch, maybe something, maybe nothing",
-    "flavor_hunch_terrible": "Your gut feelings are playing tricks on you"
   }
 }

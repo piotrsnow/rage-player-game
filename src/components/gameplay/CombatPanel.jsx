@@ -91,7 +91,7 @@ export default function CombatPanel({
     return combat.combatants.find((c) => c.type === 'player');
   }, [combat.combatants, isMultiplayer, myPlayerId]);
 
-  const spriteMap = useCombatSprites(combat.combatants);
+  const { sprites: spriteMap, regenerateSprite } = useCombatSprites(combat.combatants);
 
   const enrichedCombat = useMemo(() => {
     if (!Object.keys(spriteMap).length) return combat;
@@ -358,6 +358,7 @@ export default function CombatPanel({
         onExecuteManoeuvre={handleExecuteManoeuvre}
         onPersistCustomAttack={persistCustomAttack}
         onRemoveCustomAttack={removeCustomAttack}
+        onRegenerateSprite={regenerateSprite}
       />
 
       <div className="grid grid-cols-1 xl:grid-cols-[240px_minmax(0,1fr)] gap-3 items-start">

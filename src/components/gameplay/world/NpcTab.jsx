@@ -3,8 +3,9 @@ import CustomSelect from '../../ui/CustomSelect';
 import { GenderIcon } from '../../../utils/genderIcon';
 import { CrossLinkChip, EmptyState, findQuestsForNpc } from './shared';
 import NpcStatCard from './NpcStatCard';
+import { useActionTag } from '../../../contexts/ActionTagContext';
 
-function NpcRow({ npc, quests, characterVoiceMap, taggedVoices, hasVoicePool, handleVoiceChange, navigateTo, t }) {
+function NpcRow({ npc, quests, characterVoiceMap, taggedVoices, hasVoicePool, handleVoiceChange, navigateTo, onMentionNpc, t }) {
   const [showCard, setShowCard] = useState(false);
   const mapping = characterVoiceMap?.[npc.name];
   const currentVoiceId = mapping?.voiceId;
@@ -36,6 +37,16 @@ function NpcRow({ npc, quests, characterVoiceMap, taggedVoices, hasVoicePool, ha
           {npc.alive === false && <span className="text-xs text-error font-bold uppercase">{t('worldState.dead')}</span>}
         </div>
         <div className="flex items-center gap-1.5">
+          {onMentionNpc && npc.alive !== false && (
+            <button
+              type="button"
+              onClick={() => onMentionNpc(npc)}
+              title={t('worldState.mentionNpc', 'Wstaw do akcji')}
+              className="flex items-center justify-center w-6 h-6 rounded-sm border border-sky-500/20 bg-sky-500/10 text-sky-300 hover:bg-sky-500/20 transition-all"
+            >
+              <span className="material-symbols-outlined text-[14px]">alternate_email</span>
+            </button>
+          )}
           {npc.disposition != null && npc.disposition !== 0 && (
             <span className={`text-xs font-bold px-1.5 py-0.5 rounded-sm ${
               npc.disposition > 0
@@ -129,6 +140,17 @@ function NpcRow({ npc, quests, characterVoiceMap, taggedVoices, hasVoicePool, ha
 }
 
 export default function NpcTab({ npcs, quests, characterVoiceMap, maleVoices, femaleVoices, ttsProvider, dispatch, autoSave, navigateTo, t }) {
+  const actionTagCtx = useActionTag();
+
+  const handleMentionNpc = actionTagCtx ? (npc) => {
+    actionTagCtx.insertTag({
+      kind: 'npc',
+      id: npc.id || npc.name,
+      name: npc.name,
+      meta: npc.role ? { role: npc.role } : undefined,
+    });
+  } : null;
+
   if (npcs.length === 0) {
     return <EmptyState icon="group" text={t('worldState.emptyNpcs')} />;
   }
@@ -170,6 +192,7 @@ export default function NpcTab({ npcs, quests, characterVoiceMap, maleVoices, fe
           hasVoicePool={hasVoicePool}
           handleVoiceChange={handleVoiceChange}
           navigateTo={navigateTo}
+          onMentionNpc={handleMentionNpc}
           t={t}
         />
       ))}

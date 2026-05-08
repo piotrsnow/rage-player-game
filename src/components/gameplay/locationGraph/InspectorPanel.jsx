@@ -5,6 +5,7 @@ import { getNodeVisual, getEdgeVisual } from './graphVisuals.js';
 import { SHAPE_PATHS, AVAILABLE_SHAPES, AVAILABLE_ICONS } from './nodeShapes.js';
 import { useSettings } from '../../../contexts/SettingsContext.jsx';
 import { apiClient } from '../../../services/apiClient.js';
+import { useActionTag } from '../../../contexts/ActionTagContext.jsx';
 
 const NODE_TYPE_OPTIONS = [
   'world', 'region', 'area', 'settlement', 'district',
@@ -65,10 +66,21 @@ function NodeInspector({ node, occupants = [], onUpdate, onDelete, mode, campaig
   const vis = getNodeVisual(node.type);
   const { backendUser } = useSettings();
   const isAdmin = backendUser?.isAdmin;
+  const actionTagCtx = useActionTag();
 
   const handleField = useCallback((field, value) => {
     onUpdate(node.id, { [field]: value });
   }, [node.id, onUpdate]);
+
+  const handleMentionLocation = useCallback(() => {
+    if (!actionTagCtx) return;
+    actionTagCtx.insertTag({
+      kind: 'location',
+      id: node.id,
+      name: node.name,
+      meta: node.type ? { locationType: node.type } : undefined,
+    });
+  }, [actionTagCtx, node]);
 
   return (
     <div className="overflow-y-auto custom-scrollbar pl-6 py-4 !pr-8 text-sm">
@@ -76,6 +88,16 @@ function NodeInspector({ node, occupants = [], onUpdate, onDelete, mode, campaig
       <div className="flex items-center gap-2.5 pb-3 mb-1 border-b border-outline-variant/10">
         <span className="w-4 h-4 rounded-full flex-shrink-0" style={{ backgroundColor: vis.color }} />
         <span className="font-headline text-lg text-on-surface truncate">{node.name}</span>
+        {actionTagCtx && (
+          <button
+            type="button"
+            onClick={handleMentionLocation}
+            title={t('locationGraph.mentionLocation', 'Wstaw do akcji')}
+            className="flex items-center justify-center w-6 h-6 rounded-sm border border-emerald-500/20 bg-emerald-500/10 text-emerald-300 hover:bg-emerald-500/20 transition-all shrink-0"
+          >
+            <span className="material-symbols-outlined text-[14px]">alternate_email</span>
+          </button>
+        )}
         <span className="ml-auto text-[10px] uppercase tracking-widest text-outline bg-white/5 rounded px-1.5 py-0.5">
           {vis.label}
         </span>
@@ -96,6 +118,7 @@ function NodeInspector({ node, occupants = [], onUpdate, onDelete, mode, campaig
       >
         <Field label={t('locationGraph.inspector.name')}>
           <input
+            key={node.id}
             className={INPUT_CLS}
             defaultValue={node.name}
             onBlur={(e) => handleField('name', e.target.value)}
@@ -126,6 +149,7 @@ function NodeInspector({ node, occupants = [], onUpdate, onDelete, mode, campaig
       >
         <Field label={t('locationGraph.inspector.atmosphere')}>
           <input
+            key={node.id}
             className={INPUT_CLS}
             defaultValue={node.atmosphere || ''}
             onBlur={(e) => handleField('atmosphere', e.target.value)}
@@ -176,6 +200,7 @@ function NodeInspector({ node, occupants = [], onUpdate, onDelete, mode, campaig
         >
           <Field label={t('locationGraph.inspector.biome', { defaultValue: 'Biom' })}>
             <input
+              key={node.id}
               className={INPUT_CLS}
               defaultValue={node.biome || ''}
               placeholder="forest, plains, mountain, urban, dungeon..."
@@ -185,6 +210,7 @@ function NodeInspector({ node, occupants = [], onUpdate, onDelete, mode, campaig
 
           <Field label={t('locationGraph.inspector.anchorType', { defaultValue: 'Anchor (3D scene)' })}>
             <input
+              key={node.id}
               className={INPUT_CLS}
               defaultValue={node.anchorType || ''}
               placeholder="tavern, forest, dungeon, road, castle..."
@@ -364,7 +390,7 @@ function CollapsibleSection({ title, icon, defaultOpen = true, children }) {
       >
         <div
           className={`min-h-0 overflow-hidden ${!open ? 'pointer-events-none' : ''}`}
-          inert={!open ? true : undefined}
+          inert={!open ? '' : undefined}
         >
           <div className="pb-3 space-y-3">{children}</div>
         </div>

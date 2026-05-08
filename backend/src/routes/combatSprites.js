@@ -15,6 +15,7 @@ const GENERATE_BODY_SCHEMA = {
   required: ['combatants'],
   additionalProperties: false,
   properties: {
+    force: { type: 'boolean', default: false },
     combatants: {
       type: 'array',
       maxItems: MAX_COMBATANTS,
@@ -36,7 +37,7 @@ export async function combatSpritesRoutes(fastify) {
   fastify.post('/generate', {
     schema: { body: GENERATE_BODY_SCHEMA },
   }, async (request) => {
-    const { combatants } = request.body;
+    const { combatants, force } = request.body;
     const userId = request.user.id;
 
     const hasPixelLab = Boolean(config.pixellabApiKey);
@@ -50,7 +51,11 @@ export async function combatSpritesRoutes(fastify) {
 
       try {
         const existing = await prisma.mediaAsset.findUnique({ where: { key: cacheKey } });
-        if (existing) {
+
+        if (existing && force) {
+          await store.delete(existing.path).catch(() => {});
+          await prisma.mediaAsset.delete({ where: { key: cacheKey } }).catch(() => {});
+        } else if (existing) {
           await prisma.mediaAsset.update({
             where: { key: cacheKey },
             data: { lastAccessedAt: new Date() },

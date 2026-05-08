@@ -1,4 +1,5 @@
 import { useRef, useEffect, useCallback, useMemo, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { useTranslation } from 'react-i18next';
 import {
   TOKEN_RADIUS,
@@ -37,6 +38,7 @@ export default function CombatCanvas({
   onExecuteManoeuvre,
   onPersistCustomAttack,
   onRemoveCustomAttack,
+  onRegenerateSprite,
 }) {
   const { t } = useTranslation();
   const canvasRef = useRef(null);
@@ -325,25 +327,28 @@ export default function CombatCanvas({
           })}
         </div>
 
-        {/* Action modal */}
-        {actionModal && isMyTurn && !combatOver && (
-          <ActionModal
-            anchorRect={actionModal.anchorRect}
-            target={actionModalTarget}
-            targetType={actionModal.targetType}
-            myCombatant={myCombatant}
-            availableManoeuvres={availableManoeuvres || []}
-            savedCustomAttacks={savedCustomAttacks || []}
-            onExecute={handleExecuteFromModal}
-            onMoveToPosition={handleMoveFromModal}
-            onClose={() => setActionModal(null)}
-            onPersistCustomAttack={onPersistCustomAttack}
-            onRemoveCustomAttack={onRemoveCustomAttack}
-            t={t}
-            targetYard={actionModal.targetYard}
-          />
-        )}
       </div>
+
+      {/* Portal escapes ancestor transform/overflow containing blocks */}
+      {actionModal && isMyTurn && !combatOver && createPortal(
+        <ActionModal
+          anchorRect={actionModal.anchorRect}
+          target={actionModalTarget}
+          targetType={actionModal.targetType}
+          myCombatant={myCombatant}
+          availableManoeuvres={availableManoeuvres || []}
+          savedCustomAttacks={savedCustomAttacks || []}
+          onExecute={handleExecuteFromModal}
+          onMoveToPosition={handleMoveFromModal}
+          onClose={() => setActionModal(null)}
+          onPersistCustomAttack={onPersistCustomAttack}
+          onRemoveCustomAttack={onRemoveCustomAttack}
+          onRegenerateSprite={onRegenerateSprite}
+          t={t}
+          targetYard={actionModal.targetYard}
+        />,
+        document.body,
+      )}
 
       {isMyTurn && !combatOver && myCombatant && (
         <div className="flex items-center gap-3 text-[11px]">

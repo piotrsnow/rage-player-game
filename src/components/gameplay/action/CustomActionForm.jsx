@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useCallback, useState } from 'react';
+import { useEffect, useMemo, useCallback, useState, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
-import { parseActionSegments } from '../../../services/actionParser';
+import TaggableInput from './TaggableInput';
 
 export default function CustomActionForm({
   customAction,
@@ -18,31 +18,19 @@ export default function CustomActionForm({
   soloAvailable,
   soloCooldownTime,
   isGenerating,
-  textareaRef,
+  inputRef: externalInputRef,
   spellOptions = [],
-  onSpellSelect,
   mana = null,
 }) {
   const { t } = useTranslation();
   const [spellPickerOpen, setSpellPickerOpen] = useState(false);
-
-  const autoResize = useCallback(() => {
-    const el = textareaRef.current;
-    if (!el) return;
-    el.style.height = 'auto';
-    el.style.height = Math.min(el.scrollHeight, 120) + 'px';
-  }, []);
+  const internalInputRef = useRef(null);
+  const inputRef = externalInputRef || internalInputRef;
 
   const isAutoTyping = !!autoPlayerTypingText;
   const displayValue = isAutoTyping
     ? autoPlayerTypingText
     : customAction + (interim ? (customAction ? ' ' : '') + interim : '');
-  const displaySegments = useMemo(() => parseActionSegments(displayValue), [displayValue]);
-  const hasDialogueText = displaySegments.some((s) => s.type === 'dialogue');
-
-  useEffect(() => {
-    autoResize();
-  }, [displayValue, autoResize]);
 
   useEffect(() => {
     if (spellOptions.length === 0 || disabled || isAutoTyping) {
@@ -51,27 +39,34 @@ export default function CustomActionForm({
   }, [spellOptions.length, disabled, isAutoTyping]);
 
   const handleSpellSelect = useCallback((spell) => {
-    onSpellSelect?.(spell.name);
+    const tag = {
+      kind: 'spell',
+      id: `${spell.treeId}/${spell.name}`,
+      name: spell.name,
+      meta: { tree: spell.treeName, manaCost: spell.manaCost },
+    };
+    inputRef.current?.insertTag(tag);
     setSpellPickerOpen(false);
-  }, [onSpellSelect]);
+    inputRef.current?.focus();
+  }, [inputRef]);
+
+  const handleInputChange = useCallback((text, tags) => {
+    if (!isAutoTyping) {
+      onTypingChange(text, tags);
+    }
+  }, [isAutoTyping, onTypingChange]);
+
+  const handleSubmit = useCallback((e) => {
+    e?.preventDefault?.();
+    onSubmit(e || new Event('submit'));
+  }, [onSubmit]);
+
+  const handleEditorSubmit = useCallback(() => {
+    onSubmit(new Event('submit'));
+  }, [onSubmit]);
 
   return (
-    <form onSubmit={onSubmit} className="flex-1 min-w-0">
-      <div
-        className={`flex items-center gap-2 overflow-hidden transition-all duration-300 ${
-          hasDialogueText ? 'max-h-10 opacity-100 mb-1' : 'max-h-0 opacity-0 mb-0'
-        }`}
-      >
-        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-sm bg-amber-400/15 border border-amber-400/30">
-          <span className="material-symbols-outlined text-amber-300 text-xs">chat_bubble</span>
-          <span className="text-[10px] font-bold uppercase tracking-widest text-amber-300">
-            {t('gameplay.dialogueTag')}
-          </span>
-        </span>
-        <span className="text-[10px] text-amber-300/50 italic">
-          {t('gameplay.dialogueHint')}
-        </span>
-      </div>
+    <form onSubmit={handleSubmit} className="flex-1 min-w-0">
       <div className="flex items-center gap-1.5">
         {dictation?.enabled && supported && !isAutoTyping && dictation.autoMode && (
           <div className="shrink-0 flex items-center rounded-full overflow-hidden border border-outline-variant/30 bg-surface-container-high/30">
@@ -252,57 +247,29 @@ export default function CustomActionForm({
             </div>
           )}
         </div>
-        <div className="relative flex-1 min-w-0">
-          <div
-            aria-hidden="true"
-            className="absolute inset-0 w-full text-sm py-1.5 px-1 pointer-events-none whitespace-pre-wrap break-words overflow-hidden leading-[1.5]"
-          >
-            {displaySegments.map((seg, i) =>
-              seg.type === 'dialogue' ? (
-                <span
-                  key={i}
-                  className="bg-amber-400/15 rounded-sm text-amber-300 border-b border-amber-400/40 transition-colors"
-                >{seg.text}</span>
-              ) : (
-                <span key={i} className="text-on-surface">{seg.text}</span>
-              )
-            )}
-          </div>
-          <textarea
-            data-testid="action-input"
-            ref={textareaRef}
-            value={displayValue}
-            onChange={(e) => !isAutoTyping && onTypingChange(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' && !e.shiftKey) {
-                e.preventDefault();
-                onSubmit(e);
-              }
-            }}
-            placeholder={
-              listening
-                ? t('gameplay.voiceListening')
-                : supported
-                  ? t('gameplay.customActionPlaceholderVoice')
-                  : t('gameplay.customActionPlaceholder')
-            }
-            rows={1}
-            disabled={disabled && !isAutoTyping}
-            readOnly={listening || isAutoTyping}
-            style={hasDialogueText && !isAutoTyping ? { color: 'transparent', caretColor: '#fffbfe' } : undefined}
-            className={`relative w-full bg-transparent border-0 border-b-2 focus:ring-0 text-sm py-1.5 px-1 resize-none placeholder:text-on-surface-variant/60 overflow-hidden disabled:opacity-50 transition-all duration-300 leading-[1.5] ${
-              hasDialogueText ? 'selection:bg-amber-400/30' : ''
-            } ${
-              isAutoTyping
-                ? 'border-primary/60 text-primary shadow-[0_2px_8px_rgba(197,154,255,0.2)]'
-                : listening
-                  ? `border-primary/60 shadow-[0_2px_8px_rgba(197,154,255,0.15)]${!hasDialogueText ? ' text-on-surface' : ''}`
-                  : hasDialogueText
-                    ? 'border-amber-400/40 shadow-[0_2px_8px_rgba(251,191,36,0.08)]'
-                    : 'border-outline-variant/20 focus:border-primary/50 focus:shadow-[0_2px_8px_rgba(197,154,255,0.1)]'
-            }`}
-          />
-        </div>
+        <TaggableInput
+          ref={inputRef}
+          value={displayValue}
+          onChange={handleInputChange}
+          onSubmit={handleEditorSubmit}
+          disabled={disabled && !isAutoTyping}
+          readOnly={listening || isAutoTyping}
+          autoPlayerTypingText={autoPlayerTypingText}
+          placeholder={
+            listening
+              ? t('gameplay.voiceListening')
+              : supported
+                ? t('gameplay.customActionPlaceholderVoice')
+                : t('gameplay.customActionPlaceholder')
+          }
+          className={
+            isAutoTyping
+              ? 'border-primary/60 text-primary shadow-[0_2px_8px_rgba(197,154,255,0.2)]'
+              : listening
+                ? 'border-primary/60 shadow-[0_2px_8px_rgba(197,154,255,0.15)] text-on-surface'
+                : 'border-outline-variant/20 focus:border-primary/50 focus:shadow-[0_2px_8px_rgba(197,154,255,0.1)]'
+          }
+        />
         {isMultiplayer && (
           <button
             type="button"

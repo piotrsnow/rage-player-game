@@ -7,6 +7,8 @@ import { useSoloActionCooldown } from '../../hooks/useSoloActionCooldown';
 import { useActionTyping } from '../../hooks/useActionTyping';
 import PendingActions from '../multiplayer/PendingActions';
 import { TYPING_DRAFT_MAX_LENGTH } from '../../../shared/contracts/multiplayer.js';
+import { serializeTags } from '../../../shared/domain/actionTag';
+import { useActionTag } from '../../contexts/ActionTagContext';
 import CombatTargetPicker from './action/CombatTargetPicker';
 import TradeNpcPicker from './action/TradeNpcPicker';
 import TrainerNpcPicker from './action/TrainerNpcPicker';
@@ -86,7 +88,8 @@ export default function ActionPanel({
   const [longPressActiveIndex, setLongPressActiveIndex] = useState(null);
   const longPressTimerRef = useRef(null);
   const longPressFiredRef = useRef(false);
-  const textareaRef = useRef(null);
+  const inputRef = useRef(null);
+  const entityTagsRef = useRef([]);
   const { t } = useTranslation();
   const { settings } = useSettings();
   const mp = useMultiplayer();
@@ -116,11 +119,16 @@ export default function ActionPanel({
   const supported = dictation?.supported ?? false;
   const toggle = dictation?.toggleListening ?? (() => {});
 
-  const { handleTypingChange, emitTypingStop, cancelPendingBroadcasts, isTypingRef } = useActionTyping({
+  const { handleTypingChange: rawHandleTypingChange, emitTypingStop, cancelPendingBroadcasts, isTypingRef } = useActionTyping({
     mp,
     isMultiplayer,
     setCustomAction,
   });
+
+  const handleTypingChange = useCallback((text, tags) => {
+    if (tags) entityTagsRef.current = tags;
+    rawHandleTypingChange(text);
+  }, [rawHandleTypingChange]);
 
   useEffect(() => {
     return () => clearTimeout(longPressTimerRef.current);
@@ -132,17 +140,18 @@ export default function ActionPanel({
     e.preventDefault();
     const action = normalizeQuotes(customAction.trim());
     if (action && !disabled) {
-      // Hands-free wants the mic to stay open across submits so the user can
-      // keep dictating without re-clicking. Manual click/Enter still toggles.
       if (listening && !dictation?.handsFree) toggle();
       cancelPendingBroadcasts();
       emitTypingStop(false);
+      const tags = serializeTags(entityTagsRef.current);
       if (isMultiplayer) {
         mp.submitAction(action, true);
       } else {
-        onAction(action, true, false, soloForceRollOpts());
+        onAction(action, true, false, { ...soloForceRollOpts(), entityTags: tags.length > 0 ? tags : undefined });
       }
       setCustomAction('');
+      entityTagsRef.current = [];
+      inputRef.current?.clear();
     }
   };
 
@@ -154,12 +163,15 @@ export default function ActionPanel({
     if (!action) return;
     cancelPendingBroadcasts();
     emitTypingStop(false);
+    const tags = serializeTags(entityTagsRef.current);
     if (isMultiplayer) {
       mp.submitAction(action, true);
     } else {
-      onAction(action, true, false, forceRoll.enabled ? { forceRoll } : undefined);
+      onAction(action, true, false, { ...(forceRoll.enabled ? { forceRoll } : {}), entityTags: tags.length > 0 ? tags : undefined });
     }
     setCustomAction('');
+    entityTagsRef.current = [];
+    inputRef.current?.clear();
   }, [disabled, isAutoTyping, customAction, isMultiplayer, mp, onAction, forceRoll, cancelPendingBroadcasts, emitTypingStop]);
 
   useEffect(() => {
@@ -188,7 +200,7 @@ export default function ActionPanel({
       longPressFiredRef.current = true;
       setLongPressActiveIndex(null);
       setCustomAction(action);
-      textareaRef.current?.focus();
+      inputRef.current?.focus();
     }, 1000);
   }, []);
 
@@ -242,10 +254,16 @@ export default function ActionPanel({
     })
     .filter(Boolean), [character?.spells?.known]);
 
-  const handleSpellInputSelect = useCallback((spellName) => {
-    handleTypingChange(spellName);
-    textareaRef.current?.focus();
-  }, [handleTypingChange]);
+  const insertTag = useCallback((tag) => {
+    inputRef.current?.insertTag(tag);
+    inputRef.current?.focus();
+  }, []);
+
+  const actionTagCtx = useActionTag();
+  useEffect(() => {
+    actionTagCtx?.registerInsertTag(insertTag);
+    return () => actionTagCtx?.registerInsertTag(null);
+  }, [actionTagCtx, insertTag]);
 
   const handleInitiateCombat = () => {
     setCombatPickerOpen(false);
@@ -544,7 +562,7 @@ export default function ActionPanel({
             onForceRollRight={handleForceRollRight}
           />
           <CustomActionForm
-            textareaRef={textareaRef}
+            inputRef={inputRef}
             customAction={customAction}
             onTypingChange={handleTypingChange}
             onSubmit={handleCustomSubmit}
@@ -561,7 +579,6 @@ export default function ActionPanel({
             soloCooldownTime={soloCooldownTime}
             isGenerating={mp.state.isGenerating}
             spellOptions={spellOptions}
-            onSpellSelect={handleSpellInputSelect}
             mana={character?.mana || null}
           />
         </div>

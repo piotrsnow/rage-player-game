@@ -112,7 +112,7 @@ function extractTradeNpcHint(action) {
  * Classify intent from structured action markers.
  * Returns a selection result, or null if action is freeform and needs nano model.
  */
-export function classifyIntentHeuristic(playerAction, { isFirstScene = false } = {}) {
+export function classifyIntentHeuristic(playerAction, { isFirstScene = false, entityTags = null } = {}) {
   if (isFirstScene) {
     return { ...emptySelection(), _intent: 'first_scene' };
   }
@@ -254,6 +254,29 @@ export function classifyIntentHeuristic(playerAction, { isFirstScene = false } =
   // Rest / sleep / wait — minimal context
   if (/\b(rest|sleep|make camp|camp|nap|odpoczywam|[sś]pi[eę]|rozbijam obóz|drzemk)\b/i.test(playerAction)) {
     return { ...emptySelection(), _intent: 'rest' };
+  }
+
+  // Entity tags can provide deterministic signals before nano runs
+  if (Array.isArray(entityTags) && entityTags.length > 0) {
+    const sel = { ...emptySelection() };
+    let hasSignal = false;
+    for (const tag of entityTags) {
+      if (tag.kind === 'spell') {
+        sel._intent = 'magic';
+        hasSignal = true;
+      } else if (tag.kind === 'npc' && tag.name) {
+        sel.expand_npcs.push(tag.name);
+        hasSignal = true;
+      } else if (tag.kind === 'location') {
+        sel.expand_location = true;
+        hasSignal = true;
+      }
+    }
+    if (hasSignal) {
+      sel._intent = sel._intent || 'freeform';
+      sel._entityTags = entityTags;
+      return sel;
+    }
   }
 
   // Freeform action — needs nano model

@@ -13,8 +13,8 @@ const CampaignViewerPage = lazy(() => import('./components/viewer/CampaignViewer
 
 function RouteFallback() {
   return (
-    <div className="flex items-center justify-center min-h-[calc(100dvh-4rem)]">
-      <LoadingSpinner size="lg" />
+    <div className="flex items-center justify-center min-h-[calc(100dvh-4rem)] select-none cursor-default">
+      <LoadingSpinner size="lg" text="Mistrz Gry właśnie siada do stołu..." />
     </div>
   );
 }

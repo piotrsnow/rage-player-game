@@ -70,6 +70,7 @@ import { useGameplayActions } from '../../hooks/useGameplayActions';
 import { useUltrawideBonus } from '../../hooks/useUltrawideBonus';
 import { useFavoriteScenes } from '../../hooks/useFavoriteScenes';
 import MainQuestCompleteModal from './MainQuestCompleteModal';
+import { ActionTagProvider } from '../../contexts/ActionTagContext';
 
 function hashCode(str) {
   let h = 0;
@@ -433,6 +434,7 @@ export default function GameplayPage({ readOnly = false, shareToken = null, onRe
     try {
       await generateScene(action, false, isCustomAction, fromAutoPlayer, {
         forceRoll: opts?.forceRoll || null,
+        entityTags: opts?.entityTags || null,
       });
       sceneGenSucceededRef.current = true;
     } catch {
@@ -629,6 +631,7 @@ export default function GameplayPage({ readOnly = false, shareToken = null, onRe
   );
 
   return (
+    <ActionTagProvider>
     <div className="flex flex-col lg:flex-row h-[calc(100vh-4rem)] overflow-hidden">
       {/* Main Game Area */}
       <div className={`flex-1 flex flex-col min-h-0 overflow-hidden ${readOnly ? 'lg:mt-8' : ''}`}>
@@ -1066,5 +1069,6 @@ export default function GameplayPage({ readOnly = false, shareToken = null, onRe
         onVideoPanelClose={() => setVideoPanelOpen(false)}
       />
     </div>
+    </ActionTagProvider>
   );
 }

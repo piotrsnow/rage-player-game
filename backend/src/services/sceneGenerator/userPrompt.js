@@ -19,6 +19,7 @@ export function buildUserPrompt(playerAction, {
   creativityEligible = false,
   forceRoll = null,
   pendingSlip = null,
+  entityTags = null,
 } = {}) {
   if (isFirstScene) {
     return `Generate the opening scene. Set the stage with an atmospheric description. Introduce the setting, hint at adventure hooks, and include at least one NPC who speaks in direct dialogue. This is scene 1 — keep it concise (1-2 short paragraphs).
@@ -93,6 +94,20 @@ Include stateChanges: timeAdvance, currentLocation, npcs (introduce at least 1),
 
   if (talkNpcMatch) {
     parts.push(`Player wants to talk to "${talkNpcMatch[1]}". Narrate the conversation normally with dialogue segments for each NPC line.`);
+  }
+
+  // Structured entity references selected by the player
+  if (Array.isArray(entityTags) && entityTags.length > 0) {
+    const tagLines = entityTags.map((tag) => {
+      const extras = [];
+      if (tag.meta?.tree) extras.push(`drzewo: ${tag.meta.tree}`);
+      if (tag.meta?.manaCost != null) extras.push(`koszt: ${tag.meta.manaCost} many`);
+      if (tag.meta?.role) extras.push(tag.meta.role);
+      if (tag.meta?.locationType) extras.push(tag.meta.locationType);
+      const suffix = extras.length > 0 ? ` (${extras.join(', ')})` : '';
+      return `- ${tag.kind}: ${tag.name}${suffix}`;
+    });
+    parts.push(`## Entity references (player-selected)\n${tagLines.join('\n')}`);
   }
 
   // Combat intent

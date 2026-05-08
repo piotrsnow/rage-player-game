@@ -187,6 +187,20 @@ export const GENERATE_SCENE_SCHEMA = {
       },
     },
     achievementState: { type: ['object', 'null'] },
+    entityTags: {
+      type: ['array', 'null'],
+      maxItems: 5,
+      items: {
+        type: 'object',
+        required: ['kind', 'id', 'name'],
+        properties: {
+          kind: { type: 'string', enum: ['spell', 'item', 'npc', 'location'] },
+          id:   { type: 'string', maxLength: 200 },
+          name: { type: 'string', maxLength: 200 },
+          meta: { type: 'object', additionalProperties: true },
+        },
+      },
+    },
   },
 };
 

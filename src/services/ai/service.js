@@ -203,6 +203,7 @@ export const aiService = {
     gameState = null,
     combatResult = null,
     forceRoll = null,
+    entityTags = null,
     achievementState = null,
     onEvent = null,
   } = {}) {
@@ -223,6 +224,7 @@ export const aiService = {
       fromAutoPlayer,
       combatResult,
       forceRoll,
+      entityTags,
       achievementState,
     };
 

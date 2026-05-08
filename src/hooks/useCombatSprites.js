@@ -1,14 +1,41 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { apiClient } from '../services/apiClient';
+
+function buildPayload(combatant) {
+  return {
+    id: combatant.id,
+    name: combatant.name,
+    type: combatant.type,
+    species: combatant.species || combatant.race || undefined,
+    gender: combatant.gender || undefined,
+    equipped: combatant.equipped || undefined,
+    inventory: (combatant.inventory || []).slice(0, 10),
+    weapons: combatant.weapons || undefined,
+    equippedArmour: combatant.equippedArmour || undefined,
+    traits: (combatant.traits || []).slice(0, 5),
+    description: combatant.description || undefined,
+  };
+}
+
+function resolveSprites(raw) {
+  const out = {};
+  for (const [id, url] of Object.entries(raw)) {
+    out[id] = apiClient.resolveMediaUrl(url);
+  }
+  return out;
+}
 
 /**
  * Fetches PixelLab combat sprites for a list of combatants.
- * Returns a map of combatantId -> spriteUrl (or null on failure).
- * Sprites are fetched once per combat instance (keyed by combatant ids).
+ * Returns { sprites, regenerateSprite }.
+ *   sprites        — map of combatantId -> spriteUrl (or null on failure)
+ *   regenerateSprite(combatant) — force-regenerate a single combatant's sprite
  */
 export function useCombatSprites(combatants) {
   const [sprites, setSprites] = useState({});
   const fetchedKeyRef = useRef('');
+  const combatantsRef = useRef(combatants);
+  combatantsRef.current = combatants;
 
   const stableKey = combatants
     .map(c => c.id)
@@ -23,24 +50,11 @@ export function useCombatSprites(combatants) {
 
     const fetchSprites = async () => {
       try {
-        const payload = combatants.map(c => ({
-          id: c.id,
-          name: c.name,
-          type: c.type,
-          species: c.species || c.race || undefined,
-          gender: c.gender || undefined,
-          equipped: c.equipped || undefined,
-          inventory: (c.inventory || []).slice(0, 10),
-          weapons: c.weapons || undefined,
-          equippedArmour: c.equippedArmour || undefined,
-          traits: (c.traits || []).slice(0, 5),
-          description: c.description || undefined,
-        }));
-
+        const payload = combatants.map(buildPayload);
         const data = await apiClient.post('/combat/sprites/generate', { combatants: payload });
 
         if (!cancelled && data?.sprites) {
-          setSprites(data.sprites);
+          setSprites(resolveSprites(data.sprites));
         }
       } catch {
         // PixelLab not configured or request failed — fall back to initials
@@ -52,5 +66,20 @@ export function useCombatSprites(combatants) {
     return () => { cancelled = true; };
   }, [stableKey, combatants]);
 
-  return sprites;
+  const regenerateSprite = useCallback(async (combatant) => {
+    try {
+      const data = await apiClient.post('/combat/sprites/generate', {
+        combatants: [buildPayload(combatant)],
+        force: true,
+      });
+      if (data?.sprites) {
+        const resolved = resolveSprites(data.sprites);
+        setSprites(prev => ({ ...prev, ...resolved }));
+      }
+    } catch {
+      // silent — sprite regen is best-effort
+    }
+  }, []);
+
+  return { sprites, regenerateSprite };
 }

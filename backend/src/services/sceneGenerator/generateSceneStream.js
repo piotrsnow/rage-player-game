@@ -66,6 +66,7 @@ export async function generateSceneStream(campaignId, playerAction, options = {}
     userApiKeys = null,
     combatResult = null,
     forceRoll = null,
+    entityTags = null,
     achievementState = null,
     userId = null,
   } = options;
@@ -132,6 +133,7 @@ export async function generateSceneStream(campaignId, playerAction, options = {}
         isFirstScene,
         provider,
         timeoutMs: llmNanoTimeoutMs,
+        entityTags,
       },
     );
     onEvent({ type: 'intent', data: {
@@ -287,6 +289,7 @@ export async function generateSceneStream(campaignId, playerAction, options = {}
       preRolls,
       creativityEligible,
       forceRoll,
+      entityTags,
     });
 
     // 5. Streaming AI call

@@ -83,6 +83,7 @@ export default function ScenePanel({
   mpErrorCode = null,
   isMultiplayer = false,
   onOpenSettings = null,
+  momentumDice = null,
 }) {
   const { t } = useTranslation();
   const { settings, updateSettings } = useSettings();
@@ -532,6 +533,25 @@ export default function ScenePanel({
             </div>
           )}
         </>
+      )}
+
+      {/* Momentum minigame dice target */}
+      {momentumDice?.visible && (
+        <button
+          type="button"
+          onClick={momentumDice.onDiceClick}
+          className="absolute z-[3] w-16 h-16 flex items-center justify-center rounded-xl cursor-pointer animate-scale-in hover:scale-110 transition-transform"
+          style={{
+            top: `${(momentumDice.position?.top ?? 0.5) * 100}%`,
+            left: `${(momentumDice.position?.left ?? 0.5) * 100}%`,
+            transform: 'translate(-50%, -50%)',
+            filter: 'drop-shadow(0 0 18px rgba(251,191,36,0.6)) drop-shadow(0 0 40px rgba(251,191,36,0.25))',
+          }}
+        >
+          <span className="material-symbols-outlined text-[56px] text-amber-300/90 drop-shadow-lg">
+            casino
+          </span>
+        </button>
       )}
 
       {/* Dice Roll Overlay — top-right */}
