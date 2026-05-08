@@ -28,7 +28,7 @@ function makeCombatant(overrides = {}) {
     isDefeated: overrides.isDefeated ?? false,
     position: overrides.position ?? 2,
     movementUsed: overrides.movementUsed ?? 0,
-    movementAllowance: overrides.movementAllowance ?? 4,
+    movementAllowance: overrides.movementAllowance ?? 8,
     traits: overrides.traits || [],
     ...overrides,
   };

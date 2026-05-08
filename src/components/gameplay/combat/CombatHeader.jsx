@@ -9,6 +9,8 @@ export default function CombatHeader({
   onRequestTruce,
   onRequestSurrender,
   onEndCombat,
+  expandedLayout,
+  onToggleLayout,
 }) {
   const { t } = useTranslation();
   return (
@@ -26,6 +28,15 @@ export default function CombatHeader({
             {t('combat.multiplayer', 'MP')}
           </span>
         )}
+        <button
+          onClick={onToggleLayout}
+          title={expandedLayout ? t('combat.collapseLayout', 'Collapse battlefield') : t('combat.expandLayout', 'Expand battlefield')}
+          className="p-1 rounded-sm text-on-surface-variant hover:text-primary hover:bg-primary/10 transition-colors"
+        >
+          <span className="material-symbols-outlined text-base">
+            {expandedLayout ? 'close_fullscreen' : 'open_in_full'}
+          </span>
+        </button>
       </div>
       <div className="flex items-center gap-2">
         {!combatOver && canControl && playerWinning && (

@@ -16,7 +16,8 @@
  */
 
 import { slugifyItemName } from '../../../shared/domain/itemKeys.js';
-import { SKILL_BY_NAME } from './diceResolver.js';
+import { addEffect, removeEffect, removeEffectsByName, migrateStatusStrings, deriveStatusNames } from '../../../shared/domain/statusEffects.js';
+import { SKILL_BY_NAME, canonicalizeSkillName } from './diceResolver.js';
 
 // ── RPGon constants (mirrored from src/data/rpgSystem.js) ──
 
@@ -180,7 +181,7 @@ export function applyCharacterStateChanges(character, changes) {
     for (const [key, amount] of Object.entries(changes.attributeChanges)) {
       attrs[key] = Math.max(1, (attrs[key] || 0) + amount);
     }
-    const newMaxWounds = calculateMaxWounds(attrs.wytrzymalosc || 10);
+    const newMaxWounds = calculateMaxWounds(attrs.wytrzymalosc || 10) + (next.bonusMaxWounds || 0);
     next.attributes = attrs;
     next.maxWounds = newMaxWounds;
     next.wounds = Math.min(next.wounds || 0, newMaxWounds);
@@ -193,9 +194,10 @@ export function applyCharacterStateChanges(character, changes) {
     const skillGains = [];
     const newBadges = [];
 
-    for (const [skillName, xpGain] of Object.entries(changes.skillProgress)) {
+    for (const [rawSkillName, xpGain] of Object.entries(changes.skillProgress)) {
+      const skillName = canonicalizeSkillName(rawSkillName) || rawSkillName;
       if (!SKILL_BY_NAME[skillName]) {
-        newBadges.push({ name: skillName, earnedAt: new Date().toISOString(), redeemed: false });
+        newBadges.push({ name: rawSkillName, earnedAt: new Date().toISOString(), redeemed: false });
         continue;
       }
       const current = skills[skillName] || { level: 0, xp: 0, cap: SKILL_CAPS.basic };
@@ -338,9 +340,30 @@ export function applyCharacterStateChanges(character, changes) {
     });
   }
 
-  // ── Statuses (replace) ──
-  if (changes.statuses) {
-    next.statuses = changes.statuses;
+  // ── Active Effects (structured) ──
+  if (Array.isArray(changes.characterEffects) && changes.characterEffects.length > 0) {
+    let effects = [...(next.activeEffects || [])];
+    for (const cmd of changes.characterEffects) {
+      if (cmd.action === 'add' && cmd.effect) {
+        effects = addEffect(effects, cmd.effect);
+      } else if (cmd.action === 'remove' && cmd.effectId) {
+        effects = removeEffect(effects, cmd.effectId);
+      } else if (cmd.action === 'remove' && cmd.name) {
+        effects = removeEffectsByName(effects, cmd.name);
+      }
+    }
+    next.activeEffects = effects;
+    next.statuses = deriveStatusNames(effects);
+  }
+
+  // ── Statuses (legacy replace — backward compat) ──
+  if (changes.statuses && !changes.characterEffects) {
+    if (Array.isArray(changes.statuses) && changes.statuses.every((s) => typeof s === 'string')) {
+      next.activeEffects = migrateStatusStrings(changes.statuses);
+      next.statuses = changes.statuses;
+    } else {
+      next.statuses = changes.statuses;
+    }
   }
 
   // ── Needs (deltas, clamped 0..100) ──

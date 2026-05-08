@@ -52,7 +52,7 @@ export const inventoryHandlers = {
       if (current >= ATTRIBUTE_CAP) return;
       char.attributes[choice] = current + 1;
       if (choice === 'wytrzymalosc') {
-        char.maxWounds = calculateMaxWounds(char.attributes.wytrzymalosc);
+        char.maxWounds = calculateMaxWounds(char.attributes.wytrzymalosc) + (char.bonusMaxWounds || 0);
       }
     } else {
       return;

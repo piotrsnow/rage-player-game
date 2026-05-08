@@ -39,7 +39,7 @@ const CHARACTER_INCLUDE = {
 
 const SCALAR_FIELDS = [
   'name', 'age', 'gender', 'species',
-  'wounds', 'maxWounds', 'movement',
+  'wounds', 'maxWounds', 'bonusMaxWounds', 'movement',
   'characterLevel', 'characterXp', 'attributePoints',
   'backstory', 'portraitUrl', 'voiceId', 'voiceName',
   'campaignCount', 'fame', 'infamy', 'status',

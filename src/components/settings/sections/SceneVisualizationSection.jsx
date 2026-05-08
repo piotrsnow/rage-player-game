@@ -75,19 +75,19 @@ export default function SceneVisualizationSection({ settings, updateSettings, up
               {t('settings.imageStyleDesc')}
             </p>
           </div>
-          <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
+          <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-5 gap-2.5">
             {IMAGE_STYLES.map((style) => (
               <button
                 key={style.id}
                 onClick={() => updateDMSettings({ imageStyle: style.id })}
-                className={`flex items-center justify-center gap-1.5 px-2 py-2.5 rounded-sm border text-center transition-all ${
+                className={`flex items-center justify-center gap-2 px-3 py-3.5 rounded-sm border text-center transition-all ${
                   (dmSettings.imageStyle || 'painting') === style.id
                     ? 'bg-surface-tint/10 border-primary/30 text-primary'
                     : 'bg-surface-container-high/40 border-outline-variant/15 text-on-surface-variant hover:border-primary/20'
                 }`}
               >
-                <span className="material-symbols-outlined text-sm">{style.icon}</span>
-                <span className="font-headline text-[11px]">{t(`settings.imageStyles.${style.id}`)}</span>
+                <span className="material-symbols-outlined text-base">{style.icon}</span>
+                <span className="font-headline text-xs">{t(`settings.imageStyles.${style.id}`)}</span>
               </button>
             ))}
           </div>

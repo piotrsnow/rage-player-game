@@ -1,7 +1,8 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import DiceRoller from '../../effects/DiceRoller';
-import { translateSkill } from '../../utils/rpgTranslate';
+import { translateSkill, translateAttribute } from '../../utils/rpgTranslate';
+import { normalizeDiceRoll } from '../../utils/normalizeDiceRoll.js';
 
 const RESULT_HOLD_MS = 4200;
 const FADE_OUT_MS = 600;
@@ -13,21 +14,21 @@ function getOutcomeLabel(dr, t) {
 }
 
 function getOutcomeColor(dr) {
-  if (dr.criticalSuccess) return 'text-amber-300';
-  if (dr.criticalFailure) return 'text-red-400';
-  return dr.success ? 'text-emerald-300' : 'text-rose-400';
+  if (dr.criticalSuccess) return 'text-pink-300';
+  if (dr.criticalFailure) return 'text-rose-500';
+  return dr.success ? 'text-pink-400' : 'text-rose-400';
 }
 
 function getOutcomeGlow(dr) {
-  if (dr.criticalSuccess) return 'rgba(251, 191, 36, 0.35)';
-  if (dr.criticalFailure) return 'rgba(239, 68, 68, 0.3)';
-  return dr.success ? 'rgba(16, 185, 129, 0.25)' : 'rgba(244, 63, 94, 0.25)';
+  if (dr.criticalSuccess) return 'rgba(249, 168, 212, 0.35)';
+  if (dr.criticalFailure) return 'rgba(190, 24, 93, 0.3)';
+  return dr.success ? 'rgba(236, 72, 153, 0.25)' : 'rgba(190, 24, 93, 0.25)';
 }
 
 function getOutcomeBorder(dr) {
-  if (dr.criticalSuccess) return 'border-amber-400/50';
-  if (dr.criticalFailure) return 'border-red-500/50';
-  return dr.success ? 'border-emerald-500/40' : 'border-rose-500/40';
+  if (dr.criticalSuccess) return 'border-pink-300/50';
+  if (dr.criticalFailure) return 'border-pink-700/50';
+  return dr.success ? 'border-pink-400/40' : 'border-pink-600/40';
 }
 
 export default function DiceRollAnimationOverlay({ diceRoll, onDismiss, holdOpen = false, mode = 'fullscreen' }) {
@@ -81,13 +82,25 @@ export default function DiceRollAnimationOverlay({ diceRoll, onDismiss, holdOpen
   const dr = diceRollRef.current;
   if (!dr) return null;
 
+  const nd = normalizeDiceRoll(dr);
   const isStreaming = dr._streaming === true;
-  const target = dr.threshold ?? dr.target ?? dr.dc;
-  const skillLabel = dr.skill
-    ? translateSkill(dr.skill, t)
-    : dr.characteristic
-      ? t(`stats.${dr.characteristic}Long`)
+  const target = nd.threshold;
+  const skillLabel = nd.skill
+    ? translateSkill(nd.skill, t)
+    : nd.attributeKey
+      ? translateAttribute(nd.attributeKey, t)
       : '';
+
+  const modTags = [];
+  if (nd.attributeKey && nd.attributeValue != null) {
+    modTags.push({ label: translateAttribute(nd.attributeKey, t), value: nd.attributeValue, cls: 'text-purple-300/80' });
+  }
+  if (nd.skillLevel > 0) {
+    modTags.push({ label: translateSkill(nd.skill, t), value: nd.skillLevel, cls: 'text-emerald-300/80' });
+  }
+  if (nd.creativityBonus > 0) {
+    modTags.push({ label: t('gameplay.creativityBonus', { bonus: '' }).trim(), value: nd.creativityBonus, cls: 'text-amber-300/80' });
+  }
 
   const isImage = mode === 'image';
 
@@ -186,13 +199,24 @@ export default function DiceRollAnimationOverlay({ diceRoll, onDismiss, holdOpen
                   {t('gameplay.margin', 'Margines')}
                 </span>
                 <span className={`font-mono text-3xl font-black leading-none ${
-                  (dr.margin ?? dr.sl) >= 0 ? 'text-emerald-300' : 'text-rose-400'
+                  (dr.margin ?? dr.sl) >= 0 ? 'text-pink-300' : 'text-rose-400'
                 }`}>
                   {(dr.margin ?? dr.sl) > 0 ? '+' : ''}{dr.margin ?? dr.sl}
                 </span>
               </div>
             )}
           </div>
+
+          {/* Modifier breakdown */}
+          {modTags.length > 0 && (
+            <div className="flex items-center justify-center gap-2 mt-2 flex-wrap">
+              {modTags.map((tag, i) => (
+                <span key={i} className={`text-[10px] font-bold ${tag.cls}`}>
+                  {tag.label} +{tag.value}
+                </span>
+              ))}
+            </div>
+          )}
 
           {/* Outcome label */}
           <p

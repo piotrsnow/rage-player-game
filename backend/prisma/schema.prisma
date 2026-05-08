@@ -137,6 +137,7 @@ model Character {
   attributes      Json @default("{}")
   wounds          Int  @default(0)
   maxWounds       Int  @default(0)
+  bonusMaxWounds  Int  @default(0)
   movement        Int  @default(4)
   characterLevel  Int  @default(1)
   characterXp     Int  @default(0)

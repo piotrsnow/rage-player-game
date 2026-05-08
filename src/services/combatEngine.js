@@ -1,11 +1,35 @@
 import { rollD50, rollPercentage } from './gameState';
 import { rollLuckCheck } from '../../shared/domain/luck.js';
+import { computeEffectiveMods, tickEffects, isRestricted, addEffect } from '../../shared/domain/statusEffects.js';
 import { gameData } from './gameDataService';
 import { DIFFICULTY_THRESHOLDS, COMBAT_SKILL_XP, WEAPON_SKILL_MAP } from '../data/rpgSystem';
+import { SPELL_EFFECTS } from '../data/rpgMagic.js';
 import { calculateCreativityBonus } from './mechanics/creativityBonus';
 import { resolveD50Test } from './mechanics/d50Test';
 import { castSpell } from './magicEngine.js';
 import { shortId } from '../utils/ids';
+
+// Crit-triggered effects — applied when a critical hit lands (roll=1)
+const CRIT_EFFECTS = [
+  {
+    name: 'Głęboka rana',
+    source: 'combat',
+    category: 'dot',
+    duration: { type: 'rounds', remaining: 3 },
+    mechanics: { dotDamage: 1 },
+    stackable: true,
+    description: 'Krytyczne trafienie powoduje krwawienie.',
+  },
+  {
+    name: 'Oszołomienie',
+    source: 'combat',
+    category: 'control',
+    duration: { type: 'rounds', remaining: 1 },
+    mechanics: { testMod: -10 },
+    stackable: false,
+    description: 'Potężne uderzenie ogłusza na chwilę.',
+  },
+];
 
 const getWeaponData = (name) => gameData.getWeaponData(name);
 
@@ -52,16 +76,17 @@ function getMainWeapon(actor) {
 }
 
 function getMovementAllowance(combatant) {
-  return combatant.movement || combatant.attributes?.zrecznosc
-    ? Math.max(3, Math.floor((combatant.attributes?.zrecznosc || 10) / 3))
-    : gameData.DEFAULT_MOVEMENT;
+  if (combatant.movement) return combatant.movement;
+  const zr = combatant.attributes?.zrecznosc;
+  if (zr) return Math.max(6, Math.floor(zr / 2) + 4);
+  return gameData.DEFAULT_MOVEMENT;
 }
 
 function assignInitialPositions(combatants) {
   const friendlies = combatants.filter((c) => c.type === 'player' || c.type === 'ally');
   const enemies = combatants.filter((c) => c.type === 'enemy');
-  friendlies.forEach((c, i) => { c.position = 2 + i * 2; });
-  enemies.forEach((c, i) => { c.position = gameData.BATTLEFIELD_MAX - 2 - i * 2; });
+  friendlies.forEach((c, i) => { c.position = 4 + i * 3; });
+  enemies.forEach((c, i) => { c.position = gameData.BATTLEFIELD_MAX - 4 - i * 3; });
 }
 
 export function getDistance(a, b) {
@@ -137,7 +162,10 @@ function getLuck(actor) {
 }
 
 function resolveCombatTest(actor, attribute, skillLevel, creativityBonus = 0, threshold = DIFFICULTY_THRESHOLDS.medium) {
-  return resolveD50Test({ attribute, skillLevel, creativityBonus, threshold, luck: getLuck(actor) });
+  const mods = computeEffectiveMods(actor.activeEffects);
+  const effectAttrBonus = Object.values(mods.attributeMods).reduce((s, v) => s + v, 0);
+  const adjustedAttribute = attribute + effectAttrBonus + mods.testMod;
+  return resolveD50Test({ attribute: adjustedAttribute, skillLevel, creativityBonus, threshold, luck: getLuck(actor) });
 }
 
 function getWeaponDamage(weaponData, attacker, rarity = 'common') {
@@ -271,6 +299,7 @@ function createCombatantFromCharacter(character, id, type) {
     species: character.species || character.race || null,
     gender: character.gender || null,
     description: character.description || null,
+    activeEffects: [...(character.activeEffects || [])],
     initiative: 0,
     conditions: [],
     isDefeated: false,
@@ -326,10 +355,13 @@ export function moveCombatant(combat, actorId, targetPosition) {
   const state = { ...combat, combatants: combat.combatants.map((c) => ({ ...c })) };
   const actor = state.combatants.find((c) => c.id === actorId);
   if (!actor || actor.isDefeated) return { combat: state, moved: false };
+  if (isRestricted(actor.activeEffects, 'no_movement')) return { combat: state, moved: false };
 
   const clampedTarget = Math.max(0, Math.min(gameData.BATTLEFIELD_MAX, Math.round(targetPosition)));
   const dist = Math.abs(clampedTarget - (actor.position ?? 0));
-  const remaining = actor.movementAllowance - (actor.movementUsed || 0);
+  const moveMods = computeEffectiveMods(actor.activeEffects);
+  const effectiveAllowance = Math.max(0, actor.movementAllowance + moveMods.movementMod);
+  const remaining = effectiveAllowance - (actor.movementUsed || 0);
   if (dist === 0 || dist > remaining) return { combat: state, moved: false };
 
   actor.movementUsed = (actor.movementUsed || 0) + dist;
@@ -350,6 +382,7 @@ export function resolveManoeuvre(combat, actorId, manoeuvreKey, targetId, option
     combatants: combat.combatants.map((c) => ({
       ...c,
       conditions: [...(c.conditions || [])],
+      activeEffects: [...(c.activeEffects || [])],
       spells: c.spells
         ? { ...c.spells, usageCounts: { ...(c.spells.usageCounts || {}) } }
         : c.spells,
@@ -374,6 +407,17 @@ export function resolveManoeuvre(combat, actorId, manoeuvreKey, targetId, option
   const customDescription = sanitizeCombatDescription(options.customDescription);
 
   if (!actor || !manoeuvre) return { combat: state, result: null };
+
+  // Status effect restrictions
+  if (manoeuvre.type === 'offensive' && isRestricted(actor.activeEffects, 'no_attack')) {
+    return { combat: state, result: { actor: actor.name, actorId: actor.id, actorType: actor.type, manoeuvre: manoeuvre.name, manoeuvreKey, outcome: 'restricted', restriction: 'no_attack', rolls: [] } };
+  }
+  if (manoeuvre.type === 'magic' && isRestricted(actor.activeEffects, 'no_magic')) {
+    return { combat: state, result: { actor: actor.name, actorId: actor.id, actorType: actor.type, manoeuvre: manoeuvre.name, manoeuvreKey, outcome: 'restricted', restriction: 'no_magic', rolls: [] } };
+  }
+  if (isRestricted(actor.activeEffects, 'skip_turn')) {
+    return { combat: state, result: { actor: actor.name, actorId: actor.id, actorType: actor.type, manoeuvre: manoeuvre.name, manoeuvreKey, outcome: 'restricted', restriction: 'skip_turn', rolls: [] } };
+  }
 
   if (target && manoeuvre.range === 'melee' && !isInMeleeRange(actor, target)) {
     return {
@@ -421,7 +465,7 @@ export function resolveManoeuvre(combat, actorId, manoeuvreKey, targetId, option
     const skillLevel = getCombatSkillLevel(actor, 'Atletyka');
     const test = resolveCombatTest(actor, zrecznosc, skillLevel, 0, DIFFICULTY_THRESHOLDS.medium);
 
-    result.rolls.push({ skill: 'Atletyka', ...test, side: 'actor' });
+    result.rolls.push({ skill: 'Atletyka', ...test, attributeKey: 'zrecznosc', attributeValue: zrecznosc, side: 'actor' });
     result.checkBreakdown = {
       attribute: zrecznosc,
       skillLevel,
@@ -445,7 +489,7 @@ export function resolveManoeuvre(combat, actorId, manoeuvreKey, targetId, option
   // Magic — delegate mana/usage to magicEngine, then resolve combat test
   if (manoeuvre.type === 'magic' && target) {
     result.targetName = target.name;
-    const spellName = manoeuvre.spellName;
+    const spellName = options.spellName || manoeuvre.spellName;
 
     // If a spell name is provided, use magicEngine for mana check + usage tracking
     if (spellName) {
@@ -467,7 +511,7 @@ export function resolveManoeuvre(combat, actorId, manoeuvreKey, targetId, option
 
     const inteligencja = actor.attributes?.inteligencja || 10;
     const test = resolveCombatTest(actor, inteligencja, 0, 0, DIFFICULTY_THRESHOLDS.medium);
-    result.rolls.push({ skill: 'Inteligencja', ...test, side: 'caster' });
+    result.rolls.push({ skill: 'Inteligencja', ...test, attributeKey: 'inteligencja', attributeValue: inteligencja, side: 'caster' });
     result.castBreakdown = {
       attribute: inteligencja,
       baseTarget: DIFFICULTY_THRESHOLDS.medium,
@@ -477,9 +521,31 @@ export function resolveManoeuvre(combat, actorId, manoeuvreKey, targetId, option
     if (test.success) {
       const baseDamage = Math.max(1, Math.floor(inteligencja / 2));
       const toughness = getToughness(target);
-      const totalDamage = Math.max(1, baseDamage - Math.floor(toughness / 3));
+      const magicTargetMods = computeEffectiveMods(target.activeEffects);
+      const totalDamage = Math.max(1, baseDamage - Math.floor(toughness / 3) - magicTargetMods.damageReduction);
       target.wounds = Math.max(0, target.wounds - totalDamage);
       if (target.wounds <= 0) target.isDefeated = true;
+
+      // Apply spell effect if defined
+      const spellFx = spellName ? SPELL_EFFECTS[spellName] : null;
+      if (spellFx) {
+        const fxTarget = spellFx.target === 'self' ? actor : target;
+        const fx = { ...spellFx.effect, id: `sfx_${shortId(6)}` };
+        if (!fxTarget.activeEffects) fxTarget.activeEffects = [];
+        fxTarget.activeEffects = addEffect(fxTarget.activeEffects, fx);
+        log.push(`${fxTarget.name} gains effect: ${fx.name}.`);
+
+        // all_enemies: apply to every active enemy (besides primary target already handled)
+        if (spellFx.target === 'all_enemies') {
+          for (const c of state.combatants) {
+            if (c.id === target.id || c.isDefeated) continue;
+            if ((actor.type === 'player' || actor.type === 'ally') && c.type === 'enemy') {
+              if (!c.activeEffects) c.activeEffects = [];
+              c.activeEffects = addEffect(c.activeEffects, { ...spellFx.effect, id: `sfx_${shortId(6)}` });
+            }
+          }
+        }
+      }
 
       const spellLabel = spellName ? `"${spellName}"` : 'a spell';
       log.push(`${actor.name} casts ${spellLabel} at ${target.name}: ${test.total} vs ${test.threshold}. Damage: ${totalDamage}.${target.isDefeated ? ` ${target.name} is defeated!` : ''}`);
@@ -514,7 +580,10 @@ export function resolveManoeuvre(combat, actorId, manoeuvreKey, targetId, option
     const test = resolveCombatTest(actor, attackAttr, attackSkillLevel, creativityBonus, effectiveThreshold);
 
     result.rolls.push({
-      skill: attackSkillName, ...test, side: 'attacker',
+      skill: attackSkillName, ...test,
+      attributeKey: isRanged ? 'zrecznosc' : 'sila',
+      attributeValue: attackAttr,
+      side: 'attacker',
     });
     result.customDescription = customDescription || null;
     result.creativityBonus = creativityBonus;
@@ -549,12 +618,22 @@ export function resolveManoeuvre(combat, actorId, manoeuvreKey, targetId, option
       const blockResult = resolveShieldBlock(target, rawDamage, weaponData);
       if (blockResult.blocked) rawDamage = blockResult.damage;
 
-      // Armour DR
-      const dr = getCombatantDR(target);
+      // Armour DR + effect-based DR (e.g. Ochrona, Wielka Ochrona)
+      const targetMods = computeEffectiveMods(target.activeEffects);
+      const dr = getCombatantDR(target) + targetMods.damageReduction;
       const totalDamage = Math.max(1, rawDamage - dr);
 
       target.wounds = Math.max(0, target.wounds - totalDamage);
       if (target.wounds <= 0) target.isDefeated = true;
+
+      // Crit-triggered effect (roll=1 is critical success in d50)
+      if (test.roll === 1 && !target.isDefeated) {
+        const critFx = CRIT_EFFECTS[Math.floor(Math.random() * CRIT_EFFECTS.length)];
+        const fx = { ...critFx, id: `crit_${shortId(6)}` };
+        if (!target.activeEffects) target.activeEffects = [];
+        target.activeEffects = addEffect(target.activeEffects, fx);
+        log.push(`CRITICAL! ${target.name} suffers: ${fx.name}.`);
+      }
 
       if (manoeuvre.modifiers.feint) {
         log.push(`${actor.name} feints ${target.name}! Next attack will be easier.`);
@@ -627,14 +706,35 @@ export function resolveManoeuvre(combat, actorId, manoeuvreKey, targetId, option
 // --- Turn/round management ---
 
 export function advanceRound(combat) {
-  const state = { ...combat, combatants: combat.combatants.map((c) => ({ ...c })) };
+  const state = { ...combat, combatants: combat.combatants.map((c) => ({ ...c, activeEffects: [...(c.activeEffects || [])] })) };
+  const dotLog = [];
+
   for (const c of state.combatants) {
     c.conditions = c.conditions.filter((cond) => cond !== 'defending' && cond !== 'dodging');
     c.movementUsed = 0;
+
+    if (c.isDefeated || !c.activeEffects?.length) continue;
+
+    const { remaining, expired, dotDamage, dotHeal } = tickEffects(c.activeEffects, 'rounds');
+    c.activeEffects = remaining;
+
+    if (dotDamage > 0) {
+      c.wounds = Math.max(0, c.wounds - dotDamage);
+      dotLog.push(`${c.name} takes ${dotDamage} DoT damage.`);
+      if (c.wounds <= 0) { c.isDefeated = true; dotLog.push(`${c.name} is defeated by DoT!`); }
+    }
+    if (dotHeal > 0) {
+      c.wounds = Math.min(c.maxWounds, c.wounds + dotHeal);
+      dotLog.push(`${c.name} heals ${dotHeal} from effects.`);
+    }
+    if (expired.length > 0) {
+      dotLog.push(`${c.name}: ${expired.map((e) => e.name).join(', ')} expired.`);
+    }
   }
+
   state.round += 1;
   state.turnIndex = 0;
-  state.log = [...state.log, `--- Round ${state.round} ---`];
+  state.log = [...state.log, ...dotLog, `--- Round ${state.round} ---`];
   return state;
 }
 
@@ -681,6 +781,10 @@ export function getEnemyAction(combat, enemyId) {
   const enemy = combat.combatants.find((c) => c.id === enemyId);
   if (!enemy || enemy.isDefeated) return null;
 
+  if (isRestricted(enemy.activeEffects, 'skip_turn')) {
+    return { skipped: true, reason: 'skip_turn', enemyName: enemy.name };
+  }
+
   const playerTargets = combat.combatants.filter(
     (c) => (c.type === 'player' || c.type === 'ally') && !c.isDefeated
   );
@@ -721,12 +825,21 @@ export function resolveEnemyTurns(combat) {
     if (current.type === 'player') break;
 
     const action = getEnemyAction(state, current.id);
+    if (action && action.skipped) {
+      state.log = [...state.log, `${current.name} is stunned and skips their turn.`];
+      results.push({ actor: current.name, actorId: current.id, actorType: current.type, manoeuvre: null, manoeuvreKey: null, outcome: 'skipped', restriction: 'skip_turn', rolls: [] });
+      state.turnIndex++;
+      if (isCombatOver(state)) break;
+      continue;
+    }
     if (action) {
       if (action.moveToward) {
         const moveTarget = state.combatants.find((c) => c.id === action.moveToward);
         if (moveTarget && !isInMeleeRange(current, moveTarget) && !gameData.manoeuvres[action.manoeuvre]?.closesDistance) {
           const dir = moveTarget.position > current.position ? 1 : -1;
-          const remaining = current.movementAllowance - (current.movementUsed || 0);
+          const enemyMoveMods = computeEffectiveMods(current.activeEffects);
+          const effAllowance = Math.max(0, current.movementAllowance + enemyMoveMods.movementMod);
+          const remaining = effAllowance - (current.movementUsed || 0);
           const moveDist = Math.min(remaining, getDistance(current, moveTarget) - 1);
           if (moveDist > 0) {
             current.position = Math.max(0, Math.min(gameData.BATTLEFIELD_MAX, current.position + dir * moveDist));
@@ -790,6 +903,7 @@ export function endCombat(combat, playerCharacter) {
     rounds: combat.round,
     playerSurvived,
     flawless: isVictory && combatStats.damageTaken === 0,
+    survivingEffects: playerCombatant?.activeEffects || [],
   };
 }
 

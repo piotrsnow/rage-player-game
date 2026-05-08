@@ -8,6 +8,7 @@ import CrystalUseModal from './inventory/CrystalUseModal';
 import UseItemModal from './inventory/UseItemModal';
 import { getEquippableSlots, getEquippedSlot } from './inventory/constants';
 import StatusBar from '../ui/StatusBar';
+import ActiveEffectsRow from '../ui/ActiveEffectsRow';
 import PortraitGenerator from './PortraitGenerator';
 import CharacterHistoryPanel from './CharacterHistoryPanel';
 import CustomSelect from '../ui/CustomSelect';
@@ -414,51 +415,53 @@ export default function CharacterPanel({
     <>
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
         <div className="lg:col-span-3 space-y-6 animate-fade-in">
-          <div className="relative group">
-            <div className="absolute -inset-1 bg-gradient-to-tr from-primary-dim to-primary opacity-20 blur-xl group-hover:opacity-30 transition duration-500" />
-            <div className="relative bg-surface-container-high border border-outline-variant/15 p-1 rounded-sm overflow-hidden">
-              {character.portraitUrl ? (
-                <img
-                  src={apiClient.resolveMediaUrl(character.portraitUrl)}
-                  alt={character.name}
-                  className="w-full aspect-[3/4] object-cover"
-                  onError={(e) => { e.target.style.display = 'none'; }}
-                />
-              ) : (
-                <div className="w-full aspect-[3/4] bg-gradient-to-br from-surface-container to-surface-container-lowest flex items-center justify-center">
-                  <span className="material-symbols-outlined text-8xl text-outline/20">person</span>
-                </div>
-              )}
+          {!editingPortrait && (
+            <div className="relative group">
+              <div className="absolute -inset-1 bg-gradient-to-tr from-primary-dim to-primary opacity-20 blur-xl group-hover:opacity-30 transition duration-500" />
+              <div className="relative bg-surface-container-high border border-outline-variant/15 p-1 rounded-sm overflow-hidden">
+                {character.portraitUrl ? (
+                  <img
+                    src={apiClient.resolveMediaUrl(character.portraitUrl)}
+                    alt={character.name}
+                    className="w-full aspect-[3/4] object-cover"
+                    onError={(e) => { e.target.style.display = 'none'; }}
+                  />
+                ) : (
+                  <div className="w-full aspect-[3/4] bg-gradient-to-br from-surface-container to-surface-container-lowest flex items-center justify-center">
+                    <span className="material-symbols-outlined text-8xl text-outline/20">person</span>
+                  </div>
+                )}
+                {canEditPortrait && (
+                  <button
+                    onClick={() => setEditingPortrait(true)}
+                    className="absolute inset-0 flex items-center justify-center bg-black/0 group-hover:bg-black/40 transition-all duration-300 cursor-pointer"
+                  >
+                    <span className="material-symbols-outlined text-3xl text-white opacity-0 group-hover:opacity-100 transition-opacity duration-300 drop-shadow-lg">
+                      photo_camera
+                    </span>
+                  </button>
+                )}
+                {!character.portraitUrl && (
+                  <div className="absolute bottom-0 left-0 w-full p-4 bg-gradient-to-t from-surface-dim to-transparent">
+                    <p className="text-tertiary font-headline text-lg">{t('character.inspiration')}</p>
+                    <div className="flex gap-1 mt-1">
+                      <span className="w-4 h-4 bg-primary rounded-full shadow-[0_0_6px_rgba(197,154,255,0.6)]" />
+                      <span className="w-4 h-4 bg-surface-container rounded-full border border-outline-variant/30" />
+                    </div>
+                  </div>
+                )}
+              </div>
               {canEditPortrait && (
                 <button
                   onClick={() => setEditingPortrait(true)}
-                  className="absolute inset-0 flex items-center justify-center bg-black/0 group-hover:bg-black/40 transition-all duration-300 cursor-pointer"
+                  className="mt-2 w-full flex items-center justify-center gap-1.5 px-3 py-1.5 text-xs font-label text-on-surface-variant hover:text-primary border border-outline-variant/15 hover:border-primary/30 rounded-sm transition-all hover:bg-surface-tint/10"
                 >
-                  <span className="material-symbols-outlined text-3xl text-white opacity-0 group-hover:opacity-100 transition-opacity duration-300 drop-shadow-lg">
-                    photo_camera
-                  </span>
+                  <span className="material-symbols-outlined text-sm">photo_camera</span>
+                  {t('character.updatePortrait')}
                 </button>
               )}
-              {!character.portraitUrl && (
-                <div className="absolute bottom-0 left-0 w-full p-4 bg-gradient-to-t from-surface-dim to-transparent">
-                  <p className="text-tertiary font-headline text-lg">{t('character.inspiration')}</p>
-                  <div className="flex gap-1 mt-1">
-                    <span className="w-4 h-4 bg-primary rounded-full shadow-[0_0_6px_rgba(197,154,255,0.6)]" />
-                    <span className="w-4 h-4 bg-surface-container rounded-full border border-outline-variant/30" />
-                  </div>
-                </div>
-              )}
             </div>
-            {canEditPortrait && !editingPortrait && (
-              <button
-                onClick={() => setEditingPortrait(true)}
-                className="mt-2 w-full flex items-center justify-center gap-1.5 px-3 py-1.5 text-xs font-label text-on-surface-variant hover:text-primary border border-outline-variant/15 hover:border-primary/30 rounded-sm transition-all hover:bg-surface-tint/10"
-              >
-                <span className="material-symbols-outlined text-sm">photo_camera</span>
-                {t('character.updatePortrait')}
-              </button>
-            )}
-          </div>
+          )}
 
           {editingPortrait && (
             <div className="bg-surface-container-low p-4 border border-primary/20 rounded-sm animate-fade-in">
@@ -511,6 +514,11 @@ export default function CharacterPanel({
               )}
               {character.mana && (
                 <StatusBar label="Mana" current={character.mana.current} max={character.mana.max} color="blue" />
+              )}
+              {(character.activeEffects || []).length > 0 && (
+                <div className="mt-2">
+                  <ActiveEffectsRow effects={character.activeEffects} />
+                </div>
               )}
             </div>
           </div>

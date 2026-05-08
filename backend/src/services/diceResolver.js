@@ -54,6 +54,29 @@ const SKILLS = [
 
 export const SKILL_BY_NAME = Object.fromEntries(SKILLS.map(s => [s.name, s]));
 
+// Fuzzy lookup: strip diacritics + lowercase + collapse whitespace → canonical name.
+const SKILL_CANONICAL_MAP = new Map();
+function stripToKey(str) {
+  return String(str || '')
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .replace(/\u0142/g, 'l').replace(/\u0141/g, 'L')
+    .trim().toLowerCase().replace(/[\s_-]+/g, ' ');
+}
+for (const s of SKILLS) {
+  SKILL_CANONICAL_MAP.set(stripToKey(s.name), s.name);
+}
+
+/**
+ * Resolve an AI-returned skill name (possibly with diacritics / different casing)
+ * to the canonical ASCII key used in SKILL_BY_NAME and character.skills.
+ * Returns the canonical name or null if no match.
+ */
+export function canonicalizeSkillName(raw) {
+  if (!raw || typeof raw !== 'string') return null;
+  if (SKILL_BY_NAME[raw]) return raw;
+  return SKILL_CANONICAL_MAP.get(stripToKey(raw)) || null;
+}
+
 const SKILLS_BY_ATTRIBUTE = {};
 for (const s of SKILLS) {
   (SKILLS_BY_ATTRIBUTE[s.attribute] ??= []).push(s.name);

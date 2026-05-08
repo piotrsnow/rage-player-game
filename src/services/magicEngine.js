@@ -2,7 +2,7 @@
 // Spell trees, mana costs, scroll mechanics, progression
 
 import {
-  SPELL_TREES, SCROLL_BASE_CHANCE,
+  SPELL_TREES, SCROLL_BASE_CHANCE, SPELL_EFFECTS,
   findSpell, isSpellUnlocked, getAvailableSpells as getAvailable,
 } from '../data/rpgMagic.js';
 import { rollPercentage } from './gameState.js';
@@ -166,6 +166,14 @@ export function getSpellProgressionStatus(character) {
   }
 
   return statuses;
+}
+
+/**
+ * Get the status effect definition for a spell, if any.
+ * Returns { target, effect } or null.
+ */
+export function getSpellEffect(spellName) {
+  return SPELL_EFFECTS[spellName] || null;
 }
 
 /**

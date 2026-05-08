@@ -34,6 +34,8 @@ const GENERATE_BODY_SCHEMA = {
 };
 
 export async function combatSpritesRoutes(fastify) {
+  fastify.addHook('onRequest', fastify.authenticate);
+
   fastify.post('/generate', {
     schema: { body: GENERATE_BODY_SCHEMA },
   }, async (request) => {

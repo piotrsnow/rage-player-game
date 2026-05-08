@@ -1,6 +1,7 @@
 import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { getDistance } from '../../services/combatEngine';
+import ActiveEffectsRow from '../ui/ActiveEffectsRow';
 
 function ConditionBadge({ condition }) {
   const icons = {
@@ -130,6 +131,13 @@ export default function CombatDetailPanel({ combatant, myCombatant, allCombatant
           {activeConditions.map((cond, i) => (
             <ConditionBadge key={`${cond}_${i}`} condition={cond} />
           ))}
+        </div>
+      )}
+
+      {(combatant.activeEffects || []).length > 0 && (
+        <div className="pt-1 border-t border-outline-variant/10">
+          <div className="text-[9px] text-on-surface-variant uppercase tracking-wider mb-1">Effects</div>
+          <ActiveEffectsRow effects={combatant.activeEffects} maxVisible={8} />
         </div>
       )}
 

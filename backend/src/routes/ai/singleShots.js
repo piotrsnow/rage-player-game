@@ -8,6 +8,7 @@ import { enhanceImagePrompt } from '../../services/imagePromptEnhancer.js';
 import { generateImagePrompt } from '../../services/imagePromptGenerator.js';
 import { translateImagePromptToEnglish } from '../../services/translateImagePrompt.js';
 import { generateCombatCommentary } from '../../services/combatCommentary.js';
+import { resolveCombatTurn } from '../../services/combatTurnResolver.js';
 import { verifyObjective } from '../../services/objectiveVerifier.js';
 import { generateRecap } from '../../services/recapGenerator.js';
 import {
@@ -17,6 +18,7 @@ import {
   GENERATE_IMAGE_PROMPT_SCHEMA,
   TRANSLATE_IMAGE_PROMPT_SCHEMA,
   COMBAT_COMMENTARY_SCHEMA,
+  COMBAT_TURN_RESOLVE_SCHEMA,
   VERIFY_OBJECTIVE_SCHEMA,
   RECAP_SCHEMA,
 } from './schemas.js';
@@ -228,6 +230,29 @@ export async function singleShotRoutes(fastify) {
     try {
       return await generateRecap({
         scenes, language, provider, model, modelTier, sentencesPerScene, summaryStyle, userApiKeys,
+      });
+    } catch (err) {
+      const status = err.statusCode || 502;
+      return reply.code(status).send({ error: err.message, code: err.code || 'AI_REQUEST_FAILED' });
+    }
+  });
+
+  /**
+   * POST /ai/combat-turn-resolve — AI resolves a mid-combat player turn (item use / custom action).
+   */
+  fastify.post('/combat-turn-resolve', { schema: { body: COMBAT_TURN_RESOLVE_SCHEMA } }, async (request, reply) => {
+    const {
+      combatSnapshot,
+      playerAction = '',
+      language = 'pl',
+      provider = 'openai',
+      model,
+      modelTier = 'standard',
+    } = request.body || {};
+    const userApiKeys = await loadUserApiKeys(prisma, request.user?.id);
+    try {
+      return await resolveCombatTurn({
+        combatSnapshot, playerAction, language, provider, model, modelTier, userApiKeys,
       });
     } catch (err) {
       const status = err.statusCode || 502;

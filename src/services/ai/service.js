@@ -546,6 +546,26 @@ export const aiService = {
     }
   },
 
+  async resolveCombatTurn(combatSnapshot, playerAction, provider, language = 'pl', modelTier = 'standard') {
+    const requestBody = { combatSnapshot, playerAction, language, provider, modelTier };
+    const logId = aiCallLog.start({
+      type: 'combat-turn-resolve',
+      label: `Combat turn: ${shortLabel(playerAction)}`,
+      provider,
+      model: null,
+      request: requestBody,
+    });
+    try {
+      const data = await apiClient.post('/ai/combat-turn-resolve', requestBody);
+      const result = data?.result || { narration: '', enemyDamage: [], playerDamage: 0, playerHealing: 0, statusEffects: [], manaChange: 0, itemConsumed: false };
+      aiCallLog.finish(logId, { result, raw: data });
+      return { result, usage: data?.usage || null };
+    } catch (e) {
+      aiCallLog.fail(logId, e);
+      throw e;
+    }
+  },
+
   async verifyObjective(storyContext, questName, questDescription, objectiveDescription, provider, _apiKeyIgnored, language = 'en', modelTier = 'premium') {
     const requestBody = {
       storyContext, questName, questDescription, objectiveDescription, language, provider, modelTier,

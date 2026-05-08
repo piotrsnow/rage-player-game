@@ -262,13 +262,13 @@ export default function CustomActionForm({
                 ? t('gameplay.customActionPlaceholderVoice')
                 : t('gameplay.customActionPlaceholder')
           }
-          className={
+          className={`ml-1.5 ${
             isAutoTyping
               ? 'border-primary/60 text-primary shadow-[0_2px_8px_rgba(197,154,255,0.2)]'
               : listening
                 ? 'border-primary/60 shadow-[0_2px_8px_rgba(197,154,255,0.15)] text-on-surface'
                 : 'border-outline-variant/20 focus:border-primary/50 focus:shadow-[0_2px_8px_rgba(197,154,255,0.1)]'
-          }
+          }`}
         />
         {isMultiplayer && (
           <button

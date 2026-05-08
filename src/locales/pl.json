@@ -132,7 +132,19 @@
     "turnsUntil": "Za {{count}} tur",
     "distanceLabel": "Dystans",
     "moveHere": "Idź tutaj",
-    "range": "Zasięg"
+    "range": "Zasięg",
+    "selectSpell": "Wybierz zaklęcie",
+    "inventory": "Przedmioty",
+    "customAction": "Własna akcja",
+    "useItemDescription": "Co robisz z przedmiotem?",
+    "customActionDescription": "Opisz swoją akcję",
+    "useItemPlaceholder": "Opisz jak używasz tego przedmiotu w walce...",
+    "customActionPlaceholder": "Opisz co robisz w tej turze...",
+    "executeAiAction": "Wykonaj (AI)",
+    "aiTurnFailed": "Rozwiązanie tury AI nie powiodło się — spróbuj ponownie.",
+    "regenerateSprite": "Nowy sprite",
+    "expandLayout": "Rozszerz pole bitwy",
+    "collapseLayout": "Zwiń pole bitwy"
   },
   "nav": {
     "lobby": "Lobby",
@@ -426,6 +438,16 @@
     "rollEdge": "Przewaga {{value}}",
     "momentumBonus": "Momentum {{bonus}}",
     "dispositionBonus": "Przychylność {{bonus}}",
+    "difficultyThresholds": {
+      "easy": "Łatwe",
+      "medium": "Przeciętne",
+      "hard": "Trudne",
+      "veryHard": "Bardzo trudne",
+      "extreme": "Ekstremalne"
+    },
+    "diceRollTitle": "Test {{skill}}",
+    "diceRollSum": "Suma",
+    "diceRollVsThreshold": "vs Próg",
     "skillBonus": "{{skill}} {{bonus}}",
     "momentumActive": "Momentum {{bonus}}",
     "momentumMinigameActive": "Złap kostkę na obrazku!",

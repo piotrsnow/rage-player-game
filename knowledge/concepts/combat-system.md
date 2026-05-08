@@ -1,6 +1,6 @@
 # Combat System
 
-Turn-based tactical combat on a linear 0-20 position strip. d50 resolution, margin-based. Same engine powers solo and multiplayer — MP host runs it locally and syncs results, guests see the results dispatched back through the same reducer.
+Turn-based tactical combat on a linear 0-40 position strip. d50 resolution, margin-based. Same engine powers solo and multiplayer — MP host runs it locally and syncs results, guests see the results dispatched back through the same reducer.
 
 ## Files
 
@@ -95,6 +95,53 @@ Skill caps per difficulty: trivial 1-3, low 1-5, medium 1-8, high 1-12, deadly 1
 - **Playwright smoke:** `e2e/specs/combat.spec.js` seeds a combat-active campaign via `GET /v1/campaigns/:id` mock (see [patterns/e2e-campaign-seeding.md](../patterns/e2e-campaign-seeding.md))
 
 Before changing combat resolution logic, run: `npx vitest run src/hooks/useCombat src/hooks/useEnemy src/services/combatEngine.test.js`.
+
+## Status effects integration
+
+Status effects (`shared/domain/statusEffects.js`) are fully wired into combat:
+
+### Data tables
+
+- `CRIT_EFFECTS` (in `combatEngine.js`) — random effect on critical hit (roll=1): `Głęboka rana` (DoT) or `Oszołomienie` (testMod -10).
+- `SPELL_EFFECTS` (in `src/data/rpgMagic.js`) — per-spell effects applied on successful cast.
+
+### Mechanical impact on combat
+
+| Mechanic | Where applied | Helper |
+|---|---|---|
+| `attributeMods` + `testMod` | `resolveCombatTest()` | `computeEffectiveMods()` |
+| `damageReduction` | Offensive damage path + magic damage path in `resolveManoeuvre()` | `computeEffectiveMods()` on target |
+| `movementMod` | `moveCombatant()` + enemy movement in `resolveEnemyTurns()` | `computeEffectiveMods()` on actor |
+| `restrictions` (`no_attack`, `no_magic`, `skip_turn`, `no_movement`) | `resolveManoeuvre()` blocks the action; `getEnemyAction()` returns skip for `skip_turn`; `moveCombatant()` blocks `no_movement` | `isRestricted()` |
+| `dotDamage` / `dotHeal` | `advanceRound()` — applied per round | `tickEffects()` |
+
+### Effect lifecycle
+
+1. **Application** — `addEffect()` called from:
+   - Crit hit → random `CRIT_EFFECTS` entry
+   - Spell cast → `SPELL_EFFECTS[spellName]`
+   - AI combat-turn resolver → structured `statusEffects` in response (via `CombatPanel.handleAiAction`)
+   - Scene generation → `stateChanges.characterEffects` bucket (backend `characterMutations.js`)
+
+2. **Per-round tick** — `advanceRound()` calls `tickEffects(effects, 'rounds')`. Decrements remaining, applies DoT/heal, removes expired.
+
+3. **Combat end** — `endCombat()` returns `survivingEffects` (player's `activeEffects` at combat end). These persist into the character state for scene-generation to narrate/clear later.
+
+### UI
+
+- `ActiveEffectsRow` — badge row per combatant in `CombatantsList`
+- `CombatDetailPanel` — expanded view with effect descriptions
+
+### Backend AI combat-turn resolver
+
+`combatTurnResolver.js` prompts the AI with structured effects:
+- `formatCombatant` renders existing `activeEffects` (name, category, duration, restrictions) so the AI sees current state.
+- AI response `statusEffects` array uses structured format: `{ target, action: "add"|"remove", effect: { name, category, duration, mechanics } }`.
+- `CombatPanel.handleAiAction` applies via `addEffect()`; legacy string-style effects are gracefully migrated via `migrateStatusStrings()`.
+
+### Backend prompt (characterBlock.js)
+
+`characterBlock.js` renders active effects in the scene-generation system prompt so the premium model is aware of buffs/debuffs when narrating.
 
 ## Related
 

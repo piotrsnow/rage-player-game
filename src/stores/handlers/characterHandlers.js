@@ -101,7 +101,7 @@ export const characterHandlers = {
     if (currentVal >= 25) return;
     char.attributes[attribute] = currentVal + 1;
     char.attributePoints = (char.attributePoints || 0) - cost;
-    const newMaxWounds = calculateMaxWounds(char.attributes.wytrzymalosc);
+    const newMaxWounds = calculateMaxWounds(char.attributes.wytrzymalosc) + (char.bonusMaxWounds || 0);
     char.maxWounds = newMaxWounds;
     char.wounds = Math.min(char.wounds, newMaxWounds);
   },
@@ -124,6 +124,7 @@ export const characterHandlers = {
       const mana = char.mana || { current: 0, max: 0 };
       char.mana = { ...mana, max: (mana.max || 0) + 1, current: (mana.current || 0) + 1 };
     } else if (reward === 'wounds') {
+      char.bonusMaxWounds = (char.bonusMaxWounds || 0) + 1;
       char.maxWounds = (char.maxWounds || 0) + 1;
     }
 

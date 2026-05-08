@@ -38,6 +38,7 @@ const TaggableInput = forwardRef(function TaggableInput(
   ref,
 ) {
   const editorRef = useRef(null);
+  const wrapperRef = useRef(null);
   const [segments, setSegments] = useState([{ type: 'text', value: value || '' }]);
   const suppressSyncRef = useRef(false);
   const lastExternalValueRef = useRef(value);
@@ -129,8 +130,8 @@ const TaggableInput = forwardRef(function TaggableInput(
     onChange?.(text, collectTags(newSegs));
 
     // Detect @mention trigger
-    const atQuery = getAtQuery(editorRef.current);
-    setAutocomplete(atQuery != null ? { query: atQuery } : null);
+    const atResult = getAtQuery(editorRef.current);
+    setAutocomplete(atResult);
   }, [readDOMToSegments, segmentsToPlainText, onChange, collectTags]);
 
   // ----- keyboard handling -----
@@ -207,6 +208,8 @@ const TaggableInput = forwardRef(function TaggableInput(
     (tag) => {
       if (!tag?.kind || !tag?.id || !tag?.name) return;
 
+      let notify = null;
+
       setSegments((prev) => {
         const existingTags = collectTags(prev);
         if (existingTags.length >= MAX_ENTITY_TAGS) return prev;
@@ -219,7 +222,6 @@ const TaggableInput = forwardRef(function TaggableInput(
         if (el && sel && sel.rangeCount > 0) {
           const range = sel.getRangeAt(0);
           if (el.contains(range.startContainer)) {
-            // Find the child node index nearest the caret
             const caretNode = range.startContainer;
             const caretOffset = range.startOffset;
 
@@ -230,7 +232,6 @@ const TaggableInput = forwardRef(function TaggableInput(
               const idx = children.indexOf(caretNode.nodeType === Node.TEXT_NODE ? caretNode : caretNode.parentNode);
               if (idx >= 0) {
                 if (caretNode.nodeType === Node.TEXT_NODE && caretOffset < caretNode.textContent.length) {
-                  // Split text node — map back to segments
                   let segIdx = 0;
                   let domIdx = 0;
                   for (; segIdx < prev.length; segIdx++) {
@@ -250,7 +251,7 @@ const TaggableInput = forwardRef(function TaggableInput(
                     const text = segmentsToPlainText(next);
                     lastExternalValueRef.current = text;
                     suppressSyncRef.current = true;
-                    onChange?.(text, collectTags(next));
+                    notify = { text, tags: collectTags(next) };
                     return next;
                   }
                 } else {
@@ -266,9 +267,13 @@ const TaggableInput = forwardRef(function TaggableInput(
         const text = segmentsToPlainText(next);
         lastExternalValueRef.current = text;
         suppressSyncRef.current = true;
-        onChange?.(text, collectTags(next));
+        notify = { text, tags: collectTags(next) };
         return next;
       });
+
+      if (notify) {
+        onChange?.(notify.text, notify.tags);
+      }
     },
     [collectTags, segmentsToPlainText, onChange],
   );
@@ -358,7 +363,7 @@ const TaggableInput = forwardRef(function TaggableInput(
   const isAutoTyping = !!autoPlayerTypingText;
 
   return (
-    <div className="relative flex-1 min-w-0">
+    <div ref={wrapperRef} className="relative flex-1 min-w-0">
       {/* Dialogue highlight overlay */}
       {hasDialogue && (
         <div
@@ -381,7 +386,8 @@ const TaggableInput = forwardRef(function TaggableInput(
         <EntityAutocomplete
           query={autocomplete.query}
           pool={entityPool}
-          anchor={editorRef.current}
+          anchorRect={autocomplete.rect}
+          containerEl={wrapperRef.current}
           onSelect={handleAutocompleteSelect}
           onClose={handleAutocompleteClose}
         />
@@ -470,7 +476,8 @@ function escapeRegex(str) {
 
 /**
  * Extracts the @query text immediately before the caret.
- * Returns the query string (possibly empty) if @ trigger is active, or null.
+ * Returns { query, rect } if @ trigger is active, or null.
+ * `rect` is the DOMRect of the '@' character — used to anchor the popup.
  */
 function getAtQuery(el) {
   const sel = window.getSelection();
@@ -483,10 +490,14 @@ function getAtQuery(el) {
   const text = node.textContent.slice(0, range.startOffset);
   const atIdx = text.lastIndexOf('@');
   if (atIdx < 0) return null;
-  // @ must be at start or preceded by whitespace
   if (atIdx > 0 && !/\s/.test(text[atIdx - 1])) return null;
   const query = text.slice(atIdx + 1);
-  // Abort if query contains a space (user typed past the mention)
   if (query.includes(' ')) return null;
-  return query;
+
+  const atRange = document.createRange();
+  atRange.setStart(node, atIdx);
+  atRange.setEnd(node, atIdx + 1);
+  const rect = atRange.getBoundingClientRect();
+
+  return { query, rect };
 }

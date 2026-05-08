@@ -290,6 +290,147 @@ export const SPELL_TREES = {
 
 export const SPELL_TREE_LIST = Object.keys(SPELL_TREES);
 
+/**
+ * Spell → status effect mapping. When a spell hits, the corresponding effect
+ * is applied to the target (or caster for self-buffs). Only spells with
+ * mechanical effects are listed; pure-damage spells rely on the combat engine
+ * damage formula.
+ */
+export const SPELL_EFFECTS = {
+  'Lodowy Dotyk': {
+    target: 'enemy',
+    effect: {
+      name: 'Odmrożenie',
+      source: 'spell',
+      category: 'control',
+      duration: { type: 'rounds', remaining: 2 },
+      mechanics: { attributeMods: { zrecznosc: -3 }, movementMod: -1 },
+      stackable: false,
+      description: 'Mróz spowalnia ruchy i reakcje.',
+    },
+  },
+  'Zamiec': {
+    target: 'all_enemies',
+    effect: {
+      name: 'Zamrożenie',
+      source: 'spell',
+      category: 'control',
+      duration: { type: 'rounds', remaining: 2 },
+      mechanics: { attributeMods: { zrecznosc: -5 }, movementMod: -2, restrictions: ['no_movement'] },
+      stackable: false,
+      description: 'Silny mróz unieruchamia na krótki czas.',
+    },
+  },
+  'Ochrona': {
+    target: 'self',
+    effect: {
+      name: 'Magiczna ochrona',
+      source: 'spell',
+      category: 'buff',
+      duration: { type: 'rounds', remaining: 3 },
+      mechanics: { damageReduction: 3 },
+      stackable: false,
+      description: 'Magiczna tarcza pochłania część obrażeń.',
+    },
+  },
+  'Wielka Ochrona': {
+    target: 'self',
+    effect: {
+      name: 'Wielka magiczna ochrona',
+      source: 'spell',
+      category: 'buff',
+      duration: { type: 'rounds', remaining: 5 },
+      mechanics: { damageReduction: 6 },
+      stackable: false,
+      description: 'Potężna magiczna tarcza pochłania znaczną część obrażeń.',
+    },
+  },
+  'Strach': {
+    target: 'enemy',
+    effect: {
+      name: 'Przerażenie',
+      source: 'spell',
+      category: 'control',
+      duration: { type: 'rounds', remaining: 2 },
+      mechanics: { attributeMods: { charyzma: -5 }, testMod: -5, restrictions: ['no_attack'] },
+      stackable: false,
+      description: 'Strach paraliżuje — utrudnia działanie i uniemożliwia atak.',
+    },
+  },
+  'Sen': {
+    target: 'enemy',
+    effect: {
+      name: 'Uśpienie',
+      source: 'spell',
+      category: 'control',
+      duration: { type: 'rounds', remaining: 3 },
+      mechanics: { restrictions: ['skip_turn'], resistCheck: { attribute: 'wytrzymalosc', threshold: 20 } },
+      stackable: false,
+      description: 'Cel zasypia — pomija turę, chyba że uda mu się test odporności.',
+    },
+  },
+  'Tarcza Wiatru': {
+    target: 'self',
+    effect: {
+      name: 'Tarcza Wiatru',
+      source: 'spell',
+      category: 'buff',
+      duration: { type: 'rounds', remaining: 3 },
+      mechanics: { attributeMods: { zrecznosc: 3 } },
+      stackable: false,
+      description: 'Wir ochronny zwiększa zwinność.',
+    },
+  },
+  'Regeneracja': {
+    target: 'self',
+    effect: {
+      name: 'Regeneracja',
+      source: 'spell',
+      category: 'buff',
+      duration: { type: 'rounds', remaining: 4 },
+      mechanics: { dotHeal: 2 },
+      stackable: false,
+      description: 'Magiczna regeneracja przywraca zdrowie co rundę.',
+    },
+  },
+  'Iskra': {
+    target: 'enemy',
+    effect: {
+      name: 'Podpalenie',
+      source: 'spell',
+      category: 'dot',
+      duration: { type: 'rounds', remaining: 2 },
+      mechanics: { dotDamage: 1 },
+      stackable: false,
+      description: 'Ogień pali lekko przez chwilę.',
+    },
+  },
+  'Ognisty Pocisk': {
+    target: 'enemy',
+    effect: {
+      name: 'Płomienie',
+      source: 'spell',
+      category: 'dot',
+      duration: { type: 'rounds', remaining: 3 },
+      mechanics: { dotDamage: 2 },
+      stackable: false,
+      description: 'Intensywny ogień zadaje obrażenia co rundę.',
+    },
+  },
+  'Kula Ognia': {
+    target: 'all_enemies',
+    effect: {
+      name: 'Pożoga',
+      source: 'spell',
+      category: 'dot',
+      duration: { type: 'rounds', remaining: 2 },
+      mechanics: { dotDamage: 3 },
+      stackable: false,
+      description: 'Eksplozja ognia podpala wszystkich w zasięgu.',
+    },
+  },
+};
+
 // ── MANA BALANCE NOTES ──
 
 export const MANA_BALANCE = {

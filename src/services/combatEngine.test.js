@@ -28,9 +28,9 @@ vi.mock('./gameDataService.js', () => ({
       flee: { name: 'Flee', type: 'utility', range: 'self', modifiers: { flee: true } },
       magic: { name: 'Magic', type: 'magic', range: 'ranged', modifiers: {} },
     },
-    MELEE_RANGE: 2,
-    BATTLEFIELD_MAX: 20,
-    DEFAULT_MOVEMENT: 4,
+    MELEE_RANGE: 4,
+    BATTLEFIELD_MAX: 40,
+    DEFAULT_MOVEMENT: 8,
   },
 }));
 
@@ -68,9 +68,9 @@ function makeCombatState({ actor = {}, target = {} } = {}) {
         wounds: 12,
         maxWounds: 12,
         isDefeated: false,
-        position: 2,
+        position: 4,
         movementUsed: 0,
-        movementAllowance: 4,
+        movementAllowance: 9,
         traits: [],
         ...actor,
       },
@@ -88,9 +88,9 @@ function makeCombatState({ actor = {}, target = {} } = {}) {
         wounds: 10,
         maxWounds: 10,
         isDefeated: false,
-        position: 3,
+        position: 6,
         movementUsed: 0,
-        movementAllowance: 4,
+        movementAllowance: 8,
         traits: [],
         ...target,
       },
@@ -287,10 +287,10 @@ describe('distance and melee range', () => {
     expect(getDistance({ position: 5 }, { position: 2 })).toBe(3);
   });
 
-  it('detects melee range (distance <= 2)', () => {
+  it('detects melee range (distance <= 4)', () => {
     expect(isInMeleeRange({ position: 2 }, { position: 3 })).toBe(true);
-    expect(isInMeleeRange({ position: 2 }, { position: 4 })).toBe(true);
-    expect(isInMeleeRange({ position: 2 }, { position: 5 })).toBe(false);
+    expect(isInMeleeRange({ position: 2 }, { position: 6 })).toBe(true);
+    expect(isInMeleeRange({ position: 2 }, { position: 7 })).toBe(false);
   });
 });
 

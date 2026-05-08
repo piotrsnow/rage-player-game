@@ -153,94 +153,110 @@ export function getModelPreset(modelTitle) {
 // providers (DALL-E, Gemini, Stability, gpt-image) whose safety/instruction
 // layers actually read the English description.
 //
-// `sdTag` is the compact (≤6-word) style tail used ONLY by the sd-webui branch.
-// SDXL's CLIP encoder loses focus past ~75 tokens, so stuffing the whole
-// natural-language prompt in front of the scene was making the model hallucinate
-// architecture/props from the style scaffolding instead of drawing the scene.
-// The compact tail sits at the very END of the SD prompt; the scene leads.
+// `sdTag` is the style tail used ONLY by the sd-webui branch. It sits at the
+// END of the SD prompt so the scene subject leads. Kept under ~10 tokens —
+// enough for SDXL CLIP to parse without drowning the scene content.
+//
+// `sdNeg` is extra negative prompt merged only for this style on sd-webui.
+// The model-preset negative (deformed hands, blurry, etc.) is always applied
+// on top, so sdNeg only needs style-specific exclusions.
 const IMAGE_STYLE_PROMPTS = {
   illustration: {
     prompt: 'digital illustration, clean defined linework, vibrant saturated colors, fantasy book illustration, detailed ink-and-color art style',
     portrait: 'detailed character illustration, clean linework, vibrant colors, fantasy book art style',
-    sdTag: 'illustration, bold lines, vibrant',
+    sdTag: 'digital illustration, bold linework, vibrant flat colors, fantasy art',
+    sdNeg: 'photograph, photorealistic, 3d render, oil painting, soft focus',
     negative: 'photograph, photorealistic, 3d render, blurry',
   },
   pencil: {
     prompt: 'pencil sketch on textured paper, graphite drawing, expressive crosshatching, delicate shading, monochrome pencil art, hand-drawn feel',
     portrait: 'graphite pencil portrait, crosshatching, paper texture, monochrome sketch, detailed shading',
-    sdTag: 'pencil sketch, crosshatch, monochrome',
+    sdTag: 'graphite pencil drawing, crosshatching, paper texture, monochrome',
+    sdNeg: 'color, colorful, painting, photograph, digital art, saturated',
     negative: 'color, photograph, photorealistic, digital art, painting',
   },
   noir: {
     prompt: 'film noir style, stark high-contrast black and white, dramatic deep shadows, chiaroscuro lighting, 1940s hard-boiled detective aesthetic, venetian blind light',
     portrait: 'film noir portrait, high contrast black and white, dramatic shadow across face, chiaroscuro, smoky atmosphere',
-    sdTag: 'film noir, high contrast, b&w',
+    sdTag: 'film noir, high contrast black and white, dramatic shadows, chiaroscuro',
+    sdNeg: 'color, colorful, bright, cheerful, cartoon, anime, saturated',
     negative: 'color, bright, cheerful, cartoon, anime',
   },
   anime: {
     prompt: 'anime art style, cel-shaded, vivid colors, expressive eyes, dynamic composition, detailed anime background, Studio Ghibli quality',
     portrait: 'anime character portrait, cel-shaded, large expressive eyes, vivid colors, clean lines, detailed anime style',
-    sdTag: 'anime style, cel-shaded, vivid',
+    sdTag: 'anime artwork, cel shading, clean lines, vivid colors, detailed',
+    sdNeg: 'photorealistic, photograph, 3d render, western cartoon, realistic skin texture',
     negative: 'photorealistic, photograph, 3d render, western cartoon',
   },
   painting: {
     prompt: 'classical oil painting, rich impasto brushstrokes, chiaroscuro, deep warm palette, canvas texture visible',
     portrait: 'oil painting portrait, rich brushwork, warm candlelight, Renaissance master style, deep colors, visible canvas texture',
-    sdTag: 'oil painting, impasto, painterly',
+    sdTag: 'oil painting, visible brushstrokes, impasto, rich warm palette, canvas texture',
+    sdNeg: 'photograph, digital art, cartoon, anime, sketch, flat colors, smooth shading',
     negative: 'photograph, digital art, cartoon, anime, sketch, flat colors',
   },
   watercolor: {
     prompt: 'delicate watercolor painting, soft translucent washes, wet-on-wet bleeding edges, visible paper grain, gentle pastel palette, impressionistic atmosphere',
     portrait: 'watercolor portrait, soft translucent washes, bleeding edges, visible paper texture, pastel tones, impressionistic',
-    sdTag: 'watercolor, soft washes, paper grain',
+    sdTag: 'watercolor painting, soft washes, wet on wet, paper texture, translucent',
+    sdNeg: 'photograph, photorealistic, digital art, sharp hard edges, anime, oil painting',
     negative: 'photograph, photorealistic, digital art, sharp lines, anime',
   },
   comic: {
     prompt: 'comic book art style, bold black outlines, flat cel colors, halftone dot shading, dynamic panel composition, action-packed graphic novel aesthetic',
     portrait: 'comic book character portrait, bold ink outlines, flat cel colors, halftone shading, dynamic superhero comic style',
-    sdTag: 'comic style, bold outlines, halftone',
+    sdTag: 'comic book art, bold ink outlines, flat cel colors, halftone dots',
+    sdNeg: 'photorealistic, photograph, watercolor, oil painting, soft shading, gradient',
     negative: 'photorealistic, photograph, watercolor, oil painting, soft',
   },
   darkFantasy: {
     prompt: 'dark fantasy art, Beksinski-inspired eldritch atmosphere, oppressive gothic architecture, sickly muted palette, visceral organic textures, nightmarish surreal composition',
     portrait: 'dark fantasy portrait, haunted hollow eyes, scarred weathered face, gothic atmosphere, sickly palette, nightmarish eldritch details',
-    sdTag: 'dark fantasy, grim, eldritch',
+    sdTag: 'dark fantasy art, grim atmosphere, muted sickly palette, eldritch, ominous',
+    sdNeg: 'bright, cheerful, cartoon, clean, happy, pastel, vibrant saturated',
     negative: 'bright, cheerful, cartoon, anime, clean, happy',
   },
   vanGogh: {
     prompt: 'post-impressionist painting in the style of Van Gogh, expressive swirling brushstrokes, thick impasto texture, luminous night-sky colors, emotional dramatic movement, vivid painterly energy',
     portrait: 'post-impressionist portrait inspired by Van Gogh, swirling brushwork, thick impasto texture, vivid expressive colors, emotional painterly lighting',
-    sdTag: 'van gogh, swirling impasto',
+    sdTag: 'post-impressionist, swirling brushstrokes, thick impasto, vivid expressive colors',
+    sdNeg: 'photograph, photorealistic, 3d render, flat shading, smooth digital art, clean lines',
     negative: 'photograph, photorealistic, 3d render, flat shading, smooth digital art',
   },
   photoreal: {
     prompt: 'photorealistic cinematic photograph, shallow depth of field, RAW photo quality, 8K UHD, DSLR, natural film grain, realistic lighting and materials',
     portrait: 'photorealistic portrait photograph, DSLR quality, shallow depth of field, natural skin texture, cinematic lighting, 8K detail',
-    sdTag: 'photorealistic, dslr, cinematic',
+    sdTag: 'RAW photo, photorealistic, cinematic lighting, shallow depth of field, 8k uhd',
+    sdNeg: 'painting, drawing, illustration, cartoon, anime, sketch, watercolor, digital art, unrealistic',
     negative: 'painting, drawing, illustration, cartoon, anime, sketch, watercolor, digital art',
   },
   retro: {
     prompt: '16-bit pixel art, retro SNES-era RPG scene, limited color palette, dithering, nostalgic low-resolution aesthetic, crisp individual pixels visible',
     portrait: '16-bit pixel art character portrait, retro RPG style, limited palette, clean pixel work, nostalgic SNES aesthetic',
-    sdTag: '16-bit pixel art, retro rpg',
+    sdTag: 'pixel art, 16-bit retro RPG style, limited palette, crisp pixels, dithering',
+    sdNeg: 'photorealistic, photograph, high resolution, smooth, blurry, 3d render, anti-aliased',
     negative: 'photorealistic, photograph, high resolution, smooth, blurry, 3d render',
   },
   gothic: {
     prompt: 'gothic fantasy artwork, towering cathedral arches, ornate stonework, candlelit gloom, medieval illuminated detail, solemn dramatic composition, sacred and ominous atmosphere',
     portrait: 'gothic portrait, cathedral-lit face, ornate medieval costume details, candlelit shadows, solemn sacred atmosphere, dramatic old-world elegance',
-    sdTag: 'gothic art, candlelit, medieval',
+    sdTag: 'gothic art, candlelit, ornate medieval detail, cathedral atmosphere, solemn',
+    sdNeg: 'modern, sci-fi, cartoon, anime, cheerful, bright daylight, neon, minimalist',
     negative: 'modern, sci-fi, cartoon, anime, cheerful, bright daylight',
   },
   hiphop: {
     prompt: 'urban hip-hop graffiti art style, bold spray-paint strokes, vibrant neon colors on concrete, street art murals, dripping paint, boombox culture aesthetic, thick outlines, stylized lettering accents',
     portrait: 'hip-hop street art portrait, spray-paint on brick wall, bold outlines, vibrant neon colors, graffiti style, urban swagger, dripping paint details',
-    sdTag: 'graffiti, neon, street art',
+    sdTag: 'graffiti street art, spray paint, neon colors on concrete, bold outlines, drips',
+    sdNeg: 'photorealistic, photograph, watercolor, oil painting, soft, pastel, delicate, medieval',
     negative: 'photorealistic, photograph, watercolor, oil painting, soft, pastel, delicate',
   },
   crayon: {
     prompt: 'child-like crayon drawing on white paper, waxy texture, uneven coloring, playful naive art style, visible paper grain, bright primary colors, simple bold shapes, charming imperfect lines',
     portrait: 'crayon portrait drawing, waxy colorful strokes, child-like naive art style, uneven coloring, white paper background, playful and charming',
-    sdTag: 'crayon, naive, waxy',
+    sdTag: 'crayon drawing, waxy texture, naive childlike art, bright primary colors, paper',
+    sdNeg: 'photorealistic, photograph, digital art, clean lines, professional, polished, 3d render, detailed',
     negative: 'photorealistic, photograph, digital art, clean lines, professional, polished, 3d render',
   },
 };
@@ -407,6 +423,11 @@ function getImageStyleDirective(imageStyle, field = 'prompt') {
 export function getImageStyleNegative(imageStyle) {
   const entry = IMAGE_STYLE_PROMPTS[imageStyle] || IMAGE_STYLE_PROMPTS.painting;
   return entry.negative || '';
+}
+
+export function getImageStyleSdNegative(imageStyle) {
+  const entry = IMAGE_STYLE_PROMPTS[imageStyle] || IMAGE_STYLE_PROMPTS.painting;
+  return entry.sdNeg || entry.negative || '';
 }
 
 // Extra negatives to append when the portrait is generated from a real

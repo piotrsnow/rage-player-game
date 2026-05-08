@@ -119,6 +119,20 @@ export const COMBAT_COMMENTARY_SCHEMA = {
   required: ['combatSnapshot'],
 };
 
+export const COMBAT_TURN_RESOLVE_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    combatSnapshot: { type: 'object' },
+    playerAction: { type: 'string', maxLength: 2000 },
+    language: LANGUAGE_SCHEMA,
+    provider: PROVIDER_SCHEMA,
+    model: MODEL_SCHEMA,
+    modelTier: { type: 'string', maxLength: 20 },
+  },
+  required: ['combatSnapshot', 'playerAction'],
+};
+
 export const VERIFY_OBJECTIVE_SCHEMA = {
   type: 'object',
   additionalProperties: false,

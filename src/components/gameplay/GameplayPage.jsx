@@ -68,6 +68,7 @@ import { useGameplayDerivedState } from '../../hooks/useGameplayDerivedState';
 import { useGameplayOverlays } from '../../hooks/useGameplayOverlays';
 import { useGameplayActions } from '../../hooks/useGameplayActions';
 import { useUltrawideBonus } from '../../hooks/useUltrawideBonus';
+import { useMomentumMinigame } from '../../hooks/useMomentumMinigame';
 import { useFavoriteScenes } from '../../hooks/useFavoriteScenes';
 import MainQuestCompleteModal from './MainQuestCompleteModal';
 import { ActionTagProvider } from '../../contexts/ActionTagContext';
@@ -199,6 +200,8 @@ export default function GameplayPage({ readOnly = false, shareToken = null, onRe
   const [autoPlayerSettingsOpen, setAutoPlayerSettingsOpen] = useState(false);
   const [viewingSceneIndex, setViewingSceneIndex] = useState(null);
   const [autoPlayScenes, setAutoPlayScenes] = useState(false);
+  const [combatExpandedLayout, setCombatExpandedLayout] = useState(false);
+  useEffect(() => { if (!combat?.active) setCombatExpandedLayout(false); }, [combat?.active]);
   const handleSceneNavRef = useRef(null);
   const consecutiveIdleEventsRef = useRef(0);
   const sceneGenSucceededRef = useRef(false);
@@ -606,6 +609,14 @@ export default function GameplayPage({ readOnly = false, shareToken = null, onRe
     onIdleEvent: handleIdleEvent,
   });
 
+  const momentum = useMomentumMinigame({
+    dispatch,
+    momentumBonus: isMultiplayer
+      ? (mpGameState?.characterMomentum?.[character?.name] || 0)
+      : (sMomentumBonus || 0),
+    sceneId: currentScene?.id || null,
+  });
+
   const combatHandlers = useCombatResolution({
     isMultiplayer,
     dispatch,
@@ -680,6 +691,7 @@ export default function GameplayPage({ readOnly = false, shareToken = null, onRe
         )}
         </div>
 
+        {!(combat?.active && combatExpandedLayout) && (
         <div className="shrink-0 px-4 md:px-6 pb-2">
         {/* Scene Panel */}
         <div className="relative">
@@ -717,6 +729,11 @@ export default function GameplayPage({ readOnly = false, shareToken = null, onRe
             mpErrorCode={mpErrorCode}
             isMultiplayer={isMultiplayer}
             onOpenSettings={openSettings}
+            momentumDice={!readOnly && momentum.active ? {
+              visible: momentum.diceVisible,
+              position: momentum.position,
+              onDiceClick: momentum.handleDiceClick,
+            } : null}
           />
           {overlayText && (
             <TypewriterActionOverlay
@@ -751,6 +768,7 @@ export default function GameplayPage({ readOnly = false, shareToken = null, onRe
           )}
         </div>
         </div>
+        )}
 
         {isGeneratingScene && !readOnly && (
           <div className="shrink-0 px-4 md:px-6 pb-2">
@@ -943,6 +961,8 @@ export default function GameplayPage({ readOnly = false, shareToken = null, onRe
               isHost={mp.state.isHost}
               mpCharacters={isMultiplayer ? mpGameState?.characters : undefined}
               onPersistState={() => autoSave()}
+              expandedLayout={combatExpandedLayout}
+              onLayoutChange={setCombatExpandedLayout}
             />
           </div>
         )}
@@ -1025,6 +1045,8 @@ export default function GameplayPage({ readOnly = false, shareToken = null, onRe
           totalPlayTime={totalPlayTime}
           narrationTime={sNarrationTime || 0}
           chatGate={!!overlayText}
+          onMomentumClick={!readOnly && !momentum.cooldown ? momentum.startGame : null}
+          momentumMinigameActive={momentum.active}
         />
       </aside>
 

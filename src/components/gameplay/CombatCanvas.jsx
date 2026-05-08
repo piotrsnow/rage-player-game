@@ -39,6 +39,10 @@ export default function CombatCanvas({
   onPersistCustomAttack,
   onRemoveCustomAttack,
   onRegenerateSprite,
+  character,
+  onAiAction,
+  actionAnim,
+  expanded = false,
 }) {
   const { t } = useTranslation();
   const canvasRef = useRef(null);
@@ -251,8 +255,8 @@ export default function CombatCanvas({
     });
   }, [combatOver, isMyTurn, tokenPositions, myCombatant, onSelectTarget]);
 
-  const handleExecuteFromModal = useCallback((manoeuvreKey, targetId, customDesc) => {
-    onExecuteManoeuvre?.(manoeuvreKey, targetId, customDesc);
+  const handleExecuteFromModal = useCallback((manoeuvreKey, targetId, customDesc, extraOpts) => {
+    onExecuteManoeuvre?.(manoeuvreKey, targetId, customDesc, extraOpts);
     setActionModal(null);
   }, [onExecuteManoeuvre]);
 
@@ -272,8 +276,8 @@ export default function CombatCanvas({
 
       <div
         ref={containerRef}
-        className="w-full relative rounded-md overflow-hidden border border-error/20 bg-surface-dim"
-        style={{ height: 220 }}
+        className={`w-full relative rounded-md overflow-hidden border border-error/20 bg-surface-dim ${expanded ? 'h-[clamp(300px,45vh,600px)]' : ''}`}
+        style={expanded ? undefined : { height: 220 }}
       >
         {/* Canvas background layer */}
         <canvas
@@ -290,6 +294,15 @@ export default function CombatCanvas({
           {tokenPositions.map((pos) => {
             const c = pos.combatant;
             const turnsUntil = (combat.combatants.indexOf(c) - combat.turnIndex + combat.combatants.length) % combat.combatants.length;
+
+            let actDirection = 0;
+            if (actionAnim && actionAnim.actorId === c.id && actionAnim.targetId) {
+              const targetPos = tokenPositions.find(p => p.combatant.id === actionAnim.targetId);
+              if (targetPos) {
+                actDirection = targetPos.x > pos.x ? 1 : targetPos.x < pos.x ? -1 : 0;
+              }
+            }
+
             return (
               <CombatToken
                 key={c.id}
@@ -302,6 +315,8 @@ export default function CombatCanvas({
                 spriteUrl={c.spriteUrl || null}
                 myCombatant={myCombatant}
                 onClick={handleTokenClick}
+                isActing={actionAnim?.actorId === c.id}
+                actDirection={actDirection}
                 t={t}
               />
             );
@@ -344,6 +359,8 @@ export default function CombatCanvas({
           onPersistCustomAttack={onPersistCustomAttack}
           onRemoveCustomAttack={onRemoveCustomAttack}
           onRegenerateSprite={onRegenerateSprite}
+          character={character}
+          onAiAction={(actionText) => { onAiAction?.(actionText); setActionModal(null); }}
           t={t}
           targetYard={actionModal.targetYard}
         />,

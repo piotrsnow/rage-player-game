@@ -97,6 +97,7 @@ export function createDefaultCharacter() {
     inventory: [],
     materialBag: [],
     statuses: [],
+    activeEffects: [],
     backstory: '',
     customAttackPresets: [],
     equipped: { mainHand: null, offHand: null, armour: null },
@@ -117,6 +118,7 @@ export function normalizeCharacter(character) {
     spells: character.spells || { known: [], usageCounts: {}, scrolls: [] },
     equipped: character.equipped || { mainHand: null, offHand: null, armour: null },
     materialBag: character.materialBag || [],
+    activeEffects: character.activeEffects || [],
   };
 }
 

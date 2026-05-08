@@ -299,6 +299,8 @@ export default function GraphCanvas({
             icon: node.nodeIcon,
           });
           const r = getNodeRadius(node.scale ?? 5);
+          const hasImage = !!node.nodeImageUrl;
+          const imgR = hasImage ? r * 2 : r;
           const isSelected = selected?.type === 'node' && selected.id === node.id;
           const locOccupants = occupantsByLocation.get(node.id) || [];
           const nodeCursor = addingEdge ? 'crosshair' : addingNode ? 'crosshair' : 'move';
@@ -346,13 +348,13 @@ export default function GraphCanvas({
                   </path>
                 )
               )}
-              {node.nodeImageUrl ? (
+              {hasImage ? (
                 <>
                   <defs>
                     <clipPath id={`clip-${node.id}`}>
                       {useCircle
-                        ? <circle r={r} />
-                        : <path d={shapeGen(r)} />}
+                        ? <circle r={imgR} />
+                        : <path d={shapeGen(imgR)} />}
                     </clipPath>
                     {isSelected && (
                       <filter id={`hl-${node.id}`} filterUnits="objectBoundingBox"
@@ -371,10 +373,10 @@ export default function GraphCanvas({
                   </defs>
                   <image
                     href={apiClient.resolveMediaUrl(node.nodeImageUrl)}
-                    x={-r}
-                    y={-r}
-                    width={r * 2}
-                    height={r * 2}
+                    x={-imgR}
+                    y={-imgR}
+                    width={imgR * 2}
+                    height={imgR * 2}
                     preserveAspectRatio="xMidYMid slice"
                     opacity={node.discoveryState === 'rumored' ? 0.4 : 1}
                     filter={isSelected ? `url(#hl-${node.id})` : undefined}
@@ -418,7 +420,7 @@ export default function GraphCanvas({
                 const maxChars = isSelected ? 16 : 14;
                 const lines = wrapLabel(node.name, maxChars);
                 const lineHeight = fs + 2;
-                const baseY = r + 12;
+                const baseY = imgR + 12;
                 return (
                   <text
                     textAnchor="middle"
@@ -436,7 +438,7 @@ export default function GraphCanvas({
 
               {locOccupants.map((occ, i) => {
                 const angle = (2 * Math.PI * i) / Math.max(locOccupants.length, 1) - Math.PI / 2;
-                const orbitR = r + 10;
+                const orbitR = imgR + 10;
                 const ox = Math.cos(angle) * orbitR;
                 const oy = Math.sin(angle) * orbitR;
                 const isPlayer = occ.type === 'player';

@@ -1,3 +1,5 @@
+import ActiveEffectsRow from '../../ui/ActiveEffectsRow';
+
 function sortCombatants(combatants) {
   return combatants.slice().sort((a, b) => {
     if (a.type === 'player' && b.type !== 'player') return -1;
@@ -45,7 +47,7 @@ export default function CombatantsList({ combatants, currentTurn, onHoverCombata
               <span className={`material-symbols-outlined text-[13px] shrink-0 ${accentColor}`}>
                 {isEnemy ? 'skull' : c.type === 'ally' ? 'group' : 'shield_person'}
               </span>
-              <span className={`text-[11px] font-bold truncate ${accentColor} ${c.isDefeated ? 'line-through' : ''}`}>
+              <span className={`text-[10px] leading-tight font-bold ${accentColor} ${c.isDefeated ? 'line-through' : ''} line-clamp-2 break-words`}>
                 {c.name}
               </span>
             </div>
@@ -81,6 +83,12 @@ export default function CombatantsList({ combatants, currentTurn, onHoverCombata
                     {cond}
                   </span>
                 ))}
+              </div>
+            )}
+
+            {(c.activeEffects || []).length > 0 && (
+              <div className="mt-1">
+                <ActiveEffectsRow effects={c.activeEffects} compact maxVisible={4} />
               </div>
             )}
           </div>

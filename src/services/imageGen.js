@@ -1,4 +1,4 @@
-import { buildImagePrompt, buildItemImagePrompt, buildPortraitPrompt, getModelPreset, REFERENCE_PHOTO_NEGATIVE } from './imagePrompts';
+import { buildImagePrompt, buildItemImagePrompt, buildPortraitPrompt, getModelPreset, getImageStyleSdNegative, REFERENCE_PHOTO_NEGATIVE } from './imagePrompts';
 import { apiClient, toCanonicalStoragePath } from './apiClient';
 import { ensureEnglish } from './translateImagePrompt';
 
@@ -224,10 +224,14 @@ export const imageService = {
       prompt = buildImagePrompt(enNarrative, genre, tone, enImagePrompt, provider, imageStyle, darkPalette, characterAge, characterGender, seriousness, hasGptPortrait, sdModel);
     }
 
+    let negativePrompt = options?.preBuiltNegativePrompt || options?.negativePrompt || null;
+    if (!negativePrompt && provider === 'sd-webui') {
+      negativePrompt = getImageStyleSdNegative(imageStyle);
+    }
     const url = await generateSceneViaProxy(prompt, provider, campaignId, {
       ...options,
       portraitUrl: (hasGptPortrait || hasSdPortrait) ? portraitUrl : null,
-      negativePrompt: options?.preBuiltNegativePrompt || options?.negativePrompt || null,
+      negativePrompt,
     });
     return { url, prompt };
   },
@@ -320,9 +324,12 @@ export const imageService = {
       seriousness,
       sdModel,
     });
-    const itemNegative = provider === 'sd-webui'
-      ? 'person, human, character, hand, hands, fingers, holding, wielding, figure, body, face, portrait, full body, half body'
-      : null;
+    let itemNegative = null;
+    if (provider === 'sd-webui') {
+      const styleNeg = getImageStyleSdNegative(imageStyle);
+      const baseItemNeg = 'person, human, character, hand, hands, fingers, holding, wielding, figure, body, face, portrait, full body, half body';
+      itemNegative = styleNeg ? `${baseItemNeg}, ${styleNeg}` : baseItemNeg;
+    }
     const url = await generateSceneViaProxy(prompt, provider, campaignId, { sdModel, sdSeed, forceNew, shape: 'square', negativePrompt: itemNegative, resolutionMultiplier });
     return { url, prompt };
   },

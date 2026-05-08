@@ -8,7 +8,7 @@ import EffectEngine from '../../effects/EffectEngine';
 import resolveEffects from '../../effects/resolveEffects';
 import LoadingSpinner from '../ui/LoadingSpinner';
 import SceneCanvas from './SceneCanvas';
-import OverlayDiceCard from './scene/OverlayDiceCard';
+import DiceRollCard from './DiceRollCard';
 import HighlightedNarrative, { splitIntoSentences } from './scene/HighlightedNarrative';
 
 const Scene3DPanel = lazy(() => import('./Scene3D/Scene3DPanel'));
@@ -562,13 +562,17 @@ export default function ScenePanel({
         style={{ zIndex: 4 }}
       >
         {overlaySlots.map((dr, idx) => (
-          <OverlayDiceCard
-            key={idx}
-            dr={dr}
-            t={t}
-            showCharacter={currentOverlayRolls.length > 1}
-            isVisible={Boolean(dr)}
-          />
+          dr ? (
+            <DiceRollCard
+              key={idx}
+              diceData={dr}
+              defaultExpanded
+              showCharacter={currentOverlayRolls.length > 1}
+              className="pointer-events-auto"
+            />
+          ) : (
+            <div key={idx} className="pointer-events-none opacity-0" />
+          )
         ))}
       </div>
 

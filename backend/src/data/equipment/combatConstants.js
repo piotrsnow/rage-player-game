@@ -2,9 +2,9 @@
  * RPGon combat constants and manoeuvres.
  */
 
-export const MELEE_RANGE = 2;
-export const BATTLEFIELD_MAX = 20;
-export const DEFAULT_MOVEMENT = 4;
+export const MELEE_RANGE = 4;
+export const BATTLEFIELD_MAX = 40;
+export const DEFAULT_MOVEMENT = 8;
 
 export const MANOEUVRES = {
   attack: { name: 'Attack', type: 'offensive', skill: 'Melee (Basic)', opposed: 'Melee (Basic)', description: 'Standard melee attack using Weapon Skill', range: 'melee', modifiers: {} },

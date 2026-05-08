@@ -125,6 +125,8 @@ export default function CombatToken({
   spriteUrl,
   myCombatant,
   onClick,
+  isActing,
+  actDirection,
   t,
 }) {
   const c = combatant;
@@ -132,6 +134,7 @@ export default function CombatToken({
   const isFriendly = !isEnemy;
   const healthPct = c.maxWounds > 0 ? c.wounds / c.maxWounds : 0;
   const [shaking, setShaking] = useState(false);
+  const [spriteLoaded, setSpriteLoaded] = useState(false);
   const prevWoundsRef = useRef(c.wounds);
 
   useEffect(() => {
@@ -149,6 +152,10 @@ export default function CombatToken({
     onClick?.(c);
   }, [onClick, c]);
 
+  useEffect(() => {
+    setSpriteLoaded(false);
+  }, [spriteUrl]);
+
   const classNames = [
     'combat-token',
     isFriendly ? 'combat-token--friendly' : 'combat-token--enemy',
@@ -156,9 +163,13 @@ export default function CombatToken({
     isSelected && 'combat-token--selected',
     c.isDefeated && 'combat-token--defeated',
     shaking && 'combat-token--shake',
+    spriteLoaded && 'combat-token--has-sprite',
+    isActing && actDirection > 0 && 'combat-token--acting-right',
+    isActing && actDirection < 0 && 'combat-token--acting-left',
+    isActing && actDirection === 0 && 'combat-token--acting-right',
   ].filter(Boolean).join(' ');
 
-  const nameLabel = c.name.length > 10 ? c.name.slice(0, 9) + '\u2026' : c.name;
+  const nameLabel = c.name;
 
   const tooltipContent = buildTooltipContent(c, myCombatant, t);
 
@@ -180,10 +191,10 @@ export default function CombatToken({
         )}
 
         <div className="combat-token__sprite-wrap">
-          <HealthRing pct={healthPct} isEnemy={isEnemy} />
+          {!spriteLoaded && <HealthRing pct={healthPct} isEnemy={isEnemy} />}
 
           {spriteUrl ? (
-            <img src={spriteUrl} alt={c.name} draggable={false} />
+            <img src={spriteUrl} alt={c.name} draggable={false} onLoad={() => setSpriteLoaded(true)} />
           ) : (
             <div className="combat-token__initials">
               {c.isDefeated ? '\u2620' : getInitials(c.name)}
@@ -195,8 +206,20 @@ export default function CombatToken({
           )}
         </div>
 
+        {spriteLoaded && (
+          <div className="combat-token__health-bar">
+            <div
+              className="combat-token__health-bar-fill"
+              style={{
+                width: `${Math.max(0, Math.min(100, healthPct * 100))}%`,
+                backgroundColor: getHealthColor(healthPct, isEnemy),
+              }}
+            />
+          </div>
+        )}
+
         <span className="combat-token__name">{nameLabel}</span>
-        <span className="combat-token__hp">{c.wounds}/{c.maxWounds}</span>
+        {!spriteLoaded && <span className="combat-token__hp">{c.wounds}/{c.maxWounds}</span>}
       </div>
     </Tooltip>
   );

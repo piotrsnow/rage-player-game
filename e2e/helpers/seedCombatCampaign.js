@@ -34,9 +34,9 @@ function buildCombatant(overrides = {}) {
     wounds: overrides.wounds ?? 12,
     maxWounds: overrides.maxWounds ?? 12,
     isDefeated: false,
-    position: overrides.position ?? 2,
+    position: overrides.position ?? 4,
     movementUsed: 0,
-    movementAllowance: 4,
+    movementAllowance: 8,
     traits: [],
     ...overrides,
   };
@@ -64,7 +64,7 @@ export function buildCombatCampaignPayload({
     attributes: { sila: 8, inteligencja: 6, charyzma: 4, zrecznosc: 6, wytrzymalosc: 6, szczescie: 0 },
     wounds: enemyHp,
     maxWounds: enemyHp,
-    position: 3,
+    position: 6,
   });
 
   const combatants = enemyInitiative

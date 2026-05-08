@@ -71,15 +71,15 @@ export const gameData = {
   },
 
   get MELEE_RANGE() {
-    return _combatData?.constants?.MELEE_RANGE ?? 2;
+    return _combatData?.constants?.MELEE_RANGE ?? 4;
   },
 
   get BATTLEFIELD_MAX() {
-    return _combatData?.constants?.BATTLEFIELD_MAX ?? 20;
+    return _combatData?.constants?.BATTLEFIELD_MAX ?? 40;
   },
 
   get DEFAULT_MOVEMENT() {
-    return _combatData?.constants?.DEFAULT_MOVEMENT ?? 4;
+    return _combatData?.constants?.DEFAULT_MOVEMENT ?? 8;
   },
 
   get bestiary() {

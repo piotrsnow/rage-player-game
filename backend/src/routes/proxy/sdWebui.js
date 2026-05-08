@@ -277,6 +277,10 @@ export async function sdWebuiProxyRoutes(fastify) {
     const userSuppliedSeed = Number.isInteger(bodySeed);
     const seed = userSuppliedSeed ? bodySeed : randomSeed();
 
+    const ipaModelName =
+      portraitBase64 ? await probeIpaModel(baseUrl) : null;
+    const useTwoPassFaceRefine = Boolean(portraitBase64 && ipaModelName);
+
     const cacheParams = {
       provider: 'sd-webui',
       prompt,
@@ -285,6 +289,7 @@ export async function sdWebuiProxyRoutes(fastify) {
       height,
       seed,
       resolutionScale: GENERATED_IMAGE_SCALE,
+      ...(useTwoPassFaceRefine ? { faceRefine2p: true, ipaW: rawIpaWeight ?? null } : {}),
       ...(forceNew ? { requestTs: Date.now() } : {}),
     };
     const cacheKey = generateKey('image', cacheParams, campaignId);
@@ -325,19 +330,12 @@ export async function sdWebuiProxyRoutes(fastify) {
       payload.denoising_strength = 0.3;
     }
 
-    if (portraitBase64) {
-      const ipaModelName = await probeIpaModel(baseUrl);
-      if (ipaModelName) {
-        const sceneWeight = rawIpaWeight ?? 0.35;
-        payload.alwayson_scripts = {
-          controlnet: {
-            args: [buildIpAdapterUnit(portraitBase64, sceneWeight, ipaModelName)],
-          },
-        };
-      }
-    }
+    // Portrait + IP-Adapter: single-pass txt2img with face IP-Adapter locks the
+    // whole frame to the reference (same posing / framing every time). Generate
+    // the environment first, then img2img with IP-Adapter to graft identity.
 
     let res;
+    let b64;
     try {
       res = await fetchWithTimeout(
         `${baseUrl}/sdapi/v1/txt2img`,
@@ -358,8 +356,58 @@ export async function sdWebuiProxyRoutes(fastify) {
     }
 
     const data = await res.json();
-    const b64 = Array.isArray(data.images) ? data.images[0] : null;
+    b64 = Array.isArray(data.images) ? data.images[0] : null;
     if (!b64) return reply.code(502).send({ error: 'sd-webui returned no image' });
+
+    if (useTwoPassFaceRefine) {
+      const ipaWeight = rawIpaWeight ?? 0.35;
+      const refineDenoise = Math.min(0.52, Math.max(0.24, 0.26 + ipaWeight * 0.32));
+      const refineSteps = Math.max(12, Math.round(steps * 0.55));
+      const refineSeed = userSuppliedSeed ? (seed + 1) >>> 0 : randomSeed();
+      const refinePayload = {
+        init_images: [b64],
+        resize_mode: 0,
+        prompt,
+        negative_prompt: negativePrompt,
+        denoising_strength: refineDenoise,
+        width,
+        height,
+        steps: refineSteps,
+        cfg_scale: cfg,
+        sampler_name: sampler,
+        seed: refineSeed,
+        n_iter: 1,
+        batch_size: 1,
+        save_images: true,
+        alwayson_scripts: {
+          controlnet: {
+            args: [buildIpAdapterUnit(portraitBase64, ipaWeight, ipaModelName)],
+          },
+        },
+      };
+      try {
+        const res2 = await fetchWithTimeout(
+          `${baseUrl}/sdapi/v1/img2img`,
+          {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(refinePayload),
+          },
+          GENERATE_TIMEOUT_MS,
+        );
+        if (res2.ok) {
+          const data2 = await res2.json();
+          const b642 = Array.isArray(data2.images) ? data2.images[0] : null;
+          if (b642) b64 = b642;
+          else console.warn('[sd-webui] face-refine img2img returned no image; keeping txt2img output');
+        } else {
+          const errText = await res2.text().catch(() => '');
+          console.warn(`[sd-webui] face-refine img2img failed (${res2.status}): ${errText.slice(0, 200)}; keeping txt2img output`);
+        }
+      } catch (err) {
+        console.warn(`[sd-webui] face-refine img2img unreachable: ${err.message}; keeping txt2img output`);
+      }
+    }
 
     const originalBuffer = Buffer.from(b64, 'base64');
     const buffer = await downscaleGeneratedImage(originalBuffer);

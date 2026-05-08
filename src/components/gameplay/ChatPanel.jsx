@@ -10,7 +10,7 @@ import {
   SystemMessage,
   TypingIndicator,
 } from './chat/ChatMessages';
-import DiceRollMessage from './chat/DiceRollMessage';
+import DiceRollCard from './DiceRollCard';
 
 function formatDuration(totalSeconds) {
   const h = Math.floor(totalSeconds / 3600);
@@ -65,8 +65,8 @@ export default function ChatPanel({
   return (
     <div className="flex min-h-0 flex-col h-full overflow-hidden">
       {/* Header */}
-      <div className="px-4 py-2 border-b border-outline-variant/15 shrink-0">
-        <div className="flex items-center gap-2 flex-wrap">
+      <div className="px-4 py-2 shrink-0">
+        <div className="flex items-center gap-2 flex-wrap justify-end">
           <span
             className="flex items-center gap-1.5 px-2 py-0.5 rounded-sm text-xs bg-on-surface/5 border border-outline-variant/20 text-on-surface-variant/60 tabular-nums"
             title={`${t('chat.sessionTime')}: ${formatDuration(sessionSeconds)} / ${t('chat.totalPlayTime')}: ${formatDuration(totalPlayTime)}`}
@@ -137,7 +137,7 @@ export default function ChatPanel({
           if (msg.role === 'dm') inner = <DmMessage message={msg} narrator={narrator} />;
           else if (msg.subtype === 'combat_commentary') inner = <CombatCommentaryMessage message={msg} narrator={narrator} />;
           else if (msg.role === 'player') { const isMe = myOdId ? msg.odId === myOdId : true; inner = <PlayerMessage message={msg} isMe={isMe} />; }
-          else if (msg.subtype === 'dice_roll') { inner = <DiceRollMessage message={msg} />; px = 'px-3'; }
+          else if (msg.subtype === 'dice_roll') { inner = msg.diceData ? <DiceRollCard diceData={msg.diceData} /> : <SystemMessage message={msg} />; px = 'px-3'; }
           else inner = <SystemMessage message={msg} />;
           return <div key={msg.id} data-testid="chat-message" data-message-id={msg.id} className={px}>{inner}</div>;
         })}

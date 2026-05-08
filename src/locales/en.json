@@ -143,7 +143,19 @@
     "logMarginBonus": "margin",
     "logBlocked": "blocked",
     "logDR": "DR",
-    "logWeaponDmg": "weapon"
+    "logWeaponDmg": "weapon",
+    "selectSpell": "Select spell",
+    "inventory": "Items",
+    "customAction": "Custom action",
+    "useItemDescription": "What do you do with the item?",
+    "customActionDescription": "Describe your action",
+    "useItemPlaceholder": "Describe how you use this item in combat...",
+    "customActionPlaceholder": "Describe what you do this turn...",
+    "executeAiAction": "Execute (AI)",
+    "aiTurnFailed": "AI turn resolution failed — try again.",
+    "regenerateSprite": "New sprite",
+    "expandLayout": "Expand battlefield",
+    "collapseLayout": "Collapse battlefield"
   },
   "nav": {
     "lobby": "Lobby",
@@ -437,6 +449,16 @@
     "rollEdge": "Edge {{value}}",
     "momentumBonus": "Momentum {{bonus}}",
     "dispositionBonus": "Disposition {{bonus}}",
+    "difficultyThresholds": {
+      "easy": "Easy",
+      "medium": "Average",
+      "hard": "Hard",
+      "veryHard": "Very Hard",
+      "extreme": "Extreme"
+    },
+    "diceRollTitle": "{{skill}} Check",
+    "diceRollSum": "Total",
+    "diceRollVsThreshold": "vs Threshold",
     "momentumActive": "Momentum {{bonus}} on next roll",
     "momentumMinigameActive": "Catch the dice on the image!",
     "momentumClickHint": "Click to play the momentum minigame",

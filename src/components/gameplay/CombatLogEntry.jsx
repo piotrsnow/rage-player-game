@@ -8,6 +8,7 @@ const LOG_COLORS = {
   fled: { border: '#c59aff', bg: 'rgba(197,154,255,0.06)' },
   defeat: { border: '#ff6e84', bg: 'rgba(255,110,132,0.08)' },
   info: { border: '#74c0fc', bg: 'rgba(116,192,252,0.08)' },
+  ai_action: { border: '#a78bfa', bg: 'rgba(167,139,250,0.08)' },
   round: { border: '#48474a', bg: 'transparent' },
 };
 
@@ -18,6 +19,7 @@ const LOG_ICONS = {
   fled: 'exit_to_app',
   defeat: 'skull',
   info: 'shield',
+  ai_action: 'auto_awesome',
 };
 
 const PREFERS_REDUCED_MOTION =
@@ -113,6 +115,10 @@ function AnimatedTextSegment({ text, startIndex, visibleCount, className = '', s
 
 function AnimatedCombatLogText({ entry }) {
   const textSegments = useMemo(() => {
+    if (entry.text && !entry.actor) {
+      return [{ key: 'text', text: entry.text, startIndex: 0, className: 'text-on-surface', style: undefined }];
+    }
+
     const segments = [
       {
         key: 'actor',
@@ -252,13 +258,13 @@ function buildCombatLogTooltipContent(entry, t) {
   );
 }
 
-function CombatLogEntry({ entry, t }) {
+function CombatLogEntry({ entry, t, isNew = false }) {
   if (!entry) return null;
   const style = LOG_COLORS[entry.type] || LOG_COLORS.miss;
 
   if (entry.type === 'round') {
     return (
-      <div className="flex items-center gap-3 py-1.5" data-testid="combat-log-round">
+      <div className={`flex items-center gap-3 py-1.5 ${isNew ? 'combat-log-entry-new' : ''}`} data-testid="combat-log-round">
         <div className="flex-1 h-px bg-outline-variant/20" />
         <span className="text-[11px] text-outline-variant font-label uppercase tracking-widest shrink-0">
           {entry.text}
@@ -269,12 +275,13 @@ function CombatLogEntry({ entry, t }) {
   }
 
   const tooltipContent = buildCombatLogTooltipContent(entry, t);
+  const entryAnimClass = isNew ? 'combat-log-entry-new' : 'animate-fade-in';
 
   const content = (
     <div
       data-testid="combat-log-entry"
       data-combat-log-type={entry.type}
-      className={`flex items-start gap-2 px-3 py-2 rounded-sm animate-fade-in transition-colors ${
+      className={`flex items-start gap-2 px-3 py-2 rounded-sm ${entryAnimClass} transition-colors ${
         tooltipContent ? 'hover:bg-surface-container/30' : ''
       }`}
       style={{ borderLeft: `3px solid ${style.border}`, background: style.bg }}

@@ -16,6 +16,7 @@ import { useAI } from '../../hooks/useAI';
 import { apiClient } from '../../services/apiClient';
 import { useAiCallLogStore } from '../../stores/aiCallLogStore';
 import StatusBar from '../ui/StatusBar';
+import ActiveEffectsRow from '../ui/ActiveEffectsRow';
 import NeedsPanel from '../gameplay/NeedsPanel';
 import SidebarPartyList from './SidebarPartyList';
 import SidebarAiCallLog from './SidebarAiCallLog';
@@ -106,16 +107,20 @@ Opisz bardzo konkretne konsekwencje tej decyzji dla fabuły: relacji, zasobów, 
       style={uwBonus.sidebar > 0 ? { width: 320 + uwBonus.sidebar } : undefined}
     >
       <div className="px-6 mb-8">
-        {character.portraitUrl && (
-          <div className="mt-[140px] mb-4 aspect-[3/4] overflow-hidden rounded-sm border border-outline-variant/20 bg-surface-container-high shadow-[0_10px_30px_rgba(0,0,0,0.25)]">
+        <div className="mt-[140px] mb-4 aspect-[3/4] overflow-hidden rounded-sm border border-outline-variant/20 bg-surface-container-high shadow-[0_10px_30px_rgba(0,0,0,0.25)]">
+          {character.portraitUrl ? (
             <img
               src={apiClient.resolveMediaUrl(character.portraitUrl)}
               alt={character.name}
               className="h-full w-full object-cover"
               onError={(e) => { e.target.style.display = 'none'; }}
             />
-          </div>
-        )}
+          ) : (
+            <div className="h-full w-full flex items-center justify-center bg-surface-container">
+              <span className="material-symbols-outlined text-on-surface-variant/40 text-6xl">person</span>
+            </div>
+          )}
+        </div>
         <div className="flex items-center gap-3 mb-4 p-3 -mx-3 rounded-sm bg-surface-container/30 hover:bg-surface-container/50 transition-all duration-300 group">
           <div className="w-10 h-10 bg-surface-container-high rounded-sm flex items-center justify-center border border-tertiary/20 group-hover:border-tertiary/40 group-hover:shadow-[0_0_12px_rgba(255,239,213,0.1)] transition-all duration-300">
             <span className="material-symbols-outlined text-tertiary text-xl">shield</span>
@@ -133,6 +138,11 @@ Opisz bardzo konkretne konsekwencje tej decyzji dla fabuły: relacji, zasobów, 
             <StatusBar label="Mana" current={mana.current} max={mana.max} color="blue" />
           )}
         </div>
+        {(character.activeEffects || []).length > 0 && (
+          <div className="mt-2">
+            <ActiveEffectsRow effects={character.activeEffects} />
+          </div>
+        )}
         <div className="mt-4">
           <NeedsPanel
             needs={character.needs || { hunger: 100, thirst: 100, bladder: 100, hygiene: 100, rest: 100 }}

@@ -99,14 +99,34 @@ export function drawBackground(ctx, w, h, now, anim) {
 }
 
 export function drawBattlefield(ctx, w, bfTop, bfH, _now) {
+  const x0 = yardToX(0, w);
+  const xMax = yardToX(gameData.BATTLEFIELD_MAX, w);
+  const pad = 12;
+
   ctx.fillStyle = 'rgba(25,25,28,0.3)';
-  roundRect(ctx, BATTLEFIELD_PAD_X - 12, bfTop - 4, w - (BATTLEFIELD_PAD_X - 12) * 2, bfH + 8, 6);
+  roundRect(ctx, x0 - pad, bfTop - 4, (xMax - x0) + pad * 2, bfH + 8, 6);
   ctx.fill();
 
+  // Bright boundary lines at edges
+  ctx.strokeStyle = 'rgba(197,154,255,0.5)';
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(x0, bfTop - 2);
+  ctx.lineTo(x0, bfTop + bfH + 2);
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.moveTo(xMax, bfTop - 2);
+  ctx.lineTo(xMax, bfTop + bfH + 2);
+  ctx.stroke();
+
+  // Yard grid lines — show every 5th major, every 10th with label
   for (let yard = 0; yard <= gameData.BATTLEFIELD_MAX; yard++) {
     const x = yardToX(yard, w);
-    const isMajor = yard % 5 === 0;
-    ctx.strokeStyle = isMajor ? 'rgba(72,71,74,0.25)' : COLORS.yardLine;
+    const isMajor = yard % 10 === 0;
+    const isMid = yard % 5 === 0;
+    if (!isMajor && !isMid) continue;
+
+    ctx.strokeStyle = isMajor ? 'rgba(72,71,74,0.3)' : COLORS.yardLine;
     ctx.lineWidth = isMajor ? 1 : 0.5;
     ctx.beginPath();
     ctx.moveTo(x, bfTop + 2);
@@ -114,7 +134,7 @@ export function drawBattlefield(ctx, w, bfTop, bfH, _now) {
     ctx.stroke();
 
     if (isMajor) {
-      ctx.font = '8px Manrope, sans-serif';
+      ctx.font = '9px Manrope, sans-serif';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'top';
       ctx.fillStyle = COLORS.yardText;
@@ -242,7 +262,7 @@ export function drawCombatOverOverlay(ctx, w, h, friendlies, now, anim) {
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
   ctx.fillStyle = glowColor;
-  ctx.fillText(isVictory ? '\u2694 VICTORY' : '\u2620 DEFEAT', 0, 0);
+  ctx.fillText(isVictory ? '\u2694 ZWYCI\u0118STWO' : '\u2620 PORA\u017bKA', 0, 0);
   ctx.shadowBlur = 0;
 
   ctx.restore();

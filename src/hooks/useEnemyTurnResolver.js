@@ -65,8 +65,10 @@ export function useEnemyTurnResolver({
   addResultToLog,
   dispatchCombatChatMessage,
   setIsAwaitingAiTurn,
+  onBeforeResolve,
 }) {
-  const runEnemyTurn = useEvent(() => {
+  const runEnemyTurn = useEvent(async () => {
+    if (onBeforeResolve) await onBeforeResolve(combat);
     resolveEnemyTurnStep({
       combat,
       isMultiplayer,

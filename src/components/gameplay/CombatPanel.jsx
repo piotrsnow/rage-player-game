@@ -5,6 +5,7 @@ import { useCombatAudio } from '../../hooks/useCombatAudio';
 import { useAI } from '../../hooks/useAI';
 import { useSettings } from '../../contexts/SettingsContext';
 import { shortId } from '../../utils/ids';
+import { aiService } from '../../services/ai/service';
 import {
   resolveManoeuvre,
   advanceTurn,
@@ -21,7 +22,7 @@ import {
 } from '../../services/combatEngine';
 import CombatCanvas from './CombatCanvas';
 import { useCombatCommentary } from '../../hooks/useCombatCommentary';
-import CombatLogEntry from './CombatLogEntry';
+import CombatLog from './combat/CombatLog';
 import CombatantsList from './combat/CombatantsList';
 import CombatHeader from './combat/CombatHeader';
 import { TruceConfirmDialog, SurrenderConfirmDialog } from './combat/CombatConfirmDialogs';
@@ -31,6 +32,7 @@ import { useEnemyTurnResolver } from '../../hooks/useEnemyTurnResolver';
 import { useCombatResultSync } from '../../hooks/useCombatResultSync';
 import { useCombatHostResolve } from '../../hooks/useCombatHostResolve';
 import { useCombatSprites } from '../../hooks/useCombatSprites';
+import { addEffect, migrateStatusStrings } from '../../../shared/domain/statusEffects.js';
 
 function isCustomAttackManoeuvre(manoeuvreKey) {
   return Boolean(manoeuvreKey && gameData.manoeuvres[manoeuvreKey]?.type === 'offensive');
@@ -47,11 +49,15 @@ function summarizeLogEntry(entry) {
   return [core, extras.join(', ')].filter(Boolean).join(' — ');
 }
 
+const ACTION_ANIM_MS = 1500;
+
 export default function CombatPanel({
   combat, dispatch, onEndCombat, onSurrender, onForceTruce, character,
   isMultiplayer = false, myPlayerId, onSendManoeuvre, onHostResolve, isHost = false, mpCharacters,
   gameState,
   onPersistState,
+  expandedLayout = false,
+  onLayoutChange,
 }) {
   const { t } = useTranslation();
   const { settings } = useSettings();
@@ -61,8 +67,7 @@ export default function CombatPanel({
   const [showTruceConfirm, setShowTruceConfirm] = useState(false);
   const [combatLog, setCombatLog] = useState([]);
   const [isAwaitingAiTurn, setIsAwaitingAiTurn] = useState(false);
-  const logEndRef = useRef(null);
-  const logScrollRef = useRef(null);
+  const [actionAnim, setActionAnim] = useState(null);
   const combatAudio = useCombatAudio(combat);
 
   const currentTurn = getCurrentTurnCombatant(combat);
@@ -125,11 +130,6 @@ export default function CombatPanel({
     setCombatLog((prev) => [...prev.slice(-49), entry]);
   }, []);
 
-  useEffect(() => {
-    const el = logScrollRef.current;
-    if (el) el.scrollTop = el.scrollHeight;
-  }, [combatLog]);
-
   const prevRoundRef = useRef(combat.round);
   useEffect(() => {
     if (combat.round !== prevRoundRef.current) {
@@ -179,6 +179,26 @@ export default function CombatPanel({
     onEmitMessage: handleCommentaryMessage,
   });
 
+  const triggerActionAnim = useCallback((actorId, targetId) => {
+    setActionAnim({ actorId, targetId });
+    return new Promise((resolve) => setTimeout(resolve, ACTION_ANIM_MS));
+  }, []);
+
+  const handleEnemyBeforeResolve = useCallback(async (currentCombat) => {
+    const current = getCurrentTurnCombatant(currentCombat);
+    if (!current || current.type === 'player') return;
+    const playerTargets = currentCombat.combatants.filter(
+      (c) => (c.type === 'player' || c.type === 'ally') && !c.isDefeated
+    );
+    if (!playerTargets.length) return;
+    const closest = playerTargets.reduce((best, t) => {
+      const d = Math.abs((current.position ?? 0) - (t.position ?? 0));
+      return !best || d < best.dist ? { target: t, dist: d } : best;
+    }, null);
+    await triggerActionAnim(current.id, closest?.target?.id || null);
+    setActionAnim(null);
+  }, [triggerActionAnim]);
+
   useEnemyTurnResolver({
     combat,
     combatOver,
@@ -189,6 +209,7 @@ export default function CombatPanel({
     addResultToLog: (r) => addResultToLog(r),
     dispatchCombatChatMessage: (r) => dispatchCombatChatMessage(r),
     setIsAwaitingAiTurn,
+    onBeforeResolve: handleEnemyBeforeResolve,
   });
 
   useCombatResultSync({
@@ -220,8 +241,8 @@ export default function CombatPanel({
     onPersistState?.();
   }, [dispatch, onPersistState]);
 
-  const handleExecuteManoeuvre = useCallback((manoeuvreKey, targetId, customDesc) => {
-    if (!manoeuvreKey || !isMyTurn) return;
+  const handleExecuteManoeuvre = useCallback(async (manoeuvreKey, targetId, customDesc, extraOpts = {}) => {
+    if (!manoeuvreKey || !isMyTurn || actionAnim) return;
 
     if (isCustomAttackManoeuvre(manoeuvreKey) && customDesc) {
       persistCustomAttack(customDesc);
@@ -233,8 +254,11 @@ export default function CombatPanel({
     }
 
     const actorId = isMultiplayer ? myPlayerId : 'player';
+    await triggerActionAnim(actorId, targetId || null);
+    setActionAnim(null);
+
     const { combat: updatedCombat, result } = resolveManoeuvre(
-      combat, actorId, manoeuvreKey, targetId, { customDescription: customDesc }
+      combat, actorId, manoeuvreKey, targetId, { customDescription: customDesc, ...extraOpts }
     );
     dispatchCombatChatMessage(result);
     addResultToLog(result);
@@ -249,7 +273,7 @@ export default function CombatPanel({
     } else {
       dispatch({ type: 'UPDATE_COMBAT', payload: finalCombat });
     }
-  }, [isMyTurn, isMultiplayer, isHost, myPlayerId, combat, dispatch, onHostResolve, onSendManoeuvre, dispatchCombatChatMessage, addResultToLog, persistCustomAttack]);
+  }, [isMyTurn, actionAnim, isMultiplayer, isHost, myPlayerId, combat, dispatch, onHostResolve, onSendManoeuvre, dispatchCombatChatMessage, addResultToLog, persistCustomAttack, triggerActionAnim]);
 
   const handleMoveToPosition = useCallback((targetYard) => {
     if (!isMyTurn || combatOver) return;
@@ -274,6 +298,138 @@ export default function CombatPanel({
       dispatch({ type: 'UPDATE_COMBAT', payload: updated });
     }
   }, [combat, isMyTurn, combatOver, isMultiplayer, myPlayerId, dispatch, onHostResolve, t, addLogEntry]);
+
+  const handleAiAction = useCallback(async (actionText) => {
+    if (!isMyTurn || combatOver || actionAnim) return;
+    setIsAwaitingAiTurn(true);
+
+    const actorId = isMultiplayer ? myPlayerId : 'player';
+    const closestEnemy = combat.combatants
+      .filter((c) => c.type === 'enemy' && !c.isDefeated)
+      .reduce((best, e) => {
+        const actor = combat.combatants.find(c => c.id === actorId);
+        const d = Math.abs((actor?.position ?? 0) - (e.position ?? 0));
+        return !best || d < best.dist ? { target: e, dist: d } : best;
+      }, null);
+    await triggerActionAnim(actorId, closestEnemy?.target?.id || null);
+    setActionAnim(null);
+
+    const activeCombatants = combat.combatants
+      .filter((c) => !c.isDefeated)
+      .map((c) => ({
+        name: c.name,
+        type: c.type,
+        wounds: c.wounds ?? 0,
+        maxWounds: c.maxWounds ?? c.wounds ?? 0,
+        conditions: c.conditions || [],
+        activeEffects: (c.activeEffects || []).map(fx => ({
+          name: fx.name,
+          category: fx.category,
+          remaining: fx.duration?.remaining,
+          restrictions: fx.mechanics?.restrictions || [],
+        })),
+      }));
+    const defeatedCombatants = combat.combatants
+      .filter((c) => c.isDefeated)
+      .map((c) => ({ name: c.name, type: c.type, wounds: 0, maxWounds: c.maxWounds ?? 0 }));
+
+    const combatSnapshot = {
+      round: combat.round ?? 1,
+      reason: combat.reason || '',
+      activeCombatants,
+      defeatedCombatants,
+    };
+
+    const provider = settings.dmSettings?.aiProvider || 'openai';
+    const language = settings.language || 'pl';
+
+    try {
+      const { result } = await aiService.resolveCombatTurn(
+        combatSnapshot, actionText, provider, language, 'standard'
+      );
+
+      const updatedCombatants = combat.combatants.map((c) => {
+        let updated = { ...c, conditions: [...(c.conditions || [])] };
+
+        if (c.type === 'enemy' && !c.isDefeated && result.enemyDamage?.length) {
+          const dmgEntry = result.enemyDamage.find((d) => d.name === c.name);
+          if (dmgEntry && dmgEntry.damage > 0) {
+            updated.wounds = Math.max(0, (updated.wounds ?? 0) - dmgEntry.damage);
+            if (updated.wounds <= 0) updated.isDefeated = true;
+          }
+        }
+
+        if (c.type === 'player') {
+          if (result.playerDamage > 0) {
+            updated.wounds = Math.max(0, (updated.wounds ?? 0) - result.playerDamage);
+            if (updated.wounds <= 0) updated.isDefeated = true;
+          }
+          if (result.playerHealing > 0) {
+            updated.wounds = Math.min(updated.maxWounds ?? updated.wounds, (updated.wounds ?? 0) + result.playerHealing);
+          }
+          if (result.manaChange && updated.mana) {
+            updated.mana = { ...updated.mana, current: Math.max(0, updated.mana.current + result.manaChange) };
+          }
+        }
+
+        if (result.statusEffects?.length) {
+          if (!updated.activeEffects) updated.activeEffects = [];
+          for (const eff of result.statusEffects) {
+            if (eff.target !== c.name) continue;
+            if (eff.action === 'remove') {
+              updated.activeEffects = updated.activeEffects.filter(fx => fx.name !== eff.effect?.name);
+              continue;
+            }
+            if (eff.effect && typeof eff.effect === 'object' && eff.effect.name) {
+              const fx = { id: `ai_${shortId(6)}`, source: 'ai', stackable: false, description: '', ...eff.effect };
+              updated.activeEffects = addEffect(updated.activeEffects, fx);
+            } else if (typeof eff.effect === 'string') {
+              const migrated = migrateStatusStrings([eff.effect]);
+              for (const mfx of migrated) updated.activeEffects = addEffect(updated.activeEffects, mfx);
+            }
+          }
+        }
+
+        return updated;
+      });
+
+      let updatedCombat = { ...combat, combatants: updatedCombatants };
+      updatedCombat = advanceTurn(updatedCombat);
+
+      if (result.narration) {
+        addLogEntry({
+          type: 'ai_action',
+          text: result.narration,
+          id: `ai_turn_${shortId(4)}`,
+        });
+        dispatch({
+          type: 'ADD_CHAT_MESSAGE',
+          payload: {
+            id: `msg_${Date.now()}_combat_ai_turn_${shortId(4)}`,
+            role: 'narrator',
+            content: result.narration,
+            subtype: 'combat_ai_turn',
+            timestamp: Date.now(),
+          },
+        });
+      }
+
+      if (isMultiplayer) {
+        onHostResolve?.(updatedCombat);
+      } else {
+        dispatch({ type: 'UPDATE_COMBAT', payload: updatedCombat });
+      }
+    } catch (err) {
+      console.error('[CombatPanel] AI combat turn failed:', err);
+      addLogEntry({
+        type: 'info',
+        text: t('combat.aiTurnFailed', 'AI turn resolution failed — try again.'),
+        id: `ai_fail_${shortId(4)}`,
+      });
+    } finally {
+      setIsAwaitingAiTurn(false);
+    }
+  }, [combat, isMyTurn, combatOver, actionAnim, isMultiplayer, myPlayerId, settings, dispatch, onHostResolve, addLogEntry, t, triggerActionAnim]);
 
   const handleEndCombat = () => {
     if (isMultiplayer) {
@@ -326,6 +482,8 @@ export default function CombatPanel({
         onRequestTruce={() => setShowTruceConfirm(true)}
         onRequestSurrender={() => setShowSurrenderConfirm(true)}
         onEndCombat={handleEndCombat}
+        expandedLayout={expandedLayout}
+        onToggleLayout={() => onLayoutChange?.(!expandedLayout)}
       />
 
       {showTruceConfirm && (
@@ -342,75 +500,51 @@ export default function CombatPanel({
         />
       )}
 
-      <CombatCanvas
-        combat={enrichedCombat}
-        myPlayerId={myPlayerId}
-        isMultiplayer={isMultiplayer}
-        selectedTarget={selectedTarget}
-        onSelectTarget={setSelectedTarget}
-        onHoverCombatant={() => {}}
-        onMoveToPosition={handleMoveToPosition}
-        combatOver={combatOver}
-        isMyTurn={isMyTurn}
-        myCombatantId={myCombatant?.id}
-        availableManoeuvres={availableManoeuvres}
-        savedCustomAttacks={savedCustomAttacks}
-        onExecuteManoeuvre={handleExecuteManoeuvre}
-        onPersistCustomAttack={persistCustomAttack}
-        onRemoveCustomAttack={removeCustomAttack}
-        onRegenerateSprite={regenerateSprite}
-      />
+      <div className={expandedLayout ? 'flex flex-col gap-3' : 'grid grid-cols-1 xl:grid-cols-[minmax(0,3fr)_minmax(0,2fr)] gap-3 items-stretch'}>
+        <CombatCanvas
+          combat={enrichedCombat}
+          myPlayerId={myPlayerId}
+          isMultiplayer={isMultiplayer}
+          selectedTarget={selectedTarget}
+          onSelectTarget={setSelectedTarget}
+          onHoverCombatant={() => {}}
+          onMoveToPosition={handleMoveToPosition}
+          combatOver={combatOver}
+          isMyTurn={isMyTurn && !actionAnim}
+          myCombatantId={myCombatant?.id}
+          availableManoeuvres={availableManoeuvres}
+          actionAnim={actionAnim}
+          savedCustomAttacks={savedCustomAttacks}
+          onExecuteManoeuvre={handleExecuteManoeuvre}
+          onPersistCustomAttack={persistCustomAttack}
+          onRemoveCustomAttack={removeCustomAttack}
+          onRegenerateSprite={regenerateSprite}
+          character={character}
+          onAiAction={handleAiAction}
+          expanded={expandedLayout}
+        />
+
+        <CombatLog combatLog={combatLog} legacyLog={combat.log} expanded={expandedLayout} />
+      </div>
 
       <div className="grid grid-cols-1 xl:grid-cols-[240px_minmax(0,1fr)] gap-3 items-start">
-        <div className="space-y-3">
-          <CombatantsList
-            combatants={combat.combatants}
-            currentTurn={currentTurn}
-            onHoverCombatant={() => {}}
-            t={t}
-          />
+        <CombatantsList
+          combatants={combat.combatants}
+          currentTurn={currentTurn}
+          onHoverCombatant={() => {}}
+          t={t}
+        />
 
-          <CombatTurnStatus
-            isMyTurn={isMyTurn}
-            combatOver={combatOver}
-            isMultiplayer={isMultiplayer}
-            isHost={isHost}
-            currentTurn={currentTurn}
-            isAwaitingAiTurn={isAwaitingAiTurn}
-            combat={combat}
-            enemies={enemies}
-          />
-        </div>
-
-        <div className="min-w-0 space-y-3">
-          <div className="text-[10px] font-label uppercase tracking-widest text-on-surface-variant px-1 pb-1">
-            {t('combat.battleProgress', 'Battle Progress')}
-          </div>
-          {combatLog.length > 0 && (
-            <div
-              ref={logScrollRef}
-              className="space-y-1 max-h-[480px] overflow-y-auto custom-scrollbar rounded-sm border border-outline-variant/10 bg-surface-container/20 p-2"
-            >
-              {combatLog.map((entry) => (
-                <CombatLogEntry key={entry.id} entry={entry} t={t} />
-              ))}
-              <div ref={logEndRef} />
-            </div>
-          )}
-
-          {combatLog.length === 0 && combat.log.length > 0 && (
-            <div
-              ref={logScrollRef}
-              className="space-y-1 max-h-[480px] overflow-y-auto custom-scrollbar rounded-sm border border-outline-variant/10 bg-surface-container/20 p-2"
-            >
-              {combat.log.slice(-5).map((entry, i) => (
-                <div key={`legacy_${i}`} className="text-[11px] text-outline-variant leading-snug px-2 py-1">
-                  {entry}
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
+        <CombatTurnStatus
+          isMyTurn={isMyTurn}
+          combatOver={combatOver}
+          isMultiplayer={isMultiplayer}
+          isHost={isHost}
+          currentTurn={currentTurn}
+          isAwaitingAiTurn={isAwaitingAiTurn}
+          combat={combat}
+          enemies={enemies}
+        />
       </div>
     </div>
   );
