@@ -5,6 +5,23 @@ import { getActiveCampaignId } from './activeCampaign.js';
 import { sceneIndexCache } from './sceneIndexCache.js';
 import { parseBackendCampaign } from './campaignParse.js';
 
+function shuffleInPlace(arr) {
+  for (let i = arr.length - 1; i > 0; i -= 1) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [arr[i], arr[j]] = [arr[j], arr[i]];
+  }
+  return arr;
+}
+
+function pickSceneCoversFromScenes(scenes, max = 5) {
+  if (!Array.isArray(scenes) || scenes.length === 0) return [];
+  const urls = scenes
+    .map((scene) => (typeof scene?.imageUrl === 'string' ? scene.imageUrl.trim() : ''))
+    .filter(Boolean);
+  if (urls.length === 0) return [];
+  return shuffleInPlace(urls).slice(0, max);
+}
+
 /**
  * List campaigns — merges the backend list with the local snapshot (if any)
  * so an offline session still has its current campaign in the picker. Local
@@ -36,6 +53,7 @@ export async function getCampaigns() {
         characterCareer: local.character?.career?.name || '',
         characterTier: local.character?.career?.tier || 1,
         sceneCount: local.scenes?.length || 0,
+        sceneCovers: pickSceneCoversFromScenes(local.scenes || local.campaign.coreState?.scenes),
         totalCost: local.aiCosts?.total || 0,
         source: 'local',
       });

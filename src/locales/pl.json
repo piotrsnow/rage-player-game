@@ -22,6 +22,8 @@
     "xp": "PD",
     "success": "Sukces!",
     "failure": "Porażka!",
+    "zoomIn": "Powiększ",
+    "zoomOut": "Pomniejsz",
     "criticalSuccess": "Krytyczny sukces!",
     "criticalFailure": "Krytyczna porażka!",
     "target": "Cel",
@@ -393,7 +395,8 @@
     "playSnark": "Posłuchaj",
     "stopSnark": "Zatrzymaj",
     "introTapForSound": "Dotknij ekranu, by włączyć dźwięk",
-    "lastRollShort": "Ostatni rzut:"
+    "lastRollShort": "Ostatni rzut:",
+    "campaignCoverAlt": "Sceny z kampanii {{name}}"
   },
   "creator": {
     "title": "Wykuj Nową Kampanię",
@@ -1924,8 +1927,11 @@
       "dead": "Nie żyje",
       "inParty": "Już w drużynie",
       "lowDisposition": "Niska sympatia",
+      "lowDispositionDelta": "Brakuje +{{missing}} sympatii (min. {{min}})",
       "cooldown": "Jeszcze nie teraz",
-      "notRecent": "Dawno niewidziany"
+      "cooldownScenes": "Spróbuj za {{count}} {{noun}}",
+      "notRecent": "Dawno niewidziany",
+      "notRecentHint": "Pojaw się w ostatnich {{window}} scenach"
     }
   },
   "webcam": {

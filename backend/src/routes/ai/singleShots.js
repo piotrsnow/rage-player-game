@@ -7,6 +7,7 @@ import { generateCharacterLegend } from '../../services/characterLegendGenerator
 import { enhanceImagePrompt } from '../../services/imagePromptEnhancer.js';
 import { generateImagePrompt } from '../../services/imagePromptGenerator.js';
 import { translateImagePromptToEnglish } from '../../services/translateImagePrompt.js';
+import { buildNpcPortraitPrompt } from '../../services/npcPortraitPromptBuilder.js';
 import { generateCombatCommentary } from '../../services/combatCommentary.js';
 import { resolveCombatTurn } from '../../services/combatTurnResolver.js';
 import { verifyObjective } from '../../services/objectiveVerifier.js';
@@ -17,6 +18,7 @@ import {
   ENHANCE_IMAGE_PROMPT_SCHEMA,
   GENERATE_IMAGE_PROMPT_SCHEMA,
   TRANSLATE_IMAGE_PROMPT_SCHEMA,
+  NPC_PORTRAIT_PROMPT_SCHEMA,
   COMBAT_COMMENTARY_SCHEMA,
   COMBAT_TURN_RESOLVE_SCHEMA,
   VERIFY_OBJECTIVE_SCHEMA,
@@ -167,6 +169,24 @@ export async function singleShotRoutes(fastify) {
     const userApiKeys = await loadUserApiKeys(prisma, request.user?.id);
     try {
       return await translateImagePromptToEnglish({ text, userApiKeys });
+    } catch (err) {
+      const status = err.statusCode || 502;
+      return reply.code(status).send({ error: err.message, code: err.code || 'AI_REQUEST_FAILED' });
+    }
+  });
+
+  /**
+   * POST /ai/npc-portrait-prompt — nano-tier prompt-builder that turns a full
+   * NPC card (name + race/creatureKind + role + personality + …) into a short
+   * English image-generation subject. Used by the FE NPC portrait pipeline so
+   * non-humanoid creatures and Polish-without-diacritics roles render as the
+   * intended subject instead of falling back to a generic human portrait.
+   */
+  fastify.post('/npc-portrait-prompt', { schema: { body: NPC_PORTRAIT_PROMPT_SCHEMA } }, async (request, reply) => {
+    const { npc, force = false } = request.body || {};
+    const userApiKeys = await loadUserApiKeys(prisma, request.user?.id);
+    try {
+      return await buildNpcPortraitPrompt({ npc, userApiKeys, force });
     } catch (err) {
       const status = err.statusCode || 502;
       return reply.code(status).send({ error: err.message, code: err.code || 'AI_REQUEST_FAILED' });

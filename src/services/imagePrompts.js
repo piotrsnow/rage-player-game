@@ -542,29 +542,113 @@ export function buildItemImagePrompt(item, { genre = 'Fantasy', tone = 'Epic', p
   return `ART STYLE: ${styleDirective}. ${mood}.${darkDirective}${seriousnessDirective} Subject: a fantasy inventory artwork of "${itemName}" (${itemType}, rarity: ${itemRarity}) from a ${worldContext} setting. Visual details: ${itemDescription}. Single item in focus, centered composition, clean readable silhouette, no characters, no text, no UI elements, no watermark, high detail.`;
 }
 
-export function buildPortraitPrompt(species, gender, age, careerName, genre = 'Fantasy', provider = 'stability', imageStyle = 'painting', hasReferenceImage = false, darkPalette = false, seriousness = null, extras = {}, sdModel = null) {
+// Humanoid species recognised by the portrait pipeline. Anything else routes
+// through the creature-mode branch in buildPortraitPrompt — without that
+// branch a non-humanoid race ("legendarny ptak", "smok") would silently fall
+// back to "human" and the image would render a person.
+const HUMANOID_SPECIES_TRAITS = {
+  Human: 'human, weathered skin, visible pores and skin texture',
+  Halfling: 'halfling, short stature, round cheerful face, rosy cheeks, bright eyes',
+  Dwarf: 'dwarf, stocky build, strong jaw, thick brow ridge, deep-set eyes, braided beard',
+  'High Elf': 'high elf, pointed ears, high cheekbones, slender refined features, luminous eyes, ethereal complexion',
+  'Wood Elf': 'wood elf, pointed ears, angular sharp features, intense wild eyes, sun-kissed weathered skin',
+};
+
+export function isHumanoidSpecies(species) {
+  return typeof species === 'string' && Object.prototype.hasOwnProperty.call(HUMANOID_SPECIES_TRAITS, species);
+}
+
+export function buildPortraitPrompt(species, gender, age, careerName, genre = 'Fantasy', provider = 'stability', imageStyle = 'painting', hasReferenceImage = false, darkPalette = false, seriousness = null, extras = {}, sdModel = null, subjectOverride = null) {
   const genderLabel = gender === 'female' ? 'female' : 'male';
   const isSD = provider === 'stability';
   const isSdWebui = provider === 'sd-webui';
   const isGemini = provider === 'gemini';
 
-  const speciesTraits = {
-    Human: 'human, weathered skin, visible pores and skin texture',
-    Halfling: 'halfling, short stature, round cheerful face, rosy cheeks, bright eyes',
-    Dwarf: 'dwarf, stocky build, strong jaw, thick brow ridge, deep-set eyes, braided beard',
-    'High Elf': 'high elf, pointed ears, high cheekbones, slender refined features, luminous eyes, ethereal complexion',
-    'Wood Elf': 'wood elf, pointed ears, angular sharp features, intense wild eyes, sun-kissed weathered skin',
-  };
-
   const styleDirective = getImageStyleDirective(imageStyle, 'portrait');
-  const speciesDesc = speciesTraits[species] || 'human, weathered skin, visible pores and skin texture';
-  const parsedAge = Number(age);
-  const ageDirective = Number.isFinite(parsedAge) ? `, approximately ${Math.max(1, Math.round(parsedAge))} years old` : '';
-  const career = careerName ? `, dressed as a ${careerName} with appropriate gear and attire` : '';
   const likenessDirective = buildLikenessDirective(hasReferenceImage, extras.likeness);
   const emotionDirective = buildEmotionDirective(extras.emotions);
   const darkDirective = darkPalette ? ' Dark moody color palette, deep shadows, low-key lighting, muted desaturated tones.' : '';
   const seriousnessDirective = seriousness != null ? ` ${getSeriousnessDirective(seriousness)}.` : '';
+
+  // LLM-built subject mode (NPC portraits). The caller already prepared a
+  // self-contained English description of the character — use it verbatim as
+  // the subject and skip species/career/age/gender heuristics. Style, mood,
+  // dark palette, seriousness still apply on top.
+  const trimmedOverride = typeof subjectOverride === 'string' ? subjectOverride.trim() : '';
+  if (trimmedOverride) {
+    if (isSdWebui) {
+      const extraTags = [...getSdEmotionTags(extras.emotions)].filter(Boolean);
+      return buildSdPrompt({
+        subject: `close-up portrait of ${trimmedOverride}, head and shoulders`,
+        tone: null,
+        darkPalette,
+        seriousness,
+        age: null,
+        gender: null,
+        hasPortraitRef: false,
+        imageStyle,
+        extraTags,
+      });
+    }
+    const compositionTail = ' Sharp focus on the subject, intricate detail, moody atmospheric background, head and shoulders composition.';
+    if (isSD) {
+      return `ART STYLE: ${styleDirective}. Close-up portrait of ${trimmedOverride}.${compositionTail}${darkDirective}${seriousnessDirective}${emotionDirective} No text, no watermarks.`;
+    }
+    if (isGemini) {
+      return `Generate an image in this EXACT art style: ${styleDirective}. Portrait of ${trimmedOverride}.${compositionTail} Square 1:1 aspect ratio.${darkDirective}${seriousnessDirective}${emotionDirective} No text, no watermarks.`;
+    }
+    if (provider === 'gpt-image') {
+      return `ART STYLE: ${styleDirective}. Portrait of ${trimmedOverride}.${compositionTail}${darkDirective}${seriousnessDirective}${emotionDirective} No text, no watermarks.`;
+    }
+    return `ART STYLE: ${styleDirective}. Portrait of ${trimmedOverride}.${compositionTail}${darkDirective}${seriousnessDirective}${emotionDirective} No text, no watermarks, no borders.`;
+  }
+
+  const isHumanoid = isHumanoidSpecies(species);
+  const speciesDesc = isHumanoid ? HUMANOID_SPECIES_TRAITS[species] : (typeof species === 'string' ? species.trim() : '') || 'mysterious creature';
+  const parsedAge = Number(age);
+  const ageDirective = Number.isFinite(parsedAge) ? `, approximately ${Math.max(1, Math.round(parsedAge))} years old` : '';
+  // Creature mode skips clothing/gear since non-humanoid creatures don't wear
+  // human gear; the role/career still rides in as a flavour phrase ("herald
+  // of change") rather than a wardrobe directive.
+  const career = careerName
+    ? (isHumanoid ? `, dressed as a ${careerName} with appropriate gear and attire` : `, ${careerName}`)
+    : '';
+
+  if (!isHumanoid) {
+    const creatureSubject = `fantasy creature: ${speciesDesc}${ageDirective}${career}, head and shoulders portrait, no humanoid figure unless inherent to the species`;
+
+    if (isSdWebui) {
+      const extraTags = [
+        'fantasy creature',
+        ...getSdEmotionTags(extras.emotions),
+      ].filter(Boolean);
+      return buildSdPrompt({
+        subject: `close-up portrait of a ${speciesDesc}${ageDirective}${career}, head and shoulders`,
+        tone: null,
+        darkPalette,
+        seriousness,
+        age: null,
+        gender: null,
+        hasPortraitRef: false,
+        imageStyle,
+        extraTags,
+      });
+    }
+
+    if (isSD) {
+      return `ART STYLE: ${styleDirective}. Close-up portrait of a ${creatureSubject}. Sharp focus on the subject, intricate natural detail, moody atmospheric background.${darkDirective}${seriousnessDirective}${emotionDirective} No text, no watermarks.`;
+    }
+
+    if (isGemini) {
+      return `Generate an image in this EXACT art style: ${styleDirective}. Portrait of a ${creatureSubject}. Sharp focus, dark atmospheric background. Square 1:1 aspect ratio.${darkDirective}${seriousnessDirective}${emotionDirective} No text, no watermarks.`;
+    }
+
+    if (provider === 'gpt-image') {
+      return `ART STYLE: ${styleDirective}. Portrait of a ${creatureSubject}. Sharp focus on the subject, intricate natural detail, moody atmospheric background.${darkDirective}${seriousnessDirective}${emotionDirective} No text, no watermarks.`;
+    }
+
+    return `ART STYLE: ${styleDirective}. Portrait of a ${creatureSubject}. Sharp focus, dark atmospheric background.${darkDirective}${seriousnessDirective}${emotionDirective} No text, no watermarks, no borders.`;
+  }
 
   // When we have a reference photo going into plain img2img (A1111 / Stability
   // without IP-Adapter), the init image pulls the result toward the uploaded

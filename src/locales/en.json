@@ -23,6 +23,8 @@
     "xp": "XP",
     "success": "Success!",
     "failure": "Failure!",
+    "zoomIn": "Zoom in",
+    "zoomOut": "Zoom out",
     "criticalSuccess": "Critical Success!",
     "criticalFailure": "Critical Failure!",
     "target": "Target",
@@ -401,7 +403,8 @@
     "playSnark": "Listen",
     "stopSnark": "Stop",
     "introTapForSound": "Tap the screen to turn sound on",
-    "lastRollShort": "Last roll:"
+    "lastRollShort": "Last roll:",
+    "campaignCoverAlt": "Scenes from campaign {{name}}"
   },
   "creator": {
     "title": "Forge a New Campaign",

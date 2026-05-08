@@ -126,6 +126,43 @@ export function useImageGeneration() {
 
   const npcPortraitGenerationLocksRef = useRef(new Set());
 
+  const generateOneNpcPortrait = useCallback(
+    async (npc, { forcePromptRefresh = false } = {}) => {
+      if (!npc || typeof npc !== 'object' || typeof npc.id !== 'string') {
+        return { ok: false, reason: 'invalid_npc' };
+      }
+      const hasImgKey = imageApiKey || hasApiKey(imgKeyProvider);
+      if (!hasImgKey) return { ok: false, reason: 'no_key' };
+
+      const locks = npcPortraitGenerationLocksRef.current;
+      if (locks.has(npc.id)) return { ok: false, reason: 'in_flight' };
+      locks.add(npc.id);
+      try {
+        const result = await generateNpcPortrait(npc, {
+          genre: state.campaign?.genre,
+          provider: imageProvider,
+          imageStyle,
+          darkPalette,
+          seriousness: imageSeriousness,
+          sdModel: sdWebuiModel,
+          sdSeed: Number.isInteger(sdWebuiSeed) ? sdWebuiSeed : null,
+          forcePromptRefresh,
+        });
+        const portraitUrl = typeof result === 'string' ? result : result?.url;
+        if (!portraitUrl) return { ok: false, reason: 'empty_result' };
+        dispatch({ type: 'UPDATE_NPC_PORTRAIT', payload: { npcId: npc.id, portraitUrl } });
+        dispatch({ type: 'ADD_AI_COST', payload: calculateCost('image', { provider: imageProvider }) });
+        return { ok: true, portraitUrl };
+      } catch (err) {
+        console.warn('NPC portrait generation failed:', err?.message || err);
+        return { ok: false, reason: 'error', error: err };
+      } finally {
+        locks.delete(npc.id);
+      }
+    },
+    [state.campaign?.genre, imageProvider, imageStyle, darkPalette, imageSeriousness, sdWebuiModel, sdWebuiSeed, hasApiKey, imgKeyProvider, imageApiKey, dispatch],
+  );
+
   const ensureMissingNpcPortraits = useCallback(
     async (npcs = []) => {
       const hasImgKey = imageApiKey || hasApiKey(imgKeyProvider);
@@ -135,42 +172,31 @@ export function useImageGeneration() {
       );
       if (candidates.length === 0) return { generated: 0, failed: 0 };
 
-      const locks = npcPortraitGenerationLocksRef.current;
       let generated = 0;
       let failed = 0;
       for (const npc of candidates) {
-        if (locks.has(npc.id)) continue;
-        locks.add(npc.id);
-        try {
-          const result = await generateNpcPortrait(npc, {
-            genre: state.campaign?.genre,
-            provider: imageProvider,
-            imageStyle,
-            darkPalette,
-            seriousness: imageSeriousness,
-            sdModel: sdWebuiModel,
-            sdSeed: Number.isInteger(sdWebuiSeed) ? sdWebuiSeed : null,
-          });
-          const portraitUrl = typeof result === 'string' ? result : result?.url;
-          if (portraitUrl) {
-            dispatch({ type: 'UPDATE_NPC_PORTRAIT', payload: { npcId: npc.id, portraitUrl } });
-            dispatch({ type: 'ADD_AI_COST', payload: calculateCost('image', { provider: imageProvider }) });
-            generated += 1;
-          } else {
-            failed += 1;
-          }
-        } catch (err) {
-          console.warn('NPC portrait generation failed:', err?.message || err);
-          failed += 1;
-        } finally {
-          locks.delete(npc.id);
-        }
+        const res = await generateOneNpcPortrait(npc);
+        if (res.ok) generated += 1;
+        else failed += 1;
       }
 
       if (generated > 0) autoSave();
       return { generated, failed };
     },
-    [state.campaign?.genre, imageProvider, imageStyle, darkPalette, imageSeriousness, sdWebuiModel, sdWebuiSeed, hasApiKey, imgKeyProvider, imageApiKey, dispatch, autoSave],
+    [generateOneNpcPortrait, hasApiKey, imgKeyProvider, imageApiKey, autoSave],
+  );
+
+  // Force-regenerate a single NPC's portrait, even when one already exists.
+  // Used by NpcSheetModal's click-to-regenerate; bypasses the missing-only
+  // filter that ensureMissingNpcPortraits applies. Always rebuilds the LLM
+  // prompt so each click produces a fresh concept (not just a new SD seed).
+  const regenerateNpcPortrait = useCallback(
+    async (npc) => {
+      const res = await generateOneNpcPortrait(npc, { forcePromptRefresh: true });
+      if (res.ok) autoSave();
+      return res;
+    },
+    [generateOneNpcPortrait, autoSave],
   );
 
   const ensureMissingInventoryImages = useCallback(
@@ -257,6 +283,7 @@ export function useImageGeneration() {
     generateItemImageForInventoryItem,
     ensureMissingInventoryImages,
     ensureMissingNpcPortraits,
+    regenerateNpcPortrait,
     imageGenEnabled,
     imageApiKey,
     imageProvider,

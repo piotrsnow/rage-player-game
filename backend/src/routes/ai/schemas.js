@@ -94,6 +94,31 @@ export const TRANSLATE_IMAGE_PROMPT_SCHEMA = {
   required: ['text'],
 };
 
+export const NPC_PORTRAIT_PROMPT_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    npc: {
+      type: 'object',
+      additionalProperties: true,
+      properties: {
+        id: { type: 'string', maxLength: 200 },
+        name: { type: 'string', maxLength: 200 },
+        gender: { type: ['string', 'null'], maxLength: 40 },
+        race: { type: ['string', 'null'], maxLength: 100 },
+        creatureKind: { type: ['string', 'null'], maxLength: 200 },
+        role: { type: ['string', 'null'], maxLength: 500 },
+        personality: { type: ['string', 'null'], maxLength: 1000 },
+        age: { type: ['number', 'string', 'null'] },
+        level: { type: ['number', 'null'] },
+      },
+      required: ['name'],
+    },
+    force: { type: 'boolean' },
+  },
+  required: ['npc'],
+};
+
 export const GENERATE_CAMPAIGN_SCHEMA = {
   type: 'object',
   additionalProperties: false,

@@ -1,11 +1,6 @@
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
-
-const genreIcons = {
-  Fantasy: 'auto_fix_high',
-  'Sci-Fi': 'rocket_launch',
-  Horror: 'skull',
-};
+import CampaignCardCover from './CampaignCardCover';
 
 const genreBorderColors = {
   Fantasy: 'border-l-primary-dim',
@@ -61,11 +56,7 @@ export default function CampaignCard({ campaign, onLoad, onDelete, loading, disa
           </div>
         )}
         <div className="flex items-start gap-4 flex-1 min-w-0">
-          <div className="w-10 h-10 bg-surface-container-high rounded-sm flex items-center justify-center border border-primary/10 shrink-0 group-hover:border-primary/25 transition-colors">
-            <span className="material-symbols-outlined text-primary-dim group-hover:text-primary transition-colors">
-              {genreIcons[genre] || 'book_5'}
-            </span>
-          </div>
+          <CampaignCardCover images={campaign.sceneCovers || []} genre={genre} campaignName={campaign.name} />
           <div className="min-w-0">
             <p className="text-on-surface font-headline group-hover:text-tertiary transition-colors truncate">
               {campaign.name || 'Untitled'}

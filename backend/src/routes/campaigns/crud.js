@@ -31,6 +31,20 @@ import { CAMPAIGN_WRITE_SCHEMA } from './schemas.js';
 
 const log = childLogger({ module: 'campaigns' });
 
+function shuffleInPlace(arr) {
+  for (let i = arr.length - 1; i > 0; i -= 1) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [arr[i], arr[j]] = [arr[j], arr[i]];
+  }
+  return arr;
+}
+
+function pickRandomSceneCovers(urls, max = 5) {
+  if (!Array.isArray(urls) || urls.length === 0) return [];
+  if (urls.length <= max) return shuffleInPlace([...urls]);
+  return shuffleInPlace([...urls]).slice(0, max);
+}
+
 export async function crudCampaignRoutes(app) {
   app.get('/', async (request) => {
     const campaigns = await prisma.campaign.findMany({
@@ -43,14 +57,31 @@ export async function crudCampaignRoutes(app) {
     });
 
     const campaignIds = campaigns.map((c) => c.id);
-    const [sceneCounts, charIdsByCampaign] = await Promise.all([
+    const [sceneCounts, charIdsByCampaign, sceneImages] = await Promise.all([
       prisma.campaignScene.groupBy({
         by: ['campaignId', 'sceneIndex'],
         where: { campaignId: { in: campaignIds } },
       }),
       getCharacterIdsForCampaigns(campaignIds),
+      prisma.campaignScene.findMany({
+        where: {
+          campaignId: { in: campaignIds },
+          imageUrl: { not: null },
+        },
+        select: {
+          campaignId: true,
+          imageUrl: true,
+        },
+      }),
     ]);
     const sceneCountMap = buildDistinctSceneCountMap(sceneCounts);
+    const sceneCoversMap = new Map();
+    for (const row of sceneImages) {
+      const url = typeof row.imageUrl === 'string' ? row.imageUrl.trim() : '';
+      if (!url) continue;
+      if (!sceneCoversMap.has(row.campaignId)) sceneCoversMap.set(row.campaignId, []);
+      sceneCoversMap.get(row.campaignId).push(url);
+    }
 
     const allFirstIds = [...new Set(
       [...charIdsByCampaign.values()]
@@ -80,6 +111,7 @@ export async function crudCampaignRoutes(app) {
         characterSpecies: firstChar?.species || '',
         characterLevel: firstChar?.characterLevel || 1,
         sceneCount: sceneCountMap[c.id] || 0,
+        sceneCovers: pickRandomSceneCovers(sceneCoversMap.get(c.id), 5),
         totalCost: c.totalCost || 0,
       };
     });

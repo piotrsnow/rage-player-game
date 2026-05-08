@@ -263,11 +263,29 @@ const _imageServiceImpl = {
     return { url, prompt };
   },
 
-  async generatePortrait(imageBlob, { species, age, gender, careerName, genre } = {}, _apiKeyIgnored, strength = 0.45, provider = 'stability', imageStyle = 'painting', darkPalette = false, seriousness = null, sdModel = null, extras = {}, sdSeed = null) {
-    // `careerName` is the only free-form user-content field here — species/gender
-    // are enums and genre comes from a fixed picker list. Translate if PL.
-    const enCareerName = await ensureEnglish(careerName);
-    const prompt = buildPortraitPrompt(species, gender, age, enCareerName, genre, provider, imageStyle, Boolean(imageBlob), darkPalette, seriousness, extras, sdModel);
+  async generatePortrait(imageBlob, { species, age, gender, careerName, genre, subjectOverride = null } = {}, _apiKeyIgnored, strength = 0.45, provider = 'stability', imageStyle = 'painting', darkPalette = false, seriousness = null, sdModel = null, extras = {}, sdSeed = null) {
+    // NPC pipeline supplies a fully-formed English subject from the LLM
+    // prompt builder (see services/npcPortraitPromptLlm.js). When present we
+    // skip the per-field translation + species/career templating entirely —
+    // the override IS the subject. Player creator does not pass an override
+    // so it still routes through ensureEnglish + buildPortraitPrompt's
+    // humanoid/creature switch below.
+    const trimmedOverride = typeof subjectOverride === 'string' ? subjectOverride.trim() : '';
+    let prompt;
+    if (trimmedOverride) {
+      prompt = buildPortraitPrompt(null, gender, age, null, genre, provider, imageStyle, Boolean(imageBlob), darkPalette, seriousness, extras, sdModel, trimmedOverride);
+    } else {
+      // `careerName` is the only free-form user-content field here for the
+      // player creator (species comes from an English enum). NPC portraits
+      // without an LLM override fall back to the heuristic path and need both
+      // species and careerName translated; ensureEnglish is a no-op for
+      // English text.
+      const [enCareerName, enSpecies] = await Promise.all([
+        ensureEnglish(careerName),
+        ensureEnglish(species),
+      ]);
+      prompt = buildPortraitPrompt(enSpecies, gender, age, enCareerName, genre, provider, imageStyle, Boolean(imageBlob), darkPalette, seriousness, extras, sdModel);
+    }
 
     let url;
     if (provider === 'dalle') {
