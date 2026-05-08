@@ -5,6 +5,7 @@ import { detectCombatIntent } from '../../../shared/domain/combatIntent.js';
 import { gameData } from '../../services/gameDataService';
 import { getGameState } from '../../stores/gameStore';
 import { shortId } from '../../utils/ids';
+import { devLog } from '../../stores/devEventLogStore';
 
 /**
  * Build a combat-enemy payload from a full NPC sheet (shape from
@@ -182,6 +183,9 @@ export function applySceneStateChanges({
     {},
     { campaignId, sceneIndex },
   );
+  if (warnings.length > 0 || corrections.length > 0) {
+    devLog.emit({ category: 'validation', type: 'state_validation', label: `Validation: ${warnings.length} warnings, ${corrections.length} corrections`, severity: warnings.length > 0 ? 'warn' : 'info', data: { warnings, corrections } });
+  }
   result.stateChanges = validated;
 
   const previousFactions = { ...(state.world?.factions || {}) };
@@ -210,6 +214,7 @@ export function applySceneStateChanges({
   const consistency = checkWorldConsistency(postState, previousFactions);
   const patches = applyConsistencyPatches(postState, consistency.statePatches);
   if (patches) {
+    devLog.emit({ category: 'validation', type: 'consistency_patch', label: `Consistency patches applied`, data: { hasNpcPatch: !!patches.npcs, worldFacts: patches.newWorldFacts?.length || 0 } });
     if (patches.npcs) dispatch({ type: 'UPDATE_WORLD', payload: { npcs: patches.npcs } });
     if (patches.newWorldFacts?.length > 0) dispatch({ type: 'APPLY_STATE_CHANGES', payload: { worldFacts: patches.newWorldFacts } });
   }
@@ -236,6 +241,9 @@ export function applySceneStateChanges({
   // FE just reconciles the updated state and grants titles locally.
   if (updatedAchievementState) {
     dispatch({ type: 'UPDATE_ACHIEVEMENTS', payload: updatedAchievementState });
+  }
+  if (newlyUnlockedAchievements.length > 0) {
+    devLog.emit({ category: 'state', type: 'achievements_unlocked', label: `Achievements: ${newlyUnlockedAchievements.map((a) => a.name).join(', ')}`, data: newlyUnlockedAchievements });
   }
   for (const ach of newlyUnlockedAchievements) {
     if (ach.grantsTitle && state.character) {

@@ -6,6 +6,7 @@ import { generateNpcPortrait } from '../services/npcPortraitGen';
 import { calculateCost } from '../services/costTracker';
 import { storage } from '../services/storage';
 import { shortId } from '../utils/ids';
+import { devLog } from '../stores/devEventLogStore';
 
 const ITEM_IMAGE_RETRY_COOLDOWN_MS = 60000;
 
@@ -73,6 +74,7 @@ export function useImageGeneration() {
       activeLocks.add(itemId);
 
       try {
+        devLog.emit({ category: 'image', type: 'item_image_start', label: `Item image: ${item.name || itemId}`, data: { itemId, name: item.name, provider: imageProvider } });
         const result = await imageService.generateItemImage(item, {
           genre: options.genre ?? state.campaign?.genre,
           tone: options.tone ?? state.campaign?.tone,
@@ -207,6 +209,7 @@ export function useImageGeneration() {
       const hasImgKey = imageApiKey || hasApiKey(imgKeyProvider);
       if (!imageGenEnabled || !hasImgKey || !narrative) return null;
       dispatch({ type: 'SET_GENERATING_IMAGE', payload: true });
+      devLog.emit({ category: 'image', type: 'scene_image_start', label: `Scene image: ${imageProvider}`, data: { sceneId, provider: imageProvider, hasImagePrompt: !!imagePrompt } });
       try {
         const sceneImagePrompt = imagePrompt || state.scenes?.find((s) => s.id === sceneId)?.imagePrompt;
         const genre = campaignOverride?.genre ?? state.campaign?.genre;
@@ -239,6 +242,7 @@ export function useImageGeneration() {
         if (idx >= 0) storage.saveSceneImageUpdate(state.campaign?.backendId, idx, { imageUrl, fullImagePrompt });
         return { url: imageUrl, fullImagePrompt };
       } catch (imgErr) {
+        devLog.emit({ category: 'image', type: 'scene_image_error', label: `Image error: ${imgErr.message?.slice(0, 60)}`, severity: 'error', data: { error: imgErr.message } });
         console.warn('Image generation failed:', imgErr.message);
         return null;
       } finally {

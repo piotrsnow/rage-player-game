@@ -8,6 +8,7 @@ import { calculateCreativityBonus } from './mechanics/creativityBonus';
 import { resolveD50Test } from './mechanics/d50Test';
 import { castSpell } from './magicEngine.js';
 import { shortId } from '../utils/ids';
+import { devLog } from '../stores/devEventLogStore';
 
 // Crit-triggered effects — applied when a critical hit lands (roll=1)
 const CRIT_EFFECTS = [
@@ -496,7 +497,7 @@ export function createCombatState(playerCharacter, enemies, allies = []) {
   }
   combatants.sort((a, b) => b.initiative - a.initiative);
 
-  return {
+  const combatState = {
     active: true,
     round: 1,
     turnIndex: 0,
@@ -515,6 +516,8 @@ export function createCombatState(playerCharacter, enemies, allies = []) {
       startingWounds: playerCharacter.wounds ?? playerCharacter.maxWounds ?? 10,
     },
   };
+  devLog.emit({ category: 'combat', type: 'combat_start', label: `Combat started: ${enemies.map((e) => e.name).join(', ')}`, data: { enemies: enemies.map((e) => ({ name: e.name, wounds: e.wounds || e.maxWounds })), allies: allies.length, initiative: combatants.map((c) => ({ name: c.name, init: c.initiative })) } });
+  return combatState;
 }
 
 export function moveCombatant(combat, actorId, targetPosition) {
@@ -1062,6 +1065,7 @@ export function resolveManoeuvre(combat, actorId, manoeuvreKey, targetId, option
   }
 
   state.log = [...state.log, ...log];
+  devLog.emit({ category: 'combat', type: 'manoeuvre_resolved', label: `${actor.name}: ${manoeuvre.name} → ${result.outcome}${target ? ` (vs ${target.name})` : ''}`, data: { actor: actor.name, manoeuvre: manoeuvreKey, outcome: result.outcome, target: target?.name, damage: result.damage, rolls: result.rolls } });
   return { combat: state, result };
 }
 
@@ -1358,7 +1362,7 @@ export function endCombat(combat, playerCharacter) {
   const isVictory = playerSurvived && enemiesDefeated === totalEnemies && totalEnemies > 0;
   const combatStats = buildCombatStats(combat);
 
-  return {
+  const combatResult = {
     outcome: isVictory ? 'victory' : 'defeat',
     woundsChange: woundsDelta,
     manaChange: manaDelta,
@@ -1371,6 +1375,8 @@ export function endCombat(combat, playerCharacter) {
     flawless: isVictory && combatStats.damageTaken === 0,
     survivingEffects: playerCombatant?.activeEffects || [],
   };
+  devLog.emit({ category: 'combat', type: 'combat_end', label: `Combat ended: ${combatResult.outcome} (${combatResult.rounds} rounds)`, data: { outcome: combatResult.outcome, rounds: combatResult.rounds, enemiesDefeated, totalEnemies, woundsChange: woundsDelta, flawless: combatResult.flawless, stats: combatStats } });
+  return combatResult;
 }
 
 export function surrenderCombat(combat, playerCharacter) {

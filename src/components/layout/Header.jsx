@@ -9,6 +9,7 @@ import { useDictationContext } from '../../contexts/DictationContext';
 import { useGameCampaign } from '../../stores/gameSelectors';
 import { getGameState } from '../../stores/gameStore';
 import { useAiCallLogStore } from '../../stores/aiCallLogStore';
+import { useDevEventLogStore } from '../../stores/devEventLogStore';
 import { useMultiplayer } from '../../contexts/MultiplayerContext';
 import { storage } from '../../services/storage';
 import { peekEntryIntent, consumeEntryIntent } from '../../services/entryIntent';
@@ -77,6 +78,31 @@ const HEADER_CHROME_STYLE = {
   background: 'rgba(14, 14, 16, 0.82)',
   boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.04), 0 8px 32px rgba(0,0,0,0.5)',
 };
+
+function DevEventLogButton() {
+  const isOpen = useDevEventLogStore((s) => s.isOpen);
+  const evCount = useDevEventLogStore((s) => s.events.length);
+  const toggleOpen = useDevEventLogStore((s) => s.toggleOpen);
+  return (
+    <Tooltip content="Dev Event Log" placement="bottom" variant="compact" asChild>
+      <button
+        type="button"
+        onClick={toggleOpen}
+        aria-label="Dev Event Log"
+        className={`relative material-symbols-outlined transition-all active:scale-95 duration-200 cursor-pointer w-9 h-9 flex items-center justify-center rounded-full hover:bg-surface-container-high/40 ${
+          isOpen ? 'text-primary' : 'text-on-surface-variant hover:text-tertiary'
+        }`}
+      >
+        monitoring
+        {evCount > 0 && (
+          <span className="absolute top-1 right-1 min-w-[10px] h-[10px] rounded-full bg-tertiary/80 text-[7px] text-white flex items-center justify-center px-0.5 leading-none">
+            {evCount > 99 ? '99+' : evCount}
+          </span>
+        )}
+      </button>
+    </Tooltip>
+  );
+}
 
 export default function Header() {
   const location = useLocation();
@@ -607,6 +633,7 @@ export default function Header() {
                     admin_panel_settings
                   </button>
                 </Tooltip>
+                <DevEventLogButton />
               </>
             )}
             <Tooltip content="LLM Calls" placement="bottom" variant="compact" asChild>
