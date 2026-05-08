@@ -1,4 +1,6 @@
 import { useMemo, useState, useCallback, useEffect } from 'react';
+import { useCharacterSprites } from '../../../hooks/useCharacterSprites';
+import { apiClient } from '../../../services/apiClient';
 import { useTranslation } from 'react-i18next';
 import { useLocationGraph } from '../../../hooks/useLocationGraph';
 import { useCurrentLocationNode } from '../../../hooks/useCurrentLocationNode';
@@ -30,6 +32,26 @@ export default function MapTab({ campaignId, onTravel }) {
   const [positionOverrides, setPositionOverrides] = useState(() => loadMapLayout(campaignId));
 
   const { nodes, edges } = graph;
+
+  const spriteItems = useMemo(
+    () => (graph.occupants || []).map((o) => ({
+      id: o.id,
+      kind: o.type === 'player' ? 'character' : 'campaign-npc',
+      spriteUrl: o.spriteUrl,
+    })),
+    [graph.occupants],
+  );
+  const extraOccupantSprites = useCharacterSprites(spriteItems, {
+    campaignId,
+    endpoint: 'campaign',
+  });
+  const occupantSpriteMap = useMemo(() => {
+    const m = { ...extraOccupantSprites };
+    for (const o of graph.occupants || []) {
+      if (o.spriteUrl) m[o.id] = apiClient.resolveMediaUrl(o.spriteUrl);
+    }
+    return m;
+  }, [graph.occupants, extraOccupantSprites]);
 
   useEffect(() => {
     setPositionOverrides(loadMapLayout(campaignId));
@@ -99,6 +121,7 @@ export default function MapTab({ campaignId, onTravel }) {
           nodes={nodes}
           edges={edges}
           occupants={graph.occupants}
+          occupantSpriteMap={occupantSpriteMap}
           selected={selected}
           onSelect={setSelected}
           positionOverrides={positionOverrides}

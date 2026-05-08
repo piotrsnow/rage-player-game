@@ -42,7 +42,7 @@ const SCALAR_FIELDS = [
   'name', 'age', 'gender', 'species',
   'wounds', 'maxWounds', 'bonusMaxWounds', 'movement',
   'characterLevel', 'characterXp', 'attributePoints',
-  'backstory', 'portraitUrl', 'voiceId', 'voiceName',
+  'backstory', 'portraitUrl', 'spriteUrl', 'voiceId', 'voiceName',
   'campaignCount', 'fame', 'infamy', 'status',
   'lockedCampaignId', 'lockedCampaignName', 'lockedLocation',
   'equippedMainHand', 'equippedOffHand', 'equippedArmour',
@@ -70,6 +70,9 @@ export function reconstructCharacterSnapshot(row) {
   // FE canonical paths so `apiClient.resolveMediaUrl` can freshly hydrate.
   if (snapshot.portraitUrl) {
     snapshot.portraitUrl = toCanonicalStoragePath(snapshot.portraitUrl);
+  }
+  if (snapshot.spriteUrl) {
+    snapshot.spriteUrl = toCanonicalStoragePath(snapshot.spriteUrl);
   }
 
   // Lazy backfill: historically `characterXp` stored "XP since last level-up"
@@ -152,6 +155,9 @@ export function splitCharacterSnapshot(snapshot) {
   // may still send these on save. Keep canonical `/v1/media/file/...` only.
   if (typeof scalars.portraitUrl === 'string' && scalars.portraitUrl) {
     scalars.portraitUrl = toCanonicalStoragePath(scalars.portraitUrl);
+  }
+  if (typeof scalars.spriteUrl === 'string' && scalars.spriteUrl) {
+    scalars.spriteUrl = toCanonicalStoragePath(scalars.spriteUrl);
   }
   const equipped = snapshot.equipped || {};
   if (equipped.mainHand !== undefined) scalars.equippedMainHand = equipped.mainHand || null;

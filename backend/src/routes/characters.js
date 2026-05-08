@@ -107,6 +107,7 @@ function snapshotFromBody(body) {
     backstory: body.backstory || '',
     customAttackPresets: Array.isArray(body.customAttackPresets) ? body.customAttackPresets : [],
     portraitUrl: body.portraitUrl || '',
+    spriteUrl: body.spriteUrl ?? '',
     voiceId: body.voiceId || '',
     voiceName: body.voiceName || '',
     campaignCount: body.campaignCount ?? 0,
@@ -128,7 +129,7 @@ function mergeUpdateBody(existingSnapshot, body) {
     'name', 'gender', 'species',
     'wounds', 'maxWounds', 'movement',
     'characterLevel', 'characterXp', 'attributePoints',
-    'backstory', 'portraitUrl', 'voiceId', 'voiceName',
+    'backstory', 'portraitUrl', 'spriteUrl', 'voiceId', 'voiceName',
     'campaignCount', 'fame', 'infamy', 'status',
     'lockedCampaignId', 'lockedCampaignName', 'lockedLocation',
     'attributes', 'mana', 'spells', 'money', 'statuses', 'needs',
@@ -170,6 +171,7 @@ const CHARACTER_BODY_SCHEMA = {
     backstory: { type: 'string', maxLength: 10000 },
     customAttackPresets: { type: 'array', maxItems: 50 },
     portraitUrl: { type: 'string', maxLength: 2000 },
+    spriteUrl: { type: 'string', maxLength: 2000 },
     voiceId: { type: 'string', maxLength: 200 },
     voiceName: { type: 'string', maxLength: 200 },
     campaignCount: { type: 'number' },
@@ -268,6 +270,7 @@ export async function characterRoutes(fastify) {
       // Legacy records may hold hydrated URLs (host + `?token=`); strip back
       // to canonical so the FE card picker renders with a fresh token.
       portraitUrl: c.portraitUrl ? toCanonicalStoragePath(c.portraitUrl) : c.portraitUrl,
+      spriteUrl: c.spriteUrl ? toCanonicalStoragePath(c.spriteUrl) : c.spriteUrl,
       // Stub the FE-shape collections so list cards that read e.g.
       // `char.equipped.mainHand` don't trip on undefined.
       skills: {},

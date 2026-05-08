@@ -13,6 +13,7 @@ export default function GraphCanvas({
   addingNode, onCanvasClick, addingEdge, onEdgeSourceClick,
   positionOverrides, onNodeDragEnd, snapToGrid,
   highlightedNodeId = null, highlightedAdjacentIds = null,
+  occupantSpriteMap = {},
 }) {
   const svgRef = useRef(null);
   const containerRef = useRef(null);
@@ -454,18 +455,32 @@ export default function GraphCanvas({
 
               {locOccupants.map((occ, i) => {
                 const angle = (2 * Math.PI * i) / Math.max(locOccupants.length, 1) - Math.PI / 2;
-                const orbitR = imgR + 10;
+                const orbitR = imgR + 12;
                 const ox = Math.cos(angle) * orbitR;
                 const oy = Math.sin(angle) * orbitR;
                 const isPlayer = occ.type === 'player';
                 const dotR = isPlayer ? 5 : 4;
                 const color = isPlayer ? '#22d3ee' : '#f472b6';
+                const spriteHref = occupantSpriteMap[occ.id];
+                const tokenPx = isPlayer ? 18 : 16;
+                const labelY = (spriteHref ? tokenPx / 2 : dotR) + 8;
                 return (
                   <g key={occ.id} transform={`translate(${ox},${oy})`}>
-                    <circle r={dotR} fill={color} stroke="rgba(0,0,0,0.5)" strokeWidth={0.8} />
+                    {spriteHref ? (
+                      <image
+                        href={spriteHref}
+                        x={-tokenPx / 2}
+                        y={-tokenPx / 2}
+                        width={tokenPx}
+                        height={tokenPx}
+                        style={{ imageRendering: 'pixelated' }}
+                      />
+                    ) : (
+                      <circle r={dotR} fill={color} stroke="rgba(0,0,0,0.5)" strokeWidth={0.8} />
+                    )}
                     <title>{occ.name}{isPlayer ? ' (gracz)' : ` (${occ.role || 'NPC'})`}</title>
                     <text
-                      y={dotR + 8}
+                      y={labelY}
                       textAnchor="middle"
                       fill={color}
                       fontSize={7}

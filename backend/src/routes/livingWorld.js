@@ -35,6 +35,7 @@ import { buildPixelSpriteDescription } from '../services/pixelLabSpritePrompt.js
 import { createMediaStore } from '../services/mediaStore.js';
 import { config } from '../config.js';
 import { callAIJson } from '../services/aiJsonCall.js';
+import { ensureCharacterSpritesBatch, MAX_CHARACTER_SPRITE_BATCH } from '../services/characterSpriteService.js';
 
 const log = childLogger({ module: 'livingWorldRoutes' });
 
@@ -508,6 +509,7 @@ export async function livingWorldRoutes(fastify) {
           id: true, name: true, role: true, category: true,
           lastLocationKind: true, lastLocationId: true,
           lastInteractionSceneIndex: true,
+          spriteUrl: true,
         },
       }),
       prisma.campaign.findUnique({
@@ -516,7 +518,7 @@ export async function livingWorldRoutes(fastify) {
           currentLocationKind: true,
           currentLocationId: true,
           participants: {
-            select: { character: { select: { id: true, name: true, species: true } } },
+            select: { character: { select: { id: true, name: true, species: true, spriteUrl: true } } },
           },
         },
       }),
@@ -554,6 +556,7 @@ export async function livingWorldRoutes(fastify) {
         category: npc.category,
         locationKind: locKind,
         locationId: locId,
+        spriteUrl: npc.spriteUrl || null,
       });
     }
     if (campaignFull?.currentLocationKind && campaignFull?.currentLocationId) {
@@ -565,11 +568,80 @@ export async function livingWorldRoutes(fastify) {
           species: p.character.species,
           locationKind: campaignFull.currentLocationKind,
           locationId: campaignFull.currentLocationId,
+          spriteUrl: p.character.spriteUrl || null,
         });
       }
     }
 
     return reply.send({ nodes: nodeList, edges: edgeList, factionOverlay, occupants });
+  });
+
+  // POST /campaigns/:id/character-sprites/generate — PixelLab map tokens for graph occupants
+  fastify.post('/campaigns/:id/character-sprites/generate', {
+    schema: {
+      params: {
+        type: 'object',
+        required: ['id'],
+        properties: { id: { type: 'string', format: 'uuid' } },
+      },
+      body: {
+        type: 'object',
+        required: ['items'],
+        additionalProperties: false,
+        properties: {
+          force: { type: 'boolean' },
+          items: {
+            type: 'array',
+            maxItems: MAX_CHARACTER_SPRITE_BATCH,
+            items: {
+              type: 'object',
+              required: ['kind', 'id'],
+              additionalProperties: false,
+              properties: {
+                kind: { type: 'string', enum: ['campaign-npc', 'character'] },
+                id: { type: 'string', format: 'uuid' },
+              },
+            },
+          },
+        },
+      },
+    },
+  }, async (request, reply) => {
+    const campaignId = request.params.id;
+    const campaign = await assertCampaignOwnership(request, reply, campaignId);
+    if (!campaign) return;
+
+    if (!config.pixellabApiKey) {
+      return reply.code(503).send({ error: 'PIXELLAB_API_KEY not configured' });
+    }
+
+    const { items, force } = request.body;
+    const userId = request.user.id;
+
+    const validated = [];
+    for (const item of items) {
+      if (item.kind === 'campaign-npc') {
+        const row = await prisma.campaignNPC.findFirst({
+          where: { id: item.id, campaignId },
+          select: { id: true },
+        });
+        if (row) validated.push(item);
+      } else if (item.kind === 'character') {
+        const row = await prisma.campaignParticipant.findFirst({
+          where: { campaignId, characterId: item.id },
+          select: { characterId: true },
+        });
+        if (row) validated.push(item);
+      }
+    }
+
+    const sprites = await ensureCharacterSpritesBatch(validated, {
+      userId,
+      campaignId,
+      force: !!force,
+    });
+
+    return reply.send({ sprites });
   });
 
   // ── Location Graph CRUD (Phase 2) ──────────────────────────────────

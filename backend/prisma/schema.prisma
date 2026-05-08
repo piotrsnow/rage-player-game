@@ -166,6 +166,7 @@ model Character {
   customAttackPresets Json   @default("[]")
 
   portraitUrl   String @default("")
+  spriteUrl     String?
   voiceId       String @default("")
   voiceName     String @default("")
   campaignCount Int    @default(0)
@@ -496,6 +497,7 @@ model CampaignNPC {
   level        Int     @default(1)
   stats        Json    @default("{}")
   portraitUrl  String?
+  spriteUrl    String?
 
   embeddingText String?
   embedding     Unsupported("vector(1536)")?
@@ -980,6 +982,7 @@ model WorldNPC {
   creatureKind String?
   level        Int     @default(1)
   stats        Json    @default("{}")
+  spriteUrl    String?
 
   embeddingText String?
   embedding     Unsupported("vector(1536)")?

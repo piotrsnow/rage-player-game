@@ -94,6 +94,7 @@ export async function syncNPCsToNormalized(campaignId, npcs) {
         factionId: npc.factionId || null,
         notes: npc.notes || null,
         portraitUrl: npc.portraitUrl || null,
+        spriteUrl: npc.spriteUrl || null,
       },
     }));
   if (valid.length === 0) return;
@@ -412,6 +413,7 @@ export async function reconstructFromNormalized(campaignId, coreState, { current
       level: n.level,
       stats: n.stats && typeof n.stats === 'object' ? n.stats : {},
       portraitUrl: n.portraitUrl || null,
+      spriteUrl: n.spriteUrl || null,
       relationships: (n.relationships || []).map((r) => ({
         npcName: r.targetRef,
         type: r.relation,

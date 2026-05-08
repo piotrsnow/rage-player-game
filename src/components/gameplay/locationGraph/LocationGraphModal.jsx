@@ -1,7 +1,9 @@
-import { useState, useCallback, useRef } from 'react';
+import { useState, useCallback, useRef, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useModalA11y } from '../../../hooks/useModalA11y.js';
 import { useLocationGraph } from '../../../hooks/useLocationGraph.js';
+import { useCharacterSprites } from '../../../hooks/useCharacterSprites.js';
+import { apiClient } from '../../../services/apiClient.js';
 import { useGraphShortcuts } from '../../../hooks/useGraphShortcuts.js';
 import { useEntityBrowser } from '../../../hooks/useEntityBrowser.js';
 import GraphCanvas from './GraphCanvas.jsx';
@@ -35,6 +37,25 @@ export default function LocationGraphModal({ campaignId, onClose }) {
   const { t } = useTranslation();
   const modalRef = useModalA11y(onClose);
   const graph = useLocationGraph(campaignId);
+  const spriteItems = useMemo(
+    () => (graph.occupants || []).map((o) => ({
+      id: o.id,
+      kind: o.type === 'player' ? 'character' : 'campaign-npc',
+      spriteUrl: o.spriteUrl,
+    })),
+    [graph.occupants],
+  );
+  const extraOccupantSprites = useCharacterSprites(spriteItems, {
+    campaignId,
+    endpoint: 'campaign',
+  });
+  const occupantSpriteMap = useMemo(() => {
+    const m = { ...extraOccupantSprites };
+    for (const o of graph.occupants || []) {
+      if (o.spriteUrl) m[o.id] = apiClient.resolveMediaUrl(o.spriteUrl);
+    }
+    return m;
+  }, [graph.occupants, extraOccupantSprites]);
   const entityBrowser = useEntityBrowser(campaignId);
   const [activeTab, setActiveTab] = useState('graph');
 
@@ -237,6 +258,7 @@ export default function LocationGraphModal({ campaignId, onClose }) {
                     nodes={graph.nodes}
                     edges={graph.edges}
                     occupants={graph.occupants}
+                    occupantSpriteMap={occupantSpriteMap}
                     selected={graph.selected}
                     onSelect={graph.setSelected}
                     onDoubleClickNode={handleDoubleClickNode}

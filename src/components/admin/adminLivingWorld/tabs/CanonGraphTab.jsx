@@ -15,6 +15,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { apiClient } from '../../../../services/apiClient';
+import { useCharacterSprites } from '../../../../hooks/useCharacterSprites';
 import { KV } from '../shared/primitives';
 import {
   LOCATION_TYPE_COLORS, NPC_CATEGORY_COLORS, edgeColour, nodeRadius,
@@ -25,6 +26,7 @@ const H = 600;
 const PAD = 50;
 const NPC_ORBIT_RADIUS = 18;
 const NPC_DOT_RADIUS = 3;
+const NPC_SPRITE_PX = 12;
 
 // Deterministic orbit placement: spread up to N NPCs evenly around a
 // location. Past 10 we tighten to two rings so big settlements don't overlap
@@ -65,6 +67,23 @@ export default function CanonGraphTab() {
       .then(setGraph)
       .finally(() => setLoading(false));
   }, []);
+
+  const spriteItems = useMemo(
+    () => (graph?.npcs || []).map((n) => ({
+      id: n.id,
+      kind: 'world-npc',
+      spriteUrl: n.spriteUrl,
+    })),
+    [graph?.npcs],
+  );
+  const extraNpcSprites = useCharacterSprites(spriteItems, { endpoint: 'admin' });
+  const npcSpriteMap = useMemo(() => {
+    const m = { ...extraNpcSprites };
+    for (const n of graph?.npcs || []) {
+      if (n.spriteUrl) m[n.id] = apiClient.resolveMediaUrl(n.spriteUrl);
+    }
+    return m;
+  }, [graph?.npcs, extraNpcSprites]);
 
   const { nodeById, npcById, project, grouping, stats } = useMemo(() => {
     if (!graph?.locations?.length) {
@@ -207,17 +226,44 @@ export default function CanonGraphTab() {
               const cy = p.sy + dy;
               const color = NPC_CATEGORY_COLORS[npc.category] || NPC_CATEGORY_COLORS.commoner;
               const isSelected = selectedKind === 'npc' && selectedId === npc.id;
+              const spriteHref = npcSpriteMap[npc.id];
+              const half = NPC_SPRITE_PX / 2;
               return (
                 <g key={npc.id} onClick={(e) => { e.stopPropagation(); setSelectedKind('npc'); setSelectedId(npc.id); }} className="cursor-pointer">
                   <line x1={p.sx} y1={p.sy} x2={cx} y2={cy} stroke={color} strokeWidth={0.5} strokeOpacity={0.4} strokeDasharray="2 2" />
-                  <circle
-                    cx={cx} cy={cy}
-                    r={NPC_DOT_RADIUS + (isSelected ? 1.5 : 0)}
-                    fill={color}
-                    stroke={isSelected ? '#fff' : 'rgba(255,255,255,0.4)'}
-                    strokeWidth={isSelected ? 1.5 : 0.5}
-                    opacity={npc.keyNpc ? 1 : 0.6}
-                  />
+                  {spriteHref ? (
+                    <>
+                      <image
+                        href={spriteHref}
+                        x={cx - half}
+                        y={cy - half}
+                        width={NPC_SPRITE_PX}
+                        height={NPC_SPRITE_PX}
+                        style={{ imageRendering: 'pixelated' }}
+                        opacity={npc.keyNpc ? 1 : 0.75}
+                      />
+                      {isSelected && (
+                        <rect
+                          x={cx - half - 1}
+                          y={cy - half - 1}
+                          width={NPC_SPRITE_PX + 2}
+                          height={NPC_SPRITE_PX + 2}
+                          fill="none"
+                          stroke="#fff"
+                          strokeWidth={1.5}
+                        />
+                      )}
+                    </>
+                  ) : (
+                    <circle
+                      cx={cx} cy={cy}
+                      r={NPC_DOT_RADIUS + (isSelected ? 1.5 : 0)}
+                      fill={color}
+                      stroke={isSelected ? '#fff' : 'rgba(255,255,255,0.4)'}
+                      strokeWidth={isSelected ? 1.5 : 0.5}
+                      opacity={npc.keyNpc ? 1 : 0.6}
+                    />
+                  )}
                 </g>
               );
             });

@@ -162,6 +162,7 @@ export async function saveCharacter(character) {
         customAttackPresets: character.customAttackPresets || [],
         // Presentation
         portraitUrl: character.portraitUrl || '',
+        spriteUrl: character.spriteUrl || '',
         campaignCount: character.campaignCount || 0,
         voiceId: character.voiceId || '',
         voiceName: character.voiceName || '',

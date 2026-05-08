@@ -26,6 +26,8 @@ import { migrateExistingCampaignGraph, runGraphConsistencyCheck, loadCampaignGra
 import { getExtractionStats } from '../services/locationGraph/graphExtractor.js';
 import { LOCATION_KIND_WORLD, LOCATION_KIND_CAMPAIGN } from '../services/locationRefs.js';
 import { getModelOverrides, setModelOverrides, TASK_CATEGORIES } from '../services/serverConfig.js';
+import { config } from '../config.js';
+import { ensureCharacterSpritesBatch, MAX_CHARACTER_SPRITE_BATCH } from '../services/characterSpriteService.js';
 
 const log = childLogger({ module: 'adminLivingWorld' });
 
@@ -90,11 +92,69 @@ export async function adminLivingWorldRoutes(fastify) {
           activeGoal: true,
           lastTickAt: true,
           updatedAt: true,
+          spriteUrl: true,
+          category: true,
         },
       }),
     ]);
 
     return { total, rows };
+  });
+
+  // POST /character-sprites/generate — admin PixelLab batch for canonical NPC / character tokens
+  fastify.post('/character-sprites/generate', guard({
+    schema: {
+      body: {
+        type: 'object',
+        required: ['items'],
+        additionalProperties: false,
+        properties: {
+          force: { type: 'boolean' },
+          items: {
+            type: 'array',
+            maxItems: MAX_CHARACTER_SPRITE_BATCH,
+            items: {
+              type: 'object',
+              required: ['kind', 'id'],
+              additionalProperties: false,
+              properties: {
+                kind: { type: 'string', enum: ['world-npc', 'campaign-npc', 'character'] },
+                id: { type: 'string', format: 'uuid' },
+              },
+            },
+          },
+        },
+      },
+    },
+  }), async (request, reply) => {
+    if (!config.pixellabApiKey) {
+      return reply.code(503).send({ error: 'PIXELLAB_API_KEY not configured' });
+    }
+
+    const { items, force } = request.body;
+    const userId = request.user.id;
+
+    const validated = [];
+    for (const item of items) {
+      if (item.kind === 'world-npc') {
+        const row = await prisma.worldNPC.findUnique({ where: { id: item.id }, select: { id: true } });
+        if (row) validated.push(item);
+      } else if (item.kind === 'campaign-npc') {
+        const row = await prisma.campaignNPC.findUnique({ where: { id: item.id }, select: { id: true } });
+        if (row) validated.push(item);
+      } else if (item.kind === 'character') {
+        const row = await prisma.character.findUnique({ where: { id: item.id }, select: { id: true } });
+        if (row) validated.push(item);
+      }
+    }
+
+    const sprites = await ensureCharacterSpritesBatch(validated, {
+      userId,
+      campaignId: null,
+      force: !!force,
+    });
+
+    return { sprites };
   });
 
   fastify.get('/npcs/:id', guard(), async (request, reply) => {
@@ -468,6 +528,7 @@ export async function adminLivingWorldRoutes(fastify) {
           id: true, canonicalId: true, name: true, role: true, category: true,
           keyNpc: true, alive: true,
           currentLocationId: true, homeLocationId: true,
+          spriteUrl: true,
         },
       }),
     ]);
@@ -500,6 +561,7 @@ export async function adminLivingWorldRoutes(fastify) {
       alive: n.alive !== false,
       homeLocationId: n.homeLocationId || null,
       currentLocationId: n.currentLocationId || null,
+      spriteUrl: n.spriteUrl || null,
     }));
 
     return {
