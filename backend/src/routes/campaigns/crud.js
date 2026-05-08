@@ -126,6 +126,8 @@ export async function crudCampaignRoutes(app) {
     const coreState = campaign.coreState || {};
     await reconstructFromNormalized(campaign.id, coreState, {
       currentLocationName: campaign.currentLocationName || null,
+      currentLocationKind: campaign.currentLocationKind || null,
+      currentLocationId: campaign.currentLocationId || null,
     });
 
     const characterIds = await getCampaignCharacterIds(campaign.id);

@@ -178,6 +178,40 @@ export function splitCharacterSnapshot(snapshot) {
 }
 
 /**
+ * Shallow merge: `overlay` keys only replace when the value is not `undefined`.
+ * (Explicit `null` is kept — e.g. cleared status / lock fields.)
+ */
+function overlaySnapshotBaseline(base, overlay) {
+  const out = { ...base };
+  if (!overlay) return out;
+  for (const [k, v] of Object.entries(overlay)) {
+    if (v !== undefined) out[k] = v;
+  }
+  return out;
+}
+
+/**
+ * `persistCharacterSnapshot` replaces child tables from the snapshot. If the
+ * caller passes a partial object (multiplayer wire, or any path that dropped a
+ * scalar like `wounds`), omitting a field would either wipe relations or omit
+ * required Prisma update args — merge with the current DB row first.
+ */
+function snapshotNeedsDbBaseline(snapshot) {
+  if (!snapshot) return true;
+  for (const key of SCALAR_FIELDS) {
+    if (snapshot[key] === undefined) return true;
+  }
+  for (const key of JSON_FIELDS) {
+    if (snapshot[key] === undefined) return true;
+  }
+  if (snapshot.skills === undefined) return true;
+  if (snapshot.inventory === undefined) return true;
+  if (snapshot.materialBag === undefined) return true;
+  if (snapshot.equipped === undefined) return true;
+  return false;
+}
+
+/**
  * Stack inventory items by itemKey. Two items with the same slugified name
  * merge into one row; props of the latest entry win. This is the F4
  * "option A" decision — name-keyed stacking, no per-stack UUID.
@@ -280,8 +314,13 @@ export async function loadCharacterSnapshotById(id, client = prisma) {
  */
 export async function persistCharacterSnapshot(characterId, snapshot, client = prisma) {
   if (!characterId || !snapshot) return null;
-  clearStaleEquipped(snapshot);
-  const { scalars, skillRows, inventoryRows, materialRows } = splitCharacterSnapshot(snapshot);
+  let merged = snapshot;
+  if (snapshotNeedsDbBaseline(snapshot)) {
+    const baseline = await loadCharacterSnapshot({ id: characterId }, client);
+    if (baseline) merged = overlaySnapshotBaseline(baseline, snapshot);
+  }
+  clearStaleEquipped(merged);
+  const { scalars, skillRows, inventoryRows, materialRows } = splitCharacterSnapshot(merged);
 
   const ops = async (tx) => {
     if (Object.keys(scalars).length > 0) {

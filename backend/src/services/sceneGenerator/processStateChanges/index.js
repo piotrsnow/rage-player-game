@@ -5,7 +5,12 @@ import { applyDungeonRoomState } from '../../livingWorld/dungeonEntry.js';
 import { auditQuestWorldImpact } from '../../livingWorld/questAudit.js';
 import { applyFameFromEvent } from '../../livingWorld/fameService.js';
 import { appendEvent } from '../../livingWorld/worldEventLog.js';
-import { resolveWorldLocation, walkUpAncestors, resolveLocationByName } from '../../livingWorld/worldStateService.js';
+import {
+  resolveWorldLocation,
+  walkUpAncestors,
+  resolveLocationByName,
+  findOrCreateCampaignLocation,
+} from '../../livingWorld/worldStateService.js';
 import { LOCATION_KIND_WORLD, LOCATION_KIND_CAMPAIGN, lookupLocationByKindId } from '../../locationRefs.js';
 
 import { generateSceneEmbedding } from './sceneEmbedding.js';
@@ -22,7 +27,8 @@ import {
   processCampaignComplete,
 } from './livingWorld.js';
 import { createEdge } from '../../locationGraph/graphService.js';
-import { markLocationEdgeTraversed } from '../../livingWorld/userDiscoveryService.js';
+import { findSimilarNodeImage } from '../../locationGraph/imageMatcher.js';
+import { markLocationEdgeTraversed, markLocationDiscovered } from '../../livingWorld/userDiscoveryService.js';
 
 // Re-exported so existing test file processStateChanges.test.js keeps
 // working via `import { shouldPromoteToGlobal } from './processStateChanges.js'`.
@@ -33,12 +39,8 @@ const log = childLogger({ module: 'sceneGenerator' });
 // Match-or-drop resolver for AI-emitted `stateChanges.currentLocation`.
 // Returns `{ kind, id, name }` when the target name resolves to an existing
 // canonical WorldLocation OR per-campaign CampaignLocation in this campaign's
-// fog. Returns null on miss — caller drops the emission, player stays put.
-//
-// AI never creates locations mid-play (per `knowledge/concepts/scene-generation.md`
-// and `hearsay-and-ai-locations.md`). The `findOrCreateCampaignLocation` path
-// is reserved for sublocation entries (`stateChanges.newLocations` with
-// `parentLocationName` set) and creation-time `initialLocationsResolver`.
+// fog. Returns null on miss — caller decides whether to create-on-miss
+// (with guards) or drop.
 async function resolveCurrentLocationTarget(campaignId, targetName) {
   const ref = await resolveLocationByName(targetName, { campaignId }).catch(() => null);
   if (!ref?.row?.id) return null;
@@ -46,6 +48,81 @@ async function resolveCurrentLocationTarget(campaignId, targetName) {
     ? (ref.row.canonicalName || targetName)
     : (ref.row.name || targetName);
   return { kind: ref.kind, id: ref.row.id, name };
+}
+
+// Create the bidirectional movement edge between two location nodes if it
+// doesn't already exist, then mark it traversed for the current scene.
+// Used by every code path that transitions the player between two resolved
+// nodes (anchor, retry-after-subloc-create, auto-promote, create-on-miss).
+async function ensureMovementEdge({ from, to, sceneIndex, campaignId }) {
+  if (!from?.kind || !from?.id || !to?.kind || !to?.id) return;
+  const fromKey = `${from.kind}:${from.id}`;
+  const toKey = `${to.kind}:${to.id}`;
+  if (fromKey === toKey) return;
+  try {
+    const existing = await prisma.locationEdge.findFirst({
+      where: {
+        fromKind: from.kind, fromId: from.id,
+        toKind: to.kind, toId: to.id,
+        category: 'movement', isActive: true,
+        OR: [{ campaignId: null }, { campaignId }],
+      },
+    });
+    if (!existing) {
+      await createEdge({
+        fromKind: from.kind,
+        fromId: from.id,
+        toKind: to.kind,
+        toId: to.id,
+        edgeType: 'path_to',
+        category: 'movement',
+        bidirectional: true,
+        weight: 1.0,
+        metadata: { autoCreated: true },
+        discoveryState: 'visited',
+        campaignId,
+        createdBy: 'system',
+      });
+    }
+    await markLocationEdgeTraversed({
+      fromKind: from.kind,
+      fromId: from.id,
+      toKind: to.kind,
+      toId: to.id,
+      sceneIndex,
+      campaignId,
+    });
+  } catch (edgeErr) {
+    log.debug({ err: edgeErr?.message, campaignId, fromKey, toKey }, 'ensureMovementEdge failed (non-fatal)');
+  }
+}
+
+// Generic-terrain blacklist for create-on-miss guard. AI emits these as
+// "I am in <generic terrain>" but they're not POI — they describe the
+// patch the player is wandering across. Keep wandering (flavor name +
+// coords) instead of materializing a CampaignLocation.
+const GENERIC_TERRAIN_TOKENS = new Set([
+  'las', 'lasu', 'lasie',
+  'polana', 'polanie', 'polany',
+  'łąka', 'łąki', 'łące',
+  'błota', 'bagno', 'bagna',
+  'dolina', 'doliny', 'dolinie',
+  'góry', 'górach', 'wzgórza', 'wzgórze',
+  'rzeka', 'rzeki', 'rzece',
+  'droga', 'drogi', 'drodze', 'trakt', 'traktu',
+  'pole', 'pola',
+  'pustkowie', 'pustkowia',
+]);
+
+function isGenericTerrainName(name) {
+  const lower = String(name || '').toLowerCase().trim();
+  if (!lower) return true;
+  const tokens = lower.split(/\s+/);
+  // If every token is a stopword/adjective + a generic-terrain noun ("stary
+  // las", "głęboka dolina"), treat as generic. We don't enumerate adjectives
+  // — just check whether ANY token is a known generic-terrain noun. AI-named
+  // POI like "Magowa Wieża" / "Karczma Pod Wilkiem" don't share these tokens.
+  return tokens.some((t) => GENERIC_TERRAIN_TOKENS.has(t));
 }
 
 export async function processStateChanges(campaignId, stateChanges, { prevLoc = null, sceneIndex = null, currentRef = null } = {}) {
@@ -166,6 +243,93 @@ export async function processStateChanges(campaignId, stateChanges, { prevLoc = 
             currentY: coords?.regionY ?? null,
           };
           log.info({ campaignId, name: resolved.name, kind: resolved.kind, x: updates.currentX, y: updates.currentY }, 'currentLocation updated (anchored at POI)');
+        } else if (
+          // Create-on-miss with guards. AI emitted a name that doesn't resolve
+          // to any known POI — but if it's a plausible POI label (≥2 words, not
+          // generic terrain) AND the player has a known prevLoc to anchor from,
+          // materialize a CampaignLocation node + a movement edge + transition.
+          // Coords inherited from prevLoc when AI didn't supply them; smart
+          // placer is intentionally NOT used here (we'd need direction/distance
+          // hints AI doesn't reliably emit on plain currentLocation switches).
+          livingWorldEnabled
+          && currentRef?.kind && currentRef?.id
+          && aiName.trim().split(/\s+/).length >= 2
+          && !isGenericTerrainName(aiName)
+        ) {
+          const anchorRow = await lookupLocationByKindId({
+            prisma,
+            kind: currentRef.kind,
+            id: currentRef.id,
+            select: { regionX: true, regionY: true, region: true },
+          }).catch(() => null);
+          const newRegionX = aiX ?? anchorRow?.regionX ?? 0;
+          const newRegionY = aiY ?? anchorRow?.regionY ?? 0;
+          const created = await findOrCreateCampaignLocation(aiName, {
+            campaignId,
+            description: '',
+            locationType: 'campaignPlace',
+            category: 'campaignPlace',
+            region: anchorRow?.region || null,
+            regionX: newRegionX,
+            regionY: newRegionY,
+            positionConfidence: aiX != null ? 0.7 : 0.4,
+            dangerLevel: 'safe',
+          }).catch((err) => {
+            log.warn({ err: err?.message, campaignId, aiName }, 'create-on-miss findOrCreateCampaignLocation failed (non-fatal)');
+            return null;
+          });
+          if (created) {
+            aiNameResolved = true;
+            updates = {
+              currentLocationName: created.name,
+              currentLocationKind: LOCATION_KIND_CAMPAIGN,
+              currentLocationId: created.id,
+              currentX: created.regionX ?? newRegionX,
+              currentY: created.regionY ?? newRegionY,
+            };
+            log.info(
+              { campaignId, name: created.name, id: created.id, regionX: updates.currentX, regionY: updates.currentY },
+              'currentLocation create-on-miss — new CampaignLocation materialized',
+            );
+            // Best-effort node image inheritance — same pattern as
+            // processSublocationEntry.
+            if (!created.nodeImageUrl) {
+              try {
+                const matchedUrl = await findSimilarNodeImage({
+                  locationType: 'campaignPlace',
+                  biome: null,
+                  tags: [],
+                });
+                if (matchedUrl) {
+                  await prisma.campaignLocation.update({ where: { id: created.id }, data: { nodeImageUrl: matchedUrl } });
+                }
+              } catch { /* non-fatal */ }
+            }
+            // Mark as visited for the player's fog-of-war so the new node
+            // shows up in the FE graph immediately (player-mode + GM-mode).
+            if (ownerUserId) {
+              try {
+                await markLocationDiscovered({
+                  userId: ownerUserId,
+                  locationKind: LOCATION_KIND_CAMPAIGN,
+                  locationId: created.id,
+                  campaignId,
+                });
+              } catch (err) {
+                log.debug({ err: err?.message, campaignId, locId: created.id }, 'create-on-miss markLocationDiscovered failed (non-fatal)');
+              }
+            }
+          } else if (hasCoords) {
+            // Fall back to wandering if creation failed.
+            updates = {
+              currentLocationName: aiName,
+              currentLocationKind: null,
+              currentLocationId: null,
+              currentX: aiX,
+              currentY: aiY,
+            };
+            log.info({ campaignId, flavorName: aiName, x: aiX, y: aiY }, 'currentLocation updated (wandering — create-on-miss failed, fallback)');
+          }
         } else if (hasCoords) {
           updates = {
             currentLocationName: aiName,
@@ -178,7 +342,7 @@ export async function processStateChanges(campaignId, stateChanges, { prevLoc = 
         } else {
           log.warn(
             { campaignId, ignored: aiName },
-            'AI emitted stateChanges.currentLocation but name did not resolve and no currentX/Y given — dropped',
+            'AI emitted stateChanges.currentLocation but name did not resolve, guards failed, and no currentX/Y given — dropped',
           );
         }
       } else {
@@ -194,49 +358,13 @@ export async function processStateChanges(campaignId, stateChanges, { prevLoc = 
       if (updates) {
         await prisma.campaign.update({ where: { id: campaignId }, data: updates });
 
-        // Auto-create movement edge between old and new location (if both resolved).
-        if (updates.currentLocationKind && updates.currentLocationId && currentRef?.kind && currentRef?.id) {
-          const fromKey = `${currentRef.kind}:${currentRef.id}`;
-          const toKey = `${updates.currentLocationKind}:${updates.currentLocationId}`;
-          if (fromKey !== toKey) {
-            try {
-              const existing = await prisma.locationEdge.findFirst({
-                where: {
-                  fromKind: currentRef.kind, fromId: currentRef.id,
-                  toKind: updates.currentLocationKind, toId: updates.currentLocationId,
-                  category: 'movement', isActive: true,
-                  OR: [{ campaignId: null }, { campaignId }],
-                },
-              });
-              if (!existing) {
-                await createEdge({
-                  fromKind: currentRef.kind,
-                  fromId: currentRef.id,
-                  toKind: updates.currentLocationKind,
-                  toId: updates.currentLocationId,
-                  edgeType: 'path_to',
-                  category: 'movement',
-                  bidirectional: true,
-                  weight: 1.0,
-                  metadata: { autoCreated: true },
-                  discoveryState: 'visited',
-                  campaignId,
-                  createdBy: 'system',
-                });
-              }
-              // Mark traversed edges as 'visited' in discoveryState
-              await markLocationEdgeTraversed({
-                fromKind: currentRef.kind,
-                fromId: currentRef.id,
-                toKind: updates.currentLocationKind,
-                toId: updates.currentLocationId,
-                sceneIndex,
-                campaignId,
-              });
-            } catch (edgeErr) {
-              log.debug({ err: edgeErr?.message, campaignId }, 'Auto-edge creation failed (non-fatal)');
-            }
-          }
+        if (updates.currentLocationKind && updates.currentLocationId) {
+          await ensureMovementEdge({
+            from: currentRef,
+            to: { kind: updates.currentLocationKind, id: updates.currentLocationId },
+            sceneIndex,
+            campaignId,
+          });
         }
       }
     } catch (err) {
@@ -276,44 +404,12 @@ export async function processStateChanges(campaignId, stateChanges, { prevLoc = 
           { campaignId, name: retryResolved.name, kind: retryResolved.kind },
           'currentLocation resolved on retry (sublocation created by newLocations in same scene)',
         );
-        if (currentRef) {
-          const fromKey = `${currentRef.kind}:${currentRef.id}`;
-          const toKey = `${retryResolved.kind}:${retryResolved.id}`;
-          if (fromKey !== toKey) {
-            const existing = await prisma.locationEdge.findFirst({
-              where: {
-                fromKind: currentRef.kind, fromId: currentRef.id,
-                toKind: retryResolved.kind, toId: retryResolved.id,
-                category: 'movement', isActive: true,
-                OR: [{ campaignId: null }, { campaignId }],
-              },
-            });
-            if (!existing) {
-              await createEdge({
-                fromKind: currentRef.kind,
-                fromId: currentRef.id,
-                toKind: retryResolved.kind,
-                toId: retryResolved.id,
-                edgeType: 'path_to',
-                category: 'movement',
-                bidirectional: true,
-                weight: 1.0,
-                metadata: { autoCreated: true },
-                discoveryState: 'visited',
-                campaignId,
-                createdBy: 'system',
-              });
-            }
-            await markLocationEdgeTraversed({
-              fromKind: currentRef.kind,
-              fromId: currentRef.id,
-              toKind: retryResolved.kind,
-              toId: retryResolved.id,
-              sceneIndex,
-              campaignId,
-            });
-          }
-        }
+        await ensureMovementEdge({
+          from: currentRef,
+          to: { kind: retryResolved.kind, id: retryResolved.id },
+          sceneIndex,
+          campaignId,
+        });
       }
     } catch (err) {
       log.warn({ err: err?.message, campaignId, aiName }, 'currentLocation retry-resolve failed (non-fatal)');
@@ -360,45 +456,12 @@ export async function processStateChanges(campaignId, stateChanges, { prevLoc = 
           'Auto-promoted new sublocation to currentLocation',
         );
 
-        // Create movement edge from previous location to the new sublocation.
-        if (currentRef) {
-          const fromKey = `${currentRef.kind}:${currentRef.id}`;
-          const toKey = `${created.kind}:${created.row.id}`;
-          if (fromKey !== toKey) {
-            const existing = await prisma.locationEdge.findFirst({
-              where: {
-                fromKind: currentRef.kind, fromId: currentRef.id,
-                toKind: created.kind, toId: created.row.id,
-                category: 'movement', isActive: true,
-                OR: [{ campaignId: null }, { campaignId }],
-              },
-            });
-            if (!existing) {
-              await createEdge({
-                fromKind: currentRef.kind,
-                fromId: currentRef.id,
-                toKind: created.kind,
-                toId: created.row.id,
-                edgeType: 'path_to',
-                category: 'movement',
-                bidirectional: true,
-                weight: 1.0,
-                metadata: { autoCreated: true },
-                discoveryState: 'visited',
-                campaignId,
-                createdBy: 'system',
-              });
-            }
-            await markLocationEdgeTraversed({
-              fromKind: currentRef.kind,
-              fromId: currentRef.id,
-              toKind: created.kind,
-              toId: created.row.id,
-              sceneIndex,
-              campaignId,
-            });
-          }
-        }
+        await ensureMovementEdge({
+          from: currentRef,
+          to: { kind: created.kind, id: created.row.id },
+          sceneIndex,
+          campaignId,
+        });
       }
     } catch (err) {
       log.warn({ err: err?.message, campaignId }, 'auto-promote sublocation → currentLocation failed (non-fatal)');

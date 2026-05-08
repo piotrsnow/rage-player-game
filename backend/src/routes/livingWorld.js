@@ -431,6 +431,10 @@ export async function livingWorldRoutes(fastify) {
         scale: node.scale ?? 5,
         tags: node.tags || [],
         atmosphere: node.atmosphere || null,
+        description: node.description || null,
+        biome: node.biome || null,
+        region: node.region || null,
+        visitCount: node.visitCount ?? 0,
         dangerLevel: node.dangerLevel || 'safe',
         regionX: node.regionX ?? 0,
         regionY: node.regionY ?? 0,
@@ -448,7 +452,8 @@ export async function livingWorldRoutes(fastify) {
       where: { campaignId: request.params.id, id: { notIn: [...seenNodeIds] } },
       select: {
         id: true, name: true, locationType: true, scale: true, tags: true,
-        atmosphere: true, dangerLevel: true, regionX: true, regionY: true,
+        atmosphere: true, description: true, biome: true, region: true,
+        visitCount: true, dangerLevel: true, regionX: true, regionY: true,
         nodeShape: true, nodeIcon: true, nodeImageUrl: true,
       },
     });
@@ -461,6 +466,10 @@ export async function livingWorldRoutes(fastify) {
         scale: node.scale ?? 5,
         tags: node.tags || [],
         atmosphere: node.atmosphere || null,
+        description: node.description || null,
+        biome: node.biome || null,
+        region: node.region || null,
+        visitCount: node.visitCount ?? 0,
         dangerLevel: node.dangerLevel || 'safe',
         regionX: node.regionX ?? 0,
         regionY: node.regionY ?? 0,
@@ -791,6 +800,8 @@ export async function livingWorldRoutes(fastify) {
           anchorType: { type: ['string', 'null'], maxLength: 40 },
           tacticalGrid: { type: ['object', 'null'] },
           dungeonState: { type: ['object', 'null'] },
+          regionX: { type: 'number' },
+          regionY: { type: 'number' },
         },
       },
     },
@@ -800,7 +811,6 @@ export async function livingWorldRoutes(fastify) {
     const { nodeId } = request.params;
     const b = request.body;
 
-    // Try CampaignLocation first, then WorldLocation
     let updated = null;
     const campaignLoc = await prisma.campaignLocation.findFirst({
       where: { id: nodeId, campaignId: request.params.id },
@@ -816,7 +826,6 @@ export async function livingWorldRoutes(fastify) {
       if (b.shape !== undefined) data.nodeShape = b.shape || null;
       if (b.icon !== undefined) data.nodeIcon = b.icon || null;
       if (b.nodeImageUrl !== undefined) data.nodeImageUrl = b.nodeImageUrl || null;
-      // Faza 0 — opcjonalna walidacja tacticalGrid przed zapisem.
       if (b.biome !== undefined) data.biome = b.biome || null;
       if (b.anchorType !== undefined) data.anchorType = b.anchorType || null;
       if (b.tacticalGrid !== undefined) {
@@ -831,8 +840,23 @@ export async function livingWorldRoutes(fastify) {
         }
       }
       if (b.dungeonState !== undefined) data.dungeonState = b.dungeonState ?? null;
+      if (b.regionX !== undefined) data.regionX = b.regionX;
+      if (b.regionY !== undefined) data.regionY = b.regionY;
       if (Object.keys(data).length > 0) {
         updated = await prisma.campaignLocation.update({ where: { id: nodeId }, data });
+      }
+    }
+    if (!updated) {
+      const worldLoc = await prisma.worldLocation.findFirst({
+        where: { id: nodeId },
+      });
+      if (worldLoc) {
+        const data = {};
+        if (b.regionX !== undefined) data.regionX = b.regionX;
+        if (b.regionY !== undefined) data.regionY = b.regionY;
+        if (Object.keys(data).length > 0) {
+          updated = await prisma.worldLocation.update({ where: { id: nodeId }, data });
+        }
       }
     }
     if (!updated) return reply.code(404).send({ error: 'Node not found or not editable' });
