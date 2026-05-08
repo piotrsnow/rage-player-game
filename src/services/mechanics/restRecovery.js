@@ -1,3 +1,4 @@
+import { sanitizeMana } from '../../../shared/domain/mana.js';
 import { NEED_KEYWORD_HINTS } from '../autoPlayer.js';
 
 const HEAL_RATE_PER_HOUR = 0.10;
@@ -23,10 +24,10 @@ export function isRestAction(playerAction, t) {
 }
 
 /**
- * Calculate rest recovery: 10% max HP per hour slept + needs satisfaction.
+ * Calculate rest recovery: 10% max HP per hour slept + needs satisfaction + full mana.
  * @param {Object} character - player character state
  * @param {number} hoursSlept - from timeAdvance.hoursElapsed (default 0.5)
- * @returns {{ woundsChange: number|undefined, needsChanges: Object } | null}
+ * @returns {{ woundsChange?: number, needsChanges: Object, manaChange?: number } | null}
  */
 export function calculateRestRecovery(character, hoursSlept = 0.5) {
   if (!character) return null;
@@ -46,8 +47,12 @@ export function calculateRestRecovery(character, hoursSlept = 0.5) {
     if (delta > 0) needsChanges[key] = delta;
   }
 
+  const { current: manaCur, max: manaMax } = sanitizeMana(character.mana);
+  const manaDelta = manaMax > 0 ? Math.max(0, manaMax - manaCur) : 0;
+
   return {
     woundsChange: healed > 0 ? healed : undefined,
     needsChanges,
+    ...(manaDelta > 0 ? { manaChange: manaDelta } : {}),
   };
 }

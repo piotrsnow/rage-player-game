@@ -1,7 +1,7 @@
 import { useEffect, useRef } from 'react';
 
 export default function LoadingSpinner({ size = 'md', text }) {
-  const edge = { sm: 20, md: 32, lg: 120 }[size];
+  const edge = { sm: 20, md: 32, xl: 64, lg: 120 }[size];
   const half = edge / 2;
   const dot = Math.round(edge * 0.14);
 

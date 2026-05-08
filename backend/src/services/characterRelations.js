@@ -14,6 +14,7 @@
 
 import { prisma } from '../lib/prisma.js';
 import { slugifyItemName } from '../../../shared/domain/itemKeys.js';
+import { sanitizeMana } from '../../../shared/domain/mana.js';
 import { toCanonicalStoragePath } from './urlCanonical.js';
 
 // Mirror of cumulativeCharXpThreshold from src/data/rpgSystem.js — needed for
@@ -122,6 +123,8 @@ export function reconstructCharacterSnapshot(row) {
   delete snapshot.equippedMainHand;
   delete snapshot.equippedOffHand;
   delete snapshot.equippedArmour;
+
+  snapshot.mana = sanitizeMana(snapshot.mana);
 
   return snapshot;
 }

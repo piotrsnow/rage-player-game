@@ -1,6 +1,6 @@
 import { useMemo } from 'react';
 import { useGameSlice } from '../stores/gameSelectors';
-import { findSpell, SPELL_TREES } from '../data/rpgMagic';
+import { resolveKnownSpellDisplay } from '../services/magicEngine';
 
 /**
  * Collect all taggable entities from the current game state into a flat array
@@ -14,17 +14,19 @@ export function useEntityPool() {
   return useMemo(() => {
     const pool = [];
 
-    // Spells
+    // Spells (canonical from SPELL_TREES + AI-invented custom names in known[])
     const knownSpells = character?.spells?.known || [];
     for (const spellName of knownSpells) {
-      const found = findSpell(spellName);
-      if (!found) continue;
-      const tree = SPELL_TREES[found.treeId];
+      if (!spellName) continue;
+      const display = resolveKnownSpellDisplay(spellName, character);
       pool.push({
         kind: 'spell',
-        id: `${found.treeId}/${found.spell.name}`,
-        name: found.spell.name,
-        meta: { tree: tree?.name || found.treeId, manaCost: found.spell.manaCost },
+        id: display.treeId ? `${display.treeId}/${spellName}` : `custom/${spellName}`,
+        name: spellName,
+        meta: {
+          tree: display.treeName || (display.isCustom ? 'Wymyślone' : null),
+          manaCost: display.manaCost,
+        },
       });
     }
 

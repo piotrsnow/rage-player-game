@@ -1,7 +1,7 @@
 import { prisma } from '../../lib/prisma.js';
 import { childLogger } from '../../lib/logger.js';
 import { loadUserApiKeys } from '../../services/apiKeyService.js';
-import { analyzeIncident } from '../../services/incidentAnalyzer.js';
+import { analyzeIncident, isWorldCorrectionConfirmedApplied } from '../../services/incidentAnalyzer.js';
 import { getCampaignCharacterIds } from '../../services/campaignSync.js';
 import { loadCharacterSnapshotById, persistCharacterSnapshot } from '../../services/characterRelations.js';
 import { applyCharacterStateChanges } from '../../services/characterMutations.js';
@@ -105,6 +105,7 @@ export async function incidentRoutes(fastify) {
           aiVerdict: true,
           isPlayerRight: true,
           corrections: true,
+          worldCorrectionApplied: true,
           createdAt: true,
         },
       });
@@ -113,7 +114,7 @@ export async function incidentRoutes(fastify) {
       const textDuplicate = recentIncidents.find(
         (inc) => normalizeComplaint(inc.playerComplaint) === incomingNorm,
       );
-      if (textDuplicate) {
+      if (textDuplicate && isWorldCorrectionConfirmedApplied(textDuplicate)) {
         log.info(
           { campaignId, userId, previousIncidentId: textDuplicate.id },
           'Incident rejected — exact text duplicate within dedupe window',
@@ -129,7 +130,7 @@ export async function incidentRoutes(fastify) {
         });
       }
 
-      const recentResolvedIncidents = recentIncidents.filter((i) => i.isPlayerRight);
+      const recentResolvedIncidents = recentIncidents.filter(isWorldCorrectionConfirmedApplied);
 
       const userApiKeys = await loadUserApiKeys(prisma, userId);
 
@@ -210,6 +211,7 @@ export async function incidentRoutes(fastify) {
             }
           }
 
+          let worldCorrectionApplied = false;
           try {
             const currentRef = (campaign.currentLocationKind && campaign.currentLocationId)
               ? { kind: campaign.currentLocationKind, id: campaign.currentLocationId, name: campaign.currentLocationName }
@@ -219,11 +221,24 @@ export async function incidentRoutes(fastify) {
               sceneIndex: currentSceneIndex,
               currentRef,
             });
+            worldCorrectionApplied = true;
+            await prisma.campaignIncident.update({
+              where: { id: incidentRow.id },
+              data: { worldCorrectionApplied: true },
+            });
           } catch (err) {
             log.warn(
               { err: err?.message, campaignId, incidentId: incidentRow.id },
               'processStateChanges failed for incident correction (non-fatal — character snapshot already persisted)',
             );
+            try {
+              await prisma.campaignIncident.update({
+                where: { id: incidentRow.id },
+                data: { worldCorrectionApplied: false },
+              });
+            } catch (updErr) {
+              log.warn({ err: updErr?.message, campaignId, incidentId: incidentRow.id }, 'worldCorrectionApplied=false update failed');
+            }
           }
 
           return {
@@ -238,6 +253,7 @@ export async function incidentRoutes(fastify) {
             narrativeComment: incidentRow.narrativeComment,
             appliedStateChanges,
             renamedNpcs: appliedRenames,
+            worldCorrectionApplied,
             createdAt: incidentRow.createdAt,
           };
         } catch (err) {
@@ -328,6 +344,7 @@ export async function incidentRoutes(fastify) {
           technicalDetails: true,
           corrections: true,
           narrativeComment: true,
+          worldCorrectionApplied: true,
           createdAt: true,
         },
       });

@@ -27,6 +27,7 @@ import {
   rollD100,
 } from '../../services/partyRecruitment';
 import { MAX_COMPANIONS } from '../../stores/handlers/partyHandlers';
+import { resolveTrailingSpellAtMention } from '../../utils/resolveSpellAtMention.js';
 
 const DICE_ANIMATION_MS = 4800;
 
@@ -140,7 +141,7 @@ export default function ActionPanel({
 
   const handleCustomSubmit = (e) => {
     e.preventDefault();
-    const action = normalizeQuotes(customAction.trim());
+    const action = normalizeQuotes(resolveTrailingSpellAtMention(customAction.trim(), character));
     if (action && !disabled) {
       if (listening && !dictation?.handsFree) toggle();
       cancelPendingBroadcasts();
@@ -161,7 +162,7 @@ export default function ActionPanel({
   // and is suppressed while another writer (auto-player typewriter) is active.
   const handleAutoSubmit = useCallback(() => {
     if (disabled || isAutoTyping) return;
-    const action = normalizeQuotes(customAction.trim());
+    const action = normalizeQuotes(resolveTrailingSpellAtMention(customAction.trim(), character));
     if (!action) return;
     cancelPendingBroadcasts();
     emitTypingStop(false);
@@ -174,7 +175,7 @@ export default function ActionPanel({
     setCustomAction('');
     entityTagsRef.current = [];
     inputRef.current?.clear();
-  }, [disabled, isAutoTyping, customAction, isMultiplayer, mp, onAction, forceRoll, cancelPendingBroadcasts, emitTypingStop]);
+  }, [disabled, isAutoTyping, customAction, character, isMultiplayer, mp, onAction, forceRoll, cancelPendingBroadcasts, emitTypingStop]);
 
   useEffect(() => {
     if (!dictation) return undefined;
@@ -226,7 +227,7 @@ export default function ActionPanel({
   };
 
   const handleSoloCustomSubmit = () => {
-    const action = normalizeQuotes(customAction.trim());
+    const action = normalizeQuotes(resolveTrailingSpellAtMention(customAction.trim(), character));
     if (action) {
       if (listening && !dictation?.handsFree) toggle();
       cancelPendingBroadcasts();

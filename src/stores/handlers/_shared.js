@@ -17,6 +17,7 @@ import { DEFAULT_CHARACTER_AGE, normalizeCharacterAge } from '../../services/cha
 import { createStartingSkills } from '../../data/rpgSystem';
 import { shortId } from '../../utils/ids';
 import { slugifyItemName } from '../../../shared/domain/itemKeys.js';
+import { sanitizeMana } from '../../../shared/domain/mana.js';
 
 export function createDefaultNeeds() {
   return { hunger: 100, thirst: 100, bladder: 100, hygiene: 100, rest: 100 };
@@ -114,7 +115,7 @@ export function normalizeCharacter(character) {
     ...character,
     age: normalizeCharacterAge(character.age),
     attributes: character.attributes || { sila: 10, inteligencja: 10, charyzma: 10, zrecznosc: 10, wytrzymalosc: 10, szczescie: 5 },
-    mana: character.mana || { current: 0, max: 0 },
+    mana: sanitizeMana(character.mana),
     spells: character.spells || { known: [], usageCounts: {}, scrolls: [] },
     equipped: character.equipped || { mainHand: null, offHand: null, armour: null },
     materialBag: character.materialBag || [],

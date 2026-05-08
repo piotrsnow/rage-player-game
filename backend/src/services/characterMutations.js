@@ -19,10 +19,14 @@ import { slugifyItemName } from '../../../shared/domain/itemKeys.js';
 import { normalizeSpellMaterialIcon } from '../../../shared/domain/spellMaterialIcons.js';
 import { addEffect, removeEffect, removeEffectsByName, migrateStatusStrings, deriveStatusNames } from '../../../shared/domain/statusEffects.js';
 import { SKILL_BY_NAME, canonicalizeSkillName } from './diceResolver.js';
+import { sanitizeMana } from '../../../shared/domain/mana.js';
+import { childLogger } from '../lib/logger.js';
+
+const log = childLogger({ module: 'characterMutations' });
 
 // ── RPGon constants (mirrored from src/data/rpgSystem.js) ──
 
-const SKILL_CAPS = { basic: 10, max: 25 };
+const SKILL_CAPS = { basic: 15, max: 25 };
 const SKILL_XP_CONFIG = { base: 20, multiplier: 1.25 };
 
 function xpForSkillLevel(level) {
@@ -165,6 +169,19 @@ export function applyCharacterStateChanges(character, changes) {
   }
 
   // ── Mana ──
+  // Safeguard: gdy upstream przepuści NaN/Infinity/0 jako manaChange, traktuj
+  // jako zepsutą próbę regeneracji i normalizuj do +1. Wartości ujemne
+  // (legalne koszty zaklęć) zostają nietknięte. Klon `changes` żeby nie
+  // mutować wejścia — wywołujący traktują payload jako read-only.
+  if (changes.manaChange !== undefined && changes.manaChange !== null) {
+    if (!Number.isFinite(changes.manaChange) || changes.manaChange === 0) {
+      log.warn(
+        { original: changes.manaChange, stateChangeKeys: Object.keys(changes) },
+        '[safeguard] manaChange normalized to +1',
+      );
+      changes = { ...changes, manaChange: 1 };
+    }
+  }
   if (changes.manaChange !== undefined) {
     const mana = { ...(next.mana || { current: 0, max: 0 }) };
     mana.current = Math.max(0, Math.min(mana.max || 0, (mana.current || 0) + changes.manaChange));
@@ -392,6 +409,8 @@ export function applyCharacterStateChanges(character, changes) {
     }
     next.equipped = equipped;
   }
+
+  if (next.mana) next.mana = sanitizeMana(next.mana);
 
   return next;
 }

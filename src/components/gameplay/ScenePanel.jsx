@@ -379,7 +379,7 @@ export default function ScenePanel({
       ) : (
         <div className="w-full h-full bg-gradient-to-br from-surface-container-high to-surface-container-lowest flex items-center justify-center">
           {isGeneratingImage && (settings.sceneVisualization || 'image') === 'image' ? (
-            <LoadingSpinner size="md" text={t('gameplay.conjuringVision')} />
+            <LoadingSpinner size="xl" text={t('gameplay.conjuringVision')} />
           ) : (
             <div className="flex flex-col items-center gap-3">
               <span className="material-symbols-outlined text-6xl text-outline/20">landscape</span>

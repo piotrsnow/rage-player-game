@@ -5,6 +5,7 @@ import { slugifyItemName } from '../../../../shared/domain/itemKeys.js';
 import { normalizeSpellMaterialIcon } from '../../../../shared/domain/spellMaterialIcons.js';
 import { addEffect, removeEffect, removeEffectsByName, migrateStatusStrings, deriveStatusNames } from '../../../../shared/domain/statusEffects.js';
 import { normalizeSkillName } from '../../../services/diceRollInference.js';
+import { sanitizeMana } from '../../../../shared/domain/mana.js';
 
 /**
  * All direct character-sheet mutations — wounds, status, mana, attributes,
@@ -22,6 +23,7 @@ export function applyCharacterMutations(draft, changes) {
   applyMoneyChange(draft, changes);
   applyCharacterEffects(draft, changes);
   applySkillBadges(draft, changes);
+  if (draft.character?.mana) draft.character.mana = sanitizeMana(draft.character.mana);
 }
 
 function applyVitals(draft, changes) {

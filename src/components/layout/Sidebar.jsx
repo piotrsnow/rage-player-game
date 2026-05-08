@@ -126,7 +126,7 @@ Opisz bardzo konkretne konsekwencje tej decyzji dla fabuły: relacji, zasobów, 
             <span className="material-symbols-outlined text-tertiary text-xl">shield</span>
           </div>
           <div className="min-w-0">
-            <div className="font-headline text-tertiary text-lg font-bold truncate leading-tight">{character.name}</div>
+            <div className="font-headline text-tertiary text-[1.70625rem] font-bold truncate leading-tight">{character.name}</div>
             <div className="text-[10px] text-on-surface-variant uppercase tracking-widest truncate">
               {t(`species.${character.species}`, { defaultValue: character.species })}
             </div>

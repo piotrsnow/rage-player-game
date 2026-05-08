@@ -59,6 +59,22 @@ export function validateStateChanges(stateChanges, currentState, config = {}, co
     }
   }
 
+  // manaChange safeguard — gdy AI/pipeline emituje NaN/Infinity/0, traktuj
+  // jako zepsutą próbę regeneracji i normalizuj do +1. Wartości ujemne to
+  // legalne koszty zaklęć (passthrough). Zapis do corrections[] daje toast
+  // validation_warning i ślad w devLog — safeguard nie znika cicho.
+  if (validated.manaChange !== undefined && validated.manaChange !== null) {
+    if (!Number.isFinite(validated.manaChange) || validated.manaChange === 0) {
+      // eslint-disable-next-line no-console
+      console.warn('[safeguard] manaChange normalized to +1', {
+        original: validated.manaChange,
+        stateChangeKeys: Object.keys(stateChanges || {}),
+      });
+      corrections.push(`manaChange ${validated.manaChange} normalized to +1`);
+      validated.manaChange = 1;
+    }
+  }
+
   if (validated.newItems && Array.isArray(validated.newItems)) {
     validated.newItems = normalizeItemList(validated.newItems, corrections);
     if (validated.newItems.length > limits.maxItemsPerScene) {

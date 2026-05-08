@@ -152,10 +152,13 @@ const TaggableInput = forwardRef(function TaggableInput(
 
   // ----- keyboard handling -----
 
+  const autocompleteUiOpen = autocomplete && entityPool.length > 0;
+
   const handleKeyDown = useCallback(
     (e) => {
-      // Let autocomplete handle navigation keys when open
-      if (autocomplete && (e.key === 'ArrowDown' || e.key === 'ArrowUp' || e.key === 'Tab')) {
+      // Only steal keys when the autocomplete popup is actually mounted (needs a non-empty pool).
+      // Otherwise @-trigger would block Enter forever when there are zero taggable entities.
+      if (autocompleteUiOpen && (e.key === 'ArrowDown' || e.key === 'ArrowUp' || e.key === 'Tab')) {
         return; // EntityAutocomplete captures these via document listener
       }
       if (autocomplete && e.key === 'Escape') {
@@ -163,7 +166,7 @@ const TaggableInput = forwardRef(function TaggableInput(
         setAutocomplete(null);
         return;
       }
-      if (autocomplete && e.key === 'Enter') {
+      if (autocompleteUiOpen && e.key === 'Enter') {
         return; // Let autocomplete handle Enter for selection
       }
 
@@ -204,7 +207,7 @@ const TaggableInput = forwardRef(function TaggableInput(
         }
       }
     },
-    [onSubmit, handleInput, autocomplete],
+    [onSubmit, handleInput, autocomplete, autocompleteUiOpen],
   );
 
   // ----- prevent rich-paste -----

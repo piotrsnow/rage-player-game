@@ -91,6 +91,15 @@ export function detectDuplicateCorrection(stateChanges, recentResolved) {
 }
 
 /**
+ * Incidents that count as "fixed in the world" for Layer-2 prompt context and
+ * Layer-3 fingerprint dedupe — player-right verdict AND processStateChanges completed.
+ * Legacy rows with null worldCorrectionApplied are excluded (unknown apply outcome).
+ */
+export function isWorldCorrectionConfirmedApplied(inc) {
+  return inc?.isPlayerRight === true && inc?.worldCorrectionApplied === true;
+}
+
+/**
  * Render the "already-resolved incidents" context block for the AI. Empty
  * string when nothing to show. Each line includes scene index, age in
  * minutes, complaint snippet, and resolved correction summary so the AI can

@@ -1,3 +1,4 @@
+import { sanitizeMana } from '../../../shared/domain/mana.js';
 import { normalizeCharacter, normalizeCustomAttackPresets } from './_shared';
 import { calculateMaxWounds } from '../../services/gameState';
 import { SKILL_CAPS, CREATION_LIMITS } from '../../data/rpgSystem';
@@ -9,6 +10,7 @@ export const characterHandlers = {
     draft.character.customAttackPresets = normalizeCustomAttackPresets(
       action.payload.customAttackPresets ?? draft.character.customAttackPresets
     );
+    if (draft.character.mana) draft.character.mana = sanitizeMana(draft.character.mana);
   },
 
   /**

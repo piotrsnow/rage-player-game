@@ -764,7 +764,11 @@
     "badgeReward_wounds": "+1 max wounds",
     "badgeRewardFlash_attribute": "+1 attribute point!",
     "badgeRewardFlash_mana": "+1 max mana!",
-    "badgeRewardFlash_wounds": "+1 max wounds!"
+    "badgeRewardFlash_wounds": "+1 max wounds!",
+    "skillNextLevelProgress": "Progress toward next level",
+    "skillXpFraction": "{{xp}} / {{needed}} XP",
+    "skillXpFractionShort": "{{xp}}/{{needed}}",
+    "skillXpRemaining": "{{count}} XP to next level"
   },
   "codex": {
     "title": "Codex",

@@ -13,7 +13,7 @@ import PortraitGenerator from './PortraitGenerator';
 import CharacterHistoryPanel from './CharacterHistoryPanel';
 import CustomSelect from '../ui/CustomSelect';
 import { translateSkill, translateAttribute } from '../../utils/rpgTranslate';
-import { SKILLS, DIFFICULTY_THRESHOLDS } from '../../data/rpgSystem';
+import { SKILLS, DIFFICULTY_THRESHOLDS, SKILL_CAPS, xpForSkillLevel } from '../../data/rpgSystem';
 import { resolveKnownSpellDisplay } from '../../services/magicEngine';
 import SkillGainHistory from './SkillGainHistory';
 import FavoriteScenesList from './FavoriteScenesList';
@@ -67,12 +67,29 @@ function getSkillAttribute(skillName) {
   return entry?.attribute || null;
 }
 
+/** XP bar + labels for next skill level (matches AdvancementPanel math). */
+function getSkillXpProgress(skillName, skillsMap) {
+  const raw = skillsMap?.[skillName];
+  const obj = typeof raw === 'object'
+    ? raw
+    : { level: typeof raw === 'number' ? raw : 0, xp: 0, cap: SKILL_CAPS.basic };
+  const level = obj.level ?? 0;
+  const xp = obj.xp ?? obj.progress ?? 0;
+  const cap = obj.cap ?? SKILL_CAPS.basic;
+  const atCap = level >= cap;
+  const needed = atCap ? 0 : xpForSkillLevel(level + 1);
+  const xpPct = needed > 0 ? Math.min(100, (xp / needed) * 100) : atCap ? 100 : 0;
+  const remaining = needed > 0 ? Math.max(0, needed - xp) : 0;
+  return { xp, needed, atCap, xpPct, remaining, cap };
+}
+
 function SkillDetailPanel({ skillName, level, character, t }) {
   const attrKey = getSkillAttribute(skillName);
   const attrValue = attrKey ? (character.attributes?.[attrKey] || 0) : 0;
   const attrLabel = attrKey ? translateAttribute(attrKey, t) : '—';
   const luck = character.attributes?.szczescie || 0;
   const translatedName = translateSkill(skillName, t);
+  const prog = getSkillXpProgress(skillName, character.skills);
 
   return (
     <div className="bg-surface-container-low p-6 border border-outline-variant/10 rounded-sm animate-fade-in">
@@ -115,6 +132,34 @@ function SkillDetailPanel({ skillName, level, character, t }) {
           </p>
         )}
       </div>
+
+      {(prog.atCap || prog.needed > 0) && (
+        <div className="mt-4 p-4 bg-surface-container-high/40 rounded-sm border border-outline-variant/10">
+          <p className="text-on-surface text-xs font-label uppercase tracking-wider mb-2">
+            {t('character.skillNextLevelProgress')}
+          </p>
+          {prog.atCap ? (
+            <p className="text-sm text-tertiary font-headline">{t('advancement.maxed')}</p>
+          ) : (
+            <>
+              <div className="w-full h-2 bg-surface-container-high/60 rounded-full overflow-hidden mb-2">
+                <div
+                  className="h-full rounded-full bg-primary transition-[width]"
+                  style={{ width: `${prog.xpPct}%` }}
+                />
+              </div>
+              <div className="flex flex-wrap items-center justify-between gap-2 text-sm text-on-surface-variant">
+                <span className="tabular-nums">
+                  {t('character.skillXpFraction', { xp: prog.xp, needed: prog.needed })}
+                </span>
+                <span className="tabular-nums text-outline">
+                  {t('character.skillXpRemaining', { count: prog.remaining })}
+                </span>
+              </div>
+            </>
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -178,6 +223,7 @@ function SkillsGrid({ character, t }) {
           {learned.map(({ name, level }) => {
             const icon = SKILL_ICONS[name] || 'star';
             const isSelected = selectedSkill === name;
+            const prog = getSkillXpProgress(name, character.skills);
             return (
               <button
                 key={name}
@@ -194,6 +240,21 @@ function SkillsGrid({ character, t }) {
                   </span>
                 )}
                 <span className="text-tertiary font-headline text-2xl">{level}</span>
+                <div className="w-full mt-1.5 space-y-0.5">
+                  <div className="w-full h-1.5 bg-surface-container-high/60 rounded-full overflow-hidden">
+                    <div
+                      className={`h-full rounded-full transition-[width] ${prog.atCap ? 'bg-tertiary' : 'bg-primary'}`}
+                      style={{ width: `${prog.atCap ? 100 : prog.xpPct}%` }}
+                    />
+                  </div>
+                  <span className="block text-[8px] text-outline tabular-nums leading-tight min-h-[1rem]">
+                    {prog.atCap
+                      ? t('advancement.maxed')
+                      : prog.needed > 0
+                        ? t('character.skillXpFractionShort', { xp: prog.xp, needed: prog.needed })
+                        : '\u00a0'}
+                  </span>
+                </div>
               </button>
             );
           })}

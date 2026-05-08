@@ -138,7 +138,7 @@ async function callNanoOpenAI(userPrompt, signal) {
         { role: 'user', content: userPrompt },
       ],
       temperature: 0,
-      max_tokens: 250,
+      max_completion_tokens: 250,
       response_format: { type: 'json_object' },
     }),
     signal,

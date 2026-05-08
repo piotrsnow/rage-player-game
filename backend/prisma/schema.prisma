@@ -419,10 +419,12 @@ model CampaignIncident {
   playerComplaint  String   @db.Text
   aiVerdict        String   @db.Text
   isPlayerRight    Boolean
-  technicalDetails String?  @db.Text
-  corrections      Json?
-  narrativeComment String?  @db.Text
-  createdAt        DateTime @default(now()) @db.Timestamptz
+  technicalDetails       String?  @db.Text
+  corrections            Json?
+  narrativeComment       String?  @db.Text
+  /// When isPlayerRight: true — whether processStateChanges finished without throw (world/campaign side-effects).
+  worldCorrectionApplied Boolean?
+  createdAt              DateTime @default(now()) @db.Timestamptz
 
   campaign Campaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
   user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)

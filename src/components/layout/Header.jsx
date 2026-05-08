@@ -292,14 +292,14 @@ export default function Header() {
             onMouseLeave={clearPlayLogoVignette}
             onFocus={updatePlayLogoVignette}
             onBlur={clearPlayLogoVignette}
-            className="absolute left-6 bottom-0 z-[51] block leading-none translate-x-[10px] translate-y-[120px] transition-opacity duration-300"
+            className="absolute left-6 bottom-0 z-[51] block leading-none translate-x-[10px] translate-y-[138px] transition-opacity duration-300"
           >
             <span className="relative inline-block origin-top leading-none motion-reduce:animate-none animate-campaign-logo-float will-change-transform">
               <img
                 src={campaignLogoSrc}
                 alt={t('common.appName')}
                 onLoad={updateCampaignLogoCenter}
-                className="relative z-0 block h-[12rem] w-auto max-w-[min(62vw,44rem)] object-contain object-bottom select-none pointer-events-auto brightness-[0.9] contrast-[1.22]"
+                className="relative z-0 block h-[16.2rem] w-auto max-w-[min(83.7vw,59.4rem)] object-contain object-bottom select-none pointer-events-auto brightness-[0.9] contrast-[1.22]"
               />
               <span
                 aria-hidden
@@ -341,7 +341,7 @@ export default function Header() {
       )}
       <div
         className={`flex gap-2 min-w-0 items-center min-h-16 ${
-          isPlayRoute ? 'pl-[max(13rem,min(34rem,calc(46vw+7rem)))] ml-3 md:ml-5' : ''
+          isPlayRoute ? 'pl-[max(17.55rem,min(45.9rem,calc(62.1vw_+_9.45rem)))] ml-3 md:ml-5' : ''
         }`}
       >
         {!isPlayRoute && (

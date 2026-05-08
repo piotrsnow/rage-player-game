@@ -147,12 +147,14 @@ export function applyNeedsAndRest(result, resolved, needsSystemEnabled) {
       ...(result.stateChanges?.needsChanges || {}),
       ...(resolved.restRecovery.needsChanges || {}),
     };
+    const restMana = resolved.restRecovery.manaChange;
     result.stateChanges = {
       ...(result.stateChanges || {}),
       ...(resolved.restRecovery.woundsChange !== undefined
         ? { woundsChange: resolved.restRecovery.woundsChange }
         : {}),
       ...(Object.keys(mergedNeedsChanges).length > 0 ? { needsChanges: mergedNeedsChanges } : {}),
+      ...(restMana != null ? { manaChange: restMana } : {}),
     };
   }
 }

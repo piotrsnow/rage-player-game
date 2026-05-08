@@ -55,7 +55,7 @@ export const ATTRIBUTE_SCALE = {
 // ── SKILL SYSTEM ──
 
 export const SKILL_CAPS = {
-  basic: 10,
+  basic: 15,
   max: 25,
 };
 
@@ -325,7 +325,7 @@ export const CREATION_LIMITS = {
   szczesciePointCost: 3, // each point of Szczescie costs 3 from the attribute pool
   startingSkillPoints: 15, // points to distribute among ANY skills
   racialSkillLevel: 5, // species skills start at this level (free, not from pool)
-  // No maxPerSkillAtCreation — SKILL_CAPS.basic (10) is the only limit
+  // No maxPerSkillAtCreation — SKILL_CAPS.basic (15) is the only limit
 };
 
 // ── HELPER FUNCTIONS ──

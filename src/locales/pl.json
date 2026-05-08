@@ -757,7 +757,11 @@
     "badgeReward_wounds": "+1 max obrażeń",
     "badgeRewardFlash_attribute": "+1 punkt cechy!",
     "badgeRewardFlash_mana": "+1 max many!",
-    "badgeRewardFlash_wounds": "+1 max obrażeń!"
+    "badgeRewardFlash_wounds": "+1 max obrażeń!",
+    "skillNextLevelProgress": "Postęp do następnego poziomu",
+    "skillXpFraction": "{{xp}} / {{needed}} PD",
+    "skillXpFractionShort": "{{xp}}/{{needed}}",
+    "skillXpRemaining": "{{count}} PD do następnego poziomu"
   },
   "codex": {
     "title": "Kodeks",

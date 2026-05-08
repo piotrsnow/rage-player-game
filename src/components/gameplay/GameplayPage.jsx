@@ -1054,7 +1054,12 @@ export default function GameplayPage({ readOnly = false, shareToken = null, onRe
           streamingNarrative={streamingNarrative}
           streamingSegments={streamingSegments}
           narrator={settings.narratorEnabled ? narrator : null}
-          autoPlay={!readOnly && settings.narratorEnabled && settings.narratorAutoPlay && !overlayText}
+          // Do not gate on `overlayText`: the player-action typewriter often lacks
+          // fastFinish (streamComplete is cleared in clearStreamingOutput before paint),
+          // so tying auto-narration to the overlay blocks TTS until typing finishes
+          // or can stall edge cases. Narrator is already stopped when the overlay mounts
+          // on submit; new DM audio can overlap the tail of the typewriter safely.
+          autoPlay={!readOnly && settings.narratorEnabled && settings.narratorAutoPlay}
           myOdId={isMultiplayer ? mp.state.myOdId : null}
           momentumBonus={isMultiplayer
             ? (mpGameState?.characterMomentum?.[character?.name] || 0)
