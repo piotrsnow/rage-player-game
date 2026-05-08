@@ -522,7 +522,7 @@ export default function LobbyPage() {
 
             {/* Not logged in — centered auth panel */}
             {!isLoggedIn && (
-              <div className="w-full max-w-sm mt-10">
+              <div className="w-full max-w-sm mt-4 sm:mt-6 lg:mt-10">
                 <AuthPanel />
               </div>
             )}
@@ -530,7 +530,7 @@ export default function LobbyPage() {
             {/* Logged in — single column: badge, then buttons */}
             {isLoggedIn && (
               <div
-                className="w-full max-w-2xl flex flex-col items-center gap-5 relative z-20 mt-10"
+                className="w-full max-w-2xl flex flex-col items-center gap-3 sm:gap-4 lg:gap-5 relative z-20 mt-4 sm:mt-6 lg:mt-10"
                 style={{ transform: `translateY(-${badgeOverlapPx}px)` }}
               >
                 {/* Badge + CTAs at full CSS size; only outer hero uses fitScale when needed */}
@@ -551,7 +551,7 @@ export default function LobbyPage() {
                   </div>
                 )}
 
-                <div className="flex flex-row gap-4 items-stretch w-full">
+                <div className="flex flex-row gap-2 sm:gap-3 lg:gap-4 items-stretch w-full">
                   <Button size="lg" className="flex-1" onClick={() => navigate('/create')}>
                     {t('lobby.newCampaign')}
                   </Button>

@@ -12,7 +12,7 @@ import GlassCard from '../ui/GlassCard';
 
 function OrnamentalDivider() {
   return (
-    <div className="flex items-center justify-center gap-3 my-4">
+    <div className="flex items-center justify-center gap-3 my-2 sm:my-3 lg:my-4">
       <div className="h-px w-10 bg-gradient-to-r from-transparent to-primary/30" />
       <span className="material-symbols-outlined text-primary/30 text-[10px]">diamond</span>
       <div className="h-px w-10 bg-gradient-to-l from-transparent to-primary/30" />
@@ -52,6 +52,67 @@ const TILT_COOLDOWN_MS = 3000;
 /** Slight overshoot for return-to-neutral after drag release */
 const SPRING_RESET_TRANSITION =
   'transform 0.55s cubic-bezier(0.34, 1.45, 0.56, 1)';
+
+function lerp(start, end, t) {
+  return start + (end - start) * t;
+}
+
+function clamp(value, min, max) {
+  return Math.min(Math.max(value, min), max);
+}
+
+function getStatHoloStyle(value, max = 25) {
+  const safeMax = Number(max) > 0 ? Number(max) : 25;
+  const normalized = clamp(Number(value) || 0, 0, safeMax) / safeMax;
+  const stops = [
+    { t: 0, h: 270, s: 60, l: 30 },   // dark purple
+    { t: 0.33, h: 325, s: 75, l: 55 }, // pink
+    { t: 0.66, h: 205, s: 80, l: 55 }, // blue
+    { t: 1, h: 175, s: 65, l: 48 },    // sea teal
+  ];
+
+  let left = stops[0];
+  let right = stops[stops.length - 1];
+  for (let i = 0; i < stops.length - 1; i += 1) {
+    if (normalized >= stops[i].t && normalized <= stops[i + 1].t) {
+      left = stops[i];
+      right = stops[i + 1];
+      break;
+    }
+  }
+
+  const segmentLength = right.t - left.t || 1;
+  const segmentT = clamp((normalized - left.t) / segmentLength, 0, 1);
+  const hue = lerp(left.h, right.h, segmentT);
+  const sat = lerp(left.s, right.s, segmentT);
+  const lit = lerp(left.l, right.l, segmentT);
+
+  const shimmerProgress = normalized <= 0.2 ? 0 : (normalized - 0.2) / 0.8;
+  const shimmerOpacity = shimmerProgress > 0 ? lerp(0.15, 0.7, shimmerProgress) : 0;
+  const shimmerDuration = shimmerProgress > 0 ? lerp(8, 3, shimmerProgress) : 0;
+
+  const baseColor = `hsl(${hue.toFixed(1)} ${sat.toFixed(1)}% ${lit.toFixed(1)}%)`;
+  if (shimmerProgress <= 0) {
+    return {
+      '--shimmer-duration': '0s',
+      '--stat-holo-gradient': 'none',
+      color: baseColor,
+      WebkitTextFillColor: baseColor,
+      backgroundImage: 'none',
+    };
+  }
+
+  const glowColor = `hsl(${hue.toFixed(1)} ${Math.min(100, sat + 8).toFixed(1)}% ${Math.min(95, lit + 24).toFixed(1)}% / ${shimmerOpacity.toFixed(2)})`;
+  const shineColor = `hsl(${hue.toFixed(1)} ${Math.min(100, sat + 5).toFixed(1)}% ${Math.min(99, lit + 37).toFixed(1)}% / ${Math.min(1, shimmerOpacity + 0.28).toFixed(2)})`;
+  const holoGradient = `linear-gradient(90deg, ${baseColor} 0%, ${baseColor} 18%, ${glowColor} 38%, ${shineColor} 50%, ${glowColor} 62%, ${baseColor} 82%, ${baseColor} 100%)`;
+
+  return {
+    '--shimmer-duration': `${shimmerDuration.toFixed(2)}s`,
+    '--stat-holo-gradient': holoGradient,
+    backgroundImage: holoGradient,
+    color: baseColor,
+  };
+}
 
 function LoggedInBanner({ user }) {
   const { t, i18n } = useTranslation();
@@ -397,6 +458,72 @@ function LoggedInBanner({ user }) {
           : `${skill} ${ndLastLobby.roll} ${mark}`;
       })()
     : null;
+  const successRate = diceStats?.totalRolls > 0 ? diceStats.successes / diceStats.totalRolls : 0;
+  const avgRoll = Number(diceStats?.avgRoll) || 0;
+  const diceChips = diceStats && diceStats.totalRolls > 0
+    ? [
+        {
+          icon: 'casino',
+          value: diceStats.totalRolls,
+          label: `Rzuty: ${diceStats.totalRolls}`,
+          border: 'border-primary/20',
+          hoverBorder: 'hover:border-primary/45',
+          statValue: Math.min((diceStats.totalRolls || 0) / 4, 25),
+        },
+        {
+          icon: 'check_circle',
+          value: `${Math.round(successRate * 100)}%`,
+          label: `Sukces: ${diceStats.successes}/${diceStats.totalRolls}`,
+          border: 'border-emerald-500/20',
+          hoverBorder: 'hover:border-emerald-500/45',
+          statValue: successRate * 25,
+        },
+        {
+          icon: 'bar_chart',
+          value: diceStats.avgRoll,
+          label: `Średni rzut: ${diceStats.avgRoll}`,
+          border: 'border-tertiary/20',
+          hoverBorder: 'hover:border-tertiary/45',
+          statValue: (1 - clamp(avgRoll, 0, 50) / 50) * 25,
+        },
+        {
+          icon: 'star',
+          value: diceStats.critSuccesses,
+          label: `Kryty (1): ${diceStats.critSuccesses}`,
+          border: 'border-amber-500/20',
+          hoverBorder: 'hover:border-amber-500/45',
+          statValue: Math.min((diceStats.critSuccesses || 0) * 5, 25),
+        },
+        {
+          icon: 'dangerous',
+          value: diceStats.critFailures,
+          label: `Fumble (50): ${diceStats.critFailures}`,
+          border: 'border-error/20',
+          hoverBorder: 'hover:border-error/45',
+          statValue: Math.min((diceStats.critFailures || 0) * 5, 25),
+        },
+        ...(diceStats.bestSkill
+          ? [{
+              icon: 'trending_up',
+              value: '',
+              label: `Najlepsza: ${diceStats.bestSkill}`,
+              border: 'border-emerald-500/20',
+              hoverBorder: 'hover:border-emerald-500/45',
+              statValue: 20,
+            }]
+          : []),
+        ...(diceStats.worstSkill
+          ? [{
+              icon: 'trending_down',
+              value: '',
+              label: `Najgorsza: ${diceStats.worstSkill}`,
+              border: 'border-error/20',
+              hoverBorder: 'hover:border-error/45',
+              statValue: 20,
+            }]
+          : []),
+      ]
+    : [];
 
   return (
     <div
@@ -411,10 +538,10 @@ function LoggedInBanner({ user }) {
     >
       <div className="flip-card-inner" style={{ aspectRatio: '1.586 / 1' }}>
         {/* ===== FRONT ===== */}
-        <div className="flip-card-front holo-card p-8 flex flex-col overflow-hidden">
+        <div className="flip-card-front holo-card p-3 sm:p-5 lg:p-8 flex flex-col overflow-hidden">
           {/* Header: portrait + identity */}
-          <div className="flex gap-5 items-start mb-3">
-            <div className="badge-portrait-frame w-36 shrink-0 rounded-lg overflow-visible bg-surface-container-lowest/60 flex items-center justify-center aspect-[3/4]">
+          <div className="flex gap-3 sm:gap-4 lg:gap-5 items-start mb-1 sm:mb-2 lg:mb-3">
+            <div className="badge-portrait-frame w-20 sm:w-28 lg:w-36 shrink-0 rounded-lg overflow-visible bg-surface-container-lowest/60 flex items-center justify-center aspect-[3/4]">
               {portraitSrc ? (
                 <img
                   src={portraitSrc}
@@ -428,26 +555,26 @@ function LoggedInBanner({ user }) {
             </div>
 
             <div className="min-w-0 flex-1 pt-1">
-              <h2 className="font-headline text-4xl text-tertiary tracking-wide truncate leading-tight mb-3">
+              <h2 className="font-headline text-xl sm:text-2xl lg:text-4xl text-tertiary tracking-wide truncate leading-tight mb-1 sm:mb-2 lg:mb-3">
                 {displayName}
               </h2>
               <div className="flex items-center gap-2 flex-wrap">
-                <span className="inline-flex items-center gap-2 px-3 h-9 rounded-full bg-primary/10 border border-primary/25 text-sm font-headline">
-                  <span className="material-symbols-outlined text-lg text-primary">star</span>
-                  <span className="text-on-surface-variant/80 text-xs uppercase tracking-wider">Lvl</span>
+                <span className="inline-flex items-center gap-1.5 sm:gap-2 px-2 sm:px-3 h-7 sm:h-8 lg:h-9 rounded-full bg-primary/10 border border-primary/25 text-xs sm:text-sm font-headline">
+                  <span className="material-symbols-outlined text-sm sm:text-lg text-primary">star</span>
+                  <span className="text-on-surface-variant/80 text-[10px] sm:text-xs uppercase tracking-wider">Lvl</span>
                   <span className="text-on-surface font-headline">{level}</span>
                 </span>
                 {speciesLabel && (
-                  <span className="inline-flex items-center gap-2 px-3 h-9 rounded-full bg-primary/10 border border-primary/25 text-sm font-headline">
-                    <span className="material-symbols-outlined text-lg text-primary">groups</span>
-                    <span className="text-on-surface-variant/80 text-xs uppercase tracking-wider">{speciesLabel}</span>
+                  <span className="inline-flex items-center gap-1.5 sm:gap-2 px-2 sm:px-3 h-7 sm:h-8 lg:h-9 rounded-full bg-primary/10 border border-primary/25 text-xs sm:text-sm font-headline">
+                    <span className="material-symbols-outlined text-sm sm:text-lg text-primary">groups</span>
+                    <span className="text-on-surface-variant/80 text-[10px] sm:text-xs uppercase tracking-wider">{speciesLabel}</span>
                   </span>
                 )}
               </div>
 
               {/* Legend (AI-generated) — directly below lvl/species */}
               {badgeLegend && (
-                <p className="mt-3 text-sm leading-snug italic animate-text-shimmer">
+                <p className="mt-1 sm:mt-2 lg:mt-3 text-xs sm:text-sm leading-snug italic animate-text-shimmer">
                   &ldquo;{badgeLegend}&rdquo;
                 </p>
               )}
@@ -456,13 +583,13 @@ function LoggedInBanner({ user }) {
 
           {/* Stats grid — full badge width, with tooltip on hover */}
           {statChips.length > 0 && (
-            <div className="flex flex-wrap gap-2 mb-4">
+            <div className="flex flex-wrap gap-1 sm:gap-1.5 lg:gap-2 mb-2 sm:mb-3 lg:mb-4">
               {statChips.map((chip) => (
                 <div
                   key={chip.key}
                   onPointerEnter={() => handleChipHover(chip)}
                   className={[
-                    'group relative flex items-center h-11 w-11 rounded-md justify-center',
+                    'group relative flex items-center h-8 w-8 sm:h-9 sm:w-9 lg:h-11 lg:w-11 rounded-md justify-center',
                     'border',
                     'bg-gradient-to-br from-primary/10 via-tertiary/5 to-primary/10',
                     'shadow-[inset_0_0_0_1px_rgba(255,255,255,0.04)]',
@@ -472,7 +599,10 @@ function LoggedInBanner({ user }) {
                       : 'border-primary/20 hover:border-primary/45',
                   ].join(' ')}
                 >
-                  <span className={`material-symbols-outlined text-xl ${chip.kind === 'attr' ? 'text-primary' : 'text-tertiary/80'}`}>
+                  <span
+                    className="material-symbols-outlined stat-icon-holo text-base sm:text-lg lg:text-xl"
+                    style={getStatHoloStyle(chip.value)}
+                  >
                     {chip.icon}
                   </span>
                   <span className="absolute -bottom-0.5 -right-0.5 text-[9px] font-headline text-on-surface bg-surface-dim/80 rounded px-0.5 leading-tight">
@@ -495,7 +625,7 @@ function LoggedInBanner({ user }) {
           )}
 
           {/* Footer (awers) */}
-          <div className="flex items-center gap-2 sm:gap-3 mt-auto pt-4 border-t border-outline-variant/8">
+          <div className="flex items-center gap-2 sm:gap-3 mt-auto pt-2 sm:pt-3 lg:pt-4 border-t border-outline-variant/8">
          
             {lastRollSummary && (
               <span
@@ -529,10 +659,10 @@ function LoggedInBanner({ user }) {
         </div>
 
         {/* ===== BACK — snark + dice stats ===== */}
-        <div className="flip-card-back holo-card p-8 flex flex-col overflow-hidden">
-          <div className="flex items-center gap-2.5 mb-2">
-            <h3 className="font-headline text-tertiary text-xl flex items-center gap-2.5">
-              <span className="material-symbols-outlined text-primary-dim text-2xl">theater_comedy</span>
+        <div className="flip-card-back holo-card p-3 sm:p-5 lg:p-8 flex flex-col overflow-hidden">
+          <div className="flex items-center gap-2 sm:gap-2.5 mb-1 sm:mb-2">
+            <h3 className="font-headline text-tertiary text-base sm:text-lg lg:text-xl flex items-center gap-2 sm:gap-2.5">
+              <span className="material-symbols-outlined text-primary-dim text-xl sm:text-2xl">theater_comedy</span>
               {t('lobby.snarkTitle', 'Twoje wybryki')}
             </h3>
             {ttsAvailable && (
@@ -556,7 +686,7 @@ function LoggedInBanner({ user }) {
 
           <div className="flex-1 min-h-0 overflow-y-auto custom-scrollbar flex flex-col items-center justify-center text-center">
             {badgeSnark ? (
-              <p className="text-base leading-relaxed italic animate-text-shimmer max-w-md">
+              <p className="text-sm sm:text-base leading-relaxed italic animate-text-shimmer max-w-md">
                 {badgeSnark}
               </p>
             ) : badgeLoading ? (
@@ -577,23 +707,20 @@ function LoggedInBanner({ user }) {
             )}
           </div>
 
-          {diceStats && diceStats.totalRolls > 0 && (
+          {diceChips.length > 0 && (
             <div className="mt-auto">
-              <div className="flex flex-wrap gap-2 justify-center">
-                {[
-                  { icon: 'casino', value: diceStats.totalRolls, label: `Rzuty: ${diceStats.totalRolls}`, color: 'text-primary', border: 'border-primary/20', hoverBorder: 'hover:border-primary/45' },
-                  { icon: 'check_circle', value: `${Math.round((diceStats.successes / diceStats.totalRolls) * 100)}%`, label: `Sukces: ${diceStats.successes}/${diceStats.totalRolls}`, color: 'text-emerald-400', border: 'border-emerald-500/20', hoverBorder: 'hover:border-emerald-500/45' },
-                  { icon: 'bar_chart', value: diceStats.avgRoll, label: `Średni rzut: ${diceStats.avgRoll}`, color: 'text-tertiary', border: 'border-tertiary/20', hoverBorder: 'hover:border-tertiary/45' },
-                  { icon: 'star', value: diceStats.critSuccesses, label: `Kryty (1): ${diceStats.critSuccesses}`, color: 'text-amber-400', border: 'border-amber-500/20', hoverBorder: 'hover:border-amber-500/45' },
-                  { icon: 'dangerous', value: diceStats.critFailures, label: `Fumble (50): ${diceStats.critFailures}`, color: 'text-error', border: 'border-error/20', hoverBorder: 'hover:border-error/45' },
-                  ...(diceStats.bestSkill ? [{ icon: 'trending_up', value: '', label: `Najlepsza: ${diceStats.bestSkill}`, color: 'text-emerald-400', border: 'border-emerald-500/20', hoverBorder: 'hover:border-emerald-500/45' }] : []),
-                  ...(diceStats.worstSkill ? [{ icon: 'trending_down', value: '', label: `Najgorsza: ${diceStats.worstSkill}`, color: 'text-error', border: 'border-error/20', hoverBorder: 'hover:border-error/45' }] : []),
-                ].map((chip) => (
+              <div className="flex flex-wrap gap-1.5 sm:gap-2 justify-center">
+                {diceChips.map((chip) => (
                   <div
                     key={chip.icon}
-                    className={`group relative flex items-center h-14 w-14 rounded-md justify-center border bg-gradient-to-br from-primary/10 via-tertiary/5 to-primary/10 shadow-[inset_0_0_0_1px_rgba(255,255,255,0.04)] transition-[border-color,box-shadow] duration-200 ease-out ${chip.border} ${chip.hoverBorder}`}
+                    className={`group relative flex items-center h-10 w-10 sm:h-12 sm:w-12 lg:h-14 lg:w-14 rounded-md justify-center border bg-gradient-to-br from-primary/10 via-tertiary/5 to-primary/10 shadow-[inset_0_0_0_1px_rgba(255,255,255,0.04)] transition-[border-color,box-shadow] duration-200 ease-out ${chip.border} ${chip.hoverBorder}`}
                   >
-                    <span className={`material-symbols-outlined text-2xl ${chip.color}`}>{chip.icon}</span>
+                    <span
+                      className="material-symbols-outlined stat-icon-holo text-lg sm:text-xl lg:text-2xl"
+                      style={getStatHoloStyle(chip.statValue)}
+                    >
+                      {chip.icon}
+                    </span>
                     {chip.value !== '' && (
                       <span className="absolute -bottom-0.5 -right-0.5 text-[10px] font-headline text-on-surface bg-surface-dim/80 rounded px-0.5 leading-tight">
                         {chip.value}
@@ -690,14 +817,14 @@ function LoginForm() {
 
   return (
     <form onSubmit={handleSubmit} className="w-full max-w-sm mx-auto" autoComplete="on">
-      <div className="text-center mb-6">
-        <span className="material-symbols-outlined text-primary/40 text-4xl mb-2 block">
+      <div className="text-center mb-3 sm:mb-4 lg:mb-6">
+        <span className="material-symbols-outlined text-primary/40 text-3xl sm:text-4xl mb-1.5 sm:mb-2 block">
           shield_person
         </span>
-        <h3 className="font-headline text-tertiary text-lg tracking-wide">
+        <h3 className="font-headline text-tertiary text-base sm:text-lg tracking-wide">
           {t('lobby.loginTitle')}
         </h3>
-        <p className="text-on-surface-variant/50 text-xs mt-1 max-w-xs mx-auto">
+        <p className="text-on-surface-variant/50 text-[10px] sm:text-xs mt-1 max-w-xs mx-auto">
           {t('lobby.loginSubtitle')}
         </p>
       </div>
@@ -706,7 +833,7 @@ function LoginForm() {
 
       <input type="hidden" name="serverUrl" value={serverUrl} readOnly />
 
-      <div className="space-y-4">
+      <div className="space-y-3 sm:space-y-4">
         <div>
           <label htmlFor="auth-email" className="block text-[10px] text-on-surface-variant/60 font-label uppercase tracking-widest mb-1.5">
             {t('settings.backendEmail')}
@@ -741,11 +868,11 @@ function LoginForm() {
           <p className="text-[10px] text-outline/30 mt-1">{t('settings.backendPasswordHint')}</p>
         </div>
 
-        <div className="flex gap-3 pt-2">
+        <div className="flex gap-3 pt-1 sm:pt-2">
           <button
             type="submit"
             disabled={!canSubmit}
-            className="flex-1 py-3 rounded-sm border bg-surface-tint/10 border-primary/25 text-primary text-xs font-headline uppercase tracking-widest hover:bg-surface-tint/20 hover:border-primary/40 transition-all disabled:opacity-30 disabled:hover:bg-surface-tint/10"
+            className="flex-1 py-2 sm:py-3 rounded-sm border bg-surface-tint/10 border-primary/25 text-primary text-[10px] sm:text-xs font-headline uppercase tracking-widest hover:bg-surface-tint/20 hover:border-primary/40 transition-all disabled:opacity-30 disabled:hover:bg-surface-tint/10"
           >
             {loading ? t('common.loading') : t('settings.backendLogin')}
           </button>
@@ -753,7 +880,7 @@ function LoginForm() {
             type="button"
             onClick={handleRegister}
             disabled={!canSubmit}
-            className="flex-1 py-3 rounded-sm border border-outline-variant/15 text-on-surface-variant text-xs font-headline uppercase tracking-widest hover:border-primary/25 hover:text-primary transition-all disabled:opacity-30"
+            className="flex-1 py-2 sm:py-3 rounded-sm border border-outline-variant/15 text-on-surface-variant text-[10px] sm:text-xs font-headline uppercase tracking-widest hover:border-primary/25 hover:text-primary transition-all disabled:opacity-30"
           >
             {t('settings.backendRegister')}
           </button>
@@ -789,7 +916,7 @@ export default function AuthPanel() {
 
   return (
     <div className="w-full max-w-md animate-slide-up relative z-10" style={{ animationDelay: '0.1s' }}>
-      <GlassCard elevated className="p-8 md:p-10">
+      <GlassCard elevated className="p-4 sm:p-6 md:p-8 lg:p-10">
         {backendAuthChecking ? (
           <SessionCheckBanner />
         ) : (

@@ -252,18 +252,6 @@ export function useImageGeneration() {
     [state.scenes, state.campaign?.genre, state.campaign?.tone, state.campaign?.backendId, state.character?.age, state.character?.gender, state.character?.portraitUrl, imageGenEnabled, imageApiKey, imageProvider, imageStyle, darkPalette, imageSeriousness, sdWebuiModel, sdWebuiSeed, sdWebuiIpaMode, imageResolutionMultiplier, sdWebuiIpaEnabled, sdWebuiQualityPreset, hasApiKey, imgKeyProvider, dispatch, autoSave]
   );
 
-  const backfillCampaignRef = useRef(null);
-  useEffect(() => {
-    const backendId = state.campaign?.backendId;
-    if (!backendId || backfillCampaignRef.current === backendId) return;
-    const npcs = state.world?.npcs;
-    if (!Array.isArray(npcs) || npcs.length === 0) return;
-    const missing = npcs.filter((n) => n && typeof n.id === 'string' && !n.portraitUrl);
-    if (missing.length === 0) return;
-    backfillCampaignRef.current = backendId;
-    void ensureMissingNpcPortraits(missing);
-  }, [state.campaign?.backendId, state.world?.npcs, ensureMissingNpcPortraits]);
-
   return {
     generateImageForScene,
     generateItemImageForInventoryItem,

@@ -165,17 +165,11 @@ export function applySceneStateChanges({
 }) {
   if (!result.stateChanges || Object.keys(result.stateChanges).length === 0) return;
 
-  const introducedNpcNames = new Set(
+  const updatedNpcNames = new Set(
     (Array.isArray(result.stateChanges.npcs) ? result.stateChanges.npcs : [])
-      .filter((n) => n?.action === 'introduce' && typeof n?.name === 'string')
+      .filter((n) => n?.action === 'update' && typeof n?.name === 'string')
       .map((n) => n.name.toLowerCase()),
   );
-  const existingNpcNames = new Set(
-    (state.world?.npcs || [])
-      .map((n) => (typeof n?.name === 'string' ? n.name.toLowerCase() : null))
-      .filter(Boolean),
-  );
-  const newlyIntroducedNames = [...introducedNpcNames].filter((name) => !existingNpcNames.has(name));
 
   const { validated, warnings, corrections } = validateStateChanges(
     result.stateChanges,
@@ -198,11 +192,10 @@ export function applySceneStateChanges({
   if (Array.isArray(validated.newItems) && validated.newItems.length > 0) {
     void ensureMissingInventoryImages(validated.newItems, { emitWarning: false });
   }
-  if (newlyIntroducedNames.length > 0 && typeof ensureMissingNpcPortraits === 'function') {
+  if (updatedNpcNames.size > 0 && typeof ensureMissingNpcPortraits === 'function') {
     setTimeout(() => {
-      const nameSet = new Set(newlyIntroducedNames);
       const fresh = (getGameState()?.world?.npcs || [])
-        .filter((n) => n?.name && nameSet.has(n.name.toLowerCase()) && !n.portraitUrl);
+        .filter((n) => n?.name && updatedNpcNames.has(n.name.toLowerCase()) && !n.portraitUrl);
       if (fresh.length > 0) void ensureMissingNpcPortraits(fresh);
     }, 0);
   }

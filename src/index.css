@@ -544,6 +544,11 @@
   100% { background-position: 200% center; }
 }
 
+@keyframes statHoloShimmer {
+  0% { background-position: -180% center; }
+  100% { background-position: 180% center; }
+}
+
 @keyframes barShimmer {
   0% { transform: translateX(-100%); }
   100% { transform: translateX(200%); }
@@ -885,6 +890,15 @@
   background-clip: text;
   -webkit-text-fill-color: transparent;
   animation: textShimmer 6s linear infinite;
+}
+
+.stat-icon-holo {
+  background-image: var(--stat-holo-gradient);
+  background-size: 220% auto;
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  animation: statHoloShimmer var(--shimmer-duration, 0s) linear infinite;
 }
 
 .animate-float {

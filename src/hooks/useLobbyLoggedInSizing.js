@@ -1,11 +1,12 @@
 import { useState, useLayoutEffect } from 'react';
 
-/** Reference viewport height (vertical) — layout OK at full scale. */
+/** Reference viewport height (vertical) — layout OK at this scale. */
 const VIEWPORT_H_REFERENCE = 1440;
-/** Full HD height — badge ~35% smaller than at REFERENCE → scale 1 - 0.35 = 0.65. */
+const SCALE_AT_REFERENCE = 0.80;
+/** Full HD height — 20% smaller than before (was 0.65). */
 const VIEWPORT_H_FHD = 1080;
-const SCALE_AT_FHD = 0.65;
-const SCALE_MIN = 0.35;
+const SCALE_AT_FHD = 0.52;
+const SCALE_MIN = 0.20;
 
 function readLogoBaseRem() {
   if (typeof window === 'undefined') return 22.5;
@@ -15,14 +16,14 @@ function readLogoBaseRem() {
 }
 
 /**
- * Linear scale vs viewport height: 1080px → 0.65, 1440px → 1.0, extrapolated below/above with clamp.
+ * Linear scale vs viewport height: 1080px → 0.52, 1440px → 0.80, extrapolated below/above with clamp.
  * Exported for tests / reuse.
  */
 export function lobbyViewportScale(heightPx) {
-  if (heightPx >= VIEWPORT_H_REFERENCE) return 1;
-  const slope = (1 - SCALE_AT_FHD) / (VIEWPORT_H_REFERENCE - VIEWPORT_H_FHD);
+  if (heightPx >= VIEWPORT_H_REFERENCE) return SCALE_AT_REFERENCE;
+  const slope = (SCALE_AT_REFERENCE - SCALE_AT_FHD) / (VIEWPORT_H_REFERENCE - VIEWPORT_H_FHD);
   const scale = SCALE_AT_FHD + (heightPx - VIEWPORT_H_FHD) * slope;
-  return Math.max(SCALE_MIN, Math.min(1, scale));
+  return Math.max(SCALE_MIN, Math.min(SCALE_AT_REFERENCE, scale));
 }
 
 function computeSizing() {
