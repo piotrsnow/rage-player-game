@@ -54,6 +54,52 @@ const SKILLS = [
 
 export const SKILL_BY_NAME = Object.fromEntries(SKILLS.map(s => [s.name, s]));
 
+const SKILLS_BY_ATTRIBUTE = {};
+for (const s of SKILLS) {
+  (SKILLS_BY_ATTRIBUTE[s.attribute] ??= []).push(s.name);
+}
+
+// Action-text → attribute heuristics (mirrors src/services/mechanics/skillCheck.js ACTION_PATTERNS).
+const FORCE_ROLL_PATTERNS = [
+  { re: /\b(?:atak(?:uj[eę]?|ować)?|uderz(?:am|ać|yć)?|tn(?:ij|ę)|walcz(?:[eę]|yć)?|łam(?:ię|ać)?|podnos[zię]|dźwig(?:am|ać)?|pcham|forsuj[eę]?|attack|hit|strike|slash|stab|punch|kick|fight|swing|cleave|parry|block|force|lift|push|pull|break\s*(?:down|open)|smash|carry)\b/iu, attribute: 'sila' },
+  { re: /\b(?:strzel(?:am|ać)?|celuj[eę]?|skrad(?:am|ać)|chow(?:am|ać)|ukryw(?:am|ać)|przemyk(?:am|ać)?|unikai?(?:m|ć)|skacz[eę]?|biegnę|sprint|sneak|hide|stealth|dodge|evade|climb|jump|sprint|run|acrobat|tumble|leap|shoot|fire|aim|lockpick|pick\s*(?:lock|pocket)|sleight)\b/iu, attribute: 'zrecznosc' },
+  { re: /\b(?:mów(?:ię|ić)?|powiedz|rozmawiam|przekonuj[eę]?|negocjuj[eę]?|targuj[eę]?|kłam(?:ię|ać)?|blefuj[eę]?|pytam|prosz[eę]?|flirtuj[eę]?|zastrasz(?:am|ać)?|say|tell|talk|speak|persuade|convince|negotiate|bargain|haggle|bluff|lie|charm|flirt|intimidate|gossip|command|order)\b/iu, attribute: 'charyzma' },
+  { re: /\b(?:szuk(?:am|ać)|badam|przeszuk(?:uj[eę]?|iwać)?|obserwuj[eę]?|analizuj[eę]?|czyt(?:am|ać)|rozpozn(?:aję|ać)?|search|look|examine|investigate|inspect|read|study|analyze|identify|perceive|notice|spot|recall|research|decipher)\b/iu, attribute: 'inteligencja' },
+  { re: /\b(?:wytrzym(?:uj[eę]?|ać)?|znos[zię]|opier(?:am|ać)|przetrwa(?:ć|m)?|endure|resist|withstand|tough(?:en)?|brace|survive|swim|march)\b/iu, attribute: 'wytrzymalosc' },
+  { re: /\b(?:rzuc(?:am)?\s*(?:zaklęcie|czar)|cast\s*spell|channel|meditat|invoke|dispel)\b/iu, attribute: 'inteligencja' },
+];
+
+const FALLBACK_FORCED_SKILL = 'Przeczucie';
+
+/**
+ * Pick the best skill for a forced roll. Priority:
+ *   1. Action-text heuristic → character's highest skill for that attribute
+ *   2. First canonical skill for the matched attribute (character has none trained)
+ *   3. Przeczucie (unclassifiable text — player wants a roll anyway)
+ */
+export function inferForcedRollSkill(playerAction, character) {
+  if (typeof playerAction !== 'string' || !playerAction.trim()) return FALLBACK_FORCED_SKILL;
+
+  const text = playerAction.trim();
+  let attribute = null;
+  for (const p of FORCE_ROLL_PATTERNS) {
+    if (p.re.test(text)) { attribute = p.attribute; break; }
+  }
+
+  if (attribute) {
+    const candidates = SKILLS_BY_ATTRIBUTE[attribute] || [];
+    let bestSkill = null;
+    let bestLevel = -1;
+    for (const name of candidates) {
+      const level = getSkillLevel(character, name);
+      if (level > bestLevel) { bestSkill = name; bestLevel = level; }
+    }
+    return bestSkill || candidates[0] || FALLBACK_FORCED_SKILL;
+  }
+
+  return FALLBACK_FORCED_SKILL;
+}
+
 // ── HELPERS ──
 
 export function rollD50() {

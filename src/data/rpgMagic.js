@@ -16,6 +16,7 @@ export const SPELL_TREES = {
     spells: [
       {
         name: 'Iskra',
+        icon: 'local_fire_department',
         level: 1,
         manaCost: 1,
         unlockCondition: null, // starting spell
@@ -24,6 +25,7 @@ export const SPELL_TREES = {
       },
       {
         name: 'Ognisty Pocisk',
+        icon: 'whatshot',
         level: 2,
         manaCost: 2,
         unlockCondition: 'Iskra',
@@ -32,6 +34,7 @@ export const SPELL_TREES = {
       },
       {
         name: 'Kula Ognia',
+        icon: 'flare',
         level: 3,
         manaCost: 4,
         unlockCondition: 'Ognisty Pocisk',
@@ -49,6 +52,7 @@ export const SPELL_TREES = {
     spells: [
       {
         name: 'Piorun',
+        icon: 'bolt',
         level: 1,
         manaCost: 3,
         unlockCondition: null,
@@ -57,6 +61,7 @@ export const SPELL_TREES = {
       },
       {
         name: 'Lancuch Blyskawic',
+        icon: 'electric_bolt',
         level: 2,
         manaCost: 5,
         unlockCondition: 'Piorun',
@@ -74,6 +79,7 @@ export const SPELL_TREES = {
     spells: [
       {
         name: 'Ochrona',
+        icon: 'shield',
         level: 1,
         manaCost: 3,
         unlockCondition: null,
@@ -82,6 +88,7 @@ export const SPELL_TREES = {
       },
       {
         name: 'Wielka Ochrona',
+        icon: 'health_and_safety',
         level: 2,
         manaCost: 5,
         unlockCondition: 'Ochrona',
@@ -99,6 +106,7 @@ export const SPELL_TREES = {
     spells: [
       {
         name: 'Niewidzialnosc',
+        icon: 'visibility_off',
         level: 1,
         manaCost: 4,
         unlockCondition: null,
@@ -107,6 +115,7 @@ export const SPELL_TREES = {
       },
       {
         name: 'Grupowa Niewidzialnosc',
+        icon: 'group',
         level: 2,
         manaCost: 5,
         unlockCondition: 'Niewidzialnosc',
@@ -124,6 +133,7 @@ export const SPELL_TREES = {
     spells: [
       {
         name: 'Lodowy Dotyk',
+        icon: 'ac_unit',
         level: 1,
         manaCost: 2,
         unlockCondition: null,
@@ -132,6 +142,7 @@ export const SPELL_TREES = {
       },
       {
         name: 'Lodowa Bariera',
+        icon: 'severe_cold',
         level: 2,
         manaCost: 3,
         unlockCondition: 'Lodowy Dotyk',
@@ -140,6 +151,7 @@ export const SPELL_TREES = {
       },
       {
         name: 'Zamiec',
+        icon: 'weather_snowy',
         level: 3,
         manaCost: 5,
         unlockCondition: 'Lodowa Bariera',
@@ -157,6 +169,7 @@ export const SPELL_TREES = {
     spells: [
       {
         name: 'Leczenie Ran',
+        icon: 'healing',
         level: 1,
         manaCost: 2,
         unlockCondition: null,
@@ -165,6 +178,7 @@ export const SPELL_TREES = {
       },
       {
         name: 'Regeneracja',
+        icon: 'monitor_heart',
         level: 2,
         manaCost: 4,
         unlockCondition: 'Leczenie Ran',
@@ -173,6 +187,7 @@ export const SPELL_TREES = {
       },
       {
         name: 'Wskrzeszenie Iskry Zycia',
+        icon: 'favorite',
         level: 3,
         manaCost: 5,
         unlockCondition: 'Regeneracja',
@@ -190,6 +205,7 @@ export const SPELL_TREES = {
     spells: [
       {
         name: 'Telekineza',
+        icon: 'open_with',
         level: 1,
         manaCost: 3,
         unlockCondition: null,
@@ -198,6 +214,7 @@ export const SPELL_TREES = {
       },
       {
         name: 'Teleportacja',
+        icon: 'move_up',
         level: 2,
         manaCost: 5,
         unlockCondition: 'Telekineza',
@@ -215,6 +232,7 @@ export const SPELL_TREES = {
     spells: [
       {
         name: 'Strach',
+        icon: 'sentiment_very_dissatisfied',
         level: 1,
         manaCost: 2,
         unlockCondition: null,
@@ -223,6 +241,7 @@ export const SPELL_TREES = {
       },
       {
         name: 'Sen',
+        icon: 'bedtime',
         level: 2,
         manaCost: 3,
         unlockCondition: 'Strach',
@@ -240,6 +259,7 @@ export const SPELL_TREES = {
     spells: [
       {
         name: 'Wykrycie Magii',
+        icon: 'travel_explore',
         level: 1,
         manaCost: 1,
         unlockCondition: null,
@@ -248,6 +268,7 @@ export const SPELL_TREES = {
       },
       {
         name: 'Tarcza Wiatru',
+        icon: 'cyclone',
         level: 2,
         manaCost: 2,
         unlockCondition: 'Wykrycie Magii',
@@ -256,6 +277,7 @@ export const SPELL_TREES = {
       },
       {
         name: 'Rozproszenie Magii',
+        icon: 'auto_fix_off',
         level: 3,
         manaCost: 4,
         unlockCondition: 'Tarcza Wiatru',

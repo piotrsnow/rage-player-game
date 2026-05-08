@@ -274,12 +274,17 @@ function SpellTreesTab({ character }) {
                       <span className={`material-symbols-outlined text-sm mt-0.5 shrink-0 ${
                         isKnown ? 'text-green-400' : isUnlocked ? 'text-tertiary' : 'text-outline/40'
                       }`}>
-                        {isKnown ? 'check_circle' : isUnlocked ? 'lock_open' : 'lock'}
+                        {spell.icon || tree.icon}
                       </span>
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center justify-between gap-2">
-                          <span className={`font-bold ${isKnown ? 'text-primary' : 'text-on-surface'}`}>
+                          <span className={`flex items-center gap-1.5 font-bold ${isKnown ? 'text-primary' : 'text-on-surface'}`}>
                             {spell.name}
+                            <span className={`material-symbols-outlined text-[11px] ${
+                              isKnown ? 'text-green-400' : isUnlocked ? 'text-tertiary/80' : 'text-outline/50'
+                            }`}>
+                              {isKnown ? 'check_circle' : isUnlocked ? 'lock_open' : 'lock'}
+                            </span>
                           </span>
                           <span className="text-on-surface-variant tabular-nums shrink-0">
                             {spell.manaCost} many · lv.{spell.level}

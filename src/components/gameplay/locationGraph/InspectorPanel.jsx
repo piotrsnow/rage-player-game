@@ -15,6 +15,9 @@ const DANGER_LEVELS = ['safe', 'low', 'moderate', 'dangerous', 'deadly'];
 
 const DISCOVERY_OPTIONS = ['unknown', 'rumored', 'known', 'visited', 'mapped', 'hidden'];
 
+const INPUT_CLS = 'bg-white/5 rounded px-2.5 py-2 w-full text-sm text-on-surface border border-outline-variant/10 focus:border-primary/40 outline-none transition-colors';
+const SELECT_CLS = 'bg-surface-container rounded px-2.5 py-2 w-full text-sm text-on-surface border border-outline-variant/10';
+
 export default function InspectorPanel({
   selectedNode, selectedEdge, allNodes, occupants = [],
   onUpdateNode, onUpdateEdge, onDeleteNode, onDeleteEdge,
@@ -24,7 +27,7 @@ export default function InspectorPanel({
 
   if (!selectedNode && !selectedEdge) {
     return (
-      <div className="flex flex-col items-center justify-center h-full text-outline text-xs uppercase tracking-widest gap-2 p-4">
+      <div className="flex flex-col items-center justify-center h-full text-outline text-xs uppercase tracking-widest gap-2 px-6 py-4">
         <span className="material-symbols-outlined text-2xl">info</span>
         {t('locationGraph.selectToInspect')}
       </div>
@@ -68,97 +71,112 @@ function NodeInspector({ node, occupants = [], onUpdate, onDelete, mode, campaig
   }, [node.id, onUpdate]);
 
   return (
-    <div className="overflow-y-auto custom-scrollbar px-6 py-3 space-y-3 text-xs">
-      <div className="flex items-center gap-2 pb-2 border-b border-outline-variant/10">
+    <div className="overflow-y-auto custom-scrollbar pl-6 py-4 !pr-8 text-sm">
+      {/* Header */}
+      <div className="flex items-center gap-2.5 pb-3 mb-1 border-b border-outline-variant/10">
         <span className="w-4 h-4 rounded-full flex-shrink-0" style={{ backgroundColor: vis.color }} />
-        <span className="font-bold text-on-surface text-base truncate">{node.name}</span>
+        <span className="font-headline text-lg text-on-surface truncate">{node.name}</span>
+        <span className="ml-auto text-[10px] uppercase tracking-widest text-outline bg-white/5 rounded px-1.5 py-0.5">
+          {vis.label}
+        </span>
       </div>
 
       {isAdmin && (
-        <NodeImageSection
-          node={node}
-          campaignId={campaignId}
-          onUpdate={handleField}
-        />
+        <CollapsibleSection
+          title={t('locationGraph.inspector.sectionImage', { defaultValue: 'Obrazek' })}
+          icon="image"
+        >
+          <NodeImageSection node={node} campaignId={campaignId} onUpdate={handleField} />
+        </CollapsibleSection>
       )}
 
-      <Field label={t('locationGraph.inspector.name')}>
-        <input
-          className="bg-white/5 rounded-sm px-2.5 py-1.5 w-full text-on-surface border border-outline-variant/10 focus:border-primary/40 outline-none"
-          defaultValue={node.name}
-          onBlur={(e) => handleField('name', e.target.value)}
-        />
-      </Field>
+      <CollapsibleSection
+        title={t('locationGraph.inspector.sectionBasic', { defaultValue: 'Podstawowe' })}
+        icon="info"
+      >
+        <Field label={t('locationGraph.inspector.name')}>
+          <input
+            className={INPUT_CLS}
+            defaultValue={node.name}
+            onBlur={(e) => handleField('name', e.target.value)}
+          />
+        </Field>
 
-      <Field label={t('locationGraph.inspector.type')}>
-        <select
-          className="bg-surface-container rounded-sm px-2.5 py-1.5 w-full text-on-surface border border-outline-variant/10"
-          value={node.type || 'generic'}
-          onChange={(e) => handleField('type', e.target.value)}
-        >
-          {NODE_TYPE_OPTIONS.map((t) => {
-            const v = getNodeVisual(t);
-            return <option key={t} value={t} className="bg-surface-container text-on-surface py-1">{v.label}</option>;
-          })}
-        </select>
-      </Field>
+        <Field label={t('locationGraph.inspector.type')}>
+          <select
+            className={SELECT_CLS}
+            value={node.type || 'generic'}
+            onChange={(e) => handleField('type', e.target.value)}
+          >
+            {NODE_TYPE_OPTIONS.map((t) => {
+              const v = getNodeVisual(t);
+              return <option key={t} value={t} className="bg-surface-container text-on-surface py-1">{v.label}</option>;
+            })}
+          </select>
+        </Field>
 
-      <Field label={t('locationGraph.inspector.tags')}>
-        <TagChips tags={node.tags || []} onChange={(next) => handleField('tags', next)} />
-      </Field>
+        <Field label={t('locationGraph.inspector.tags')}>
+          <TagChips tags={node.tags || []} onChange={(next) => handleField('tags', next)} />
+        </Field>
+      </CollapsibleSection>
 
-      <Field label={t('locationGraph.inspector.atmosphere')}>
-        <input
-          className="bg-white/5 rounded-sm px-2.5 py-1.5 w-full text-on-surface border border-outline-variant/10 focus:border-primary/40 outline-none"
-          defaultValue={node.atmosphere || ''}
-          onBlur={(e) => handleField('atmosphere', e.target.value)}
-        />
-      </Field>
+      <CollapsibleSection
+        title={t('locationGraph.inspector.sectionAppearance', { defaultValue: 'Wygląd' })}
+        icon="palette"
+      >
+        <Field label={t('locationGraph.inspector.atmosphere')}>
+          <input
+            className={INPUT_CLS}
+            defaultValue={node.atmosphere || ''}
+            onBlur={(e) => handleField('atmosphere', e.target.value)}
+          />
+        </Field>
 
-      <Field label={t('locationGraph.inspector.dangerLevel')}>
-        <select
-          className="bg-surface-container rounded-sm px-2.5 py-1.5 w-full text-on-surface border border-outline-variant/10"
-          value={node.dangerLevel || 'safe'}
-          onChange={(e) => handleField('dangerLevel', e.target.value)}
-        >
-          {DANGER_LEVELS.map((d) => <option key={d} value={d} className="bg-surface-container text-on-surface py-1">{t(`locationGraph.danger.${d}`)}</option>)}
-        </select>
-      </Field>
+        <Field label={t('locationGraph.inspector.dangerLevel')}>
+          <select
+            className={SELECT_CLS}
+            value={node.dangerLevel || 'safe'}
+            onChange={(e) => handleField('dangerLevel', e.target.value)}
+          >
+            {DANGER_LEVELS.map((d) => <option key={d} value={d} className="bg-surface-container text-on-surface py-1">{t(`locationGraph.danger.${d}`)}</option>)}
+          </select>
+        </Field>
 
-      <Field label={t('locationGraph.inspector.scale')}>
-        <input
-          type="range" min={0} max={7} step={1}
-          className="w-full"
-          value={node.scale ?? 5}
-          onChange={(e) => handleField('scale', Number(e.target.value))}
-        />
-        <span className="text-xs text-outline">{node.scale ?? 5}</span>
-      </Field>
+        <Field label={t('locationGraph.inspector.scale')}>
+          <input
+            type="range" min={0} max={7} step={1}
+            className="w-full"
+            value={node.scale ?? 5}
+            onChange={(e) => handleField('scale', Number(e.target.value))}
+          />
+          <span className="text-xs text-outline">{node.scale ?? 5}</span>
+        </Field>
 
-      <Field label={t('locationGraph.inspector.shape', { defaultValue: 'Kształt' })}>
-        <ShapePicker
-          value={node.nodeShape || null}
-          onChange={(v) => handleField('shape', v)}
-          color={vis.color}
-        />
-      </Field>
+        <Field label={t('locationGraph.inspector.shape', { defaultValue: 'Kształt' })}>
+          <ShapePicker
+            value={node.nodeShape || null}
+            onChange={(v) => handleField('shape', v)}
+            color={vis.color}
+          />
+        </Field>
 
-      <Field label={t('locationGraph.inspector.icon', { defaultValue: 'Ikona' })}>
-        <IconPicker
-          value={node.nodeIcon || null}
-          onChange={(v) => handleField('icon', v)}
-        />
-      </Field>
+        <Field label={t('locationGraph.inspector.icon', { defaultValue: 'Ikona' })}>
+          <IconPicker
+            value={node.nodeIcon || null}
+            onChange={(v) => handleField('icon', v)}
+          />
+        </Field>
+      </CollapsibleSection>
 
-      {/* Faza 0 — biome / anchorType / tacticalGrid (GM mode only).
-          biome: hint dla scenePlanner po Fazie 1 (zastąpi keyword detection).
-          anchorType: explicit override mapowania na sceneAnchors.
-          tacticalGrid: pełny editor pojawia się w Fazie 7 (na razie info-only). */}
       {mode === 'gm' && (
-        <>
+        <CollapsibleSection
+          title={t('locationGraph.inspector.sectionGm', { defaultValue: 'Ustawienia GM' })}
+          icon="tune"
+          defaultOpen={false}
+        >
           <Field label={t('locationGraph.inspector.biome', { defaultValue: 'Biom' })}>
             <input
-              className="bg-white/5 rounded-sm px-2.5 py-1.5 w-full text-on-surface border border-outline-variant/10 focus:border-primary/40 outline-none"
+              className={INPUT_CLS}
               defaultValue={node.biome || ''}
               placeholder="forest, plains, mountain, urban, dungeon..."
               onBlur={(e) => handleField('biome', e.target.value || null)}
@@ -167,7 +185,7 @@ function NodeInspector({ node, occupants = [], onUpdate, onDelete, mode, campaig
 
           <Field label={t('locationGraph.inspector.anchorType', { defaultValue: 'Anchor (3D scene)' })}>
             <input
-              className="bg-white/5 rounded-sm px-2.5 py-1.5 w-full text-on-surface border border-outline-variant/10 focus:border-primary/40 outline-none"
+              className={INPUT_CLS}
               defaultValue={node.anchorType || ''}
               placeholder="tavern, forest, dungeon, road, castle..."
               onBlur={(e) => handleField('anchorType', e.target.value || null)}
@@ -175,45 +193,47 @@ function NodeInspector({ node, occupants = [], onUpdate, onDelete, mode, campaig
           </Field>
 
           <Field label={t('locationGraph.inspector.tacticalGrid', { defaultValue: 'Siatka taktyczna' })}>
-            <div className="text-[11px] text-outline">
+            <div className="text-xs text-outline">
               {node.tacticalGrid
                 ? `${node.tacticalGrid.width}×${node.tacticalGrid.height} ${t('locationGraph.inspector.gridSet', { defaultValue: '(zdefiniowana)' })}`
                 : t('locationGraph.inspector.gridDefault', { defaultValue: 'Brak — walka użyje domyślnej siatki 12×12' })}
             </div>
           </Field>
-        </>
+        </CollapsibleSection>
       )}
 
       {occupants.length > 0 && (
-        <div className="space-y-1.5 pt-1 border-t border-outline-variant/10">
-          <span className="text-xs font-label uppercase tracking-widest text-outline">
-            {t('locationGraph.inspector.occupants', { defaultValue: 'Postacie' })}
-          </span>
+        <CollapsibleSection
+          title={t('locationGraph.inspector.sectionOccupants', { defaultValue: 'Postacie' })}
+          icon="group"
+        >
           <ul className="space-y-1">
             {occupants.map((occ) => (
-              <li key={occ.id} className="flex items-center gap-2 px-1.5 py-1 rounded-sm bg-white/5">
+              <li key={occ.id} className="flex items-center gap-2 px-2 py-1.5 rounded bg-white/5">
                 <span
                   className="w-2.5 h-2.5 rounded-full flex-shrink-0"
                   style={{ backgroundColor: occ.type === 'player' ? '#22d3ee' : '#f472b6' }}
                 />
-                <span className="text-on-surface truncate">{occ.name}</span>
+                <span className="text-on-surface text-sm truncate">{occ.name}</span>
                 <span className="ml-auto text-[10px] text-outline">
                   {occ.type === 'player' ? 'Gracz' : occ.role || 'NPC'}
                 </span>
               </li>
             ))}
           </ul>
-        </div>
+        </CollapsibleSection>
       )}
 
       {mode === 'gm' && (
-        <button
-          onClick={() => onDelete(node.id)}
-          className="flex items-center gap-1 w-full px-2 py-2 rounded-sm text-red-400 hover:bg-red-500/10 transition-colors text-xs uppercase tracking-widest"
-        >
-          <span className="material-symbols-outlined text-base">delete</span>
-          {t('locationGraph.inspector.deleteNode')}
-        </button>
+        <div className="pt-3 mt-1">
+          <button
+            onClick={() => onDelete(node.id)}
+            className="flex items-center gap-1.5 w-full px-3 py-2 rounded border border-red-500/20 text-red-400 hover:bg-red-500/10 transition-colors text-xs uppercase tracking-widest"
+          >
+            <span className="material-symbols-outlined text-base">delete</span>
+            {t('locationGraph.inspector.deleteNode')}
+          </button>
+        </div>
       )}
     </div>
   );
@@ -236,77 +256,119 @@ function EdgeInspector({ edge, allNodes, onUpdate, onDelete, mode, t }) {
   }, [edge.id, onUpdate]);
 
   return (
-    <div className="overflow-y-auto custom-scrollbar px-6 py-3 space-y-3 text-xs">
-      <div className="flex items-center gap-2 pb-2 border-b border-outline-variant/10">
+    <div className="overflow-y-auto custom-scrollbar pl-6 py-4 !pr-8 text-sm">
+      {/* Header */}
+      <div className="flex items-center gap-2.5 pb-3 mb-1 border-b border-outline-variant/10">
         <span className="w-6 h-0.5" style={{ backgroundColor: vis.color }} />
-        <span className="font-bold text-on-surface text-base">{edge.edgeType}</span>
+        <span className="font-headline text-lg text-on-surface">{edge.edgeType}</span>
       </div>
 
-      <div className="flex items-center gap-1 text-xs text-on-surface-variant">
+      <div className="flex items-center gap-1.5 text-sm text-on-surface-variant pb-2">
         <span>{fromNode?.name || edge.fromId}</span>
-        <span className="material-symbols-outlined text-xs">{edge.bidirectional ? 'swap_horiz' : 'arrow_forward'}</span>
+        <span className="material-symbols-outlined text-sm">{edge.bidirectional ? 'swap_horiz' : 'arrow_forward'}</span>
         <span>{toNode?.name || edge.toId}</span>
       </div>
 
-      <Field label={t('locationGraph.inspector.edgeType')}>
-        <select
-          className="bg-surface-container rounded-sm px-2.5 py-1.5 w-full text-on-surface border border-outline-variant/10"
-          value={edge.edgeType}
-          onChange={(e) => handleField('edgeType', e.target.value)}
-        >
-          {Object.entries(edgeTypesByCategory).map(([cat, types]) => (
-            <optgroup key={cat} label={t(`locationGraph.categories.${cat}`)} className="bg-surface-container text-on-surface">
-              {types.map((type) => <option key={type} value={type} className="bg-surface-container text-on-surface py-1">{type.replace(/_/g, ' ')}</option>)}
-            </optgroup>
-          ))}
-        </select>
-      </Field>
-
-      <Field label={t('locationGraph.inspector.bidirectional')}>
-        <label className="flex items-center gap-2 cursor-pointer">
-          <input
-            type="checkbox"
-            checked={edge.bidirectional}
-            onChange={(e) => handleField('bidirectional', e.target.checked)}
-            className="rounded"
-          />
-          <span className="text-on-surface-variant">{edge.bidirectional ? '↔' : '→'}</span>
-        </label>
-      </Field>
-
-      <Field label={t('locationGraph.inspector.discoveryState')}>
-        <select
-          className="bg-surface-container rounded-sm px-2.5 py-1.5 w-full text-on-surface border border-outline-variant/10"
-          value={edge.discoveryState || 'unknown'}
-          onChange={(e) => handleField('discoveryState', e.target.value)}
-        >
-          {DISCOVERY_OPTIONS.map((d) => <option key={d} value={d} className="bg-surface-container text-on-surface py-1">{t(`locationGraph.discovery.${d}`)}</option>)}
-        </select>
-      </Field>
-
-      {edge.category === 'movement' && typeof edge.metadata?.traversalCount === 'number' && edge.metadata.traversalCount > 0 && (
-        <Field label={t('locationGraph.inspector.familiarity', { defaultValue: 'Znajomość trasy' })}>
-          <div className="flex items-center gap-2 text-on-surface-variant">
-            <span className="material-symbols-outlined text-sm">
-              {edge.metadata.traversalCount >= 3 ? 'explore' : 'explore_off'}
-            </span>
-            <span>
-              {edge.metadata.traversalCount}x
-              {edge.metadata.traversalCount >= 3 ? ` — ${t('locationGraph.inspector.familiarRoute', { defaultValue: 'znana trasa' })}` : ''}
-            </span>
-          </div>
+      <CollapsibleSection
+        title={t('locationGraph.inspector.sectionConnection', { defaultValue: 'Połączenie' })}
+        icon="link"
+      >
+        <Field label={t('locationGraph.inspector.edgeType')}>
+          <select
+            className={SELECT_CLS}
+            value={edge.edgeType}
+            onChange={(e) => handleField('edgeType', e.target.value)}
+          >
+            {Object.entries(edgeTypesByCategory).map(([cat, types]) => (
+              <optgroup key={cat} label={t(`locationGraph.categories.${cat}`)} className="bg-surface-container text-on-surface">
+                {types.map((type) => <option key={type} value={type} className="bg-surface-container text-on-surface py-1">{type.replace(/_/g, ' ')}</option>)}
+              </optgroup>
+            ))}
+          </select>
         </Field>
-      )}
+
+        <Field label={t('locationGraph.inspector.bidirectional')}>
+          <label className="flex items-center gap-2 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={edge.bidirectional}
+              onChange={(e) => handleField('bidirectional', e.target.checked)}
+              className="rounded"
+            />
+            <span className="text-on-surface-variant">{edge.bidirectional ? '↔' : '→'}</span>
+          </label>
+        </Field>
+
+        <Field label={t('locationGraph.inspector.discoveryState')}>
+          <select
+            className={SELECT_CLS}
+            value={edge.discoveryState || 'unknown'}
+            onChange={(e) => handleField('discoveryState', e.target.value)}
+          >
+            {DISCOVERY_OPTIONS.map((d) => <option key={d} value={d} className="bg-surface-container text-on-surface py-1">{t(`locationGraph.discovery.${d}`)}</option>)}
+          </select>
+        </Field>
+
+        {edge.category === 'movement' && typeof edge.metadata?.traversalCount === 'number' && edge.metadata.traversalCount > 0 && (
+          <Field label={t('locationGraph.inspector.familiarity', { defaultValue: 'Znajomość trasy' })}>
+            <div className="flex items-center gap-2 text-on-surface-variant">
+              <span className="material-symbols-outlined text-sm">
+                {edge.metadata.traversalCount >= 3 ? 'explore' : 'explore_off'}
+              </span>
+              <span>
+                {edge.metadata.traversalCount}x
+                {edge.metadata.traversalCount >= 3 ? ` — ${t('locationGraph.inspector.familiarRoute', { defaultValue: 'znana trasa' })}` : ''}
+              </span>
+            </div>
+          </Field>
+        )}
+      </CollapsibleSection>
 
       {mode === 'gm' && (
-        <button
-          onClick={() => onDelete(edge.id)}
-          className="flex items-center gap-1 w-full px-2 py-2 rounded-sm text-red-400 hover:bg-red-500/10 transition-colors text-xs uppercase tracking-widest"
-        >
-          <span className="material-symbols-outlined text-base">delete</span>
-          {t('locationGraph.inspector.deleteEdge')}
-        </button>
+        <div className="pt-3 mt-1">
+          <button
+            onClick={() => onDelete(edge.id)}
+            className="flex items-center gap-1.5 w-full px-3 py-2 rounded border border-red-500/20 text-red-400 hover:bg-red-500/10 transition-colors text-xs uppercase tracking-widest"
+          >
+            <span className="material-symbols-outlined text-base">delete</span>
+            {t('locationGraph.inspector.deleteEdge')}
+          </button>
+        </div>
       )}
+    </div>
+  );
+}
+
+function CollapsibleSection({ title, icon, defaultOpen = true, children }) {
+  const [open, setOpen] = useState(defaultOpen);
+  return (
+    <div className="border-b border-outline-variant/10">
+      <button
+        type="button"
+        onClick={() => setOpen(!open)}
+        aria-expanded={open}
+        className="flex items-center gap-2 w-full py-2.5 text-xs text-on-surface-variant/70 hover:text-on-surface-variant transition-colors"
+      >
+        <span className="material-symbols-outlined text-sm">{icon}</span>
+        <span className="uppercase tracking-widest font-label">{title}</span>
+        <span
+          className={`ml-auto material-symbols-outlined text-sm transition-transform duration-300 ease-[cubic-bezier(0.4,0,0.2,1)] motion-reduce:transition-none ${open ? 'rotate-0' : '-rotate-90'}`}
+        >
+          expand_more
+        </span>
+      </button>
+      <div
+        className={`grid transition-[grid-template-rows] duration-300 ease-[cubic-bezier(0.4,0,0.2,1)] motion-reduce:transition-none ${
+          open ? 'grid-rows-[1fr]' : 'grid-rows-[0fr]'
+        }`}
+      >
+        <div
+          className={`min-h-0 overflow-hidden ${!open ? 'pointer-events-none' : ''}`}
+          inert={!open ? true : undefined}
+        >
+          <div className="pb-3 space-y-3">{children}</div>
+        </div>
+      </div>
     </div>
   );
 }
@@ -464,17 +526,13 @@ function NodeImageSection({ node, campaignId, onUpdate }) {
   }, [gallery, loadGallery]);
 
   return (
-    <div className="space-y-2 pb-2 border-b border-outline-variant/10">
-      <label className="text-xs font-label uppercase tracking-widest text-outline">
-        {t('locationGraph.inspector.nodeImage', { defaultValue: 'Obrazek węzła' })}
-      </label>
-
+    <div className="space-y-2.5">
       {node.nodeImageUrl && (
-        <div className="relative group">
+        <div className="relative group inline-block">
           <img
-            src={node.nodeImageUrl}
+            src={apiClient.resolveMediaUrl(node.nodeImageUrl)}
             alt={node.name}
-            className="w-full rounded border border-outline-variant/15 bg-black/20"
+            className="max-w-[180px] w-full rounded-lg border border-outline-variant/15 bg-black/20"
             style={{ imageRendering: 'pixelated' }}
           />
           <button
@@ -492,7 +550,7 @@ function NodeImageSection({ node, campaignId, onUpdate }) {
           type="button"
           onClick={() => fileRef.current?.click()}
           disabled={uploading}
-          className="flex items-center gap-1 px-2 py-1 rounded-sm bg-white/5 border border-outline-variant/10 hover:bg-white/10 transition-colors text-on-surface-variant disabled:opacity-50"
+          className="flex items-center gap-1 px-2 py-1 rounded bg-white/5 border border-outline-variant/10 hover:bg-white/10 transition-colors text-on-surface-variant text-xs disabled:opacity-50"
         >
           <span className="material-symbols-outlined text-sm">upload</span>
           {uploading ? '...' : t('locationGraph.inspector.upload', { defaultValue: 'Wgraj' })}
@@ -500,7 +558,7 @@ function NodeImageSection({ node, campaignId, onUpdate }) {
         <button
           type="button"
           onClick={openPicker}
-          className="flex items-center gap-1 px-2 py-1 rounded-sm bg-white/5 border border-outline-variant/10 hover:bg-white/10 transition-colors text-on-surface-variant"
+          className="flex items-center gap-1 px-2 py-1 rounded bg-white/5 border border-outline-variant/10 hover:bg-white/10 transition-colors text-on-surface-variant text-xs"
         >
           <span className="material-symbols-outlined text-sm">photo_library</span>
           {t('locationGraph.inspector.pick', { defaultValue: 'Wybierz' })}
@@ -509,7 +567,7 @@ function NodeImageSection({ node, campaignId, onUpdate }) {
           type="button"
           onClick={handleGenerate}
           disabled={generating}
-          className="flex items-center gap-1 px-2 py-1 rounded-sm bg-primary/10 border border-primary/20 hover:bg-primary/20 transition-colors text-primary disabled:opacity-50"
+          className="flex items-center gap-1 px-2 py-1 rounded bg-primary/10 border border-primary/20 hover:bg-primary/20 transition-colors text-primary text-xs disabled:opacity-50"
         >
           <span className="material-symbols-outlined text-sm">auto_fix_high</span>
           {generating
@@ -522,8 +580,9 @@ function NodeImageSection({ node, campaignId, onUpdate }) {
       <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={handleUpload} />
 
       <input
-        className="bg-white/5 rounded-sm px-2 py-1 w-full text-on-surface text-[11px] border border-outline-variant/10 focus:border-primary/40 outline-none"
-        placeholder={t('locationGraph.inspector.customPrompt', { defaultValue: 'Custom prompt (opcjonalny)...' })}
+        className="bg-white/5 rounded px-2.5 py-1.5 w-full text-on-surface text-xs border border-outline-variant/10 focus:border-primary/40 outline-none"
+        placeholder={t('locationGraph.inspector.customPrompt')}
+        title={t('locationGraph.inspector.customPromptHint')}
         value={customPrompt}
         onChange={(e) => setCustomPrompt(e.target.value)}
       />
@@ -552,7 +611,7 @@ function NodeImageSection({ node, campaignId, onUpdate }) {
                   className="relative group rounded border border-outline-variant/10 hover:border-primary/40 transition-colors overflow-hidden aspect-square bg-black/20"
                   title={img.name}
                 >
-                  <img src={img.url} alt={img.name} className="w-full h-full object-cover" style={{ imageRendering: 'pixelated' }} />
+                  <img src={apiClient.resolveMediaUrl(img.url)} alt={img.name} className="w-full h-full object-cover" style={{ imageRendering: 'pixelated' }} />
                 </button>
               ))}
             </div>
@@ -584,15 +643,15 @@ function TagChips({ tags, onChange }) {
   };
 
   return (
-    <div className="flex flex-wrap items-center gap-1 bg-white/5 rounded-sm border border-outline-variant/10 focus-within:border-primary/40 px-2 py-1.5 min-h-[32px]">
+    <div className="flex flex-wrap items-center gap-1 bg-white/5 rounded border border-outline-variant/10 focus-within:border-primary/40 px-2.5 py-2 min-h-[38px]">
       {tags.map((tag, i) => (
-        <span key={tag + i} className="inline-flex items-center gap-1 bg-primary/15 text-primary rounded-full px-2 py-0.5 text-[11px] leading-tight">
+        <span key={tag + i} className="inline-flex items-center gap-1 bg-primary/15 text-primary rounded-full px-2 py-0.5 text-xs leading-tight">
           {tag}
           <button type="button" onClick={() => remove(i)} className="hover:text-red-400 transition-colors leading-none">×</button>
         </span>
       ))}
       <input
-        className="bg-transparent outline-none text-on-surface text-xs flex-1 min-w-[60px]"
+        className="bg-transparent outline-none text-on-surface text-sm flex-1 min-w-[60px]"
         value={input}
         onChange={(e) => setInput(e.target.value)}
         onKeyDown={handleKeyDown}
@@ -605,8 +664,8 @@ function TagChips({ tags, onChange }) {
 
 function Field({ label, children }) {
   return (
-    <div className="space-y-1">
-      <label className="text-xs font-label uppercase tracking-widest text-outline">{label}</label>
+    <div className="space-y-1.5">
+      <label className="text-xs font-label uppercase tracking-widest text-on-surface-variant/70">{label}</label>
       {children}
     </div>
   );

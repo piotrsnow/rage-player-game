@@ -37,12 +37,12 @@ function roundTo8(v) {
   return Math.max(256, Math.round(v / 8) * 8);
 }
 
-function applyPresetToPayload(payload, sdModel, kind = 'scene', resolutionMultiplier = 1) {
+function applyPresetToPayload(payload, sdModel, kind = 'scene', resolutionMultiplier = 1, { qualitySteps, qualityCfg } = {}) {
   const preset = getModelPreset(sdModel);
   if (!preset) return;
   if (payload.sampler == null) payload.sampler = preset.sampler;
-  if (payload.steps == null) payload.steps = preset.steps;
-  if (payload.cfg == null) payload.cfg = preset.cfg;
+  if (payload.steps == null) payload.steps = qualitySteps ?? preset.steps;
+  if (payload.cfg == null) payload.cfg = qualityCfg ?? preset.cfg;
   if (payload.width == null) {
     payload.width = kind === 'portrait' ? preset.portraitWidth : preset.width;
   }
@@ -79,7 +79,7 @@ async function fetchPortraitAsBase64(portraitUrl) {
 
 const IPA_WEIGHT_BY_MODE = { speed: 0.15, balanced: 0.35, quality: 0.65 };
 
-async function generateSceneViaProxy(prompt, provider, campaignId, { forceNew = false, portraitUrl = null, sdModel = null, sdSeed = null, shape = 'scene', negativePrompt = null, resolutionMultiplier = 1, ipaMode = 'balanced' } = {}) {
+async function generateSceneViaProxy(prompt, provider, campaignId, { forceNew = false, portraitUrl = null, sdModel = null, sdSeed = null, shape = 'scene', negativePrompt = null, resolutionMultiplier = 1, ipaMode = 'balanced', qualitySteps, qualityCfg } = {}) {
   const body = { prompt };
   if (campaignId) body.campaignId = campaignId;
   if (forceNew) body.forceNew = true;
@@ -104,7 +104,7 @@ async function generateSceneViaProxy(prompt, provider, campaignId, { forceNew = 
       payload.width = 1024;
       payload.height = 1024;
     }
-    applyPresetToPayload(payload, sdModel, 'scene', resolutionMultiplier);
+    applyPresetToPayload(payload, sdModel, 'scene', resolutionMultiplier, { qualitySteps, qualityCfg });
     if (negativePrompt) {
       payload.negativePrompt = payload.negativePrompt
         ? `${negativePrompt}, ${payload.negativePrompt}`

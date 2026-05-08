@@ -42,11 +42,15 @@ export function useSceneGeneration({ ensureMissingInventoryImages, ensureMissing
   const [sceneGenStartTime, setSceneGenStartTime] = useState(null);
 
   const { aiProvider, language, needsSystemEnabled, aiModelTier = 'premium', sdWebuiModel = '', sdWebuiSeed = null } = settings;
-  const QUALITY_RES = { speed: 0.25, balanced: 0.5, quality: 1 };
   const sdWebuiQualityPreset = settings.sdWebuiQualityPreset || 'balanced';
   const sdWebuiIpaEnabled = settings.sdWebuiIpaEnabled ?? (settings.sdWebuiIpaMode !== 'off');
   const sdWebuiIpaMode = sdWebuiIpaEnabled ? sdWebuiQualityPreset : 'off';
-  const imageResolutionMultiplier = QUALITY_RES[sdWebuiQualityPreset] ?? 0.5;
+  const RESOLUTION_MAP = { low: 0.5, base: 1.0, high: 1.5 };
+  const imageResolutionMultiplier = RESOLUTION_MAP[settings.imageResolutionPreset] ?? settings.imageResolutionMultiplier ?? 1;
+  const QUALITY_STEPS = { speed: 6, balanced: 20, quality: 35 };
+  const QUALITY_CFG = { speed: 2, balanced: 5, quality: 7 };
+  const qualitySteps = QUALITY_STEPS[sdWebuiQualityPreset];
+  const qualityCfg = QUALITY_CFG[sdWebuiQualityPreset];
 
   const stream = useSceneBackendStream();
 
@@ -101,7 +105,7 @@ export function useSceneGeneration({ ensureMissingInventoryImages, ensureMissing
               return imageService.generateSceneImage(
                 '', state.campaign?.genre, state.campaign?.tone, imageApiKey, imageProvider,
                 speculativeDesc, state.campaign?.backendId, imageStyle, darkPalette,
-                state.character?.age, state.character?.gender, { sdModel: sdWebuiModel, sdSeed: Number.isInteger(sdWebuiSeed) ? sdWebuiSeed : null, resolutionMultiplier: imageResolutionMultiplier, ipaMode: sdWebuiIpaMode }, imageSeriousness,
+                state.character?.age, state.character?.gender, { sdModel: sdWebuiModel, sdSeed: Number.isInteger(sdWebuiSeed) ? sdWebuiSeed : null, resolutionMultiplier: imageResolutionMultiplier, ipaMode: sdWebuiIpaMode, qualitySteps, qualityCfg }, imageSeriousness,
                 state.character?.portraitUrl || null
               );
             }).then((result) => result?.url || null)
@@ -326,7 +330,7 @@ export function useSceneGeneration({ ensureMissingInventoryImages, ensureMissing
             const { url: imageUrl, prompt: fullImagePrompt } = await imageService.generateSceneImage(
               result.narrative, state.campaign?.genre, state.campaign?.tone, imageApiKey, imageProvider,
               result.imagePrompt, state.campaign?.backendId, imageStyle, darkPalette,
-              state.character?.age, state.character?.gender, { sdModel: sdWebuiModel, sdSeed: Number.isInteger(sdWebuiSeed) ? sdWebuiSeed : null, resolutionMultiplier: imageResolutionMultiplier, ipaMode: sdWebuiIpaMode, ...llmPromptOpts }, imageSeriousness,
+              state.character?.age, state.character?.gender, { sdModel: sdWebuiModel, sdSeed: Number.isInteger(sdWebuiSeed) ? sdWebuiSeed : null, resolutionMultiplier: imageResolutionMultiplier, ipaMode: sdWebuiIpaMode, qualitySteps, qualityCfg, ...llmPromptOpts }, imageSeriousness,
               state.character?.portraitUrl || null
             );
             dispatch({ type: 'UPDATE_SCENE_IMAGE', payload: { sceneId, image: imageUrl, fullImagePrompt } });

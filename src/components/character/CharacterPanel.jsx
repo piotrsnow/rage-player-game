@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { apiClient } from '../../services/apiClient';
 import { useAI } from '../../hooks/useAI';
 import StatsGrid from './StatsGrid';
@@ -13,6 +13,7 @@ import CharacterHistoryPanel from './CharacterHistoryPanel';
 import CustomSelect from '../ui/CustomSelect';
 import { translateSkill, translateAttribute } from '../../utils/rpgTranslate';
 import { SKILLS, DIFFICULTY_THRESHOLDS } from '../../data/rpgSystem';
+import { findSpell, SPELL_TREES } from '../../data/rpgMagic';
 import SkillGainHistory from './SkillGainHistory';
 import FavoriteScenesList from './FavoriteScenesList';
 import BadgesSection from './BadgesSection';
@@ -226,6 +227,96 @@ const NEEDS_META = [
   { key: 'rest', icon: 'bedtime' },
 ];
 
+function SpellDetailPanel({ spell, uses, currentMana, t, onClose }) {
+  const hasEnoughMana = currentMana >= spell.manaCost;
+
+  return (
+    <div className="bg-surface-container-low p-6 border border-tertiary/15 rounded-sm animate-fade-in">
+      <div className="flex items-start justify-between gap-3 mb-4">
+        <div className="flex items-start gap-4 min-w-0">
+          <span className="material-symbols-outlined text-tertiary text-3xl mt-0.5">
+            {spell.icon}
+          </span>
+          <div className="min-w-0">
+            <h4 className="text-tertiary font-headline text-xl leading-tight">{spell.name}</h4>
+            <p className="text-on-surface-variant/70 text-sm mt-1">
+              {spell.treeName} · {t('magic.level', { level: spell.level, defaultValue: `Poziom ${spell.level}` })}
+            </p>
+          </div>
+        </div>
+        <button
+          type="button"
+          onClick={onClose}
+          aria-label={t('common.close')}
+          className="text-on-surface-variant hover:text-tertiary transition-colors"
+        >
+          <span className="material-symbols-outlined text-base">close</span>
+        </button>
+      </div>
+
+      <div className="grid grid-cols-2 gap-3 mb-4">
+        <div className="rounded-sm bg-surface-container-high/60 border border-outline-variant/10 px-3 py-2">
+          <div className="text-[9px] font-label uppercase tracking-widest text-on-surface-variant/70">
+            {t('magic.manaCost', 'Koszt many')}
+          </div>
+          <div className={`font-headline text-lg ${hasEnoughMana ? 'text-tertiary' : 'text-error-light'}`}>
+            {spell.manaCost}
+          </div>
+        </div>
+        <div className="rounded-sm bg-surface-container-high/60 border border-outline-variant/10 px-3 py-2">
+          <div className="text-[9px] font-label uppercase tracking-widest text-on-surface-variant/70">
+            {t('magic.usesLabel', 'Uzycia')}
+          </div>
+          <div className="font-headline text-lg text-primary">{uses}</div>
+        </div>
+      </div>
+
+      <p className="text-on-surface-variant text-sm leading-relaxed">{spell.description}</p>
+      {!hasEnoughMana && (
+        <p className="text-error-light/80 text-xs mt-3">
+          {t('magic.notEnoughMana', { defaultValue: 'Za malo many na rzucenie tego zaklecia.' })}
+        </p>
+      )}
+    </div>
+  );
+}
+
+function SpellsGrid({ spells, selectedSpellName, onSelectSpell, t }) {
+  if (spells.length === 0) return null;
+
+  return (
+    <div className="bg-surface-container-low p-6 border border-tertiary/15 rounded-sm">
+      <h3 className="text-tertiary font-headline mb-4 flex items-center gap-2">
+        <span className="material-symbols-outlined text-sm">auto_awesome</span>
+        {t('magic.spells', 'Zaklecia')}
+      </h3>
+      <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
+        {spells.map((spell) => {
+          const isSelected = selectedSpellName === spell.name;
+          return (
+            <button
+              key={spell.name}
+              type="button"
+              onClick={() => onSelectSpell(isSelected ? null : spell.name)}
+              className={`bg-surface-container-high/60 backdrop-blur-md p-3 border-b-2 flex flex-col items-center text-center transition-all hover:bg-surface-container-highest/80 ${
+                isSelected ? 'border-tertiary bg-tertiary/10' : 'border-tertiary/20'
+              }`}
+            >
+              <span className="material-symbols-outlined text-tertiary mb-1 text-3xl">{spell.icon}</span>
+              <span className="text-on-surface-variant font-label text-[9px] uppercase tracking-[0.1em] leading-tight">
+                {spell.name}
+              </span>
+              <span className="text-[10px] text-outline mt-1">
+                {spell.manaCost} {t('magic.manaShort', 'many')}
+              </span>
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 export default function CharacterPanel({
   character,
   settings,
@@ -255,10 +346,31 @@ export default function CharacterPanel({
   const inventoryItems = character.inventory || [];
   const equipped = character.equipped || {};
   const [selectedItemId, setSelectedItemId] = useState(null);
+  const [selectedSpellName, setSelectedSpellName] = useState(null);
   const [crystalItemId, setCrystalItemId] = useState(null);
   const [useItemModalItem, setUseItemModalItem] = useState(null);
   const [regeneratingItemId, setRegeneratingItemId] = useState(null);
   const selectedItem = inventoryItems.find((i) => i.id === selectedItemId) || null;
+  const knownSpells = useMemo(() => {
+    const usageCounts = character.spells?.usageCounts || {};
+    return (character.spells?.known || [])
+      .map((spellName) => {
+        const found = findSpell(spellName);
+        if (!found) return null;
+        const tree = SPELL_TREES[found.treeId];
+        return {
+          ...found.spell,
+          icon: found.spell.icon || tree?.icon || 'auto_awesome',
+          treeId: found.treeId,
+          treeName: tree?.name || found.treeId,
+          uses: usageCounts[spellName] || 0,
+        };
+      })
+      .filter(Boolean);
+  }, [character.spells?.known, character.spells?.usageCounts]);
+  const selectedSpell = selectedSpellName
+    ? knownSpells.find((spell) => spell.name === selectedSpellName) || null
+    : null;
 
   const { generateItemImageForInventoryItem } = useAI();
   const canRegenerateItemImage = !isMultiplayer && settings.itemImagesEnabled !== false;
@@ -268,6 +380,12 @@ export default function CharacterPanel({
       setSelectedItemId(null);
     }
   }, [inventoryItems, selectedItemId]);
+
+  useEffect(() => {
+    if (selectedSpellName && !knownSpells.some((spell) => spell.name === selectedSpellName)) {
+      setSelectedSpellName(null);
+    }
+  }, [knownSpells, selectedSpellName]);
 
   const handleEquipItem = (itemId, slot) => {
     dispatch({ type: 'EQUIP_ITEM', payload: { itemId, slot } });
@@ -480,20 +598,21 @@ export default function CharacterPanel({
             </div>
           )}
 
-          {character.spells?.known?.length > 0 && (
-            <div className="bg-surface-container-low p-6 border border-tertiary/15 rounded-sm">
-              <h3 className="text-tertiary font-headline mb-4 flex items-center gap-2">
-                <span className="material-symbols-outlined text-sm">auto_awesome</span>
-                {t('magic.spells', 'Zaklecia')}
-              </h3>
-              <div className="flex flex-wrap gap-2">
-                {character.spells.known.map((spell) => (
-                  <span key={spell} className="px-3 py-1 bg-tertiary/10 text-tertiary text-xs rounded-sm border border-tertiary/20">
-                    {spell}
-                  </span>
-                ))}
-              </div>
-            </div>
+          <SpellsGrid
+            spells={knownSpells}
+            selectedSpellName={selectedSpellName}
+            onSelectSpell={setSelectedSpellName}
+            t={t}
+          />
+
+          {selectedSpell && (
+            <SpellDetailPanel
+              spell={selectedSpell}
+              uses={selectedSpell.uses}
+              currentMana={character.mana?.current || 0}
+              t={t}
+              onClose={() => setSelectedSpellName(null)}
+            />
           )}
 
         </div>

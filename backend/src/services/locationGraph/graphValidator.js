@@ -7,6 +7,7 @@ import {
 } from '../../../../shared/domain/locationGraph.js';
 import { LOCATION_KIND_WORLD, LOCATION_KIND_CAMPAIGN } from '../locationRefs.js';
 import { createEdge, updateEdge } from './graphService.js';
+import { findSimilarNodeImage } from './imageMatcher.js';
 import { childLogger } from '../../lib/logger.js';
 
 const log = childLogger({ module: 'graphValidator' });
@@ -95,6 +96,15 @@ export async function applyGraphUpdate(update, { campaignId }) {
       const row = await prisma.campaignLocation.create({ data });
       nameIndex.set(slug, { kind: LOCATION_KIND_CAMPAIGN, id: row.id });
       applied.nodes++;
+
+      const matchedUrl = await findSimilarNodeImage({
+        locationType: data.locationType,
+        biome: data.biome || null,
+        tags: data.tags || [],
+      });
+      if (matchedUrl) {
+        await prisma.campaignLocation.update({ where: { id: row.id }, data: { nodeImageUrl: matchedUrl } });
+      }
     } catch (err) {
       log.warn({ err: err?.message, node: node.name }, 'Failed to create graph node');
     }

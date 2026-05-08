@@ -2,6 +2,7 @@ import { useMemo, useRef, useState, useCallback, useEffect } from 'react';
 import { forceDirectedLayout } from '../../../services/graphLayout.js';
 import { getNodeVisual, getEdgeVisual, getNodeRadius } from './graphVisuals.js';
 import { SHAPE_PATHS } from './nodeShapes.js';
+import { apiClient } from '../../../services/apiClient.js';
 
 const LAYOUT_W = 800;
 const LAYOUT_H = 600;
@@ -78,11 +79,80 @@ export default function GraphCanvas({
     return positions.get(nodeId);
   }, [draggingNodeId, dragNodePos, positions]);
 
+  const getSelectedFocal = useCallback(() => {
+    if (!selected) return null;
+    if (selected.type === 'node') return positions.get(selected.id) || null;
+    if (selected.type === 'edge') {
+      const edge = edges.find((e) => e.id === selected.id);
+      if (!edge) return null;
+      const from = positions.get(edge.fromId);
+      const to = positions.get(edge.toId);
+      if (!from || !to) return null;
+      return { x: (from.x + to.x) / 2, y: (from.y + to.y) / 2 };
+    }
+    return null;
+  }, [selected, positions, edges]);
+
+  const applyZoom = useCallback((factor) => {
+    const focal = getSelectedFocal();
+    const oldZoom = zoom;
+    const newZoom = Math.max(0.3, Math.min(3, oldZoom * factor));
+    if (focal) {
+      const offsetX = (size.w - LAYOUT_W) / 2;
+      const offsetY = (size.h - LAYOUT_H) / 2;
+      const screenX = focal.x * oldZoom + pan.x + offsetX;
+      const screenY = focal.y * oldZoom + pan.y + offsetY;
+      setPan({
+        x: screenX - focal.x * newZoom - offsetX,
+        y: screenY - focal.y * newZoom - offsetY,
+      });
+    }
+    setZoom(newZoom);
+  }, [zoom, pan, size, getSelectedFocal]);
+
   const handleWheel = useCallback((e) => {
     e.preventDefault();
-    const delta = e.deltaY > 0 ? 0.9 : 1.1;
-    setZoom((z) => Math.max(0.3, Math.min(3, z * delta)));
-  }, []);
+    const factor = e.deltaY > 0 ? 0.9 : 1.1;
+    applyZoom(factor);
+  }, [applyZoom]);
+
+  const handleZoomIn = useCallback(() => applyZoom(1.25), [applyZoom]);
+  const handleZoomOut = useCallback(() => applyZoom(0.8), [applyZoom]);
+
+  const handleFitToView = useCallback(() => {
+    if (positions.size === 0) return;
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    for (const pos of positions.values()) {
+      if (pos.x < minX) minX = pos.x;
+      if (pos.y < minY) minY = pos.y;
+      if (pos.x > maxX) maxX = pos.x;
+      if (pos.y > maxY) maxY = pos.y;
+    }
+    const margin = 60;
+    const contentW = maxX - minX + margin * 2;
+    const contentH = maxY - minY + margin * 2;
+    const fitZoom = Math.max(0.3, Math.min(2, Math.min(size.w / contentW, size.h / contentH)));
+    const cx = (minX + maxX) / 2;
+    const cy = (minY + maxY) / 2;
+    const offsetX = (size.w - LAYOUT_W) / 2;
+    const offsetY = (size.h - LAYOUT_H) / 2;
+    setPan({
+      x: size.w / 2 - cx * fitZoom - offsetX,
+      y: size.h / 2 - cy * fitZoom - offsetY,
+    });
+    setZoom(fitZoom);
+  }, [positions, size]);
+
+  const handleCenterOnSelection = useCallback(() => {
+    const focal = getSelectedFocal();
+    if (!focal) return;
+    const offsetX = (size.w - LAYOUT_W) / 2;
+    const offsetY = (size.h - LAYOUT_H) / 2;
+    setPan({
+      x: size.w / 2 - focal.x * zoom - offsetX,
+      y: size.h / 2 - focal.y * zoom - offsetY,
+    });
+  }, [getSelectedFocal, zoom, size]);
 
   const handleMouseDown = useCallback((e) => {
     if (e.target === svgRef.current || e.target.closest('[data-bg]') || e.target === containerRef.current) {
@@ -253,10 +323,28 @@ export default function GraphCanvas({
                 onDoubleClickNode?.(node);
               }}
             >
-              {isSelected && (
-                <circle r={r + 4} fill="none" stroke="#fbbf24" strokeWidth={2} opacity={0.8}>
-                  <animate attributeName="r" values={`${r + 3};${r + 6};${r + 3}`} dur="1.5s" repeatCount="indefinite" />
-                </circle>
+              {isSelected && !node.nodeImageUrl && (
+                useCircle ? (
+                  <circle r={r + 4} fill="none" stroke="#fbbf24" strokeWidth={2} opacity={0.8}>
+                    <animate attributeName="r" values={`${r + 3};${r + 6};${r + 3}`} dur="1.5s" repeatCount="indefinite" />
+                  </circle>
+                ) : (
+                  <path
+                    d={shapeGen(r)}
+                    fill="none"
+                    stroke="#fbbf24"
+                    strokeWidth={2}
+                    opacity={0.8}
+                  >
+                    <animateTransform
+                      attributeName="transform"
+                      type="scale"
+                      values="1.15;1.3;1.15"
+                      dur="1.5s"
+                      repeatCount="indefinite"
+                    />
+                  </path>
+                )
               )}
               {node.nodeImageUrl ? (
                 <>
@@ -266,33 +354,32 @@ export default function GraphCanvas({
                         ? <circle r={r} />
                         : <path d={shapeGen(r)} />}
                     </clipPath>
+                    {isSelected && (
+                      <filter id={`hl-${node.id}`} filterUnits="objectBoundingBox"
+                        x="-15%" y="-15%" width="130%" height="130%">
+                        <feMorphology in="SourceAlpha" operator="dilate" result="expanded">
+                          <animate attributeName="radius" values="2;3.5;2" dur="1.5s" repeatCount="indefinite" />
+                        </feMorphology>
+                        <feFlood floodColor="#fbbf24" result="color" />
+                        <feComposite in="color" in2="expanded" operator="in" result="outline" />
+                        <feMerge>
+                          <feMergeNode in="outline" />
+                          <feMergeNode in="SourceGraphic" />
+                        </feMerge>
+                      </filter>
+                    )}
                   </defs>
                   <image
-                    href={node.nodeImageUrl}
+                    href={apiClient.resolveMediaUrl(node.nodeImageUrl)}
                     x={-r}
                     y={-r}
                     width={r * 2}
                     height={r * 2}
-                    clipPath={`url(#clip-${node.id})`}
                     preserveAspectRatio="xMidYMid slice"
                     opacity={node.discoveryState === 'rumored' ? 0.4 : 1}
+                    filter={isSelected ? `url(#hl-${node.id})` : undefined}
                     style={{ imageRendering: 'pixelated' }}
                   />
-                  {useCircle ? (
-                    <circle
-                      r={r}
-                      fill="none"
-                      stroke={isSelected ? '#fbbf24' : 'rgba(255,255,255,0.25)'}
-                      strokeWidth={isSelected ? 2 : 1}
-                    />
-                  ) : (
-                    <path
-                      d={shapeGen(r)}
-                      fill="none"
-                      stroke={isSelected ? '#fbbf24' : 'rgba(255,255,255,0.25)'}
-                      strokeWidth={isSelected ? 2 : 1}
-                    />
-                  )}
                 </>
               ) : (
                 <>
@@ -326,16 +413,26 @@ export default function GraphCanvas({
                   </text>
                 </>
               )}
-              <text
-                y={r + 14}
-                textAnchor="middle"
-                fill="rgba(255,255,255,0.85)"
-                fontSize={11}
-                fontWeight={isSelected ? 700 : 400}
-                pointerEvents="none"
-              >
-                {truncate(node.name, 18)}
-              </text>
+              {(() => {
+                const fs = isSelected ? 11 : 9;
+                const maxChars = isSelected ? 16 : 14;
+                const lines = wrapLabel(node.name, maxChars);
+                const lineHeight = fs + 2;
+                const baseY = r + 12;
+                return (
+                  <text
+                    textAnchor="middle"
+                    fill="rgba(255,255,255,0.85)"
+                    fontSize={fs}
+                    fontWeight={isSelected ? 700 : 400}
+                    pointerEvents="none"
+                  >
+                    {lines.map((line, i) => (
+                      <tspan key={i} x={0} y={baseY + i * lineHeight}>{line}</tspan>
+                    ))}
+                  </text>
+                );
+              })()}
 
               {locOccupants.map((occ, i) => {
                 const angle = (2 * Math.PI * i) / Math.max(locOccupants.length, 1) - Math.PI / 2;
@@ -368,6 +465,39 @@ export default function GraphCanvas({
         })}
       </g>
     </svg>
+
+    <div className="absolute bottom-3 left-3 flex flex-col gap-1 bg-surface-container-highest/80 backdrop-blur-sm border border-outline-variant/15 rounded-sm p-1">
+      <button
+        onClick={handleZoomIn}
+        className="w-7 h-7 flex items-center justify-center rounded-sm hover:bg-white/10 text-on-surface-variant hover:text-on-surface transition-colors"
+        title="Zoom in"
+      >
+        <span className="material-symbols-outlined text-lg">zoom_in</span>
+      </button>
+      <button
+        onClick={handleZoomOut}
+        className="w-7 h-7 flex items-center justify-center rounded-sm hover:bg-white/10 text-on-surface-variant hover:text-on-surface transition-colors"
+        title="Zoom out"
+      >
+        <span className="material-symbols-outlined text-lg">zoom_out</span>
+      </button>
+      <div className="w-full h-px bg-outline-variant/20" />
+      <button
+        onClick={handleFitToView}
+        className="w-7 h-7 flex items-center justify-center rounded-sm hover:bg-white/10 text-on-surface-variant hover:text-on-surface transition-colors"
+        title="Fit to view"
+      >
+        <span className="material-symbols-outlined text-lg">fit_screen</span>
+      </button>
+      <button
+        onClick={handleCenterOnSelection}
+        disabled={!selected}
+        className="w-7 h-7 flex items-center justify-center rounded-sm hover:bg-white/10 text-on-surface-variant hover:text-on-surface transition-colors disabled:opacity-30 disabled:pointer-events-none"
+        title="Center on selection"
+      >
+        <span className="material-symbols-outlined text-lg">center_focus_strong</span>
+      </button>
+    </div>
     </div>
   );
 }
@@ -400,4 +530,18 @@ function ArrowHead({ from, to, color }) {
 function truncate(str, max) {
   if (!str) return '';
   return str.length > max ? str.slice(0, max - 1) + '…' : str;
+}
+
+function wrapLabel(str, maxCharsPerLine) {
+  if (!str) return [''];
+  if (str.length <= maxCharsPerLine) return [str];
+
+  const breakIdx = str.lastIndexOf(' ', maxCharsPerLine);
+  const splitAt = breakIdx > 0 ? breakIdx : maxCharsPerLine;
+  const line1 = str.slice(0, splitAt).trim();
+  const rest = str.slice(splitAt).trim();
+  const line2 = rest.length > maxCharsPerLine
+    ? rest.slice(0, maxCharsPerLine - 1) + '…'
+    : rest;
+  return [line1, line2];
 }

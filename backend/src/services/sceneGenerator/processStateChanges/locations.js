@@ -12,6 +12,7 @@ import {
   lookupLocationByKindId,
 } from '../../locationRefs.js';
 import { createEdge } from '../../locationGraph/graphService.js';
+import { findSimilarNodeImage } from '../../locationGraph/imageMatcher.js';
 
 const log = childLogger({ module: 'sceneGenerator' });
 
@@ -199,6 +200,17 @@ async function processSublocationEntry(campaignId, entry, { discoveryState = 'vi
     { campaignId, parent: parent.canonicalName || parent.name, child: entry.name, parentKind: effectiveParent.kind },
     'CampaignLocation sublocation materialized',
   );
+
+  if (!created.nodeImageUrl) {
+    const matchedUrl = await findSimilarNodeImage({
+      locationType: entry.locationType || 'interior',
+      biome: null,
+      tags: [],
+    });
+    if (matchedUrl) {
+      await prisma.campaignLocation.update({ where: { id: created.id }, data: { nodeImageUrl: matchedUrl } });
+    }
+  }
 
   await autoDiscoverCreated({ campaignId, kind: LOCATION_KIND_CAMPAIGN, id: created.id, state: discoveryState });
 

@@ -12,7 +12,7 @@ import { useSettings } from '../contexts/SettingsContext';
  * Uses backend TTS when `narrator.isNarratorReady`; otherwise falls back to
  * browser `speechSynthesis` (same contract as manual play / viewer mode in
  * GameplayPage `playSceneNarration`). Without this, users with narrator on but
- * `sceneTtsTier === 'none'` or missing keys never heard auto-play at all.
+ * missing backend keys or no voice configured never heard auto-play at all.
  */
 export function useChatAutoNarration({ messages, narrator, autoPlay }) {
   const { settings } = useSettings();

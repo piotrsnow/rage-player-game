@@ -43,6 +43,7 @@ import { voiceSettingsRoutes } from './routes/voiceSettings.js';
 import { sceneModelConfigRoutes } from './routes/sceneModelConfig.js';
 import { fontConfigRoutes } from './routes/fontConfig.js';
 import { mapStudioRoutes } from './routes/mapStudio/index.js';
+import { combatSpritesRoutes } from './routes/combatSprites.js';
 import { seedWorld } from './scripts/seedWorld.js';
 import {
   startRoomCleanup,
@@ -224,6 +225,14 @@ await fastify.register(async function livingWorldScope(app) {
   });
   app.register(livingWorldRoutes);
 }, { prefix: '/v1/livingWorld' });
+
+// Combat sprites — PixelLab pixel-art generation for combat tokens.
+await fastify.register(async function combatSpritesScope(app) {
+  app.addHook('onRoute', (routeOptions) => {
+    routeOptions.config = { ...routeOptions.config, rateLimit: { max: 10, timeWindow: '1 minute' } };
+  });
+  app.register(combatSpritesRoutes);
+}, { prefix: '/v1/combat/sprites' });
 
 // Phase 6 — admin observability + moderation routes. Gated on User.isAdmin
 // via requireAdmin plugin. Default rate is 60/min — read-heavy, but tick

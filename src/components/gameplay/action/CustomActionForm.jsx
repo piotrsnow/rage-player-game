@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useCallback } from 'react';
+import { useEffect, useMemo, useCallback, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { parseActionSegments } from '../../../services/actionParser';
 
@@ -19,8 +19,12 @@ export default function CustomActionForm({
   soloCooldownTime,
   isGenerating,
   textareaRef,
+  spellOptions = [],
+  onSpellSelect,
+  mana = null,
 }) {
   const { t } = useTranslation();
+  const [spellPickerOpen, setSpellPickerOpen] = useState(false);
 
   const autoResize = useCallback(() => {
     const el = textareaRef.current;
@@ -39,6 +43,17 @@ export default function CustomActionForm({
   useEffect(() => {
     autoResize();
   }, [displayValue, autoResize]);
+
+  useEffect(() => {
+    if (spellOptions.length === 0 || disabled || isAutoTyping) {
+      setSpellPickerOpen(false);
+    }
+  }, [spellOptions.length, disabled, isAutoTyping]);
+
+  const handleSpellSelect = useCallback((spell) => {
+    onSpellSelect?.(spell.name);
+    setSpellPickerOpen(false);
+  }, [onSpellSelect]);
 
   return (
     <form onSubmit={onSubmit} className="flex-1 min-w-0">
@@ -175,6 +190,68 @@ export default function CustomActionForm({
             <span className="material-symbols-outlined text-sm">smart_toy</span>
           </span>
         )}
+        <div className="relative shrink-0">
+          <button
+            type="button"
+            onClick={() => setSpellPickerOpen((v) => !v)}
+            disabled={disabled || isAutoTyping || listening || spellOptions.length === 0}
+            title={spellOptions.length > 0
+              ? t('magic.pickSpell', 'Wybierz zaklecie')
+              : t('magic.noSpells', 'Brak znanych zakleć')}
+            aria-label={t('magic.pickSpell', 'Wybierz zaklecie')}
+            aria-expanded={spellPickerOpen}
+            className="flex items-center justify-center w-8 h-8 rounded-sm border border-tertiary/20 bg-tertiary/10 text-tertiary hover:bg-tertiary/20 hover:text-on-surface transition-all disabled:opacity-30 disabled:cursor-not-allowed"
+          >
+            <span className="material-symbols-outlined text-lg">auto_awesome</span>
+          </button>
+
+          {spellPickerOpen && (
+            <div className="absolute left-0 bottom-full mb-2 w-72 max-h-80 overflow-y-auto custom-scrollbar rounded-sm border border-tertiary/20 bg-surface-container-highest/95 backdrop-blur-xl shadow-2xl z-40 p-2">
+              <div className="flex items-center justify-between gap-2 px-2 py-1.5 border-b border-outline-variant/10 mb-1">
+                <span className="text-[10px] font-label uppercase tracking-widest text-tertiary">
+                  {t('magic.spells', 'Zaklecia')}
+                </span>
+                {mana && (
+                  <span className="text-[10px] text-on-surface-variant tabular-nums">
+                    {mana.current}/{mana.max} mana
+                  </span>
+                )}
+              </div>
+              <div className="space-y-1">
+                {spellOptions.map((spell) => {
+                  const hasEnoughMana = !mana || mana.current >= spell.manaCost;
+                  return (
+                    <button
+                      key={spell.name}
+                      type="button"
+                      onClick={() => handleSpellSelect(spell)}
+                      className={`w-full text-left flex items-start gap-2 px-2 py-2 rounded-sm border transition-colors ${
+                        hasEnoughMana
+                          ? 'border-transparent hover:border-tertiary/25 hover:bg-tertiary/10'
+                          : 'border-transparent opacity-60 hover:bg-surface-container-high/50'
+                      }`}
+                    >
+                      <span className="material-symbols-outlined text-tertiary text-lg mt-0.5 shrink-0">
+                        {spell.icon}
+                      </span>
+                      <span className="min-w-0 flex-1">
+                        <span className="flex items-center justify-between gap-2">
+                          <span className="text-xs font-bold text-on-surface truncate">{spell.name}</span>
+                          <span className="text-[10px] text-on-surface-variant tabular-nums shrink-0">
+                            {spell.manaCost} many
+                          </span>
+                        </span>
+                        <span className="block text-[10px] text-on-surface-variant/75 leading-tight line-clamp-2">
+                          {spell.description}
+                        </span>
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+        </div>
         <div className="relative flex-1 min-w-0">
           <div
             aria-hidden="true"

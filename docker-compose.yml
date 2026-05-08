@@ -105,10 +105,6 @@ services:
           path: ./backend/package.json
         - action: rebuild
           path: ./backend/prisma
-        - action: rebuild
-          path: ./src
-        - action: rebuild
-          path: ./package.json
 
   # XTTS Voice Studio — standalone voice manager + TTS server.
   # Requires NVIDIA GPU; skip with `docker compose up backend` if no GPU.

@@ -1,12 +1,14 @@
 import { useEffect, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { apiClient } from '../../../services/apiClient';
 import { AI_MODELS } from '../../../services/ai/models';
 
 const TASK_CATEGORIES = [
   {
     key: 'sceneGeneration',
-    label: 'Generowanie scen',
+    labelKey: 'keys.taskSceneGeneration',
     defaultTier: 'premium',
+    icon: 'auto_stories',
     calls: [
       'Solo scene stream (streamingClient)',
       'Short narrative / combat fast-path',
@@ -16,14 +18,16 @@ const TASK_CATEGORIES = [
   },
   {
     key: 'campaignGeneration',
-    label: 'Generowanie kampanii',
+    labelKey: 'keys.taskCampaignGeneration',
     defaultTier: 'premium',
+    icon: 'map',
     calls: ['Campaign bootstrap stream'],
   },
   {
     key: 'intentClassification',
-    label: 'Klasyfikacja intencji (nano)',
+    labelKey: 'keys.taskIntentClassification',
     defaultTier: 'nano',
+    icon: 'category',
     calls: [
       'Intent classifier / nanoSelector',
       'Translate image prompt',
@@ -32,8 +36,9 @@ const TASK_CATEGORIES = [
   },
   {
     key: 'memoryExtraction',
-    label: 'Pamięć i ekstrakcja',
+    labelKey: 'keys.taskMemoryExtraction',
     defaultTier: 'nanoReasoning',
+    icon: 'neurology',
     calls: [
       'Memory compressor (running summary)',
       'DM memory updater',
@@ -44,8 +49,9 @@ const TASK_CATEGORIES = [
   },
   {
     key: 'imagePrompt',
-    label: 'Prompty do obrazów',
+    labelKey: 'keys.taskImagePrompt',
     defaultTier: 'nano / standard',
+    icon: 'brush',
     calls: [
       'Image prompt generator (nano)',
       'Image prompt enhancer (standard)',
@@ -53,8 +59,9 @@ const TASK_CATEGORIES = [
   },
   {
     key: 'auxiliary',
-    label: 'Pomocnicze zapytania',
+    labelKey: 'keys.taskAuxiliary',
     defaultTier: 'standard',
+    icon: 'build',
     calls: [
       'Recap generator',
       'NPC dialog',
@@ -72,6 +79,7 @@ const openaiModels = AI_MODELS.filter((m) => m.provider === 'openai');
 const anthropicModels = AI_MODELS.filter((m) => m.provider === 'anthropic');
 
 export default function ModelOverridesSection() {
+  const { t } = useTranslation();
   const [overrides, setOverrides] = useState({});
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -99,9 +107,9 @@ export default function ModelOverridesSection() {
     setToast(null);
     try {
       await apiClient.put('/v1/admin/livingWorld/model-overrides', overrides);
-      setToast({ type: 'success', text: 'Zapisano' });
+      setToast({ type: 'success', text: t('keys.modelsSaved') });
     } catch (err) {
-      setToast({ type: 'error', text: err.message || 'Błąd zapisu' });
+      setToast({ type: 'error', text: err.message || t('keys.modelsSaveError') });
     }
     setSaving(false);
     setTimeout(() => setToast(null), 3000);
@@ -109,38 +117,36 @@ export default function ModelOverridesSection() {
 
   if (loading) {
     return (
-      <div className="flex items-center gap-2 text-on-surface-variant py-4">
-        <span className="material-symbols-outlined animate-spin text-sm">progress_activity</span>
-        <span className="text-xs">Ładowanie konfiguracji modeli…</span>
+      <div className="flex items-center gap-3 text-on-surface-variant py-8">
+        <span className="material-symbols-outlined animate-spin">progress_activity</span>
+        <span className="text-sm">{t('keys.modelsLoading')}</span>
       </div>
     );
   }
 
   return (
-    <div className="space-y-4">
-      <div className="flex items-center justify-between">
+    <div className="space-y-6">
+      <div className="flex items-start justify-between gap-4">
         <div>
-          <h3 className="font-headline text-sm text-tertiary flex items-center gap-2">
-            <span className="material-symbols-outlined text-sm">tune</span>
-            Przypisanie modeli do zadań
+          <h3 className="font-headline text-lg text-tertiary flex items-center gap-2">
+            {t('keys.modelsTitle')}
           </h3>
-          <p className="text-[10px] text-on-surface-variant/60 mt-1">
-            Wybierz model per-dostawca dla każdej kategorii zapytań AI.
-            Puste pole = domyślny model z tieru.
+          <p className="text-sm text-on-surface-variant/70 mt-1 max-w-xl leading-relaxed">
+            {t('keys.modelsSubtitle')}
           </p>
         </div>
         <button
           type="button"
           onClick={handleSave}
           disabled={saving}
-          className="px-4 py-2 rounded-sm bg-primary/15 border border-primary/30 text-primary text-xs font-label uppercase tracking-wider hover:bg-primary/25 transition-colors disabled:opacity-40"
+          className="shrink-0 px-5 py-2.5 rounded-sm bg-primary/15 border border-primary/30 text-primary text-sm font-label uppercase tracking-wider hover:bg-primary/25 transition-colors disabled:opacity-40"
         >
-          {saving ? 'Zapisuję…' : 'Zapisz'}
+          {saving ? t('keys.modelsSaving') : t('keys.modelsSaveBtn')}
         </button>
       </div>
 
       {toast && (
-        <div className={`text-xs px-3 py-2 rounded-sm border ${
+        <div className={`text-sm px-4 py-2.5 rounded-sm border ${
           toast.type === 'success'
             ? 'bg-primary/10 border-primary/20 text-primary'
             : 'bg-error/10 border-error/20 text-error'
@@ -149,13 +155,14 @@ export default function ModelOverridesSection() {
         </div>
       )}
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+      <div className="space-y-4">
         {TASK_CATEGORIES.map((cat) => (
           <CategoryCard
             key={cat.key}
             category={cat}
             value={overrides[cat.key] || {}}
             onChange={(provider, val) => handleChange(cat.key, provider, val)}
+            t={t}
           />
         ))}
       </div>
@@ -163,55 +170,63 @@ export default function ModelOverridesSection() {
   );
 }
 
-function CategoryCard({ category, value, onChange }) {
+function CategoryCard({ category, value, onChange, t }) {
   return (
-    <div className="rounded-md border border-outline-variant/15 bg-surface-container-lowest/30 p-3 space-y-2">
-      <div>
-        <h4 className="text-xs font-headline text-on-surface flex items-center gap-2">
-          {category.label}
-          <span className="text-[9px] text-outline/50 font-label px-1 py-0.5 rounded-sm bg-outline/5 border border-outline/10">
-            {category.defaultTier}
-          </span>
-        </h4>
-        <ul className="mt-1 space-y-0.5">
-          {category.calls.map((call) => (
-            <li key={call} className="text-[9px] text-on-surface-variant/50 pl-2.5 relative before:content-['•'] before:absolute before:left-0 before:text-primary/30">
-              {call}
-            </li>
-          ))}
-        </ul>
+    <div className="rounded-sm border border-outline-variant/15 bg-surface-container-lowest/30 p-5 space-y-4">
+      <div className="flex items-start justify-between gap-4">
+        <div className="flex items-start gap-3">
+          <span className="material-symbols-outlined text-tertiary/70 mt-0.5">{category.icon}</span>
+          <div>
+            <h4 className="text-base font-headline text-on-surface flex items-center gap-2.5">
+              {t(category.labelKey)}
+              <span className="text-xs text-outline/60 font-label px-1.5 py-0.5 rounded-sm bg-outline/5 border border-outline/10">
+                {category.defaultTier}
+              </span>
+            </h4>
+            <ul className="mt-2 flex flex-wrap gap-x-4 gap-y-1">
+              {category.calls.map((call) => (
+                <li key={call} className="text-xs text-on-surface-variant/50 flex items-center gap-1.5">
+                  <span className="w-1 h-1 rounded-full bg-primary/30 shrink-0" />
+                  {call}
+                </li>
+              ))}
+            </ul>
+          </div>
+        </div>
       </div>
 
-      <div className="grid grid-cols-2 gap-2">
+      <div className="grid grid-cols-2 gap-4">
         <ModelSelect
           label="OpenAI"
           models={openaiModels}
           value={value.openai || ''}
           onChange={(v) => onChange('openai', v)}
+          t={t}
         />
         <ModelSelect
           label="Anthropic"
           models={anthropicModels}
           value={value.anthropic || ''}
           onChange={(v) => onChange('anthropic', v)}
+          t={t}
         />
       </div>
     </div>
   );
 }
 
-function ModelSelect({ label, models, value, onChange }) {
+function ModelSelect({ label, models, value, onChange, t }) {
   return (
     <div>
-      <label className="block text-[9px] text-outline/50 font-label uppercase tracking-wider mb-0.5">
+      <label className="block text-xs text-on-surface-variant/60 font-label uppercase tracking-wider mb-1">
         {label}
       </label>
       <select
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        className="w-full text-[11px] bg-surface-container-lowest border border-outline-variant/15 rounded-sm px-2 py-1 text-on-surface focus:border-primary/40 focus:ring-0 focus:outline-none"
+        className="w-full text-sm bg-surface-container-lowest border border-outline-variant/15 rounded-sm px-3 py-2 text-on-surface focus:border-primary/40 focus:ring-0 focus:outline-none"
       >
-        <option value="">— domyślny (tier) —</option>
+        <option value="">{t('keys.modelsDefault')}</option>
         {models.map((m) => (
           <option key={m.id} value={m.id}>
             {m.label} ({m.id})

@@ -397,7 +397,7 @@ function LoggedInBanner({ user }) {
 
               {/* Legend (AI-generated) — directly below lvl/species */}
               {badgeLegend && (
-                <p className="mt-3 text-base leading-relaxed italic animate-text-shimmer">
+                <p className="mt-3 text-sm leading-snug italic animate-text-shimmer">
                   &ldquo;{badgeLegend}&rdquo;
                 </p>
               )}

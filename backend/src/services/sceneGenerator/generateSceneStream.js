@@ -7,6 +7,7 @@ import { requireServerApiKey } from '../apiKeyService.js';
 import {
   resolveBackendDiceRollWithPreRoll,
   generatePreRolls,
+  inferForcedRollSkill,
   CREATIVITY_BONUS_MAX,
 } from '../diceResolver.js';
 import { resolveAndApplyRewards } from '../rewardResolver.js';
@@ -167,22 +168,32 @@ export async function generateSceneStream(campaignId, playerAction, options = {}
     const preRolls = generatePreRolls(characterForRoll);
     let serverDiceRoll = null;
 
-    if (!resolvedMechanics?.diceRoll && intentResult.roll_skill && !isFirstScene) {
-      // ForceRoll bypasses the testsFrequency RNG gate — the player
-      // explicitly asked for a roll this turn, so fire every time nano
-      // picked a skill.
-      const testsFrequency = dmSettings?.testsFrequency ?? 50;
+    if (!resolvedMechanics?.diceRoll && !isFirstScene) {
       const forceRollActive = forceRoll?.enabled === true;
-      if (forceRollActive || Math.random() * 100 < testsFrequency) {
-        serverDiceRoll = resolveBackendDiceRollWithPreRoll(
-          characterForRoll,
-          intentResult.roll_skill,
-          intentResult.roll_difficulty || 'medium',
-          preRolls[0].d50,
-          preRolls[0].luckySuccess,
-        );
-        if (serverDiceRoll) {
-          resolvedMechanics = { diceRoll: serverDiceRoll };
+
+      let rollSkill = intentResult.roll_skill || null;
+      let rollDifficulty = intentResult.roll_difficulty || 'medium';
+
+      // When the player forced a roll but nano didn't pick a skill,
+      // use action-text heuristics to choose one deterministically.
+      if (!rollSkill && forceRollActive) {
+        rollSkill = inferForcedRollSkill(playerAction, characterForRoll);
+        rollDifficulty = 'medium';
+      }
+
+      if (rollSkill) {
+        const testsFrequency = dmSettings?.testsFrequency ?? 50;
+        if (forceRollActive || Math.random() * 100 < testsFrequency) {
+          serverDiceRoll = resolveBackendDiceRollWithPreRoll(
+            characterForRoll,
+            rollSkill,
+            rollDifficulty,
+            preRolls[0].d50,
+            preRolls[0].luckySuccess,
+          );
+          if (serverDiceRoll) {
+            resolvedMechanics = { diceRoll: serverDiceRoll };
+          }
         }
       }
     }
@@ -263,6 +274,7 @@ export async function generateSceneStream(campaignId, playerAction, options = {}
       livingWorldEnabled,
       questGiverHint,
       magicExposure,
+      playerAction,
     });
 
     const userPrompt = buildUserPrompt(playerAction, {

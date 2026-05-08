@@ -29,7 +29,9 @@ import {
 } from '../services/locationGraph/graphService.js';
 import { EDGE_TYPES, safeValidateTacticalGrid } from '../../../shared/domain/locationGraph.js';
 import { slugifyLocationName } from '../services/locationRefs.js';
+import { findSimilarNodeImage } from '../services/locationGraph/imageMatcher.js';
 import { generatePixelSprite, scaleToSpriteSize } from '../services/pixelLabClient.js';
+import { buildPixelSpriteDescription } from '../services/pixelLabSpritePrompt.js';
 import { createMediaStore } from '../services/mediaStore.js';
 import { config } from '../config.js';
 
@@ -593,7 +595,23 @@ export async function livingWorldRoutes(fastify) {
       }
     }
 
-    return reply.code(201).send({ node: { id: node.id, kind: 'campaign', name: node.name } });
+    let matchedImageUrl = node.nodeImageUrl || null;
+    if (!b.nodeImageUrl) {
+      const url = await findSimilarNodeImage({
+        locationType: b.type || 'generic',
+        biome: b.biome || null,
+        tags: b.tags || [],
+      });
+      if (url) {
+        await prisma.campaignLocation.update({
+          where: { id: node.id },
+          data: { nodeImageUrl: url },
+        });
+        matchedImageUrl = url;
+      }
+    }
+
+    return reply.code(201).send({ node: { id: node.id, kind: 'campaign', name: node.name, nodeImageUrl: matchedImageUrl } });
   });
 
   // PUT /campaigns/:id/location-graph/nodes/:nodeId
@@ -782,17 +800,20 @@ export async function livingWorldRoutes(fastify) {
 
     const loc = await prisma.campaignLocation.findFirst({
       where: { id: request.params.nodeId, campaignId: request.params.id },
-      select: { id: true, name: true, description: true, locationType: true, scale: true },
+      select: {
+        id: true, name: true, description: true, locationType: true,
+        scale: true, tags: true, atmosphere: true, biome: true, dangerLevel: true,
+      },
     });
     if (!loc) return reply.code(404).send({ error: 'Node not found' });
 
     const { width, height } = scaleToSpriteSize(loc.scale ?? 5);
-    const prompt = request.body?.prompt
-      || `top-down pixel art icon of ${loc.name}, ${loc.description || ''}, ${loc.locationType || 'generic'} style, fantasy RPG`.trim();
+    const userHint = request.body?.prompt || null;
+    const description = buildPixelSpriteDescription(loc, userHint);
 
     const result = await generatePixelSprite({
       apiKey: config.pixellabApiKey,
-      description: prompt,
+      description,
       width,
       height,
     });
@@ -805,6 +826,7 @@ export async function livingWorldRoutes(fastify) {
     const storeResult = await store.put(storagePath, buffer, 'image/png');
 
     const key = `node-sprite:${loc.id}`;
+    const metadata = { description, userHint, width, height };
     await prisma.mediaAsset.upsert({
       where: { key },
       create: {
@@ -816,12 +838,12 @@ export async function livingWorldRoutes(fastify) {
         size: buffer.length,
         backend: config.mediaBackend,
         path: storagePath,
-        metadata: { prompt, width, height },
+        metadata,
       },
       update: {
         size: buffer.length,
         path: storagePath,
-        metadata: { prompt, width, height },
+        metadata,
         lastAccessedAt: new Date(),
       },
     });

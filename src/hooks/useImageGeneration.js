@@ -33,11 +33,15 @@ export function useImageGeneration() {
     : (settings.imageProvider || 'dalle');
 
   const { itemImagesEnabled, sdWebuiModel = '', sdWebuiSeed = null } = settings;
-  const QUALITY_RES = { speed: 0.25, balanced: 0.5, quality: 1 };
   const sdWebuiQualityPreset = settings.sdWebuiQualityPreset || 'balanced';
   const sdWebuiIpaEnabled = settings.sdWebuiIpaEnabled ?? (settings.sdWebuiIpaMode !== 'off');
   const sdWebuiIpaMode = sdWebuiIpaEnabled ? sdWebuiQualityPreset : 'off';
-  const imageResolutionMultiplier = QUALITY_RES[sdWebuiQualityPreset] ?? 0.5;
+  const RESOLUTION_MAP = { low: 0.5, base: 1.0, high: 1.5 };
+  const imageResolutionMultiplier = RESOLUTION_MAP[settings.imageResolutionPreset] ?? settings.imageResolutionMultiplier ?? 1;
+  const QUALITY_STEPS = { speed: 6, balanced: 20, quality: 35 };
+  const QUALITY_CFG = { speed: 2, balanced: 5, quality: 7 };
+  const qualitySteps = QUALITY_STEPS[sdWebuiQualityPreset];
+  const qualityCfg = QUALITY_CFG[sdWebuiQualityPreset];
   const imageStyle = settings.dmSettings?.imageStyle || 'painting';
   const darkPalette = settings.dmSettings?.darkPalette || false;
   const imageSeriousness = settings.dmSettings?.narratorSeriousness ?? null;
@@ -219,7 +223,7 @@ export function useImageGeneration() {
           darkPalette,
           state.character?.age,
           state.character?.gender,
-          { forceNew: Boolean(options.forceNew), sdModel: sdWebuiModel, sdSeed: Number.isInteger(sdWebuiSeed) ? sdWebuiSeed : null, resolutionMultiplier: imageResolutionMultiplier, ipaMode: sdWebuiIpaMode },
+          { forceNew: Boolean(options.forceNew), sdModel: sdWebuiModel, sdSeed: Number.isInteger(sdWebuiSeed) ? sdWebuiSeed : null, resolutionMultiplier: imageResolutionMultiplier, ipaMode: sdWebuiIpaMode, qualitySteps, qualityCfg },
           imageSeriousness,
           state.character?.portraitUrl || null
         );

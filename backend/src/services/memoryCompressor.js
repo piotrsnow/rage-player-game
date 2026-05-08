@@ -15,6 +15,31 @@ import { logLlmCallStart, logLlmCallFinish, logLlmCallFail, getLlmCallUserId } f
 
 const log = childLogger({ module: 'memoryCompressor' });
 
+// ── PRIORITY-AWARE EVICTION ──
+// When gameStateSummary exceeds `limit`, mark oldest minor facts for eviction
+// first, then oldest major facts. Returns the surviving subset in original order.
+export function evictToLimit(facts, limit) {
+  if (facts.length <= limit) return facts;
+  const excess = facts.length - limit;
+  const evictSet = new Set();
+  let evicted = 0;
+  // First pass: evict oldest minor facts
+  for (let i = 0; i < facts.length && evicted < excess; i++) {
+    if (facts[i]?.importance !== 'major') {
+      evictSet.add(i);
+      evicted++;
+    }
+  }
+  // Second pass: evict oldest major facts if still over
+  for (let i = 0; i < facts.length && evicted < excess; i++) {
+    if (!evictSet.has(i)) {
+      evictSet.add(i);
+      evicted++;
+    }
+  }
+  return facts.filter((_, i) => !evictSet.has(i));
+}
+
 // ── NANO MODEL CALLER (provider-aware) ──
 
 // `reasoning: true` routes to the nanoReasoning tier (gpt-5.4-nano) for tasks
@@ -209,6 +234,7 @@ MEMORY rules:
 - FACT: "Marta refused to reveal how she knows about Barbara" (blocked info still counts)
 - NOT A FACT: "People at the fire flinched" (atmosphere)
 - NOT A FACT: "Grimwald asked about Mazak" (player action without answer = nothing happened)
+- Importance: 'major' = plot-altering, character-defining, or quest-critical (survives eviction longest). 'minor' = useful flavor/context (evicted first when cap reached). Tag honestly — overflagging 'major' dilutes the signal.
 - Max 5 entries per scene. If nothing happened, return [].
 
 GM NOTES rules:
@@ -359,7 +385,7 @@ ${currentSummary.map((f, i) => `${i + 1}. ${factText(f)}`).join('\n') || '(empty
     }
 
     if (updated.length > 15) {
-      updated = updated.slice(-15);
+      updated = evictToLimit(updated, 15);
     }
     coreState.gameStateSummary = updated;
 

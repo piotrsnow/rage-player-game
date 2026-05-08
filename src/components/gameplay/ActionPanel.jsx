@@ -18,6 +18,7 @@ import CustomActionForm from './action/CustomActionForm';
 import IncidentModal from './action/IncidentModal';
 import SelfQuestModal from './action/SelfQuestModal';
 import { useGameSlice } from '../../stores/gameSelectors';
+import { findSpell, SPELL_TREES } from '../../data/rpgMagic';
 import {
   getRecentNpcsForRecruitment,
   calculateRecruitChance,
@@ -226,6 +227,25 @@ export default function ActionPanel({
       mp.soloAction(myPlayer.pendingAction, false, settings.language || 'en', settings.dmSettings);
     }
   };
+
+  const spellOptions = useMemo(() => (character?.spells?.known || [])
+    .map((spellName) => {
+      const found = findSpell(spellName);
+      if (!found) return null;
+      const tree = SPELL_TREES[found.treeId];
+      return {
+        ...found.spell,
+        icon: found.spell.icon || tree?.icon || 'auto_awesome',
+        treeId: found.treeId,
+        treeName: tree?.name || found.treeId,
+      };
+    })
+    .filter(Boolean), [character?.spells?.known]);
+
+  const handleSpellInputSelect = useCallback((spellName) => {
+    handleTypingChange(spellName);
+    textareaRef.current?.focus();
+  }, [handleTypingChange]);
 
   const handleInitiateCombat = () => {
     setCombatPickerOpen(false);
@@ -540,6 +560,9 @@ export default function ActionPanel({
             soloAvailable={soloAvailable}
             soloCooldownTime={soloCooldownTime}
             isGenerating={mp.state.isGenerating}
+            spellOptions={spellOptions}
+            onSpellSelect={handleSpellInputSelect}
+            mana={character?.mana || null}
           />
         </div>
       )}

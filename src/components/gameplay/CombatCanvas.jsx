@@ -1,20 +1,25 @@
-import { useRef, useEffect, useCallback, useMemo } from 'react';
+import { useRef, useEffect, useCallback, useMemo, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import {
   TOKEN_RADIUS,
-  TRACK_HEIGHT,
   BATTLEFIELD_PAD_TOP,
+  BATTLEFIELD_PAD_X,
   xToYard,
+  yardToX,
   initParticles,
   drawBackground,
-  drawInitiativeTrack,
   drawBattlefield,
   drawMovementZone,
   drawMeleeEngagements,
+  drawRangeIndicator,
   computeTokenPositions,
-  drawToken,
-  drawFloatingTexts,
   drawCombatOverOverlay,
 } from './combat/combatCanvasDraw';
+import CombatToken from './combat/CombatToken';
+import InitiativeBar from './combat/InitiativeBar';
+import ActionModal from './combat/ActionModal';
+
+const FLOAT_TEXT_DURATION = 1200;
 
 export default function CombatCanvas({
   combat,
@@ -27,50 +32,71 @@ export default function CombatCanvas({
   combatOver,
   isMyTurn = false,
   myCombatantId,
+  availableManoeuvres,
+  savedCustomAttacks,
+  onExecuteManoeuvre,
+  onPersistCustomAttack,
+  onRemoveCustomAttack,
 }) {
+  const { t } = useTranslation();
   const canvasRef = useRef(null);
   const containerRef = useRef(null);
-  const sizeRef = useRef({ w: 800, h: 300 });
+  const [containerSize, setContainerSize] = useState({ w: 800, h: 260 });
   const animRef = useRef({
-    healthBars: {},
-    flashTargets: {},
-    prevWounds: {},
-    time: 0,
     particles: [],
-    floatingTexts: [],
     combatOverStart: null,
+    prevWounds: {},
   });
-  const hoveredRef = useRef(null);
   const hoverYardRef = useRef(null);
   const rafRef = useRef(0);
-  const hitRectsRef = useRef([]);
+
+  const [actionModal, setActionModal] = useState(null);
+  const [floatingTexts, setFloatingTexts] = useState([]);
+  const floatIdRef = useRef(0);
 
   const friendlies = useMemo(
     () => combat.combatants.filter((c) => c.type === 'player' || c.type === 'ally'),
     [combat.combatants]
   );
-  const enemies = useMemo(
-    () => combat.combatants.filter((c) => c.type === 'enemy'),
-    [combat.combatants]
-  );
 
+  const myCombatant = useMemo(() => {
+    if (myCombatantId) return combat.combatants.find((c) => c.id === myCombatantId);
+    if (isMultiplayer && myPlayerId) return combat.combatants.find((c) => c.id === myPlayerId);
+    return combat.combatants.find((c) => c.type === 'player');
+  }, [combat.combatants, myCombatantId, isMultiplayer, myPlayerId]);
+
+  const actionModalTarget = useMemo(() => {
+    if (!actionModal?.targetId) return null;
+    return combat.combatants.find(c => c.id === actionModal.targetId) || null;
+  }, [actionModal, combat.combatants]);
+
+  // Detect wound changes -> floating damage text
   useEffect(() => {
     for (const c of combat.combatants) {
       const prev = animRef.current.prevWounds[c.id];
-      if (prev !== undefined && prev !== c.wounds) {
-        if (c.wounds < prev) {
-          animRef.current.flashTargets[c.id] = { start: performance.now(), type: 'damage' };
-          animRef.current.floatingTexts.push({
-            combatantId: c.id,
-            text: `-${prev - c.wounds}`,
-            start: performance.now(),
-            color: '#ff6e84',
-          });
-        }
+      if (prev !== undefined && c.wounds < prev) {
+        const dmg = prev - c.wounds;
+        floatIdRef.current += 1;
+        setFloatingTexts(ft => [...ft, {
+          id: floatIdRef.current,
+          combatantId: c.id,
+          text: `-${dmg}`,
+          color: '#ff6e84',
+          start: Date.now(),
+        }]);
       }
       animRef.current.prevWounds[c.id] = c.wounds;
     }
   }, [combat.combatants]);
+
+  // Clean up expired floating texts
+  useEffect(() => {
+    if (floatingTexts.length === 0) return;
+    const timer = setInterval(() => {
+      setFloatingTexts(ft => ft.filter(f => Date.now() - f.start < FLOAT_TEXT_DURATION));
+    }, 200);
+    return () => clearInterval(timer);
+  }, [floatingTexts.length]);
 
   useEffect(() => {
     if (combatOver && !animRef.current.combatOverStart) {
@@ -86,7 +112,7 @@ export default function CombatCanvas({
     const ro = new ResizeObserver(([entry]) => {
       const { width, height } = entry.contentRect;
       if (width > 0 && height > 0) {
-        sizeRef.current = { w: width, h: height };
+        setContainerSize({ w: width, h: height });
         animRef.current.particles = initParticles(width, height);
       }
     });
@@ -94,18 +120,24 @@ export default function CombatCanvas({
     return () => ro.disconnect();
   }, []);
 
-  const myCombatant = useMemo(() => {
-    if (myCombatantId) return combat.combatants.find((c) => c.id === myCombatantId);
-    if (isMultiplayer && myPlayerId) return combat.combatants.find((c) => c.id === myPlayerId);
-    return combat.combatants.find((c) => c.type === 'player');
-  }, [combat.combatants, myCombatantId, isMultiplayer, myPlayerId]);
+  // Battlefield layout constants
+  const bfTop = BATTLEFIELD_PAD_TOP;
+  const bfBot = containerSize.h - 16;
+  const bfH = bfBot - bfTop;
+  const bfCenterY = bfTop + bfH / 2;
 
+  const tokenPositions = useMemo(
+    () => computeTokenPositions(combat.combatants, containerSize.w, bfCenterY, bfH),
+    [combat.combatants, containerSize.w, bfCenterY, bfH]
+  );
+
+  // Canvas draw loop — background only
   const draw = useCallback(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
     const ctx = canvas.getContext('2d');
     const dpr = window.devicePixelRatio || 1;
-    const { w, h } = sizeRef.current;
+    const { w, h } = containerSize;
 
     canvas.width = w * dpr;
     canvas.height = h * dpr;
@@ -114,18 +146,8 @@ export default function CombatCanvas({
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
     const now = performance.now();
-    animRef.current.time = now;
-    const pulse = 0.5 + 0.5 * Math.sin(now / 500);
-    const hitRects = [];
 
     drawBackground(ctx, w, h, now, animRef.current);
-    drawInitiativeTrack(ctx, combat.combatants, combat.turnIndex, myPlayerId, isMultiplayer, w, pulse, myCombatant);
-
-    const bfTop = TRACK_HEIGHT + BATTLEFIELD_PAD_TOP;
-    const bfBot = h - 16;
-    const bfH = bfBot - bfTop;
-    const bfCenterY = bfTop + bfH / 2;
-
     drawBattlefield(ctx, w, bfTop, bfH, now);
 
     if (isMyTurn && myCombatant && !combatOver) {
@@ -134,21 +156,17 @@ export default function CombatCanvas({
 
     drawMeleeEngagements(ctx, combat.combatants, w, bfCenterY, now);
 
-    const positions = computeTokenPositions(combat.combatants, w, bfCenterY, bfH);
-    for (const pos of positions) {
-      drawToken(ctx, pos, combat.turnIndex, combat.combatants, selectedTarget,
-        hoveredRef.current, pulse, now, animRef.current, w);
-      hitRects.push({ id: pos.combatant.id, x: pos.x - TOKEN_RADIUS, y: pos.y - TOKEN_RADIUS, w: TOKEN_RADIUS * 2, h: TOKEN_RADIUS * 2 });
+    if (actionModal?.targetId && myCombatant) {
+      const target = combat.combatants.find(c => c.id === actionModal.targetId);
+      if (target && target.id !== myCombatant.id) {
+        drawRangeIndicator(ctx, myCombatant, target, w, bfCenterY);
+      }
     }
-
-    drawFloatingTexts(ctx, positions, now, animRef.current);
-
-    hitRectsRef.current = hitRects;
 
     if (combatOver) {
       drawCombatOverOverlay(ctx, w, h, friendlies, now, animRef.current);
     }
-  }, [combat, myPlayerId, isMultiplayer, selectedTarget, combatOver, friendlies, isMyTurn, myCombatant]);
+  }, [containerSize, combat, isMyTurn, myCombatant, combatOver, friendlies, bfTop, bfH, bfCenterY, actionModal]);
 
   useEffect(() => {
     let running = true;
@@ -164,84 +182,182 @@ export default function CombatCanvas({
     };
   }, [draw]);
 
-  const handlePointerMove = useCallback((e) => {
+  const handleCanvasPointerMove = useCallback((e) => {
     const rect = canvasRef.current?.getBoundingClientRect();
     if (!rect) return;
     const x = e.clientX - rect.left;
-    const y = e.clientY - rect.top;
-    let found = null;
-    for (const hr of hitRectsRef.current) {
-      const cx = hr.x + hr.w / 2;
-      const cy = hr.y + hr.h / 2;
-      const dx = x - cx;
-      const dy = y - cy;
-      if (dx * dx + dy * dy <= TOKEN_RADIUS * TOKEN_RADIUS * 1.3) {
-        found = hr.id;
-        break;
-      }
-    }
-    if (hoveredRef.current !== found) {
-      hoveredRef.current = found;
-      onHoverCombatant?.(found);
-    }
-
-    const { w } = sizeRef.current;
-    const yard = xToYard(x, w);
+    const yard = xToYard(x, containerSize.w);
     hoverYardRef.current = yard;
 
     const canvas = canvasRef.current;
-    if (canvas) {
-      const isClickableEnemy = found && enemies.some((en) => en.id === found && !en.isDefeated);
-      const isClickableYard = isMyTurn && !found && myCombatant && !combatOver;
-      canvas.style.cursor = isClickableEnemy ? 'pointer' : isClickableYard ? 'crosshair' : 'default';
+    if (canvas && isMyTurn && myCombatant && !combatOver) {
+      canvas.style.cursor = 'crosshair';
+    } else if (canvas) {
+      canvas.style.cursor = 'default';
     }
-  }, [enemies, onHoverCombatant, isMyTurn, myCombatant, combatOver]);
+  }, [containerSize.w, isMyTurn, myCombatant, combatOver]);
 
-  const handleClick = useCallback((e) => {
+  const handleCanvasClick = useCallback((e) => {
+    if (!isMyTurn || combatOver) return;
     const rect = canvasRef.current?.getBoundingClientRect();
     if (!rect) return;
     const x = e.clientX - rect.left;
-    const y = e.clientY - rect.top;
-    let clickedCombatant = false;
-    for (const hr of hitRectsRef.current) {
-      const cx = hr.x + hr.w / 2;
-      const cy = hr.y + hr.h / 2;
-      const dx = x - cx;
-      const dy = y - cy;
-      if (dx * dx + dy * dy <= TOKEN_RADIUS * TOKEN_RADIUS * 1.3) {
-        const enemy = enemies.find((en) => en.id === hr.id && !en.isDefeated);
-        if (enemy && onSelectTarget) {
-          onSelectTarget(enemy.id);
-        }
-        clickedCombatant = true;
-        break;
-      }
-    }
-    if (!clickedCombatant && isMyTurn && myCombatant && !combatOver && onMoveToPosition) {
-      const { w } = sizeRef.current;
-      const yard = xToYard(x, w);
-      onMoveToPosition(yard);
-    }
-  }, [enemies, onSelectTarget, onMoveToPosition, isMyTurn, myCombatant, combatOver]);
+    const yard = xToYard(x, containerSize.w);
+    const yPx = yardToX(yard, containerSize.w);
+
+    setActionModal({
+      targetId: null,
+      targetType: 'ground',
+      targetYard: yard,
+      anchorRect: { x: rect.left + yPx, y: rect.top + bfCenterY, width: 0, height: 0 },
+    });
+  }, [containerSize.w, isMyTurn, combatOver, bfCenterY]);
+
+  const handleTokenClick = useCallback((combatant) => {
+    if (combatOver) return;
+    if (!isMyTurn) return;
+
+    const pos = tokenPositions.find(p => p.combatant.id === combatant.id);
+    if (!pos) return;
+
+    const containerRect = containerRef.current?.getBoundingClientRect();
+    if (!containerRect) return;
+
+    const isSelf = combatant.id === myCombatant?.id;
+    const isEnemy = combatant.type === 'enemy';
+    const isAlly = combatant.type === 'ally';
+
+    let targetType = 'enemy';
+    if (isSelf) targetType = 'self';
+    else if (isAlly) targetType = 'ally';
+    else if (!isEnemy) targetType = 'self';
+
+    if (combatant.isDefeated) return;
+
+    onSelectTarget?.(isEnemy ? combatant.id : null);
+
+    setActionModal({
+      targetId: combatant.id,
+      targetType,
+      targetYard: null,
+      anchorRect: {
+        x: containerRect.left + pos.x,
+        y: containerRect.top + pos.y - TOKEN_RADIUS - 10,
+        width: TOKEN_RADIUS * 2,
+        height: TOKEN_RADIUS * 2,
+      },
+    });
+  }, [combatOver, isMyTurn, tokenPositions, myCombatant, onSelectTarget]);
+
+  const handleExecuteFromModal = useCallback((manoeuvreKey, targetId, customDesc) => {
+    onExecuteManoeuvre?.(manoeuvreKey, targetId, customDesc);
+    setActionModal(null);
+  }, [onExecuteManoeuvre]);
+
+  const handleMoveFromModal = useCallback((yard) => {
+    onMoveToPosition?.(yard);
+    setActionModal(null);
+  }, [onMoveToPosition]);
 
   return (
-    <div
-      ref={containerRef}
-      className="w-full relative rounded-md overflow-hidden border border-error/20 bg-surface-dim"
-      style={{ height: 220 }}
-    >
-      <canvas
-        ref={canvasRef}
-        className="w-full h-full"
-        style={{ display: 'block' }}
-        onPointerMove={handlePointerMove}
-        onClick={handleClick}
-        onPointerLeave={() => {
-          hoveredRef.current = null;
-          hoverYardRef.current = null;
-          onHoverCombatant?.(null);
-        }}
+    <div className="space-y-1.5">
+      <InitiativeBar
+        combatants={combat.combatants}
+        turnIndex={combat.turnIndex}
+        myCombatantId={myCombatant?.id}
+        t={t}
       />
+
+      <div
+        ref={containerRef}
+        className="w-full relative rounded-md overflow-hidden border border-error/20 bg-surface-dim"
+        style={{ height: 220 }}
+      >
+        {/* Canvas background layer */}
+        <canvas
+          ref={canvasRef}
+          className="w-full h-full absolute inset-0"
+          style={{ display: 'block' }}
+          onPointerMove={handleCanvasPointerMove}
+          onClick={handleCanvasClick}
+          onPointerLeave={() => { hoverYardRef.current = null; }}
+        />
+
+        {/* DOM token overlay */}
+        <div className="absolute inset-0 pointer-events-none">
+          {tokenPositions.map((pos) => {
+            const c = pos.combatant;
+            const turnsUntil = (combat.combatants.indexOf(c) - combat.turnIndex + combat.combatants.length) % combat.combatants.length;
+            return (
+              <CombatToken
+                key={c.id}
+                combatant={c}
+                x={pos.x}
+                y={pos.y}
+                isActive={combat.combatants.indexOf(c) === combat.turnIndex}
+                isSelected={c.id === selectedTarget}
+                turnsUntil={c.isDefeated ? null : turnsUntil}
+                spriteUrl={c.spriteUrl || null}
+                myCombatant={myCombatant}
+                onClick={handleTokenClick}
+                t={t}
+              />
+            );
+          })}
+
+          {/* Floating damage texts */}
+          {floatingTexts.map((ft) => {
+            const pos = tokenPositions.find(p => p.combatant.id === ft.combatantId);
+            if (!pos) return null;
+            return (
+              <div
+                key={ft.id}
+                className="combat-float-text"
+                style={{
+                  left: pos.x,
+                  top: pos.y - TOKEN_RADIUS - 10,
+                  color: ft.color,
+                }}
+              >
+                {ft.text}
+              </div>
+            );
+          })}
+        </div>
+
+        {/* Action modal */}
+        {actionModal && isMyTurn && !combatOver && (
+          <ActionModal
+            anchorRect={actionModal.anchorRect}
+            target={actionModalTarget}
+            targetType={actionModal.targetType}
+            myCombatant={myCombatant}
+            availableManoeuvres={availableManoeuvres || []}
+            savedCustomAttacks={savedCustomAttacks || []}
+            onExecute={handleExecuteFromModal}
+            onMoveToPosition={handleMoveFromModal}
+            onClose={() => setActionModal(null)}
+            onPersistCustomAttack={onPersistCustomAttack}
+            onRemoveCustomAttack={onRemoveCustomAttack}
+            t={t}
+            targetYard={actionModal.targetYard}
+          />
+        )}
+      </div>
+
+      {isMyTurn && !combatOver && myCombatant && (
+        <div className="flex items-center gap-3 text-[11px]">
+          <div className="flex items-center gap-1.5 px-2.5 py-1 bg-surface-container/30 border border-outline-variant/10 rounded-sm">
+            <span className="material-symbols-outlined text-sm text-primary">directions_walk</span>
+            <span className="text-on-surface-variant">{t('combat.movement', 'Movement')}:</span>
+            <span className="text-primary font-bold tabular-nums">
+              {myCombatant.movementAllowance - (myCombatant.movementUsed || 0)}/{myCombatant.movementAllowance}
+            </span>
+            <span className="text-outline-variant">y</span>
+          </div>
+          <span className="text-[10px] text-outline-variant">{t('combat.clickToMove', 'Click battlefield to move')}</span>
+        </div>
+      )}
     </div>
   );
 }

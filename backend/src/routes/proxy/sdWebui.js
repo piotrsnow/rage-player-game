@@ -20,28 +20,38 @@ const DEFAULT_NEGATIVE_PROMPT = 'blurry, lowres, worst quality, low quality, jpe
 // IP-Adapter (ControlNet extension) — face-preserving portrait generation
 // ---------------------------------------------------------------------------
 
-let cachedIpaModel = undefined; // undefined = not yet probed
+let cachedIpaProbe = undefined; // undefined = not yet probed
 
-const IPA_MODEL_RE = /ip[_-]?adapter.*face/i;
+const IPA_FACE_RE = /ip[_-]?adapter.*face/i;
+const IPA_ANY_SDXL_RE = /ip[_-]?adapter.*sdxl/i;
+const VITH_RE = /vit[_-]?h/i;
+
+function pickPreprocessor(modelName) {
+  if (VITH_RE.test(modelName)) return 'ip-adapter_clip_sdxl_plus_vith';
+  return 'ip-adapter_clip_sdxl';
+}
 
 async function probeIpaModel(baseUrl) {
   if (config.sdWebui.ipaModel) return config.sdWebui.ipaModel;
-  if (cachedIpaModel !== undefined) return cachedIpaModel;
+  if (cachedIpaProbe !== undefined) return cachedIpaProbe;
   try {
     const res = await fetchWithTimeout(
       `${baseUrl}/controlnet/model_list`, { method: 'GET' }, 10_000,
     );
-    if (!res.ok) { cachedIpaModel = null; return null; }
+    if (!res.ok) { cachedIpaProbe = null; return null; }
     const data = await res.json();
     const models = data.model_list || [];
-    const match = models.find((m) => IPA_MODEL_RE.test(m));
-    cachedIpaModel = match || null;
-    if (!match) {
-      console.warn('[sd-webui] No IP-Adapter face model found among ControlNet models. Portrait generation will fall back to plain img2img. Install an IP-Adapter model (e.g. ip-adapter-plus-face_sdxl_vit-h) into models/ControlNet/.');
+    const face = models.find((m) => IPA_FACE_RE.test(m));
+    const any = face || models.find((m) => IPA_ANY_SDXL_RE.test(m));
+    cachedIpaProbe = any || null;
+    if (any) {
+      console.log(`[sd-webui] IP-Adapter model: ${any} (preprocessor: ${pickPreprocessor(any)})`);
+    } else {
+      console.warn('[sd-webui] No IP-Adapter model found among ControlNet models. Portrait generation will fall back to plain img2img. Install an IP-Adapter model (e.g. ip-adapter-plus-face_sdxl_vit-h) into models/ControlNet/.');
     }
-    return cachedIpaModel;
+    return cachedIpaProbe;
   } catch {
-    cachedIpaModel = null;
+    cachedIpaProbe = null;
     return null;
   }
 }
@@ -49,7 +59,7 @@ async function probeIpaModel(baseUrl) {
 function buildIpAdapterUnit(imageBase64, weight, modelName) {
   return {
     enabled: true,
-    module: 'ip-adapter_clip_sdxl',
+    module: pickPreprocessor(modelName),
     model: modelName,
     image: imageBase64,
     weight: Math.max(0, Math.min(1.5, weight)),
@@ -540,7 +550,7 @@ export async function sdWebuiProxyRoutes(fastify) {
       }
       const data = await res.json();
       const models = data.model_list || [];
-      const ipaModels = models.filter((m) => IPA_MODEL_RE.test(m));
+      const ipaModels = models.filter((m) => IPA_FACE_RE.test(m) || IPA_ANY_SDXL_RE.test(m));
       const activeIpa = await probeIpaModel(baseUrl);
       return { models, ipaModels, activeIpa };
     } catch (err) {

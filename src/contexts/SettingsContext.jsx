@@ -19,6 +19,7 @@ const EMPTY_BACKEND_KEYS = {
   meshy: { configured: false },
   'sd-webui': { configured: false },
   xtts: { configured: false },
+  pixellab: { configured: false },
 };
 
 const LOCAL_ONLY_KEYS = ['backendUrl', 'useBackend', 'appZoom'];
@@ -121,6 +122,7 @@ const defaultSettings = {
   sdWebuiIpaMode: 'balanced',
   sdWebuiIpaEnabled: true,
   sdWebuiQualityPreset: 'balanced',
+  imageResolutionPreset: 'base',
   imageResolutionMultiplier: 1,
   imagePromptLlmEnabled: false,
   imagePromptLlmProvider: 'openai',

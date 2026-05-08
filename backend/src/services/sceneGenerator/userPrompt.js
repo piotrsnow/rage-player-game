@@ -5,15 +5,7 @@ const BESTIARY_RACES_STR = BESTIARY_RACES.join(', ');
 const BESTIARY_LOCATIONS_STR = BESTIARY_LOCATIONS.join(', ');
 
 function buildPreRollInstructions() {
-  return `To resolve a non-lucky check:
-1. Pick skill name from PC Skills (e.g. Skradanie:4 → skill_level=4). If not in list → skill_level=0.
-2. Find linked attribute from PC Attributes (see mapping in CORE RULES, e.g. Skradanie→ZRC:13 → attr=13).
-3. total = base + attr + skill_level + creativityBonus (the top-level bonus you are awarding this scene — already factored into the result below)
-4. Compare vs threshold: easy=20, medium=35, hard=50, veryHard=65, extreme=80
-5. margin = total - threshold. success = margin >= 0.
-LUCKY SUCCESS rolls: skip all calculation, auto-success. Narrate fortunate twist.
-IMPORTANT: Decide creativityBonus FIRST, then calculate result, then narrate accordingly. Do not narrate success if the roll fails.
-Include in TOP-LEVEL diceRolls field (NOT nested in stateChanges): [{skill, difficulty, success}]. Use only as many rolls as genuinely needed.`;
+  return `Resolve per CORE RULES. Thresholds: easy=20, medium=35, hard=50, veryHard=65, extreme=80. Lucky success → auto-success. Include in TOP-LEVEL diceRolls [{skill, difficulty, success}].`;
 }
 
 export function buildUserPrompt(playerAction, {
@@ -110,7 +102,7 @@ Include stateChanges: timeAdvance, currentLocation, npcs (introduce at least 1),
     } else if (attackNpcMatch) {
       parts.push(`PLAYER ATTACKS "${attackNpcMatch[1]}". MUST include combatUpdate. Use enemyHints with appropriate budget/maxDifficulty/count. If tension should build first, use pendingThreat instead.`);
     } else if (detectCombatIntent(playerAction)) {
-      parts.push(`COMBAT INTENT DETECTED. MUST include combatUpdate with enemyHints {location, budget, maxDifficulty, count}. Available races: ${BESTIARY_RACES_STR}.`);
+      parts.push(`COMBAT INTENT DETECTED. MUST include combatUpdate with enemyHints {location, budget, maxDifficulty, count, race}.`);
     }
   }
 
@@ -151,19 +143,10 @@ ${buildPreRollInstructions()}`);
         if (pr.luckySuccess) return `  Roll ${i + 1}: LUCKY SUCCESS — auto-success, narrate fortunate twist. No calculation needed.`;
         return `  Roll ${i + 1}: base=${pr.base} (d50=${pr.d50}+momentum=${pr.momentum}). Add attribute + skill_level, compare vs threshold.`;
       });
-      if (forceRoll?.enabled) {
-        const modNote = forceRoll.modifier
-          ? ` A ${forceRoll.modifier > 0 ? '+' : ''}${forceRoll.modifier} circumstance modifier will be added to the roll post-hoc — narrate accordingly (${forceRoll.modifier > 0 ? 'favorable circumstance helping the character' : 'unfavorable circumstance hindering the character'}).`
-          : '';
-        parts.push(`PLAYER DEMANDED A ROLL — you MUST include exactly one entry in the top-level diceRolls field this scene, picking the skill that best fits the action. Trivial or absurd actions (e.g. "I try to levitate", "I flirt with a rock") ARE acceptable to roll for — the player wants to see the mechanical outcome anyway. Use Roll 1 from the pre-rolls below.${modNote}
-${rollLines.join('\n')}
-${buildPreRollInstructions()}`);
-      } else {
-        parts.push(`No skill check was pre-resolved.
+      parts.push(`No skill check was pre-resolved.
 If you determine this action requires skill checks (genuine risk/uncertainty), use IN ORDER:
 ${rollLines.join('\n')}
 ${buildPreRollInstructions()}`);
-      }
     } else {
       parts.push('No skill check for this action.');
     }

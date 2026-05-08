@@ -1170,7 +1170,6 @@ export function useNarrator({ viewerMode = false, shareToken = null, backendUrl 
         )
       : !!(
           settings.narratorEnabled
-          && settings.sceneTtsTier !== 'none'
           && hasApiKey(activeTtsProvider)
           && voicePools.narratorVoiceId
         ),

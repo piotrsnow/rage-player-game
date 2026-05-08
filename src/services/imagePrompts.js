@@ -1,3 +1,15 @@
+export const QUALITY_SD_PARAMS = {
+  speed: { steps: 6, cfg: 2 },
+  balanced: { steps: 20, cfg: 5 },
+  quality: { steps: 35, cfg: 7 },
+};
+
+export const RESOLUTION_PRESETS = {
+  low: 0.5,
+  base: 1.0,
+  high: 1.5,
+};
+
 // Cloud providers (DALL-E, Gemini, Stability, gpt-image) have content policies
 // that reject or silently desaturate prompts containing gore / drugs / explicit
 // violence, so we strip those defensively — losing a grim-dark adjective is

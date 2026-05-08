@@ -209,8 +209,11 @@ export default function MagicPanel({ character, combat, onCastSpell }) {
                           } ${hasEnoughMana ? '' : 'opacity-45'}`}
                         >
                           <div className="flex items-center justify-between gap-2 min-w-0">
-                            <span className={`text-[10px] font-bold truncate ${hasEnoughMana ? 'text-on-surface' : 'text-on-surface-variant'}`}>
-                              {s.name}
+                            <span className={`flex items-center gap-1.5 min-w-0 text-[10px] font-bold ${hasEnoughMana ? 'text-on-surface' : 'text-on-surface-variant'}`}>
+                              <span className="material-symbols-outlined text-xs text-tertiary shrink-0">
+                                {s.icon || tree.icon}
+                              </span>
+                              <span className="truncate">{s.name}</span>
                             </span>
                             <span className="text-[9px] text-on-surface-variant tabular-nums shrink-0">
                               {s.manaCost} many · {uses} {t('magic.usesShort', 'uż.')}

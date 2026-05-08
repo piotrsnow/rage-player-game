@@ -83,6 +83,13 @@ export default function Header() {
   const navigate = useNavigate();
   const { t } = useTranslation();
   const [entryRoute, setEntryRoute] = useState(() => peekEntryIntent());
+
+  useEffect(() => {
+    if (entryRoute && (location.pathname.startsWith('/play') || location.pathname.startsWith('/create'))) {
+      consumeEntryIntent();
+      setEntryRoute(null);
+    }
+  }, [location.pathname, entryRoute]);
   const { settings, updateSettings, backendUser } = useSettings();
   const music = useGlobalMusic();
   const { openCharacterSheet, openTasksInfo, openSettings, openKeys, openImageConfig, openAudioConfig, openProfile, openAdminUsers, openLocationGraph, openGmModal, openPrivacy } = useModals();
@@ -134,7 +141,6 @@ export default function Header() {
   const clearPlayLogoVignette = useCallback(() => setLogoHoverVignette(null), []);
   const [volumeOpen, setVolumeOpen] = useState(false);
   const volumeRef = useRef(null);
-  const [isMuted, setIsMuted] = useState(false);
   const preMuteVolumesRef = useRef(null);
   const [saveStatus, setSaveStatus] = useState('idle');
   const saveTimeoutRef = useRef(null);
@@ -186,8 +192,10 @@ export default function Header() {
 
   const vol = settings.musicVolume ?? 40;
   const dlgVol = settings.dialogueVolume ?? 80;
+  const sfxVol = settings.sfxVolume ?? 70;
+  const currentlyMuted = vol === 0 && dlgVol === 0 && sfxVol === 0;
   const maxVol = Math.max(vol, dlgVol);
-  const volumeIcon = isMuted ? 'volume_off' : maxVol === 0 ? 'volume_off' : maxVol < 40 ? 'volume_down' : 'volume_up';
+  const volumeIcon = currentlyMuted ? 'volume_off' : maxVol < 40 ? 'volume_down' : 'volume_up';
   const isPlayRoute = location.pathname.startsWith('/play');
 
   useEffect(() => {
@@ -408,11 +416,10 @@ export default function Header() {
                   onClick={() => setVolumeOpen((v) => !v)}
                   onContextMenu={(e) => {
                     e.preventDefault();
-                    if (!isMuted) {
-                      preMuteVolumesRef.current = { musicVolume: vol, dialogueVolume: dlgVol, sfxVolume: settings.sfxVolume ?? 70 };
+                    if (!currentlyMuted) {
+                      preMuteVolumesRef.current = { musicVolume: vol, dialogueVolume: dlgVol, sfxVolume: sfxVol };
                       updateSettings({ musicVolume: 0, dialogueVolume: 0, sfxVolume: 0 });
                       music.setVolume(0);
-                      setIsMuted(true);
                     } else {
                       const saved = preMuteVolumesRef.current || {};
                       const restored = {
@@ -422,7 +429,6 @@ export default function Header() {
                       };
                       updateSettings(restored);
                       music.setVolume(restored.musicVolume);
-                      setIsMuted(false);
                       preMuteVolumesRef.current = null;
                     }
                   }}
@@ -443,7 +449,7 @@ export default function Header() {
                       onChange={(e) => {
                         const v = Number(e.target.value);
                         music.setVolume(v);
-                        if (isMuted && v > 0) { setIsMuted(false); preMuteVolumesRef.current = null; }
+                        if (v > 0) preMuteVolumesRef.current = null;
                       }}
                       className="flex-1 h-1 accent-primary cursor-pointer"
                     />
@@ -459,7 +465,7 @@ export default function Header() {
                       onChange={(e) => {
                         const v = Number(e.target.value);
                         updateSettings({ dialogueVolume: v });
-                        if (isMuted && v > 0) { setIsMuted(false); preMuteVolumesRef.current = null; }
+                        if (v > 0) preMuteVolumesRef.current = null;
                       }}
                       className="flex-1 h-1 accent-primary cursor-pointer"
                     />

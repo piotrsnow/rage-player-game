@@ -728,6 +728,10 @@
   -webkit-backface-visibility: hidden;
 }
 
+.flip-card-front {
+  transform: rotateY(0deg);
+}
+
 .flip-card-back {
   transform: rotateY(180deg);
 }
@@ -975,4 +979,313 @@
 ::selection {
   background: rgba(197, 154, 255, 0.3);
   color: #fffbfe;
+}
+
+/* ── Combat token system ── */
+
+.combat-token {
+  position: absolute;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  transform: translate(-50%, -50%);
+  pointer-events: auto;
+  cursor: pointer;
+  transition: filter 0.3s ease;
+  z-index: 2;
+}
+
+.combat-token--defeated {
+  opacity: 0.3;
+  pointer-events: none;
+}
+
+.combat-token__sprite-wrap {
+  position: relative;
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: filter 0.25s ease, transform 0.15s ease;
+}
+
+.combat-token:hover .combat-token__sprite-wrap {
+  transform: scale(1.08);
+}
+
+.combat-token__sprite-wrap img {
+  width: 44px;
+  height: 44px;
+  object-fit: contain;
+  image-rendering: pixelated;
+  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.6));
+}
+
+.combat-token__initials {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  font-weight: 700;
+  font-family: Manrope, sans-serif;
+}
+
+.combat-token--friendly .combat-token__initials {
+  background: radial-gradient(circle at 40% 35%, #2a1e3d, #15102a);
+  color: #c59aff;
+}
+
+.combat-token--enemy .combat-token__initials {
+  background: radial-gradient(circle at 40% 35%, #3a1825, #1e0e14);
+  color: #ff6e84;
+}
+
+/* Active turn glow — follows alpha contour via drop-shadow */
+.combat-token--active .combat-token__sprite-wrap {
+  animation: combatTokenPulse 2s ease-in-out infinite;
+}
+
+.combat-token--active.combat-token--friendly .combat-token__sprite-wrap {
+  filter:
+    drop-shadow(0 0 6px rgba(197, 154, 255, 0.7))
+    drop-shadow(0 0 14px rgba(197, 154, 255, 0.35));
+}
+
+.combat-token--active.combat-token--enemy .combat-token__sprite-wrap {
+  filter:
+    drop-shadow(0 0 6px rgba(255, 110, 132, 0.7))
+    drop-shadow(0 0 14px rgba(255, 110, 132, 0.35));
+}
+
+/* Selected target (dashed ring) */
+.combat-token--selected .combat-token__sprite-wrap::after {
+  content: '';
+  position: absolute;
+  inset: -5px;
+  border-radius: 50%;
+  border: 2px dashed #ff6e84;
+  animation: combatTargetDash 1s linear infinite;
+}
+
+/* Hover ring */
+.combat-token:hover:not(.combat-token--defeated) .combat-token__sprite-wrap::before {
+  content: '';
+  position: absolute;
+  inset: -3px;
+  border-radius: 50%;
+  border: 1.5px solid rgba(197, 154, 255, 0.35);
+}
+
+.combat-token--enemy:hover:not(.combat-token--defeated) .combat-token__sprite-wrap::before {
+  border-color: rgba(255, 110, 132, 0.35);
+}
+
+.combat-token__name {
+  margin-top: 3px;
+  font-size: 10px;
+  font-family: Manrope, sans-serif;
+  color: #adaaad;
+  white-space: nowrap;
+  max-width: 80px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-align: center;
+}
+
+.combat-token__hp {
+  font-size: 8px;
+  font-family: Manrope, sans-serif;
+  color: #9547f7;
+  white-space: nowrap;
+}
+
+.combat-token--enemy .combat-token__hp {
+  color: #b8344a;
+}
+
+.combat-token__advantage {
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: rgba(197, 154, 255, 0.9);
+  color: #0e0e10;
+  font-size: 8px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 3;
+}
+
+/* Turn indicator badge above token */
+.combat-token__turn-badge {
+  position: absolute;
+  top: -22px;
+  left: 50%;
+  transform: translateX(-50%);
+  min-width: 18px;
+  height: 18px;
+  border-radius: 9px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 9px;
+  font-weight: 700;
+  font-family: Manrope, sans-serif;
+  padding: 0 4px;
+  z-index: 4;
+}
+
+.combat-token__turn-badge--waiting {
+  background: rgba(72, 71, 74, 0.6);
+  color: #adaaad;
+  border: 1px solid rgba(72, 71, 74, 0.3);
+}
+
+.combat-token__turn-badge--now {
+  background: rgba(197, 154, 255, 0.25);
+  color: #c59aff;
+  border: 1px solid rgba(197, 154, 255, 0.4);
+  animation: combatTokenPulse 2s ease-in-out infinite;
+}
+
+.combat-token--enemy .combat-token__turn-badge--now {
+  background: rgba(255, 110, 132, 0.2);
+  color: #ff6e84;
+  border-color: rgba(255, 110, 132, 0.4);
+}
+
+/* Damage shake */
+.combat-token--shake {
+  animation: combatShake 0.4s ease-out;
+}
+
+/* Floating damage number */
+.combat-float-text {
+  position: absolute;
+  pointer-events: none;
+  font-size: 16px;
+  font-weight: 700;
+  font-family: Manrope, sans-serif;
+  text-shadow: 0 0 8px currentColor;
+  z-index: 10;
+  animation: combatFloatUp 1.2s ease-out forwards;
+}
+
+/* Health ring SVG */
+.combat-health-ring {
+  position: absolute;
+  inset: -4px;
+  width: calc(100% + 8px);
+  height: calc(100% + 8px);
+  transform: rotate(-90deg);
+  pointer-events: none;
+}
+
+.combat-health-ring circle {
+  fill: none;
+  stroke-linecap: round;
+}
+
+.combat-health-ring__bg {
+  stroke: rgba(72, 71, 74, 0.3);
+  stroke-width: 3.5;
+}
+
+.combat-health-ring__fill {
+  stroke-width: 3.5;
+  transition: stroke-dashoffset 0.5s ease, stroke 0.3s ease;
+}
+
+@keyframes combatTokenPulse {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.05); }
+}
+
+@keyframes combatTargetDash {
+  to { stroke-dashoffset: -12; }
+}
+
+@keyframes combatShake {
+  0% { transform: translate(-50%, -50%) translateX(0); }
+  20% { transform: translate(-50%, -50%) translateX(-4px); }
+  40% { transform: translate(-50%, -50%) translateX(4px); }
+  60% { transform: translate(-50%, -50%) translateX(-2px); }
+  80% { transform: translate(-50%, -50%) translateX(2px); }
+  100% { transform: translate(-50%, -50%) translateX(0); }
+}
+
+@keyframes combatFloatUp {
+  0% { opacity: 1; transform: translate(-50%, 0); }
+  100% { opacity: 0; transform: translate(-50%, -40px); }
+}
+
+/* Action modal */
+.combat-action-modal {
+  position: fixed;
+  z-index: 50;
+  min-width: 200px;
+  max-width: 320px;
+  animation: combatModalIn 0.15s ease-out;
+}
+
+@keyframes combatModalIn {
+  from { opacity: 0; transform: scale(0.95) translateY(4px); }
+  to { opacity: 1; transform: scale(1) translateY(0); }
+}
+
+/* Initiative bar */
+.combat-initiative-bar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  padding: 4px 8px;
+  background: rgba(25, 25, 28, 0.7);
+  border-radius: 6px;
+  border: 1px solid rgba(72, 71, 74, 0.2);
+}
+
+.combat-initiative-pip {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 9px;
+  font-weight: 700;
+  font-family: Manrope, sans-serif;
+  color: #fffbfe;
+  transition: all 0.2s ease;
+  position: relative;
+  cursor: default;
+  flex-shrink: 0;
+}
+
+.combat-initiative-pip--defeated {
+  opacity: 0.25;
+}
+
+.combat-initiative-pip--active {
+  transform: scale(1.15);
+  box-shadow: 0 0 10px currentColor;
+}
+
+.combat-initiative-pip--me::after {
+  content: '';
+  position: absolute;
+  top: -4px;
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: #c59aff;
 }

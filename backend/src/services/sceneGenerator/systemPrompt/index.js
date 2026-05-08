@@ -8,6 +8,7 @@
  */
 
 import {
+  executionOrderBlock,
   coreRulesBlock,
   scenePacingBlock,
   narrativeRulesBlock,
@@ -15,7 +16,6 @@ import {
   suggestedActionsBlock,
   stateChangesRulesBlock,
   actionRulesBlock,
-  itemCombinationBlock,
   playerInputPolicyBlock,
   responseFormatBlock,
   worldSettingBlock,
@@ -67,6 +67,7 @@ export function buildLeanSystemPrompt(coreState, recentScenes, language = 'pl', 
   livingWorldEnabled = false,
   questGiverHint = null,
   magicExposure = null,
+  playerAction = '',
 } = {}) {
   const cs = coreState;
   const intent = intentResult._intent || 'freeform';
@@ -82,18 +83,22 @@ export function buildLeanSystemPrompt(coreState, recentScenes, language = 'pl', 
   // Placed FIRST so both Anthropic (explicit cache_control) and OpenAI
   // (automatic prefix caching) can cache this prefix.
   // ═══════════════════════════════════════════════════════════════
+  // ORDER: critical behavioral rules first (strongest recall at prompt start),
+  // mechanics in the middle, output format last (strongest recall at prompt end).
+  // itemCombinationBlock is now conditional — injected only when playerAction
+  // matches combination patterns (see conditionalRules.js).
   const staticSections = [
+    playerInputPolicyBlock(),
+    executionOrderBlock(),
+    stateChangesRulesBlock(),
     coreRulesBlock(),
+    actionRulesBlock(),
     scenePacingBlock(),
     narrativeRulesBlock(),
     dialogueFormatBlock(),
     suggestedActionsBlock(language),
-    stateChangesRulesBlock(),
-    actionRulesBlock(),
-    itemCombinationBlock(),
-    playerInputPolicyBlock(),
-    responseFormatBlock(language),
     worldSettingBlock(campaign),
+    responseFormatBlock(language),
   ];
 
   // Living World static-content blocks. Item attribution + dungeon-flow hints
@@ -116,7 +121,7 @@ export function buildLeanSystemPrompt(coreState, recentScenes, language = 'pl', 
   // ═══════════════════════════════════════════════════════════════
   const dynamicSections = [];
 
-  const conditionalRules = buildConditionalRules({ intent, coreState: cs, scenePhase, livingWorldEnabled, magicExposure });
+  const conditionalRules = buildConditionalRules({ intent, coreState: cs, scenePhase, livingWorldEnabled, magicExposure, playerAction });
   if (conditionalRules.length > 0) {
     dynamicSections.push(`Conditional rules:\n${conditionalRules.join('\n')}`);
   }

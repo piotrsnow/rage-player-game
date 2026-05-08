@@ -7,13 +7,27 @@
  *
  * Each builder returns a single string. The orchestrator in `index.js` pushes
  * them into `staticSections` in the order below, then joins with `\n\n`.
+ *
+ * ORDER MATTERS: blocks at the top and bottom of the prompt have the strongest
+ * recall. Critical rules (player input policy, execution order, stateChanges)
+ * are placed first; output format last.
  */
 
+export function executionOrderBlock() {
+  return `## EXECUTION ORDER — follow step-by-step for EVERY scene:
+1. READ player input → determine creativityBonus (0 if not custom action).
+2. RESOLVE dice checks using pre-rolls + creativityBonus. Decide success/failure.
+3. WRITE dialogueSegments — narration + NPC dialogue reflecting the resolved outcome.
+4. FILL stateChanges reflecting EVERYTHING you just narrated (checklist below).
+5. GENERATE suggestedActions, atmosphere, imagePrompt, soundEffect, musicPrompt.
+Never narrate an outcome that contradicts the dice result. Never emit stateChanges that contradict the narrative.`;
+}
+
 export function coreRulesBlock() {
-  return `CORE RULES:
+  return `## CORE RULES
 - Dice/skill checks: may be engine-resolved (see user prompt) or self-resolved using pre-rolled d50 values.
 - If engine-resolved: narrate the provided result. DO NOT recalculate.
-- If pre-rolled d50 values are available and action has genuine risk: pick the correct skill from PC Skills below (format: skill:level→ATTR:value). DECIDE creativityBonus FIRST, then calculate total = base + attribute_value + skill_level + creativityBonus. Compare vs difficulty threshold. If luckySuccess → auto-success. Unlisted skills = level 0; use Attributes line for base value.
+- If pre-rolled d50 values are available and action has genuine risk: pick the correct skill from PC Skills below (format: skill:level→ATTR:value). Calculate total = base + attribute_value + skill_level + creativityBonus. Compare vs difficulty threshold. If luckySuccess → auto-success. Unlisted skills = level 0; use Attributes line for base value.
 - Include results in diceRolls array (max 3) — format in RESPONSE section.
 - Margin scaling: lucky success=fortunate twist, margin 15+=decisive success, margin 0-14=success (low margin may add complication), margin -1 to -14=failure with opportunity, margin≤-15=hard fail+consequence.
 - Consequences: risky actions generate reputation/disposition/resource/wound/rumor consequences. Criminal acts accumulate heat (guards, bounties, higher prices).
@@ -27,7 +41,7 @@ export function coreRulesBlock() {
 }
 
 export function scenePacingBlock() {
-  return `SCENE PACING — return "scenePacing" in every response. Match prose to type:
+  return `## SCENE PACING — return "scenePacing" in every response. Match prose to type:
 combat: staccato, 1-2 para | chase: breathless, fragments | stealth: sparse, tense
 exploration: atmospheric, 2-3 para | dialogue: minimal narration, NPCs drive scene
 travel_montage: 2-3 sentences, skip to arrival | rest: slow, 1-2 para
@@ -36,7 +50,7 @@ Max 2 consecutive exploration/travel/rest without a complication. Travel without
 }
 
 export function narrativeRulesBlock() {
-  return `NARRATIVE RULES:
+  return `## NARRATIVE RULES
 - Vary density by scene type. Action=short/punchy. Exploration=concrete senses. Dialogue=character voice.
 - Avoid: stacked adjectives, abstract feelings, uniform NPC voice, tax-collector clichés.
 - NPCs present MUST speak in direct dialogue segments, never just described indirectly.
@@ -45,7 +59,7 @@ export function narrativeRulesBlock() {
 }
 
 export function dialogueFormatBlock() {
-  return `DIALOGUE FORMAT:
+  return `## DIALOGUE FORMAT
 dialogueSegments: [{type:"narration",text:""}, {type:"dialogue",character:"NPC Name",gender:"male"|"female",text:""}]
 dialogueSegments is the SOLE source of scene prose. Narration segments hold all descriptive text; dialogue segments hold spoken lines. Never embed quoted speech in narration — always split into dialogue segments. Every dialogue segment MUST include a "gender" field — ONLY "male" or "female". NEVER "unknown", NEVER omitted. If the speaker's gender is ambiguous in the fiction, pick one and stay consistent. Use consistent NPC names.`;
 }
@@ -54,12 +68,13 @@ export function suggestedActionsBlock(language) {
   const example = language === 'pl' ? '"Oglądam drzwi"' : '"I examine the door"';
   const directSpeechEx = language === 'pl' ? '"Mówię: \\"...\\""' : '"I say: \\"...\\"."';
   const plTail = language === 'pl' ? ' PL: use "Mówię:", "Pytam:", "Krzyczę:" — NOT "I say:", "I ask:", "I tell:". Do NOT prefix with "I".' : '';
-  return `SUGGESTED ACTIONS:
-Return exactly 3 suggestedActions in PC voice (1st person, e.g. ${example}). At least 2 grounded + up to 1 chaotic/humorous. Exactly 1 must be direct speech (${directSpeechEx}). Reference concrete scene NPCs/objects/locations by name. Never use vague filler. Never repeat recent actions.${plTail}`;
+  return `## SUGGESTED ACTIONS
+Return exactly 3 suggestedActions in PC voice (1st person, e.g. ${example}). At least 2 grounded + up to 1 chaotic/humorous. Exactly 1 must be direct speech (${directSpeechEx}). Reference concrete scene NPCs/objects/locations by name. Never use vague filler. Never repeat recent actions.${plTail}
+Ground actions in the character's actual capabilities: never suggest spellcasting if mana=0, item use if item is not in Inventory, or skills the character has at level 0 for non-trivial checks.`;
 }
 
 export function stateChangesRulesBlock() {
-  return `MANDATORY stateChanges RULES:
+  return `## [CRITICAL] MANDATORY stateChanges RULES
 Before emitting stateChanges, mentally run this checklist against the narrative you just wrote:
   1. Time — how much time passed in the scene? (timeAdvance)
   2. Quest — did any ACTIVE objective just get fulfilled? (questUpdates + dialogueIfQuestTargetCompleted)
@@ -97,7 +112,7 @@ Emit stateChanges reflecting ALL of the above. Empty fields are OK only when the
 }
 
 export function actionRulesBlock() {
-  return `ACTION RULES:
+  return `## ACTION RULES
 - Impossible (target not present): narrate failure. Trivial (unlocked door, walking): auto-success.
 - Routine (eating, resting, looking): auto-success.
 - Uncertain: engine resolves checks. Narrate the result from user prompt.
@@ -139,7 +154,7 @@ export function playerInputPolicyBlock() {
   // in their action text ("znajduję starego Włóczęgę który daje mi mapę…"). The
   // model is GM — player input is intent, not outcome. Also closes the
   // prose↔stateChanges consistency gap in the same place.
-  return `PLAYER INPUT POLICY — CRITICAL:
+  return `## [CRITICAL] PLAYER INPUT POLICY
 The player's text describes what their character ATTEMPTS, INTENDS, or HOPES. You are the GM — you decide what ACTUALLY happens, grounded in the game state below (World State / NPCs here / Key NPCs / Active Quests / Codex / Inventory).
 - NPCs, items, quests, locations, and world facts NOT present in the game state are NOT canonical. If the player asserts a new NPC, item transfer, or world fact that doesn't exist in context, narrate a GROUNDED alternative based on what actually exists. You MAY introduce a new NPC organically when the scene calls for it — but YOU choose what they look like, what they know, and what they give. Never mirror the player's script verbatim.
 - Consistency enforcement: if you DO narrate an NPC handing over an item or offering a quest, you MUST emit the matching newItems / questOffers entry in stateChanges. Quest offers emitted this way MUST tie into the main quest line — side/faction/personal quest creation is disabled in this build.`;
@@ -166,7 +181,7 @@ export function responseFormatBlock(language) {
   "scenePacing": "exploration|combat|chase|stealth|dialogue|travel_montage|celebration|rest|dramatic|dream|cutscene",
   "suggestedActions": ["exactly 3 actions"],
   "atmosphere": {"weather":"clear|rain|snow|storm|fog|fire","particles":"none|magic_dust|sparks|embers|arcane","mood":"peaceful|tense|dark|mystical|chaotic","lighting":"natural|night|dawn|bright|rays|candlelight|moonlight","transition":"dissolve|fade|arcane_wipe"},
-  "imagePrompt": "comma-separated ENGLISH tags for SDXL image gen (max 400 chars). 8-14 tags, concrete nouns/adjectives only, no articles or filler. Order: subject, action, setting, time of day, lighting, weather, mood, camera angle, key props. Derive every tag from THIS scene's narrative — do NOT import unrelated locations, ruins, castles, or architecture that the scene does not actually contain. Template (do not copy literally, substitute from the scene): '<subject with attire>, <what they are doing>, <where — be specific to THIS scene>, <time>, <lighting>, <weather>, <mood>, <shot type>, <1-3 key props>'",
+  "imagePrompt": "comma-separated ENGLISH tags for SDXL image gen (max 400 chars). 8-14 tags, concrete nouns/adjectives only, no articles or filler. Order: subject, action, setting, time of day, lighting, weather, mood, camera angle, key props. Derive every tag from THIS scene's narrative — do NOT import unrelated locations, ruins, castles, or architecture that the scene does not actually contain. Always end with style tags: 'dark fantasy, dramatic lighting, painterly'. NEVER include: text, watermarks, UI elements, modern items, anime style, blurry, low quality. Template (substitute from the scene): '<subject with attire>, <action>, <specific setting>, <time>, <lighting>, <weather>, <mood>, <shot type>, <1-3 key props>, dark fantasy, dramatic lighting, painterly'",
   "soundEffect": "short English sound description or null",
   "musicPrompt": "instruments, tempo, mood (max 200 chars) or null",
   "questOffers": [],
@@ -202,7 +217,10 @@ export function responseFormatBlock(language) {
 FIELD SCOPE: diceRolls + dialogueIfQuestTargetCompleted are TOP-LEVEL. questUpdates + completedQuests + rewards + npcMemoryUpdates live INSIDE stateChanges — emitting them at top-level means the backend drops them silently.
 EMPTY vs OMIT: leave arrays empty ([]) and objects null when nothing happened. But if the narrative resolved a quest objective / transferred an item / moved the player, the matching stateChanges slot MUST be filled — the mockup lists every slot so you never "forget" one.
 npcsIntroduced: one entry per NEW speaking NPC (not already in NPCs section). Omit or [] if none.
-${languageRule}`;
+${languageRule}
+
+MINIMAL EXAMPLE (correct structure, abbreviated content):
+{"creativityBonus":4,"diceRolls":[{"skill":"Perswazja","difficulty":"medium","success":true}],"npcsIntroduced":[],"dialogueSegments":[{"type":"narration","text":"Podchodzisz do kowala..."},{"type":"dialogue","character":"Bjorn","gender":"male","text":"No dobrze, przekonałeś mnie."}],"scenePacing":"dialogue","suggestedActions":["Pytam o zlecenie","Oglądam wystawę broni","Mówię: \\"Dziękuję, wrócę z materiałami.\\""],"atmosphere":{"weather":"clear","particles":"none","mood":"peaceful","lighting":"natural","transition":"dissolve"},"imagePrompt":"bearded blacksmith, leaning on anvil, medieval forge interior, midday, warm forge glow, clear weather, peaceful mood, medium shot, iron tools hanging on wall, dark fantasy, dramatic lighting, painterly","soundEffect":"hammer on anvil clang","musicPrompt":null,"questOffers":[],"cutscene":null,"dilemma":null,"stateChanges":{"timeAdvance":{"hoursElapsed":0.25},"questUpdates":[],"completedQuests":[],"npcs":[{"action":"update","name":"Bjorn","dispositionChange":2}],"npcMemoryUpdates":[],"locationMentioned":[],"currentLocation":null,"currentX":null,"currentY":null,"newItems":[],"removeItems":[],"removeItemsByName":[],"rewards":[],"moneyChange":null,"woundsChange":null,"manaChange":null,"spellUsage":null,"skillsUsed":["Perswazja"],"actionDifficulty":"medium","learnSpell":null,"manaMaxChange":null,"addScroll":null,"dungeonComplete":null},"dialogueIfQuestTargetCompleted":null}`;
 }
 
 export function worldSettingBlock(campaign) {

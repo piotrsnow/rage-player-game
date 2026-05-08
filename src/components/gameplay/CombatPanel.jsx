@@ -18,13 +18,11 @@ import {
   surrenderMultiplayerCombat,
   forceTruceMultiplayerCombat,
   moveCombatant,
-  getDistance,
 } from '../../services/combatEngine';
 import CombatCanvas from './CombatCanvas';
 import { useCombatCommentary } from '../../hooks/useCombatCommentary';
 import CombatLogEntry from './CombatLogEntry';
 import CombatantsList from './combat/CombatantsList';
-import ManeuverPicker from './combat/ManeuverPicker';
 import CombatHeader from './combat/CombatHeader';
 import { TruceConfirmDialog, SurrenderConfirmDialog } from './combat/CombatConfirmDialogs';
 import CombatTurnStatus from './combat/CombatTurnStatus';
@@ -32,6 +30,7 @@ import { buildResultLogEntries, buildResultChatMessages } from './combat/combatL
 import { useEnemyTurnResolver } from '../../hooks/useEnemyTurnResolver';
 import { useCombatResultSync } from '../../hooks/useCombatResultSync';
 import { useCombatHostResolve } from '../../hooks/useCombatHostResolve';
+import { useCombatSprites } from '../../hooks/useCombatSprites';
 
 function isCustomAttackManoeuvre(manoeuvreKey) {
   return Boolean(manoeuvreKey && gameData.manoeuvres[manoeuvreKey]?.type === 'offensive');
@@ -57,15 +56,11 @@ export default function CombatPanel({
   const { t } = useTranslation();
   const { settings } = useSettings();
   const { generateCombatCommentary } = useAI();
-  const [selectedManoeuvre, setSelectedManoeuvre] = useState(null);
   const [selectedTarget, setSelectedTarget] = useState(null);
-  const [customDescription, setCustomDescription] = useState('');
-  const [showSavedAttacks, setShowSavedAttacks] = useState(false);
   const [showSurrenderConfirm, setShowSurrenderConfirm] = useState(false);
   const [showTruceConfirm, setShowTruceConfirm] = useState(false);
   const [combatLog, setCombatLog] = useState([]);
   const [isAwaitingAiTurn, setIsAwaitingAiTurn] = useState(false);
-  const [hoveredCombatantId, setHoveredCombatantId] = useState(null);
   const logEndRef = useRef(null);
   const logScrollRef = useRef(null);
   const combatAudio = useCombatAudio(combat);
@@ -96,6 +91,18 @@ export default function CombatPanel({
     return combat.combatants.find((c) => c.type === 'player');
   }, [combat.combatants, isMultiplayer, myPlayerId]);
 
+  const spriteMap = useCombatSprites(combat.combatants);
+
+  const enrichedCombat = useMemo(() => {
+    if (!Object.keys(spriteMap).length) return combat;
+    const enrichedCombatants = combat.combatants.map(c => {
+      const url = spriteMap[c.id];
+      if (url && !c.spriteUrl) return { ...c, spriteUrl: url };
+      return c;
+    });
+    return { ...combat, combatants: enrichedCombatants };
+  }, [combat, spriteMap]);
+
   const availableManoeuvres = useMemo(() => {
     const charForSkills = myCombatant || character;
     return Object.entries(gameData.manoeuvres).filter(([key]) => {
@@ -103,6 +110,7 @@ export default function CombatPanel({
       return true;
     });
   }, [myCombatant, character]);
+
   const savedCustomAttacks = useMemo(
     () => (Array.isArray(character?.customAttackPresets) ? character.customAttackPresets : []),
     [character?.customAttackPresets]
@@ -121,12 +129,6 @@ export default function CombatPanel({
     const el = logScrollRef.current;
     if (el) el.scrollTop = el.scrollHeight;
   }, [combatLog]);
-
-  useEffect(() => {
-    if (!isCustomAttackManoeuvre(selectedManoeuvre)) {
-      setShowSavedAttacks(false);
-    }
-  }, [selectedManoeuvre]);
 
   const prevRoundRef = useRef(combat.round);
   useEffect(() => {
@@ -204,64 +206,36 @@ export default function CombatPanel({
     addResultToLog,
   });
 
-  const handleManoeuvreSelect = (key) => {
-    setSelectedManoeuvre(key);
-    const man = gameData.manoeuvres[key];
-    if (man.type !== 'offensive') {
-      setCustomDescription('');
-    }
-    if (man.type === 'defensive' || man.modifiers.flee) {
-      setSelectedTarget(null);
-    } else if (enemies.filter((e) => !e.isDefeated).length === 1) {
-      setSelectedTarget(enemies.find((e) => !e.isDefeated)?.id);
-    }
-  };
-
-  const persistCustomAttack = (description) => {
+  const persistCustomAttack = useCallback((description) => {
     const trimmed = description.trim();
     if (!trimmed) return;
-
     dispatch({ type: 'SAVE_CUSTOM_ATTACK', payload: trimmed });
     onPersistState?.();
-  };
+  }, [dispatch, onPersistState]);
 
-  const removeCustomAttack = (description) => {
+  const removeCustomAttack = useCallback((description) => {
     const trimmed = description.trim();
     if (!trimmed) return;
-
     dispatch({ type: 'DELETE_CUSTOM_ATTACK', payload: trimmed });
-    if (customDescription.trim() === trimmed) {
-      setCustomDescription('');
-    }
     onPersistState?.();
-  };
+  }, [dispatch, onPersistState]);
 
-  const handleExecute = () => {
-    if (!selectedManoeuvre || !isMyTurn) return;
-    const man = gameData.manoeuvres[selectedManoeuvre];
-    const needsTarget = man.type === 'offensive' || man.type === 'magic';
-    if (needsTarget && !selectedTarget) return;
-    const trimmedDescription = customDescription.trim();
+  const handleExecuteManoeuvre = useCallback((manoeuvreKey, targetId, customDesc) => {
+    if (!manoeuvreKey || !isMyTurn) return;
 
-    if (isCustomAttackManoeuvre(selectedManoeuvre) && trimmedDescription) {
-      persistCustomAttack(trimmedDescription);
+    if (isCustomAttackManoeuvre(manoeuvreKey) && customDesc) {
+      persistCustomAttack(customDesc);
     }
 
     if (isMultiplayer && !isHost) {
-      onSendManoeuvre?.(selectedManoeuvre, selectedTarget, trimmedDescription);
-      setSelectedManoeuvre(null);
-      setSelectedTarget(null);
-      setCustomDescription('');
+      onSendManoeuvre?.(manoeuvreKey, targetId, customDesc);
       return;
     }
 
     const actorId = isMultiplayer ? myPlayerId : 'player';
     const { combat: updatedCombat, result } = resolveManoeuvre(
-      combat, actorId, selectedManoeuvre, selectedTarget, { customDescription: trimmedDescription }
+      combat, actorId, manoeuvreKey, targetId, { customDescription: customDesc }
     );
-    setSelectedManoeuvre(null);
-    setSelectedTarget(null);
-    setCustomDescription('');
     dispatchCombatChatMessage(result);
     addResultToLog(result);
     const allResults = result ? [result] : [];
@@ -275,7 +249,31 @@ export default function CombatPanel({
     } else {
       dispatch({ type: 'UPDATE_COMBAT', payload: finalCombat });
     }
-  };
+  }, [isMyTurn, isMultiplayer, isHost, myPlayerId, combat, dispatch, onHostResolve, onSendManoeuvre, dispatchCombatChatMessage, addResultToLog, persistCustomAttack]);
+
+  const handleMoveToPosition = useCallback((targetYard) => {
+    if (!isMyTurn || combatOver) return;
+    const actorId = isMultiplayer ? myPlayerId : 'player';
+    const { combat: updated, moved, distance: dist } = moveCombatant(combat, actorId, targetYard);
+    if (!moved) return;
+
+    const actor = updated.combatants.find((c) => c.id === actorId);
+    const uid = shortId(4);
+    addLogEntry({
+      type: 'info',
+      actor: actor?.name || '?',
+      action: t('combat.movedAction', 'moved {{dist}}y', { dist }),
+      target: '',
+      actorColor: '#c59aff',
+      id: `move_${uid}`,
+    });
+
+    if (isMultiplayer) {
+      onHostResolve?.(updated);
+    } else {
+      dispatch({ type: 'UPDATE_COMBAT', payload: updated });
+    }
+  }, [combat, isMyTurn, combatOver, isMultiplayer, myPlayerId, dispatch, onHostResolve, t, addLogEntry]);
 
   const handleEndCombat = () => {
     if (isMultiplayer) {
@@ -317,39 +315,6 @@ export default function CombatPanel({
     }
   };
 
-  const handleMoveToPosition = useCallback((targetYard) => {
-    if (!isMyTurn || combatOver) return;
-    const actorId = isMultiplayer ? myPlayerId : 'player';
-    const { combat: updated, moved, distance: dist } = moveCombatant(combat, actorId, targetYard);
-    if (!moved) return;
-
-    const actor = updated.combatants.find((c) => c.id === actorId);
-    const uid = shortId(4);
-    addLogEntry({
-      type: 'info',
-      actor: actor?.name || '?',
-      action: t('combat.movedAction', 'moved {{dist}}y', { dist }),
-      target: '',
-      actorColor: '#c59aff',
-      id: `move_${uid}`,
-    });
-
-    if (isMultiplayer) {
-      onHostResolve?.(updated);
-    } else {
-      dispatch({ type: 'UPDATE_COMBAT', payload: updated });
-    }
-  }, [combat, isMyTurn, combatOver, isMultiplayer, myPlayerId, dispatch, onHostResolve, t, addLogEntry]);
-
-  const selectedTargetOutOfMeleeRange = useMemo(() => {
-    if (!selectedManoeuvre || !selectedTarget) return false;
-    const man = gameData.manoeuvres[selectedManoeuvre];
-    if (man.range !== 'melee') return false;
-    const target = combat.combatants.find((c) => c.id === selectedTarget);
-    if (!target || !myCombatant) return false;
-    return getDistance(myCombatant, target) > gameData.MELEE_RANGE;
-  }, [selectedManoeuvre, selectedTarget, combat.combatants, myCombatant]);
-
   return (
     <div className="space-y-3" data-testid="combat-panel">
       <CombatHeader
@@ -378,58 +343,31 @@ export default function CombatPanel({
       )}
 
       <CombatCanvas
-        combat={combat}
+        combat={enrichedCombat}
         myPlayerId={myPlayerId}
         isMultiplayer={isMultiplayer}
         selectedTarget={selectedTarget}
         onSelectTarget={setSelectedTarget}
-        onHoverCombatant={setHoveredCombatantId}
+        onHoverCombatant={() => {}}
         onMoveToPosition={handleMoveToPosition}
         combatOver={combatOver}
         isMyTurn={isMyTurn}
         myCombatantId={myCombatant?.id}
+        availableManoeuvres={availableManoeuvres}
+        savedCustomAttacks={savedCustomAttacks}
+        onExecuteManoeuvre={handleExecuteManoeuvre}
+        onPersistCustomAttack={persistCustomAttack}
+        onRemoveCustomAttack={removeCustomAttack}
       />
 
-      {isMyTurn && !combatOver && myCombatant && (
-        <div className="flex items-center gap-3 text-[11px]">
-          <div className="flex items-center gap-1.5 px-2.5 py-1 bg-surface-container/30 border border-outline-variant/10 rounded-sm">
-            <span className="material-symbols-outlined text-sm text-primary">directions_walk</span>
-            <span className="text-on-surface-variant">{t('combat.movement', 'Movement')}:</span>
-            <span className="text-primary font-bold tabular-nums">
-              {myCombatant.movementAllowance - (myCombatant.movementUsed || 0)}/{myCombatant.movementAllowance}
-            </span>
-            <span className="text-outline-variant">y</span>
-          </div>
-          <span className="text-[10px] text-outline-variant">{t('combat.clickToMove', 'Click battlefield to move')}</span>
-        </div>
-      )}
-
-      <div className="grid grid-cols-1 xl:grid-cols-[minmax(280px,400px)_240px_minmax(0,1fr)] gap-3 items-start">
+      <div className="grid grid-cols-1 xl:grid-cols-[240px_minmax(0,1fr)] gap-3 items-start">
         <div className="space-y-3">
-          <div className="text-[10px] font-label uppercase tracking-widest text-on-surface-variant px-1 pb-1">
-            {t('combat.yourTurn', 'Your Turn')} — {t('combat.chooseManoeuvre', 'Choose Manoeuvre')}
-          </div>
-          {isMyTurn && !combatOver && (
-            <ManeuverPicker
-              availableManoeuvres={availableManoeuvres}
-              selectedManoeuvre={selectedManoeuvre}
-              selectedTarget={selectedTarget}
-              customDescription={customDescription}
-              showSavedAttacks={showSavedAttacks}
-              savedCustomAttacks={savedCustomAttacks}
-              enemies={enemies}
-              myCombatant={myCombatant}
-              selectedTargetOutOfMeleeRange={selectedTargetOutOfMeleeRange}
-              onManoeuvreSelect={handleManoeuvreSelect}
-              onSelectTarget={setSelectedTarget}
-              onCustomDescriptionChange={setCustomDescription}
-              onToggleSavedAttacks={() => setShowSavedAttacks((c) => !c)}
-              onSelectSavedAttack={(attack) => { setCustomDescription(attack); setShowSavedAttacks(false); }}
-              onRemoveCustomAttack={removeCustomAttack}
-              onExecute={handleExecute}
-              t={t}
-            />
-          )}
+          <CombatantsList
+            combatants={combat.combatants}
+            currentTurn={currentTurn}
+            onHoverCombatant={() => {}}
+            t={t}
+          />
 
           <CombatTurnStatus
             isMyTurn={isMyTurn}
@@ -442,13 +380,6 @@ export default function CombatPanel({
             enemies={enemies}
           />
         </div>
-
-        <CombatantsList
-          combatants={combat.combatants}
-          currentTurn={currentTurn}
-          onHoverCombatant={setHoveredCombatantId}
-          t={t}
-        />
 
         <div className="min-w-0 space-y-3">
           <div className="text-[10px] font-label uppercase tracking-widest text-on-surface-variant px-1 pb-1">

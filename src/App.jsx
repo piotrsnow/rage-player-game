@@ -13,7 +13,7 @@ const CampaignViewerPage = lazy(() => import('./components/viewer/CampaignViewer
 
 function RouteFallback() {
   return (
-    <div className="flex items-center justify-center min-h-[60vh]">
+    <div className="flex items-center justify-center min-h-[calc(100dvh-4rem)]">
       <LoadingSpinner size="lg" />
     </div>
   );

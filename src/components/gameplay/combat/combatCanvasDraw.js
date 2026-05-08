@@ -22,24 +22,10 @@ export const COLORS = {
 };
 
 export const TOKEN_RADIUS = 26;
-export const TOKEN_RING_WIDTH = 4;
-export const TRACK_HEIGHT = 44;
 export const BATTLEFIELD_PAD_X = 40;
-export const BATTLEFIELD_PAD_TOP = 12;
+export const BATTLEFIELD_PAD_TOP = 8;
 
 const PARTICLE_COUNT = 35;
-const FLOAT_TEXT_DURATION = 1200;
-
-function lerp(a, b, t) {
-  return a + (b - a) * Math.min(1, Math.max(0, t));
-}
-
-function getInitials(name) {
-  if (!name) return '??';
-  const parts = name.trim().split(/\s+/);
-  if (parts.length >= 2) return (parts[0][0] + parts[1][0]).toUpperCase();
-  return name.slice(0, 2).toUpperCase();
-}
 
 function roundRect(ctx, x, y, w, h, r) {
   ctx.beginPath();
@@ -55,7 +41,7 @@ function roundRect(ctx, x, y, w, h, r) {
   ctx.closePath();
 }
 
-function yardToX(position, canvasW) {
+export function yardToX(position, canvasW) {
   const usable = canvasW - BATTLEFIELD_PAD_X * 2;
   return BATTLEFIELD_PAD_X + (position / gameData.BATTLEFIELD_MAX) * usable;
 }
@@ -112,82 +98,7 @@ export function drawBackground(ctx, w, h, now, anim) {
   ctx.globalAlpha = 1;
 }
 
-export function drawInitiativeTrack(ctx, combatants, turnIndex, myPlayerId, isMultiplayer, canvasW, pulse, myCombatant) {
-  const trackH = TRACK_HEIGHT;
-  const circleR = 12;
-  const spacing = Math.min(40, (canvasW - 60) / Math.max(combatants.length, 1));
-  const totalW = (combatants.length - 1) * spacing;
-  const startX = (canvasW - totalW) / 2;
-
-  ctx.fillStyle = 'rgba(25,25,28,0.7)';
-  roundRect(ctx, 8, 4, canvasW - 16, trackH - 4, 6);
-  ctx.fill();
-  ctx.strokeStyle = 'rgba(72,71,74,0.2)';
-  ctx.lineWidth = 1;
-  roundRect(ctx, 8, 4, canvasW - 16, trackH - 4, 6);
-  ctx.stroke();
-
-  for (let i = 0; i < combatants.length; i++) {
-    const c = combatants[i];
-    const cx = startX + i * spacing;
-    const cy = trackH / 2 + 2;
-    const isActive = i === turnIndex;
-    const isMe = myCombatant && c.id === myCombatant.id;
-    const isEnemy = c.type === 'enemy';
-
-    if (c.isDefeated) ctx.globalAlpha = 0.25;
-
-    if (isActive && !c.isDefeated) {
-      const glowR = circleR + 3 + pulse * 2;
-      const glow = ctx.createRadialGradient(cx, cy, circleR - 2, cx, cy, glowR);
-      glow.addColorStop(0, isEnemy ? 'rgba(255,110,132,0.35)' : 'rgba(197,154,255,0.35)');
-      glow.addColorStop(1, 'rgba(0,0,0,0)');
-      ctx.fillStyle = glow;
-      ctx.beginPath();
-      ctx.arc(cx, cy, glowR, 0, Math.PI * 2);
-      ctx.fill();
-    }
-
-    ctx.beginPath();
-    ctx.arc(cx, cy, circleR, 0, Math.PI * 2);
-    ctx.fillStyle = isActive ? (isEnemy ? COLORS.error : COLORS.primary) : (isEnemy ? COLORS.errorDim : COLORS.primaryDim);
-    ctx.fill();
-
-    if (isActive && !c.isDefeated) {
-      ctx.strokeStyle = isEnemy ? COLORS.error : COLORS.primary;
-      ctx.lineWidth = 2;
-      ctx.stroke();
-    }
-
-    ctx.font = 'bold 9px Manrope, sans-serif';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillStyle = COLORS.text;
-    ctx.fillText(getInitials(c.name), cx, cy);
-
-    if (c.isDefeated) {
-      ctx.strokeStyle = COLORS.error;
-      ctx.lineWidth = 2;
-      ctx.beginPath();
-      ctx.moveTo(cx - 5, cy - 5);
-      ctx.lineTo(cx + 5, cy + 5);
-      ctx.moveTo(cx + 5, cy - 5);
-      ctx.lineTo(cx - 5, cy + 5);
-      ctx.stroke();
-    }
-
-    if (isMe && !c.isDefeated) {
-      ctx.fillStyle = COLORS.primary;
-      ctx.beginPath();
-      ctx.arc(cx, cy - circleR - 4, 2, 0, Math.PI * 2);
-      ctx.fill();
-    }
-
-    ctx.globalAlpha = 1;
-  }
-}
-
-export function drawBattlefield(ctx, w, bfTop, bfH, now) {
+export function drawBattlefield(ctx, w, bfTop, bfH, _now) {
   ctx.fillStyle = 'rgba(25,25,28,0.3)';
   roundRect(ctx, BATTLEFIELD_PAD_X - 12, bfTop - 4, w - (BATTLEFIELD_PAD_X - 12) * 2, bfH + 8, 6);
   ctx.fill();
@@ -280,224 +191,29 @@ export function drawMeleeEngagements(ctx, combatants, w, centerY, now) {
   ctx.restore();
 }
 
-export function computeTokenPositions(combatants, canvasW, centerY, bfH) {
-  const positions = [];
-  const yardSlots = {};
-
-  for (const c of combatants) {
-    const yard = c.position ?? 0;
-    if (!yardSlots[yard]) yardSlots[yard] = [];
-    yardSlots[yard].push(c);
-  }
-
-  for (const [yardStr, group] of Object.entries(yardSlots)) {
-    const x = yardToX(Number(yardStr), canvasW);
-    const slotH = TOKEN_RADIUS * 2 + 10;
-    const totalGroupH = group.length * slotH;
-    const startY = centerY - totalGroupH / 2 + slotH / 2;
-
-    for (let i = 0; i < group.length; i++) {
-      positions.push({
-        combatant: group[i],
-        x,
-        y: startY + i * slotH,
-      });
-    }
-  }
-
-  return positions;
-}
-
-export function drawToken(ctx, pos, turnIndex, allCombatants, selectedTarget, hoveredId, pulse, now, anim, canvasW) {
-  const { combatant: c, x, y } = pos;
-  const globalIdx = allCombatants.indexOf(c);
-  const isActive = globalIdx === turnIndex;
-  const isEnemy = c.type === 'enemy';
-  const isSelected = c.id === selectedTarget;
-  const isHovered = c.id === hoveredId;
-  const r = TOKEN_RADIUS;
+export function drawRangeIndicator(ctx, fromCombatant, toCombatant, w, centerY) {
+  if (!fromCombatant || !toCombatant) return;
+  const x1 = yardToX(fromCombatant.position ?? 0, w);
+  const x2 = yardToX(toCombatant.position ?? 0, w);
+  const dist = Math.abs((fromCombatant.position ?? 0) - (toCombatant.position ?? 0));
 
   ctx.save();
-  if (c.isDefeated) ctx.globalAlpha = 0.3;
-
-  const healthTarget = c.maxWounds > 0 ? c.wounds / c.maxWounds : 0;
-  if (anim.healthBars[c.id] === undefined) anim.healthBars[c.id] = healthTarget;
-  anim.healthBars[c.id] = lerp(anim.healthBars[c.id], healthTarget, 0.08);
-  const healthPct = anim.healthBars[c.id];
-
-  const flash = anim.flashTargets[c.id];
-  let flashAlpha = 0;
-  if (flash) {
-    const elapsed = now - flash.start;
-    if (elapsed < 500) {
-      flashAlpha = Math.max(0, 1 - elapsed / 500) * 0.6;
-    } else {
-      delete anim.flashTargets[c.id];
-    }
-  }
-
-  if (isActive && !c.isDefeated) {
-    const spotR = r + 30 + pulse * 10;
-    const spot = ctx.createRadialGradient(x, y, r * 0.5, x, y, spotR);
-    spot.addColorStop(0, isEnemy ? 'rgba(255,110,132,0.08)' : 'rgba(197,154,255,0.08)');
-    spot.addColorStop(1, 'rgba(0,0,0,0)');
-    ctx.fillStyle = spot;
-    ctx.beginPath();
-    ctx.arc(x, y, spotR, 0, Math.PI * 2);
-    ctx.fill();
-  }
-
-  ctx.fillStyle = 'rgba(72,71,74,0.3)';
+  ctx.strokeStyle = 'rgba(197,154,255,0.35)';
+  ctx.lineWidth = 1;
+  ctx.setLineDash([6, 4]);
   ctx.beginPath();
-  ctx.arc(x, y, r + TOKEN_RING_WIDTH / 2, 0, Math.PI * 2);
-  ctx.lineWidth = TOKEN_RING_WIDTH;
-  ctx.strokeStyle = 'rgba(72,71,74,0.3)';
+  ctx.moveTo(x1, centerY);
+  ctx.lineTo(x2, centerY);
   ctx.stroke();
+  ctx.setLineDash([]);
 
-  if (healthPct > 0 && !c.isDefeated) {
-    const startAngle = -Math.PI / 2;
-    const endAngle = startAngle + healthPct * Math.PI * 2;
-    let ringColor;
-    if (isEnemy) {
-      ringColor = COLORS.error;
-    } else if (healthPct > 0.5) {
-      ringColor = COLORS.primary;
-    } else if (healthPct > 0.25) {
-      ringColor = '#e8a040';
-    } else {
-      ringColor = COLORS.error;
-    }
-
-    if (healthPct < 0.25 && !c.isDefeated) {
-      ctx.globalAlpha = (c.isDefeated ? 0.3 : 1) * (0.6 + 0.4 * pulse);
-    }
-    ctx.beginPath();
-    ctx.arc(x, y, r + TOKEN_RING_WIDTH / 2, startAngle, endAngle);
-    ctx.lineWidth = TOKEN_RING_WIDTH;
-    ctx.strokeStyle = ringColor;
-    ctx.lineCap = 'round';
-    ctx.stroke();
-    ctx.lineCap = 'butt';
-    if (healthPct < 0.25 && !c.isDefeated) ctx.globalAlpha = c.isDefeated ? 0.3 : 1;
-  }
-
-  const bgGrad = ctx.createRadialGradient(x - 4, y - 4, 0, x, y, r);
-  if (isEnemy) {
-    bgGrad.addColorStop(0, '#3a1825');
-    bgGrad.addColorStop(1, '#1e0e14');
-  } else {
-    bgGrad.addColorStop(0, '#2a1e3d');
-    bgGrad.addColorStop(1, '#15102a');
-  }
-  ctx.beginPath();
-  ctx.arc(x, y, r, 0, Math.PI * 2);
-  ctx.fillStyle = bgGrad;
-  ctx.fill();
-
-  if (isActive && !c.isDefeated) {
-    ctx.strokeStyle = isEnemy ? COLORS.error : COLORS.primary;
-    ctx.lineWidth = 2;
-    ctx.beginPath();
-    ctx.arc(x, y, r, 0, Math.PI * 2);
-    ctx.stroke();
-  }
-
-  if (isSelected) {
-    ctx.save();
-    ctx.strokeStyle = COLORS.error;
-    ctx.lineWidth = 2;
-    ctx.setLineDash([4, 3]);
-    ctx.beginPath();
-    ctx.arc(x, y, r + 4, 0, Math.PI * 2);
-    ctx.stroke();
-    ctx.setLineDash([]);
-    ctx.restore();
-  }
-
-  if (isHovered && !c.isDefeated) {
-    ctx.save();
-    ctx.strokeStyle = isEnemy ? 'rgba(255,110,132,0.4)' : 'rgba(197,154,255,0.4)';
-    ctx.lineWidth = 1.5;
-    ctx.beginPath();
-    ctx.arc(x, y, r + 2, 0, Math.PI * 2);
-    ctx.stroke();
-    ctx.restore();
-  }
-
-  if (flashAlpha > 0) {
-    ctx.fillStyle = `rgba(255,110,132,${flashAlpha})`;
-    ctx.beginPath();
-    ctx.arc(x, y, r, 0, Math.PI * 2);
-    ctx.fill();
-  }
-
-  ctx.font = `bold 14px Manrope, sans-serif`;
+  const midX = (x1 + x2) / 2;
+  ctx.fillStyle = 'rgba(197,154,255,0.6)';
+  ctx.font = 'bold 10px Manrope, sans-serif';
   ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
-  ctx.fillStyle = isEnemy ? COLORS.error : COLORS.primary;
-  if (c.isDefeated) {
-    ctx.font = '18px sans-serif';
-    ctx.fillStyle = COLORS.textDim;
-    ctx.fillText('\u2620', x, y);
-  } else {
-    ctx.fillText(getInitials(c.name), x, y);
-  }
-
-  if (c.advantage > 0 && !c.isDefeated) {
-    const badgeX = x + r * 0.7;
-    const badgeY = y - r * 0.7;
-    const badgeR = 8;
-    ctx.fillStyle = 'rgba(197,154,255,0.9)';
-    ctx.beginPath();
-    ctx.arc(badgeX, badgeY, badgeR, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.font = 'bold 8px Manrope, sans-serif';
-    ctx.fillStyle = '#0e0e10';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillText(`+${c.advantage}`, badgeX, badgeY);
-  }
-
-  ctx.font = '10px Manrope, sans-serif';
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'top';
-  ctx.fillStyle = COLORS.textDim;
-  const nameLabel = c.name.length > 12 ? c.name.slice(0, 11) + '\u2026' : c.name;
-  ctx.fillText(nameLabel, x, y + r + 6);
-
-  ctx.font = '8px Manrope, sans-serif';
-  ctx.fillStyle = isEnemy ? COLORS.errorDim : COLORS.primaryDim;
-  ctx.fillText(`${c.wounds}/${c.maxWounds}`, x, y + r + 18);
-
+  ctx.textBaseline = 'bottom';
+  ctx.fillText(`${dist}y`, midX, centerY - 4);
   ctx.restore();
-}
-
-export function drawFloatingTexts(ctx, positions, now, anim) {
-  anim.floatingTexts = anim.floatingTexts.filter((ft) => {
-    const elapsed = now - ft.start;
-    if (elapsed > FLOAT_TEXT_DURATION) return false;
-
-    const pos = positions.find((p) => p.combatant.id === ft.combatantId);
-    if (!pos) return false;
-
-    const progress = elapsed / FLOAT_TEXT_DURATION;
-    const alpha = 1 - progress;
-    const offsetY = -progress * 40;
-
-    ctx.save();
-    ctx.globalAlpha = alpha;
-    ctx.font = 'bold 16px Manrope, sans-serif';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillStyle = ft.color;
-    ctx.shadowColor = ft.color;
-    ctx.shadowBlur = 8;
-    ctx.fillText(ft.text, pos.x, pos.y - TOKEN_RADIUS - 10 + offsetY);
-    ctx.shadowBlur = 0;
-    ctx.restore();
-
-    return true;
-  });
 }
 
 export function drawCombatOverOverlay(ctx, w, h, friendlies, now, anim) {
@@ -510,7 +226,7 @@ export function drawCombatOverOverlay(ctx, w, h, friendlies, now, anim) {
   ctx.fillRect(0, 0, w, h);
 
   const isVictory = friendlies.some((c) => !c.isDefeated);
-  const textY = h * 0.32;
+  const textY = h * 0.4;
 
   ctx.save();
   ctx.globalAlpha = fadeIn;
@@ -550,4 +266,36 @@ export function drawCombatOverOverlay(ctx, w, h, friendlies, now, anim) {
       ctx.globalAlpha = 1;
     }
   }
+}
+
+/**
+ * Compute DOM positions for combat tokens.
+ * Returns array of { combatant, x, y } in canvas-relative px coords.
+ */
+export function computeTokenPositions(combatants, canvasW, centerY, bfH) {
+  const positions = [];
+  const yardSlots = {};
+
+  for (const c of combatants) {
+    const yard = c.position ?? 0;
+    if (!yardSlots[yard]) yardSlots[yard] = [];
+    yardSlots[yard].push(c);
+  }
+
+  for (const [yardStr, group] of Object.entries(yardSlots)) {
+    const x = yardToX(Number(yardStr), canvasW);
+    const slotH = TOKEN_RADIUS * 2 + 10;
+    const totalGroupH = group.length * slotH;
+    const startY = centerY - totalGroupH / 2 + slotH / 2;
+
+    for (let i = 0; i < group.length; i++) {
+      positions.push({
+        combatant: group[i],
+        x,
+        y: startY + i * slotH,
+      });
+    }
+  }
+
+  return positions;
 }

@@ -116,23 +116,25 @@ export default function IntroOverlay({ onVideoEnded } = {}) {
 
       <div className="absolute inset-0 bg-black/60" />
 
-      {needsTapForAudio ? (
+      <div className={`pointer-events-auto absolute bottom-8 right-8 flex items-center gap-3 z-10 transition-all duration-300 ${skipVisible ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-2 pointer-events-none'}`}>
+        {needsTapForAudio ? (
+          <button
+            type="button"
+            onClick={unlockAudioFromGesture}
+            className="px-3 py-2 rounded-sm text-xs font-label uppercase tracking-wider text-white/50 hover:text-white bg-white/5 hover:bg-white/15 backdrop-blur-sm border border-white/10 transition-colors"
+          >
+            {t('lobby.introTapForSound')}
+          </button>
+        ) : null}
+
         <button
           type="button"
-          onClick={unlockAudioFromGesture}
-          className="pointer-events-auto absolute inset-0 z-[8] flex items-center justify-center px-8 text-center text-base font-label uppercase tracking-wider text-white/90 hover:text-white bg-black/20 hover:bg-black/30 transition-colors"
+          onClick={dismiss}
+          className="px-4 py-2 rounded-sm text-sm font-label uppercase tracking-wider text-white/70 hover:text-white bg-white/10 hover:bg-white/20 backdrop-blur-sm border border-white/10 transition-colors"
         >
-          {t('lobby.introTapForSound')}
+          Pomiń
         </button>
-      ) : null}
-
-      <button
-        type="button"
-        onClick={dismiss}
-        className={`pointer-events-auto absolute bottom-8 right-8 px-4 py-2 rounded-sm text-sm font-label uppercase tracking-wider text-white/70 hover:text-white bg-white/10 hover:bg-white/20 backdrop-blur-sm border border-white/10 transition-all duration-300 z-10 ${skipVisible ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-2 pointer-events-none'}`}
-      >
-        Pomiń
-      </button>
+      </div>
     </div>
   );
 }

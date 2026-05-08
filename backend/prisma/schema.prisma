@@ -1643,3 +1643,14 @@ model LlmCallLog {
 
   @@index([userId, startedAt(sort: Desc)])
 }
+
+// ═══════════════════════════════════════════════════════════════════════
+// System metadata — generic key-value store for infra markers (e.g. seed
+// version). One row per key, no relations.
+// ═══════════════════════════════════════════════════════════════════════
+
+model SystemMeta {
+  key       String   @id
+  value     String
+  updatedAt DateTime @updatedAt @db.Timestamptz
+}

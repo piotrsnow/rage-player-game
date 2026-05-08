@@ -16,3 +16,4 @@ export { seedEdgesFromExistingData, ensureContainsEdge } from './seedEdges.js';
 export { migrateExistingCampaignGraph } from './migrateExistingCampaign.js';
 export { getMovementOptions, findPath, canMove, getBlockers, estimateTravelTime, determineScale } from './movementEngine.js';
 export { getCharacterKnowledge, getPlayerKnowledge, filterGraphByKnowledge } from './knowledgeFilter.js';
+export { findSimilarNodeImage } from './imageMatcher.js';
