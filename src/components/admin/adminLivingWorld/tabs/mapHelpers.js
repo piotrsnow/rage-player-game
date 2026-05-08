@@ -55,8 +55,16 @@ export function edgeColour(category) {
   }
 }
 
-export function nodeRadius(scale = 5) {
-  // Compact mapping: scale 0..7 → radius 6..18 px.
-  const clamped = Math.max(0, Math.min(7, Number(scale) || 5));
-  return 6 + clamped * 1.7;
+const LOCATION_SCALE = {
+  point: 0, abstract: 0, room: 1, dungeon_room: 1,
+  cave: 2, camp: 2, site: 2, interior: 2,
+  hamlet: 3, dungeon: 3, ruin: 3, forest: 3, wilderness: 3, mountain: 3,
+  village: 4, area: 4, district: 4,
+  town: 5, campaignPlace: 5, region: 5,
+  city: 6, capital: 7,
+};
+
+export function nodeRadius(locationType = 'generic') {
+  const scale = LOCATION_SCALE[locationType] ?? 4;
+  return 6 + scale * 3.4;
 }
