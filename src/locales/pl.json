@@ -532,6 +532,8 @@
     "incidentCorrected": "Stan gry został skorygowany",
     "incidentCorrectionsApplied": "Naprawiono:",
     "incidentSlipWarning": "Następna scena może być... nieco śliska",
+    "travelMapButton": "Mapa podróży",
+    "travelMapButtonDescription": "Otwórz mapę lokacji i wybierz cel podróży",
     "selfQuestButton": "Wyzwanie",
     "selfQuestTitle": "Osobiste wyzwanie",
     "selfQuestHint": "Opisz cel lub wyzwanie powiązane z tym, co ostatnio spotkałeś w grze. AI oceni, czy pasuje do fabuły.",
@@ -2092,6 +2094,26 @@
       "sectionConnection": "Połączenie",
       "customPrompt": "Dodatkowe wskazówki do generowania sprite'a...",
       "customPromptHint": "Nazwa i typ lokacji są dodawane automatycznie — to pole dopisuje dodatkowe wytyczne."
+    },
+    "travelInspector": {
+      "selectNode": "Wybierz lokację na mapie, aby zobaczyć szczegóły podróży.",
+      "type": "Typ",
+      "dangerLevel": "Poziom zagrożenia",
+      "occupants": "Postacie na miejscu",
+      "noOccupants": "Brak postaci w tej lokacji.",
+      "travelStatus": "Status podróży",
+      "travelHere": "Podróż tutaj",
+      "travelChecking": "Sprawdzam możliwość podróży...",
+      "status": {
+        "none": "Brak",
+        "current": "Tu jesteś",
+        "adjacent": "Bezpośrednio dostępna",
+        "distant": "Daleka podróż"
+      },
+      "errors": {
+        "quietSceneRequired": "Musisz najpierw mieć spokojną scenę (bez dialogów i zmian świata), zanim spróbujesz dalekiej podróży.",
+        "travelCheckFailed": "Nie udało się sprawdzić możliwości podróży."
+      }
     },
     "toolbar": {
       "scale": "Skala",

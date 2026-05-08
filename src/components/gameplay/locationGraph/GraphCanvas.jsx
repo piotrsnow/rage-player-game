@@ -13,6 +13,7 @@ export default function GraphCanvas({
   addingNode, onCanvasClick, addingEdge, onEdgeSourceClick,
   mode,
   positionOverrides, onNodeDragEnd, snapToGrid,
+  highlightedNodeId = null, highlightedAdjacentIds = null,
 }) {
   const svgRef = useRef(null);
   const containerRef = useRef(null);
@@ -186,6 +187,7 @@ export default function GraphCanvas({
   }, [draggingNodeId, dragNodePos, onNodeDragEnd]);
 
   const handleNodeMouseDown = useCallback((nodeId, e) => {
+    if (mode !== 'gm') return;
     if (addingEdge || addingNode) return;
     e.stopPropagation();
     const layoutPos = clientToLayout(e.clientX, e.clientY);
@@ -195,7 +197,7 @@ export default function GraphCanvas({
     didDragRef.current = false;
     setDraggingNodeId(nodeId);
     setDragNodePos(nodePos);
-  }, [addingEdge, addingNode, clientToLayout, positions]);
+  }, [mode, addingEdge, addingNode, clientToLayout, positions]);
 
   const handleSvgClick = useCallback((e) => {
     if (addingNode && (e.target === svgRef.current || e.target.closest('[data-bg]'))) {
@@ -303,7 +305,15 @@ export default function GraphCanvas({
           const imgR = hasImage ? r * 2 : r;
           const isSelected = selected?.type === 'node' && selected.id === node.id;
           const locOccupants = occupantsByLocation.get(node.id) || [];
-          const nodeCursor = addingEdge ? 'crosshair' : addingNode ? 'crosshair' : 'move';
+          const isHighlightedCurrent = highlightedNodeId === node.id;
+          const isHighlightedAdjacent = highlightedAdjacentIds?.has?.(node.id) && !isHighlightedCurrent;
+          const nodeCursor = addingEdge
+            ? 'crosshair'
+            : addingNode
+              ? 'crosshair'
+              : mode === 'gm'
+                ? 'move'
+                : 'pointer';
           const shapeName = vis.shape || 'circle';
           const shapeGen = SHAPE_PATHS[shapeName];
           const useCircle = !shapeGen;
@@ -325,6 +335,18 @@ export default function GraphCanvas({
                 onDoubleClickNode?.(node);
               }}
             >
+              {isHighlightedAdjacent && (
+                <circle r={imgR + 7} fill="none" stroke="var(--md-sys-color-tertiary, #7d5260)" strokeWidth={2} opacity={0.8} />
+              )}
+              {isHighlightedCurrent && (
+                <>
+                  <circle r={imgR + 7} fill="none" stroke="var(--md-sys-color-primary, #6750a4)" strokeWidth={2} opacity={0.85} />
+                  <circle r={imgR + 10} fill="none" stroke="var(--md-sys-color-primary, #6750a4)" strokeWidth={1} opacity={0.35}>
+                    <animate attributeName="r" values={`${imgR + 8};${imgR + 14};${imgR + 8}`} dur="2s" repeatCount="indefinite" />
+                    <animate attributeName="opacity" values="0.45;0;0.45" dur="2s" repeatCount="indefinite" />
+                  </circle>
+                </>
+              )}
               {isSelected && !node.nodeImageUrl && (
                 useCircle ? (
                   <circle r={r + 4} fill="none" stroke="#fbbf24" strokeWidth={2} opacity={0.8}>

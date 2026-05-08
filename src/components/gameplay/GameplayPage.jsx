@@ -193,6 +193,7 @@ export default function GameplayPage({ readOnly = false, shareToken = null, onRe
   // Modal open/close flags — kept in the page because they don't fit any of
   // the extracted hooks' concerns and are wired straight into GameplayModals.
   const [worldModalOpen, setWorldModalOpen] = useState(false);
+  const [worldModalInitialTab, setWorldModalInitialTab] = useState('npcs');
   const [mpPanelOpen, setMpPanelOpen] = useState(false);
   const [achievementsOpen, setAchievementsOpen] = useState(false);
   const [systemLogsOpen, setSystemLogsOpen] = useState(false);
@@ -679,7 +680,10 @@ export default function GameplayPage({ readOnly = false, shareToken = null, onRe
           onOpenSummaryModal={recap.openSummaryModal}
           onOpenSystemLogs={() => setSystemLogsOpen(true)}
           onOpenAchievements={() => setAchievementsOpen(true)}
-          onOpenWorldModal={() => setWorldModalOpen(true)}
+          onOpenWorldModal={() => {
+            setWorldModalInitialTab('npcs');
+            setWorldModalOpen(true);
+          }}
           videoPanelOpen={videoPanelOpen}
           setVideoPanelOpen={setVideoPanelOpen}
           favoriteSceneIds={favoriteScenesHook.favoriteIds}
@@ -831,6 +835,10 @@ export default function GameplayPage({ readOnly = false, shareToken = null, onRe
               dictation={dictation}
               campaignId={sCampaign?.backendId || urlCampaignId || null}
               onIncidentCorrectionsApplied={handleIncidentCorrectionsApplied}
+              onOpenTravelMap={() => {
+                setWorldModalInitialTab('map');
+                setWorldModalOpen(true);
+              }}
             />
           </div>
         )}
@@ -1078,6 +1086,7 @@ export default function GameplayPage({ readOnly = false, shareToken = null, onRe
           if (subName) handleAction(`Wchodzę do ${subName}.`, true);
         }}
         worldModalOpen={worldModalOpen}
+        worldModalInitialTab={worldModalInitialTab}
         onWorldModalClose={() => setWorldModalOpen(false)}
         mpPanelOpen={mpPanelOpen}
         onMpPanelClose={() => setMpPanelOpen(false)}

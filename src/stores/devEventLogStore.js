@@ -12,14 +12,11 @@ export const useDevEventLogStore = create((set, get) => ({
   filters: new Set(),
   pinnedIds: new Set(),
   autoScroll: true,
-  enabled: false,
+  enabled: true,
 
   setEnabled: (v) => set({ enabled: v }),
 
-  toggleOpen: () => set((s) => {
-    const next = !s.isOpen;
-    return { isOpen: next, enabled: next ? true : s.enabled };
-  }),
+  toggleOpen: () => set((s) => ({ isOpen: !s.isOpen })),
 
   close: () => set({ isOpen: false }),
 

@@ -555,7 +555,7 @@ export default function ScenePanel({
         <button
           type="button"
           onClick={momentumDice.onDiceClick}
-          className="absolute w-16 h-16 flex items-center justify-center rounded-xl cursor-pointer animate-scale-in group transition-all duration-150"
+          className="absolute w-20 h-20 flex items-center justify-center rounded-xl cursor-pointer animate-scale-in group transition-all duration-150"
           style={{
             zIndex: 10,
             top: `${(momentumDice.position?.top ?? 0.5) * 100}%`,
@@ -565,7 +565,7 @@ export default function ScenePanel({
         >
           <span className="absolute inset-0 rounded-xl bg-amber-400/0 group-hover:bg-amber-400/20 transition-colors duration-150" />
           <span
-            className="material-symbols-outlined text-[56px] text-amber-300/90 group-hover:text-white group-hover:scale-125 transition-all duration-150 drop-shadow-lg"
+            className="material-symbols-outlined text-[68px] text-amber-300/90 group-hover:text-white group-hover:scale-125 transition-all duration-150 drop-shadow-lg"
             style={{
               filter: 'drop-shadow(0 0 18px rgba(251,191,36,0.6)) drop-shadow(0 0 40px rgba(251,191,36,0.25))',
             }}
@@ -579,7 +579,7 @@ export default function ScenePanel({
       {momentumDice?.result && !momentumDice.visible && !momentumDice.counting && (
         <div className="absolute inset-0 flex items-center justify-center pointer-events-none" style={{ zIndex: 10 }}>
           <div
-            key={`result-${momentumDice.result.delta}-${momentumDice.result.reactionMs}`}
+            key={`result-${momentumDice.result.ts}`}
             className="animate-momentum-result flex flex-col items-center gap-1"
           >
             <span className={`text-[min(14vw,5rem)] font-black tabular-nums select-none ${
@@ -593,9 +593,9 @@ export default function ScenePanel({
             >
               {momentumDice.result.delta > 0 ? '+' : ''}{momentumDice.result.delta}
             </span>
-            <span className="text-sm font-label uppercase tracking-widest text-on-surface/70 bg-black/50 backdrop-blur-sm rounded-sm px-3 py-1">
+            <span className="text-lg font-bold font-label uppercase tracking-widest text-on-surface/70 bg-black/50 backdrop-blur-sm rounded-sm px-3 py-1">
               {momentumDice.result.reactionMs != null
-                ? `${(momentumDice.result.reactionMs / 1000).toFixed(2)}s`
+                ? `${momentumDice.result.reactionMs} ms`
                 : t('gameplay.momentumTimeout', 'Czas minął!')}
             </span>
           </div>

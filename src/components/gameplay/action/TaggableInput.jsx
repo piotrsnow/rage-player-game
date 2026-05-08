@@ -29,6 +29,8 @@ const TaggableInput = forwardRef(function TaggableInput(
     value = '',
     onChange,
     onSubmit,
+    onFocus: onFocusProp,
+    onBlur: onBlurProp,
     disabled = false,
     readOnly = false,
     placeholder = '',
@@ -327,6 +329,27 @@ const TaggableInput = forwardRef(function TaggableInput(
 
   const handleAutocompleteClose = useCallback(() => setAutocomplete(null), []);
 
+  // ----- caret → position 0 when empty (before CSS placeholder) -----
+
+  const handleFocus = useCallback(() => {
+    onFocusProp?.();
+    const el = editorRef.current;
+    if (!el || el.textContent) return;
+    requestAnimationFrame(() => {
+      const sel = window.getSelection();
+      if (!sel) return;
+      const range = document.createRange();
+      range.setStart(el, 0);
+      range.collapse(true);
+      sel.removeAllRanges();
+      sel.addRange(range);
+    });
+  }, [onFocusProp]);
+
+  const handleBlur = useCallback(() => {
+    onBlurProp?.();
+  }, [onBlurProp]);
+
   // ----- tag removal via × button -----
 
   const handleClick = useCallback(
@@ -378,20 +401,17 @@ const TaggableInput = forwardRef(function TaggableInput(
 
   return (
     <div ref={wrapperRef} className="relative flex-1 min-w-0">
-      {/* Dialogue highlight overlay */}
-      {hasDialogue && (
+      {/* Dialogue highlight overlay — contentEditable text is transparent when active */}
+      {hasDialogue && !isAutoTyping && (
         <div
           aria-hidden="true"
           className="absolute inset-0 w-full text-sm py-3 px-2 pointer-events-none whitespace-pre-wrap break-words overflow-hidden leading-[1.5]"
         >
           {dialogueSegs.map((seg, i) =>
             seg.type === 'dialogue' ? (
-              <span
-                key={i}
-                className="bg-amber-400/15 rounded-sm text-amber-300 border-b border-amber-400/40 transition-colors"
-              >{seg.text}</span>
+              <span key={i} className="text-yellow-300">{seg.text}</span>
             ) : (
-              <span key={i} className="text-transparent">{seg.text}</span>
+              <span key={i} className="text-on-surface">{seg.text}</span>
             ),
           )}
         </div>
@@ -418,15 +438,16 @@ const TaggableInput = forwardRef(function TaggableInput(
         onKeyDown={handleKeyDown}
         onPaste={handlePaste}
         onClick={handleClick}
+        onFocus={handleFocus}
+        onBlur={handleBlur}
         className={[
           'relative w-full bg-transparent border-0 border-b-2 focus:ring-0 text-sm py-3 px-2',
           'overflow-hidden transition-all duration-300 leading-[1.5] outline-none',
           'whitespace-pre-wrap break-words min-h-[3em] max-h-[7.5em]',
           disabled ? 'opacity-50' : '',
-          hasDialogue && !isAutoTyping ? 'caret-[#fffbfe]' : '',
+          hasDialogue && !isAutoTyping ? 'text-transparent caret-[#fffbfe]' : '',
           className,
-          // empty-state placeholder via CSS
-          '[&:empty]:before:content-[attr(data-placeholder)] [&:empty]:before:text-on-surface-variant/60 [&:empty]:before:pointer-events-none',
+          '[&:empty]:before:content-[attr(data-placeholder)] [&:empty]:before:text-on-surface-variant/60 [&:empty]:before:pointer-events-none [&:empty]:before:absolute',
         ].filter(Boolean).join(' ')}
       />
     </div>

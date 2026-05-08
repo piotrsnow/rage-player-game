@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useCallback, useState, useRef } from 'react';
+import { useEffect, useCallback, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import TaggableInput from './TaggableInput';
 
@@ -19,36 +19,16 @@ export default function CustomActionForm({
   soloCooldownTime,
   isGenerating,
   inputRef: externalInputRef,
-  spellOptions = [],
-  mana = null,
 }) {
   const { t } = useTranslation();
-  const [spellPickerOpen, setSpellPickerOpen] = useState(false);
   const internalInputRef = useRef(null);
   const inputRef = externalInputRef || internalInputRef;
+  const [inputFocused, setInputFocused] = useState(false);
 
   const isAutoTyping = !!autoPlayerTypingText;
   const displayValue = isAutoTyping
     ? autoPlayerTypingText
     : customAction + (interim ? (customAction ? ' ' : '') + interim : '');
-
-  useEffect(() => {
-    if (spellOptions.length === 0 || disabled || isAutoTyping) {
-      setSpellPickerOpen(false);
-    }
-  }, [spellOptions.length, disabled, isAutoTyping]);
-
-  const handleSpellSelect = useCallback((spell) => {
-    const tag = {
-      kind: 'spell',
-      id: `${spell.treeId}/${spell.name}`,
-      name: spell.name,
-      meta: { tree: spell.treeName, manaCost: spell.manaCost },
-    };
-    inputRef.current?.insertTag(tag);
-    setSpellPickerOpen(false);
-    inputRef.current?.focus();
-  }, [inputRef]);
 
   const handleInputChange = useCallback((text, tags) => {
     if (!isAutoTyping) {
@@ -67,7 +47,7 @@ export default function CustomActionForm({
 
   return (
     <form onSubmit={handleSubmit} className="flex-1 min-w-0">
-      <div className="flex items-center gap-1.5">
+      <div className="flex items-center gap-3">
         {dictation?.enabled && supported && !isAutoTyping && dictation.autoMode && (
           <div className="shrink-0 flex items-center rounded-full overflow-hidden border border-outline-variant/30 bg-surface-container-high/30">
             <button
@@ -185,73 +165,13 @@ export default function CustomActionForm({
             <span className="material-symbols-outlined text-sm">smart_toy</span>
           </span>
         )}
-        <div className="relative shrink-0">
-          <button
-            type="button"
-            onClick={() => setSpellPickerOpen((v) => !v)}
-            disabled={disabled || isAutoTyping || listening || spellOptions.length === 0}
-            title={spellOptions.length > 0
-              ? t('magic.pickSpell', 'Wybierz zaklecie')
-              : t('magic.noSpells', 'Brak znanych zakleć')}
-            aria-label={t('magic.pickSpell', 'Wybierz zaklecie')}
-            aria-expanded={spellPickerOpen}
-            className="flex items-center justify-center w-11 h-11 rounded-sm border border-tertiary/20 bg-tertiary/10 text-tertiary hover:bg-tertiary/20 hover:text-on-surface transition-all disabled:opacity-30 disabled:cursor-not-allowed"
-          >
-            <span className="material-symbols-outlined text-[22px]">auto_awesome</span>
-          </button>
-
-          {spellPickerOpen && (
-            <div className="absolute left-0 bottom-full mb-2 w-72 max-h-80 overflow-y-auto custom-scrollbar rounded-sm border border-tertiary/20 bg-surface-container-highest/95 backdrop-blur-xl shadow-2xl z-40 p-2">
-              <div className="flex items-center justify-between gap-2 px-2 py-1.5 border-b border-outline-variant/10 mb-1">
-                <span className="text-[10px] font-label uppercase tracking-widest text-tertiary">
-                  {t('magic.spells', 'Zaklecia')}
-                </span>
-                {mana && (
-                  <span className="text-[10px] text-on-surface-variant tabular-nums">
-                    {mana.current}/{mana.max} mana
-                  </span>
-                )}
-              </div>
-              <div className="space-y-1">
-                {spellOptions.map((spell) => {
-                  const hasEnoughMana = !mana || mana.current >= spell.manaCost;
-                  return (
-                    <button
-                      key={spell.name}
-                      type="button"
-                      onClick={() => handleSpellSelect(spell)}
-                      className={`w-full text-left flex items-start gap-2 px-2 py-2 rounded-sm border transition-colors ${
-                        hasEnoughMana
-                          ? 'border-transparent hover:border-tertiary/25 hover:bg-tertiary/10'
-                          : 'border-transparent opacity-60 hover:bg-surface-container-high/50'
-                      }`}
-                    >
-                      <span className="material-symbols-outlined text-tertiary text-lg mt-0.5 shrink-0">
-                        {spell.icon}
-                      </span>
-                      <span className="min-w-0 flex-1">
-                        <span className="flex items-center justify-between gap-2">
-                          <span className="text-xs font-bold text-on-surface truncate">{spell.name}</span>
-                          <span className="text-[10px] text-on-surface-variant tabular-nums shrink-0">
-                            {spell.manaCost} many
-                          </span>
-                        </span>
-                        <span className="block text-[10px] text-on-surface-variant/75 leading-tight line-clamp-2">
-                          {spell.description}
-                        </span>
-                      </span>
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-          )}
-        </div>
         <TaggableInput
           ref={inputRef}
           value={displayValue}
           onChange={handleInputChange}
           onSubmit={handleEditorSubmit}
+          onFocus={() => setInputFocused(true)}
+          onBlur={() => setInputFocused(false)}
           disabled={disabled && !isAutoTyping}
           readOnly={listening || isAutoTyping}
           autoPlayerTypingText={autoPlayerTypingText}
@@ -267,7 +187,7 @@ export default function CustomActionForm({
               ? 'border-primary/60 text-primary shadow-[0_2px_8px_rgba(197,154,255,0.2)]'
               : listening
                 ? 'border-primary/60 shadow-[0_2px_8px_rgba(197,154,255,0.15)] text-on-surface'
-                : 'border-outline-variant/20 focus:border-primary/50 focus:shadow-[0_2px_8px_rgba(197,154,255,0.1)]'
+                : 'border-outline-variant/20 focus:border-primary/50 focus:shadow-[0_2px_8px_rgba(197,154,255,0.1)] focus:bg-primary/[0.04]'
           }`}
         />
         {isMultiplayer && (
@@ -285,7 +205,9 @@ export default function CustomActionForm({
           data-testid="submit-action"
           type="submit"
           disabled={!customAction.trim() || disabled}
-          className="shrink-0 text-primary hover:text-on-surface transition-all flex items-center justify-center w-11 h-11 rounded-sm hover:bg-primary/10 disabled:opacity-30"
+          className={`shrink-0 text-primary hover:text-on-surface transition-all duration-300 flex items-center justify-center w-11 h-11 rounded-sm hover:bg-primary/10 disabled:opacity-30 ${
+            inputFocused && !disabled ? 'bg-primary/[0.07] shadow-[0_0_10px_rgba(197,154,255,0.1)]' : ''
+          }`}
         >
           <span className="material-symbols-outlined text-[22px]">send</span>
         </button>

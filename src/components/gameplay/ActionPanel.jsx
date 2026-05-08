@@ -20,7 +20,6 @@ import CustomActionForm from './action/CustomActionForm';
 import IncidentModal from './action/IncidentModal';
 import SelfQuestModal from './action/SelfQuestModal';
 import { useGameSlice } from '../../stores/gameSelectors';
-import { findSpell, SPELL_TREES } from '../../data/rpgMagic';
 import {
   getRecentNpcsForRecruitment,
   calculateRecruitChance,
@@ -66,6 +65,7 @@ export default function ActionPanel({
   dictation = null,
   campaignId = null,
   onIncidentCorrectionsApplied = null,
+  onOpenTravelMap = null,
 }) {
   const [customAction, setCustomAction] = useState('');
   const [combatPickerOpen, setCombatPickerOpen] = useState(false);
@@ -240,20 +240,6 @@ export default function ActionPanel({
     }
   };
 
-  const spellOptions = useMemo(() => (character?.spells?.known || [])
-    .map((spellName) => {
-      const found = findSpell(spellName);
-      if (!found) return null;
-      const tree = SPELL_TREES[found.treeId];
-      return {
-        ...found.spell,
-        icon: found.spell.icon || tree?.icon || 'auto_awesome',
-        treeId: found.treeId,
-        treeName: tree?.name || found.treeId,
-      };
-    })
-    .filter(Boolean), [character?.spells?.known]);
-
   const insertTag = useCallback((tag) => {
     inputRef.current?.insertTag(tag);
     inputRef.current?.focus();
@@ -406,7 +392,7 @@ export default function ActionPanel({
                   onPointerLeave={handleLongPressUpOrLeave}
                   onContextMenu={(e) => e.preventDefault()}
                   disabled={disabled || hasPendingAction}
-                  className="relative overflow-hidden flex-1 text-left px-3 py-2.5 bg-surface-container-high/40 hover:bg-surface-container-high border border-outline-variant/15 hover:border-primary/30 rounded-sm transition-all duration-300 group disabled:opacity-50 disabled:pointer-events-none hover:translate-y-[-1px] hover:shadow-[0_4px_16px_rgba(0,0,0,0.3)]"
+                  className="relative overflow-hidden flex-1 text-left px-4 py-3.5 min-h-[3.5rem] bg-surface-container-high/40 hover:bg-surface-container-high border border-outline-variant/15 hover:border-primary/30 rounded-sm transition-all duration-300 group disabled:opacity-50 disabled:pointer-events-none hover:translate-y-[-1px] hover:shadow-[0_4px_16px_rgba(0,0,0,0.3)]"
                 >
                   <div
                     className="absolute inset-0 bg-primary/15 pointer-events-none origin-left"
@@ -415,11 +401,11 @@ export default function ActionPanel({
                       transition: longPressActiveIndex === i ? 'transform 1s linear' : 'none',
                     }}
                   />
-                  <div className="relative flex items-center gap-2">
-                    <span className="w-5 h-5 shrink-0 flex items-center justify-center rounded-full bg-gradient-to-br from-primary-dim/20 to-primary/10 text-primary font-headline text-xs leading-none border border-primary/15 group-hover:border-primary/30 group-hover:shadow-[0_0_8px_rgba(197,154,255,0.2)] transition-all">
+                  <div className="relative flex items-center gap-3.5">
+                    <span className="w-6 h-6 shrink-0 flex items-center justify-center rounded-full bg-gradient-to-br from-primary-dim/20 to-primary/10 text-primary font-headline text-sm leading-none border border-primary/15 group-hover:border-primary/30 group-hover:shadow-[0_0_8px_rgba(197,154,255,0.2)] transition-all">
                       {i + 1}
                     </span>
-                    <p className="text-xs font-medium text-on-surface-variant group-hover:text-on-surface transition-colors leading-snug line-clamp-2">
+                    <p className="text-sm font-medium text-on-surface-variant group-hover:text-on-surface transition-colors leading-snug line-clamp-2">
                       {action}
                     </p>
                   </div>
@@ -561,6 +547,18 @@ export default function ActionPanel({
             onForceRollDouble={handleForceRollDouble}
             onForceRollRight={handleForceRollRight}
           />
+          {onOpenTravelMap && (
+            <button
+              type="button"
+              aria-label={t('gameplay.travelMapButton')}
+              title={t('gameplay.travelMapButtonDescription')}
+              onClick={onOpenTravelMap}
+              disabled={disabled || hasPendingAction}
+              className="shrink-0 inline-flex items-center justify-center w-11 h-11 border rounded-sm transition-all duration-200 hover:-translate-y-px hover:shadow-[0_10px_24px_rgba(0,0,0,0.3)] disabled:opacity-30 disabled:cursor-not-allowed text-on-surface-variant/90 hover:text-on-surface bg-surface-container-high/45 hover:bg-surface-container-high border-outline-variant/20 hover:border-outline-variant/35"
+            >
+              <span className="material-symbols-outlined text-[22px] leading-none">map</span>
+            </button>
+          )}
           <CustomActionForm
             inputRef={inputRef}
             customAction={customAction}
@@ -578,8 +576,6 @@ export default function ActionPanel({
             soloAvailable={soloAvailable}
             soloCooldownTime={soloCooldownTime}
             isGenerating={mp.state.isGenerating}
-            spellOptions={spellOptions}
-            mana={character?.mana || null}
           />
         </div>
       )}

@@ -32,6 +32,7 @@ export default function GameplayModals({
   onEnterSubFromMap,
   // world
   worldModalOpen,
+  worldModalInitialTab,
   onWorldModalClose,
   // mp
   mpPanelOpen,
@@ -90,6 +91,7 @@ export default function GameplayModals({
           autoSave={autoSave}
           campaignId={campaignId}
           currentSceneId={currentSceneId}
+          initialTab={worldModalInitialTab}
           onTravel={onTravelFromMap}
           onEnterSub={onEnterSubFromMap}
           onClose={onWorldModalClose}

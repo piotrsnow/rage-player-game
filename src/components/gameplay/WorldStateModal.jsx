@@ -12,9 +12,9 @@ import MapTab from './world/MapTab';
 const TABS = ['map', 'npcs', 'quests', 'factions', 'time', 'effects', 'journal'];
 const TAB_ICONS = { map: 'map', npcs: 'group', quests: 'assignment', factions: 'groups', time: 'schedule', effects: 'auto_fix_high', journal: 'menu_book' };
 
-export default function WorldStateModal({ world, quests, characterVoiceMap, maleVoices, femaleVoices, ttsProvider, dispatch, autoSave, campaignId, currentSceneId, onTravel, onEnterSub, onClose }) {
+export default function WorldStateModal({ world, quests, characterVoiceMap, maleVoices, femaleVoices, ttsProvider, dispatch, autoSave, campaignId, currentSceneId, initialTab = 'npcs', onTravel, onEnterSub, onClose }) {
   const { t } = useTranslation();
-  const [activeTab, setActiveTab] = useState('npcs');
+  const [activeTab, setActiveTab] = useState(initialTab);
   const [highlightId, setHighlightId] = useState(null);
   const contentRef = useRef(null);
   const modalRef = useModalA11y(onClose);
@@ -31,6 +31,10 @@ export default function WorldStateModal({ world, quests, characterVoiceMap, male
     setActiveTab(tab);
     setHighlightId(entityId || null);
   }, []);
+
+  useEffect(() => {
+    if (TABS.includes(initialTab)) setActiveTab(initialTab);
+  }, [initialTab]);
 
   useEffect(() => {
     if (!highlightId || !contentRef.current) return;

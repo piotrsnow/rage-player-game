@@ -61,7 +61,7 @@ function clamp(value, min, max) {
   return Math.min(Math.max(value, min), max);
 }
 
-function getStatHoloStyle(value, max = 25) {
+function getStatHoloVisual(value, max = 25) {
   const safeMax = Number(max) > 0 ? Number(max) : 25;
   const normalized = clamp(Number(value) || 0, 0, safeMax) / safeMax;
   const stops = [
@@ -90,7 +90,11 @@ function getStatHoloStyle(value, max = 25) {
   const shimmerProgress = normalized <= 0.2 ? 0 : (normalized - 0.2) / 0.8;
   const shimmerOpacity = shimmerProgress > 0 ? lerp(0.15, 0.7, shimmerProgress) : 0;
   const shimmerDuration = shimmerProgress > 0 ? lerp(8, 3, shimmerProgress) : 0;
+  return { normalized, hue, sat, lit, shimmerProgress, shimmerOpacity, shimmerDuration };
+}
 
+function getStatHoloStyle(value, max = 25) {
+  const { hue, sat, lit, shimmerProgress, shimmerOpacity, shimmerDuration } = getStatHoloVisual(value, max);
   const baseColor = `hsl(${hue.toFixed(1)} ${sat.toFixed(1)}% ${lit.toFixed(1)}%)`;
   if (shimmerProgress <= 0) {
     return {
@@ -102,8 +106,8 @@ function getStatHoloStyle(value, max = 25) {
     };
   }
 
-  const glowColor = `hsl(${hue.toFixed(1)} ${Math.min(100, sat + 8).toFixed(1)}% ${Math.min(95, lit + 24).toFixed(1)}% / ${shimmerOpacity.toFixed(2)})`;
-  const shineColor = `hsl(${hue.toFixed(1)} ${Math.min(100, sat + 5).toFixed(1)}% ${Math.min(99, lit + 37).toFixed(1)}% / ${Math.min(1, shimmerOpacity + 0.28).toFixed(2)})`;
+  const glowColor = `hsl(${hue.toFixed(1)} ${Math.min(100, sat + 6).toFixed(1)}% ${Math.min(95, lit + 16).toFixed(1)}% / ${Math.min(1, shimmerOpacity + 0.08).toFixed(2)})`;
+  const shineColor = `hsl(${hue.toFixed(1)} ${Math.min(100, sat + 4).toFixed(1)}% ${Math.min(98, lit + 24).toFixed(1)}% / ${Math.min(1, shimmerOpacity + 0.14).toFixed(2)})`;
   const holoGradient = `linear-gradient(90deg, ${baseColor} 0%, ${baseColor} 18%, ${glowColor} 38%, ${shineColor} 50%, ${glowColor} 62%, ${baseColor} 82%, ${baseColor} 100%)`;
 
   return {
@@ -111,6 +115,24 @@ function getStatHoloStyle(value, max = 25) {
     '--stat-holo-gradient': holoGradient,
     backgroundImage: holoGradient,
     color: baseColor,
+  };
+}
+
+function getStatChipStyle(value, max = 25, highlighted = false) {
+  const { normalized, hue, sat, lit } = getStatHoloVisual(value, max);
+  const borderAlpha = lerp(0.45, 0.82, normalized);
+  const borderColor = `hsl(${hue.toFixed(1)} ${Math.max(46, sat - 6).toFixed(1)}% ${Math.min(88, lit + 22).toFixed(1)}% / ${borderAlpha.toFixed(2)})`;
+  const panelBase = `hsl(${hue.toFixed(1)} ${Math.max(20, sat - 32).toFixed(1)}% ${Math.max(7, lit - 30).toFixed(1)}% / ${lerp(0.28, 0.42, normalized).toFixed(2)})`;
+  const panelTint = `hsl(${hue.toFixed(1)} ${Math.max(26, sat - 18).toFixed(1)}% ${Math.min(68, lit - 2).toFixed(1)}% / ${lerp(0.03, 0.09, normalized).toFixed(2)})`;
+  const panelGlow = `hsl(${hue.toFixed(1)} ${Math.min(100, sat).toFixed(1)}% ${Math.min(84, lit + 10).toFixed(1)}% / ${lerp(0.02, 0.06, normalized).toFixed(2)})`;
+  const outerGlow = `hsl(${hue.toFixed(1)} ${Math.min(100, sat + 6).toFixed(1)}% ${Math.min(95, lit + 18).toFixed(1)}% / ${(highlighted ? lerp(0.28, 0.44, normalized) : lerp(0.1, 0.24, normalized)).toFixed(2)})`;
+  const backgroundImage = `linear-gradient(145deg, ${panelTint} 0%, ${panelBase} 50%, ${panelTint} 100%), radial-gradient(80% 80% at 25% 18%, ${panelGlow} 0%, transparent 75%)`;
+  return {
+    borderColor,
+    backgroundImage,
+    boxShadow: highlighted
+      ? `0 0 0 1px ${borderColor}, 0 0 12px ${outerGlow}, inset 0 1px 0 rgba(255,255,255,0.08), inset 0 0 0 1px rgba(255,255,255,0.04)`
+      : `0 0 0 1px ${borderColor}, inset 0 1px 0 rgba(255,255,255,0.06), inset 0 0 0 1px rgba(255,255,255,0.04)`,
   };
 }
 
@@ -591,13 +613,9 @@ function LoggedInBanner({ user }) {
                   className={[
                     'group relative flex items-center h-8 w-8 sm:h-9 sm:w-9 lg:h-11 lg:w-11 rounded-md justify-center',
                     'border',
-                    'bg-gradient-to-br from-primary/10 via-tertiary/5 to-primary/10',
-                    'shadow-[inset_0_0_0_1px_rgba(255,255,255,0.04)]',
-                    'transition-[border-color,box-shadow] duration-200 ease-out',
-                    highlightedKey === chip.key
-                      ? 'border-primary/60 shadow-[0_0_10px_rgba(197,154,255,0.3)]'
-                      : 'border-primary/20 hover:border-primary/45',
+                    'transition-[border-color,box-shadow,filter] duration-200 ease-out hover:brightness-110',
                   ].join(' ')}
+                  style={getStatChipStyle(chip.value, 25, highlightedKey === chip.key)}
                 >
                   <span
                     className="material-symbols-outlined stat-icon-holo text-base sm:text-lg lg:text-xl"
@@ -713,7 +731,8 @@ function LoggedInBanner({ user }) {
                 {diceChips.map((chip) => (
                   <div
                     key={chip.icon}
-                    className={`group relative flex items-center h-10 w-10 sm:h-12 sm:w-12 lg:h-14 lg:w-14 rounded-md justify-center border bg-gradient-to-br from-primary/10 via-tertiary/5 to-primary/10 shadow-[inset_0_0_0_1px_rgba(255,255,255,0.04)] transition-[border-color,box-shadow] duration-200 ease-out ${chip.border} ${chip.hoverBorder}`}
+                    className={`group relative flex items-center h-10 w-10 sm:h-12 sm:w-12 lg:h-14 lg:w-14 rounded-md justify-center border transition-[border-color,box-shadow,filter] duration-200 ease-out hover:brightness-110 ${chip.border} ${chip.hoverBorder}`}
+                    style={getStatChipStyle(chip.statValue)}
                   >
                     <span
                       className="material-symbols-outlined stat-icon-holo text-lg sm:text-xl lg:text-2xl"

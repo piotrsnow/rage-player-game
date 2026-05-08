@@ -132,7 +132,7 @@ export default function IncidentModal({ campaignId, onClose, onCorrectionsApplie
         </div>
 
         {/* Content */}
-        <div className="flex-1 overflow-y-auto custom-scrollbar p-5">
+        <div className="flex-1 overflow-y-auto custom-scrollbar p-5 mr-3">
           {view === 'form' && (
             <div className="space-y-4">
               <textarea

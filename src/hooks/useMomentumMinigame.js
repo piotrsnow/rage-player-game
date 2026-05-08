@@ -13,13 +13,14 @@ function randomPosition() {
 }
 
 function getMomentumDelta(ratio) {
-  if (ratio <= 0.3) return 3;
-  if (ratio <= 0.5) return 1;
-  if (ratio <= 0.7) return -1;
+  if (ratio <= 0.4) return 3;
+  if (ratio <= 0.65) return 1;
+  if (ratio <= 0.85) return -1;
   return -3;
 }
 
 const TIMEOUT_PENALTY = -2;
+const RESULT_DISPLAY_MS = 3500;
 
 export function useMomentumMinigame({ dispatch, momentumBonus, sceneId }) {
   const [phase, setPhase] = useState('idle');
@@ -33,18 +34,21 @@ export function useMomentumMinigame({ dispatch, momentumBonus, sceneId }) {
   const gameTimerRef = useRef(null);
   const cycleTimerRef = useRef(null);
   const countdownTimerRef = useRef(null);
-  const usedSceneRef = useRef(null);
+  const cooldownTimerRef = useRef(null);
+  const prevSceneRef = useRef(null);
 
   const cleanup = useCallback(() => {
     clearTimeout(gameTimerRef.current);
     clearTimeout(cycleTimerRef.current);
     clearTimeout(countdownTimerRef.current);
+    clearTimeout(cooldownTimerRef.current);
   }, []);
 
   useEffect(() => cleanup, [cleanup]);
 
   useEffect(() => {
-    if (sceneId && sceneId !== usedSceneRef.current) {
+    if (sceneId && sceneId !== prevSceneRef.current) {
+      prevSceneRef.current = sceneId;
       cleanup();
       setPhase('idle');
       setDiceVisible(false);
@@ -74,6 +78,18 @@ export function useMomentumMinigame({ dispatch, momentumBonus, sceneId }) {
     }, visibleMs);
   }, []);
 
+  const enterCooldown = useCallback((delta, reactionMs) => {
+    cleanup();
+    setDiceVisible(false);
+    applyDelta(delta);
+    setResult({ delta, reactionMs, ts: Date.now() });
+    setPhase('cooldown');
+    cooldownTimerRef.current = setTimeout(() => {
+      setPhase('idle');
+      setResult(null);
+    }, RESULT_DISPLAY_MS);
+  }, [cleanup, applyDelta]);
+
   const beginActivePhase = useCallback(() => {
     setPhase('active');
     setCountdownValue(0);
@@ -83,19 +99,13 @@ export function useMomentumMinigame({ dispatch, momentumBonus, sceneId }) {
     cycleTimerRef.current = setTimeout(nextCycle, initialDelay);
 
     gameTimerRef.current = setTimeout(() => {
-      cleanup();
-      setDiceVisible(false);
-      applyDelta(TIMEOUT_PENALTY);
-      setResult({ delta: TIMEOUT_PENALTY, reactionMs: null });
-      setPhase('cooldown');
+      enterCooldown(TIMEOUT_PENALTY, null);
     }, GAME_DURATION_MS);
-  }, [nextCycle, cleanup, applyDelta]);
+  }, [nextCycle, enterCooldown]);
 
   const startGame = useCallback(() => {
     if (phase !== 'idle') return;
-    if (usedSceneRef.current === sceneId) return;
 
-    usedSceneRef.current = sceneId;
     setPhase('countdown');
     setCountdownValue(COUNTDOWN_SECONDS);
 
@@ -110,7 +120,7 @@ export function useMomentumMinigame({ dispatch, momentumBonus, sceneId }) {
       countdownTimerRef.current = setTimeout(tick, 1000);
     };
     countdownTimerRef.current = setTimeout(tick, 1000);
-  }, [phase, sceneId, beginActivePhase]);
+  }, [phase, beginActivePhase]);
 
   const handleDiceClick = useCallback(() => {
     if (phase !== 'active' || !diceVisible) return;
@@ -120,12 +130,8 @@ export function useMomentumMinigame({ dispatch, momentumBonus, sceneId }) {
     const ratio = Math.min(effectiveMs / visibleDurationRef.current, 1);
     const delta = getMomentumDelta(ratio);
 
-    cleanup();
-    setDiceVisible(false);
-    applyDelta(delta);
-    setResult({ delta, reactionMs: Math.round(reactionMs) });
-    setPhase('cooldown');
-  }, [phase, diceVisible, cleanup, applyDelta]);
+    enterCooldown(delta, Math.round(reactionMs));
+  }, [phase, diceVisible, enterCooldown]);
 
   return {
     active: phase === 'active' || phase === 'countdown',
