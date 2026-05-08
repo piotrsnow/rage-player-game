@@ -12,7 +12,7 @@ function sortCombatants(combatants) {
 
 export default function CombatantsList({ combatants, currentTurn, onHoverCombatant, t }) {
   return (
-    <div className="space-y-1.5 max-h-[480px] overflow-y-auto custom-scrollbar">
+    <div className="space-y-1.5 max-h-[300px] overflow-y-auto custom-scrollbar">
       <div className="text-[10px] font-label uppercase tracking-widest text-on-surface-variant px-1 pb-1">
         {t('combat.combatants', 'Combatants')}
       </div>

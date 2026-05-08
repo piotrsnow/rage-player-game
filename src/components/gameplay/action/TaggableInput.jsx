@@ -368,7 +368,7 @@ const TaggableInput = forwardRef(function TaggableInput(
       {hasDialogue && (
         <div
           aria-hidden="true"
-          className="absolute inset-0 w-full text-sm py-1.5 px-1 pointer-events-none whitespace-pre-wrap break-words overflow-hidden leading-[1.5]"
+          className="absolute inset-0 w-full text-sm py-3 px-2 pointer-events-none whitespace-pre-wrap break-words overflow-hidden leading-[1.5]"
         >
           {dialogueSegs.map((seg, i) =>
             seg.type === 'dialogue' ? (
@@ -405,9 +405,9 @@ const TaggableInput = forwardRef(function TaggableInput(
         onPaste={handlePaste}
         onClick={handleClick}
         className={[
-          'relative w-full bg-transparent border-0 border-b-2 focus:ring-0 text-sm py-1.5 px-1',
+          'relative w-full bg-transparent border-0 border-b-2 focus:ring-0 text-sm py-3 px-2',
           'overflow-hidden transition-all duration-300 leading-[1.5] outline-none',
-          'whitespace-pre-wrap break-words min-h-[2em] max-h-[7.5em]',
+          'whitespace-pre-wrap break-words min-h-[3em] max-h-[7.5em]',
           disabled ? 'opacity-50' : '',
           hasDialogue && !isAutoTyping ? 'caret-[#fffbfe]' : '',
           className,

@@ -500,34 +500,30 @@ export default function CombatPanel({
         />
       )}
 
-      <div className={expandedLayout ? 'flex flex-col gap-3' : 'grid grid-cols-1 xl:grid-cols-[minmax(0,3fr)_minmax(0,2fr)] gap-3 items-stretch'}>
-        <CombatCanvas
-          combat={enrichedCombat}
-          myPlayerId={myPlayerId}
-          isMultiplayer={isMultiplayer}
-          selectedTarget={selectedTarget}
-          onSelectTarget={setSelectedTarget}
-          onHoverCombatant={() => {}}
-          onMoveToPosition={handleMoveToPosition}
-          combatOver={combatOver}
-          isMyTurn={isMyTurn && !actionAnim}
-          myCombatantId={myCombatant?.id}
-          availableManoeuvres={availableManoeuvres}
-          actionAnim={actionAnim}
-          savedCustomAttacks={savedCustomAttacks}
-          onExecuteManoeuvre={handleExecuteManoeuvre}
-          onPersistCustomAttack={persistCustomAttack}
-          onRemoveCustomAttack={removeCustomAttack}
-          onRegenerateSprite={regenerateSprite}
-          character={character}
-          onAiAction={handleAiAction}
-          expanded={expandedLayout}
-        />
+      <CombatCanvas
+        combat={enrichedCombat}
+        myPlayerId={myPlayerId}
+        isMultiplayer={isMultiplayer}
+        selectedTarget={selectedTarget}
+        onSelectTarget={setSelectedTarget}
+        onHoverCombatant={() => {}}
+        onMoveToPosition={handleMoveToPosition}
+        combatOver={combatOver}
+        isMyTurn={isMyTurn && !actionAnim}
+        myCombatantId={myCombatant?.id}
+        availableManoeuvres={availableManoeuvres}
+        actionAnim={actionAnim}
+        savedCustomAttacks={savedCustomAttacks}
+        onExecuteManoeuvre={handleExecuteManoeuvre}
+        onPersistCustomAttack={persistCustomAttack}
+        onRemoveCustomAttack={removeCustomAttack}
+        onRegenerateSprite={regenerateSprite}
+        character={character}
+        onAiAction={handleAiAction}
+        expanded={expandedLayout}
+      />
 
-        <CombatLog combatLog={combatLog} legacyLog={combat.log} expanded={expandedLayout} />
-      </div>
-
-      <div className="grid grid-cols-1 xl:grid-cols-[240px_minmax(0,1fr)] gap-3 items-start">
+      <div className="grid grid-cols-1 xl:grid-cols-[1fr_5fr] gap-3 items-stretch">
         <CombatantsList
           combatants={combat.combatants}
           currentTurn={currentTurn}
@@ -535,17 +531,19 @@ export default function CombatPanel({
           t={t}
         />
 
-        <CombatTurnStatus
-          isMyTurn={isMyTurn}
-          combatOver={combatOver}
-          isMultiplayer={isMultiplayer}
-          isHost={isHost}
-          currentTurn={currentTurn}
-          isAwaitingAiTurn={isAwaitingAiTurn}
-          combat={combat}
-          enemies={enemies}
-        />
+        <CombatLog combatLog={combatLog} legacyLog={combat.log} expanded={expandedLayout} />
       </div>
+
+      <CombatTurnStatus
+        isMyTurn={isMyTurn}
+        combatOver={combatOver}
+        isMultiplayer={isMultiplayer}
+        isHost={isHost}
+        currentTurn={currentTurn}
+        isAwaitingAiTurn={isAwaitingAiTurn}
+        combat={combat}
+        enemies={enemies}
+      />
     </div>
   );
 }

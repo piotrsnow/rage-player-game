@@ -538,7 +538,7 @@ export default function ActionPanel({
 
       {/* Row 2: Utility buttons + Input */}
       {(!hasPendingAction || !isMultiplayer) && (
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-3">
           <QuickActionsBar
             disabled={disabled}
             hasPendingAction={hasPendingAction}

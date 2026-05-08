@@ -195,9 +195,9 @@ export default function CustomActionForm({
               : t('magic.noSpells', 'Brak znanych zakleć')}
             aria-label={t('magic.pickSpell', 'Wybierz zaklecie')}
             aria-expanded={spellPickerOpen}
-            className="flex items-center justify-center w-8 h-8 rounded-sm border border-tertiary/20 bg-tertiary/10 text-tertiary hover:bg-tertiary/20 hover:text-on-surface transition-all disabled:opacity-30 disabled:cursor-not-allowed"
+            className="flex items-center justify-center w-11 h-11 rounded-sm border border-tertiary/20 bg-tertiary/10 text-tertiary hover:bg-tertiary/20 hover:text-on-surface transition-all disabled:opacity-30 disabled:cursor-not-allowed"
           >
-            <span className="material-symbols-outlined text-lg">auto_awesome</span>
+            <span className="material-symbols-outlined text-[22px]">auto_awesome</span>
           </button>
 
           {spellPickerOpen && (
@@ -262,7 +262,7 @@ export default function CustomActionForm({
                 ? t('gameplay.customActionPlaceholderVoice')
                 : t('gameplay.customActionPlaceholder')
           }
-          className={`ml-1.5 ${
+          className={`${
             isAutoTyping
               ? 'border-primary/60 text-primary shadow-[0_2px_8px_rgba(197,154,255,0.2)]'
               : listening
@@ -285,9 +285,9 @@ export default function CustomActionForm({
           data-testid="submit-action"
           type="submit"
           disabled={!customAction.trim() || disabled}
-          className="shrink-0 text-primary hover:text-on-surface transition-all flex items-center justify-center w-8 h-8 rounded-sm hover:bg-primary/10 disabled:opacity-30"
+          className="shrink-0 text-primary hover:text-on-surface transition-all flex items-center justify-center w-11 h-11 rounded-sm hover:bg-primary/10 disabled:opacity-30"
         >
-          <span className="material-symbols-outlined text-lg">send</span>
+          <span className="material-symbols-outlined text-[22px]">send</span>
         </button>
       </div>
       {dictation?.pausedByTTS && (

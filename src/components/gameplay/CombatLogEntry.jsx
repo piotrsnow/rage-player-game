@@ -25,6 +25,27 @@ const LOG_ICONS = {
 const PREFERS_REDUCED_MOTION =
   typeof window !== 'undefined' && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
 
+const TYPING_SFX_COUNT = 3;
+const COMBAT_LOG_TYPING_VOLUME = 0.2;
+
+function pickRandomTypingSfx() {
+  const idx = Math.floor(Math.random() * TYPING_SFX_COUNT) + 1;
+  return `/battle_sfx/typing_on_keyboard_${idx}.mp3`;
+}
+
+function fadeOutAudio(audio) {
+  let vol = audio.volume;
+  const fade = window.setInterval(() => {
+    vol = Math.max(0, vol - 0.05);
+    audio.volume = vol;
+    if (vol <= 0) {
+      window.clearInterval(fade);
+      audio.pause();
+      audio.currentTime = 0;
+    }
+  }, 30);
+}
+
 function formatSignedNumber(value) {
   if (typeof value !== 'number' || Number.isNaN(value)) return '0';
   return value > 0 ? `+${value}` : `${value}`;
@@ -166,17 +187,27 @@ function AnimatedCombatLogText({ entry }) {
     setVisibleCount(0);
     if (!totalChars) return undefined;
 
+    const sfx = new Audio(pickRandomTypingSfx());
+    sfx.loop = true;
+    sfx.volume = COMBAT_LOG_TYPING_VOLUME;
+    sfx.play().catch(() => {});
+
+    let count = 0;
     const timer = window.setInterval(() => {
-      setVisibleCount((current) => {
-        if (current >= totalChars) {
-          window.clearInterval(timer);
-          return current;
-        }
-        return current + 1;
-      });
+      count += 1;
+      if (count >= totalChars) {
+        count = totalChars;
+        window.clearInterval(timer);
+        fadeOutAudio(sfx);
+      }
+      setVisibleCount(count);
     }, 18);
 
-    return () => window.clearInterval(timer);
+    return () => {
+      window.clearInterval(timer);
+      sfx.pause();
+      sfx.currentTime = 0;
+    };
   }, [entry.id, totalChars]);
 
   return (
@@ -266,7 +297,7 @@ function CombatLogEntry({ entry, t, isNew = false }) {
     return (
       <div className={`flex items-center gap-3 py-1.5 ${isNew ? 'combat-log-entry-new' : ''}`} data-testid="combat-log-round">
         <div className="flex-1 h-px bg-outline-variant/20" />
-        <span className="text-[11px] text-outline-variant font-label uppercase tracking-widest shrink-0">
+        <span className="text-xs text-outline-variant font-label uppercase tracking-widest shrink-0">
           {entry.text}
         </span>
         <div className="flex-1 h-px bg-outline-variant/20" />
@@ -286,14 +317,14 @@ function CombatLogEntry({ entry, t, isNew = false }) {
       }`}
       style={{ borderLeft: `3px solid ${style.border}`, background: style.bg }}
     >
-      <span className="material-symbols-outlined text-sm mt-0.5 shrink-0" style={{ color: style.border }}>
+      <span className="material-symbols-outlined text-lg mt-0.5 shrink-0" style={{ color: style.border }}>
         {LOG_ICONS[entry.type] || 'info'}
       </span>
-      <div className="flex-1 min-w-0 text-[12px] leading-snug">
+      <div className="flex-1 min-w-0 text-sm leading-snug">
         <AnimatedCombatLogText entry={entry} />
       </div>
       {tooltipContent && (
-        <span className="material-symbols-outlined text-[14px] text-outline-variant/70 mt-0.5 shrink-0">
+        <span className="material-symbols-outlined text-base text-outline-variant/70 mt-0.5 shrink-0">
           info
         </span>
       )}
