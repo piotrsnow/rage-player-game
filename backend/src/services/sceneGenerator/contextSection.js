@@ -70,6 +70,22 @@ export function buildContextSection(contextBlocks) {
     parts.push(`[Campaign Memory]\n${contextBlocks.memory}`);
   }
 
+  // Travel failure override — player attempted distant travel that AI denied.
+  // Premium must narrate a colorful, funny failed journey WITHOUT changing location.
+  if (contextBlocks.travelFailure) {
+    parts.push(
+      `[TRAVEL_FAILURE]\n` +
+      `Gracz próbował odbyć daleką podróż, ale nie może — powód: "${contextBlocks.travelFailure.reason}"\n` +
+      `Opisz kolorową, zabawną porażkę podróży. Postać wyrusza ale coś ją powstrzymuje.\n` +
+      `BEZWZGLĘDNE ZASADY:\n` +
+      `- NIE emituj stateChanges.currentLocation (postać zostaje w miejscu)\n` +
+      `- NIE twórz nowych lokacji\n` +
+      `- Scena powinna być krótka i humorystyczna\n` +
+      `- Zakończ scenę powrotem postaci do punktu wyjścia\n` +
+      `[/TRAVEL_FAILURE]`,
+    );
+  }
+
   // Living World — present canonical NPCs + recent world events at the
   // current location. Only emitted when the campaign opts into the feature
   // (assembleContext returns null otherwise, so this branch is a no-op for

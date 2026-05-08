@@ -438,6 +438,7 @@ export default function GameplayPage({ readOnly = false, shareToken = null, onRe
       await generateScene(action, false, isCustomAction, fromAutoPlayer, {
         forceRoll: opts?.forceRoll || null,
         entityTags: opts?.entityTags || null,
+        travelFailureReason: opts?.travelFailureReason || null,
       });
       sceneGenSucceededRef.current = true;
     } catch {
@@ -1064,9 +1065,13 @@ export default function GameplayPage({ readOnly = false, shareToken = null, onRe
         narrator={narrator}
         campaignId={sCampaign?.backendId || urlCampaignId || null}
         currentSceneId={currentScene?.id || null}
-        onTravelFromMap={(destinationName) => {
+        onTravelFromMap={(destinationName, opts) => {
           setWorldModalOpen(false);
-          if (destinationName) handleAction(`Podróżuję do ${destinationName}.`, true);
+          if (destinationName) {
+            handleAction(`Podróżuję do ${destinationName}.`, true, false, {
+              travelFailureReason: opts?.travelFailureReason || null,
+            });
+          }
         }}
         onEnterSubFromMap={(subName) => {
           setWorldModalOpen(false);

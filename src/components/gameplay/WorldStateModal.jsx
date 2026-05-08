@@ -7,12 +7,10 @@ import TimeTab from './world/TimeTab';
 import EffectsTab from './world/EffectsTab';
 import JournalTab from './world/JournalTab';
 import FactionsTab from './world/FactionsTab';
+import MapTab from './world/MapTab';
 
-// Faza 6 — MapTab usunięty. Mapa świata otwiera się przez LocationGraphModal
-// (przycisk w GM topbarze / komendzie). WorldStateModal zostaje dla
-// NPCów/questów/czasu/efektów/journala/fakcji.
-const TABS = ['npcs', 'quests', 'factions', 'time', 'effects', 'journal'];
-const TAB_ICONS = { npcs: 'group', quests: 'assignment', factions: 'groups', time: 'schedule', effects: 'auto_fix_high', journal: 'menu_book' };
+const TABS = ['map', 'npcs', 'quests', 'factions', 'time', 'effects', 'journal'];
+const TAB_ICONS = { map: 'map', npcs: 'group', quests: 'assignment', factions: 'groups', time: 'schedule', effects: 'auto_fix_high', journal: 'menu_book' };
 
 export default function WorldStateModal({ world, quests, characterVoiceMap, maleVoices, femaleVoices, ttsProvider, dispatch, autoSave, campaignId, currentSceneId, onTravel, onEnterSub, onClose }) {
   const { t } = useTranslation();
@@ -87,6 +85,9 @@ export default function WorldStateModal({ world, quests, characterVoiceMap, male
         </div>
 
         <div ref={contentRef} className="flex-1 overflow-y-auto custom-scrollbar p-6">
+          {activeTab === 'map' && (
+            <MapTab campaignId={campaignId} onTravel={onTravel} />
+          )}
           {activeTab === 'npcs' && (
             <NpcTab npcs={npcs} quests={quests} characterVoiceMap={characterVoiceMap} maleVoices={maleVoices} femaleVoices={femaleVoices} ttsProvider={ttsProvider} dispatch={dispatch} autoSave={autoSave} navigateTo={navigateTo} t={t} />
           )}

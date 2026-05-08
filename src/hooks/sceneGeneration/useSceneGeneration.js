@@ -69,7 +69,7 @@ export function useSceneGeneration({ ensureMissingInventoryImages, ensureMissing
 
   const generateScene = useEvent(
     async (playerAction, isFirstScene = false, isCustomAction = false, fromAutoPlayer = false, sceneOptions = {}) => {
-      const { combatResult = null, forceRoll = null, entityTags = null } = sceneOptions || {};
+      const { combatResult = null, forceRoll = null, entityTags = null, travelFailureReason = null } = sceneOptions || {};
       dispatch({ type: 'SET_GENERATING_SCENE', payload: true });
       dispatch({ type: 'SET_ERROR', payload: null });
       stream.resetStreamState();
@@ -166,7 +166,7 @@ export function useSceneGeneration({ ensureMissingInventoryImages, ensureMissing
         // Stream scene from backend
         devLog.emit({ category: 'pipeline', type: 'backend_stream_start', label: 'Backend SSE stream started', data: { campaignId: backendCampaignId, provider: settings.aiProvider } });
         const backendResult = await stream.callStream(backendCampaignId, playerAction, {
-          resolved, isFirstScene, isCustomAction, fromAutoPlayer, combatResult, forceRoll, entityTags,
+          resolved, isFirstScene, isCustomAction, fromAutoPlayer, combatResult, forceRoll, entityTags, travelFailureReason,
         });
         const result = backendResult.result;
         devLog.emit({ category: 'pipeline', type: 'backend_stream_complete', label: `Stream complete (${Date.now() - sceneGenStartRef.current}ms)`, data: { durationMs: Date.now() - sceneGenStartRef.current, hasCharacter: !!backendResult.character, sceneIndex: backendResult.sceneIndex } });

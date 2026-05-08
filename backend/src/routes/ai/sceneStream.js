@@ -31,6 +31,7 @@ export async function sceneStreamRoutes(fastify) {
       forceRoll = null,
       entityTags = null,
       achievementState = null,
+      travelFailureReason = null,
     } = request.body;
 
     if ((playerAction === undefined || playerAction === null) && !isFirstScene) {
@@ -88,6 +89,7 @@ export async function sceneStreamRoutes(fastify) {
       isCustomAction, fromAutoPlayer, userApiKeys, combatResult, forceRoll,
       entityTags,
       achievementState,
+      travelFailureReason,
       userId: request.user.id,
     };
 

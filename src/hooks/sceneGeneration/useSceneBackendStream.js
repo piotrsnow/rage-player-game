@@ -68,6 +68,7 @@ export function useSceneBackendStream() {
     combatResult = null,
     forceRoll = null,
     entityTags = null,
+    travelFailureReason = null,
   }) => {
     let rawAccumulated = '';
 
@@ -87,6 +88,7 @@ export function useSceneBackendStream() {
       combatResult,
       forceRoll,
       entityTags,
+      travelFailureReason,
       achievementState: state.achievements || null,
       onEvent: (event) => {
         if (event.type === 'intent') {

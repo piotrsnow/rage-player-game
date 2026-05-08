@@ -216,6 +216,7 @@ export const GENERATE_SCENE_SCHEMA = {
         },
       },
     },
+    travelFailureReason: { type: ['string', 'null'], maxLength: 500 },
   },
 };
 

@@ -204,6 +204,7 @@ export const aiService = {
     combatResult = null,
     forceRoll = null,
     entityTags = null,
+    travelFailureReason = null,
     achievementState = null,
     onEvent = null,
   } = {}) {
@@ -225,6 +226,7 @@ export const aiService = {
       combatResult,
       forceRoll,
       entityTags,
+      travelFailureReason,
       achievementState,
     };
 

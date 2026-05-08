@@ -34,6 +34,7 @@ import { generatePixelSprite, scaleToSpriteSize } from '../services/pixelLabClie
 import { buildPixelSpriteDescription } from '../services/pixelLabSpritePrompt.js';
 import { createMediaStore } from '../services/mediaStore.js';
 import { config } from '../config.js';
+import { callAIJson } from '../services/aiJsonCall.js';
 
 const log = childLogger({ module: 'livingWorldRoutes' });
 
@@ -304,6 +305,81 @@ export async function livingWorldRoutes(fastify) {
     }
 
     return reply.send({ digests });
+  });
+
+  // POST /campaigns/:id/travel-check — nano AI decides if distant travel is feasible
+  fastify.post('/campaigns/:id/travel-check', {
+    schema: {
+      params: {
+        type: 'object',
+        properties: { id: { type: 'string', format: 'uuid' } },
+        required: ['id'],
+      },
+      body: {
+        type: 'object',
+        required: ['destinationName'],
+        properties: {
+          destinationName: { type: 'string', maxLength: 200, minLength: 1 },
+        },
+        additionalProperties: false,
+      },
+    },
+  }, async (request, reply) => {
+    const campaign = await assertCampaignOwnership(request, reply, request.params.id);
+    if (!campaign) return;
+
+    const { destinationName } = request.body;
+
+    const campaignFull = await prisma.campaign.findUnique({
+      where: { id: request.params.id },
+      select: {
+        currentLocationName: true,
+        coreState: true,
+      },
+    });
+
+    const currentLoc = campaignFull?.currentLocationName || campaignFull?.coreState?.world?.currentLocation || 'nieznana';
+    const worldState = campaignFull?.coreState?.world || {};
+    const timeOfDay = worldState.timeState?.timeOfDay || 'dzień';
+    const day = worldState.timeState?.day || 1;
+
+    const userApiKeys = await loadUserApiKeys(prisma, request.user?.id);
+
+    const systemPrompt = `Jesteś narratorem gry RPG. Gracz chce odbyć daleką podróż z "${currentLoc}" do "${destinationName}". Zdecyduj czy ta podróż jest teraz możliwa. Uwzględnij: odległość, porę dnia (${timeOfDay}), dzień kampanii (${day}), potencjalne zagrożenia na drodze, logikę narracyjną. Jeśli podróż NIE jest możliwa, podaj zabawny, kolorowy powód dlaczego (np. smok blokuje drogę, most się zawalił, ktoś ukradł buty gracza). Odpowiedz TYLKO valid JSON: {"allowed": true/false, "reason": "krótki opis"}`;
+
+    const userPrompt = `Gracz w lokacji "${currentLoc}" chce podróżować do "${destinationName}". Pora: ${timeOfDay}, dzień ${day}. Czy może teraz tam dotrzeć?`;
+
+    try {
+      const { text } = await callAIJson({
+        provider: 'openai',
+        modelTier: 'nano',
+        taskCategory: 'travel_check',
+        systemPrompt,
+        userPrompt,
+        maxTokens: 200,
+        temperature: 0.9,
+        userApiKeys,
+        userId: request.user?.id,
+        taskType: 'travel_check',
+        taskLabel: `travel-check: ${currentLoc} → ${destinationName}`,
+      });
+
+      let parsed;
+      try {
+        parsed = JSON.parse(text.trim());
+      } catch {
+        const match = text.match(/\{[\s\S]*\}/);
+        parsed = match ? JSON.parse(match[0]) : { allowed: true, reason: '' };
+      }
+
+      return reply.send({
+        allowed: !!parsed.allowed,
+        reason: parsed.reason || '',
+      });
+    } catch (err) {
+      log.warn({ err }, 'travel-check AI call failed, allowing travel as fallback');
+      return reply.send({ allowed: true, reason: '' });
+    }
   });
 
   // GET /campaigns/:id/location-graph — graph view for the frontend modal

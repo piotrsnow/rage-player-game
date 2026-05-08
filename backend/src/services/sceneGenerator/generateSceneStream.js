@@ -68,6 +68,7 @@ export async function generateSceneStream(campaignId, playerAction, options = {}
     forceRoll = null,
     entityTags = null,
     achievementState = null,
+    travelFailureReason = null,
     userId = null,
   } = options;
   let resolvedMechanics = resolvedMechanicsOpt;
@@ -231,6 +232,9 @@ export async function generateSceneStream(campaignId, playerAction, options = {}
       campaignId, intentResult, currentLocation, inlineKeys,
       { provider, timeoutMs: llmNanoTimeoutMs, playerAction },
     );
+    if (travelFailureReason) {
+      contextBlocks.travelFailure = { reason: travelFailureReason };
+    }
     onEvent({ type: 'context_ready' });
 
     // 3b. Phase D — if nano flagged a quest offer AND the world is getting
