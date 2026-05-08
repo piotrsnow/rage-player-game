@@ -570,16 +570,31 @@ export function buildPortraitPrompt(species, gender, age, careerName, genre = 'F
   const darkDirective = darkPalette ? ' Dark moody color palette, deep shadows, low-key lighting, muted desaturated tones.' : '';
   const seriousnessDirective = seriousness != null ? ` ${getSeriousnessDirective(seriousness)}.` : '';
 
-  // LLM-built subject mode (NPC portraits). The caller already prepared a
-  // self-contained English description of the character — use it verbatim as
-  // the subject and skip species/career/age/gender heuristics. Style, mood,
-  // dark palette, seriousness still apply on top.
+  // LLM-built subject mode (NPC portraits). The caller prepared an English
+  // subject; species/career templating is skipped, but we prefix explicit
+  // gender and/or age when known — SD models otherwise drift on archetypes
+  // (hermit = old man, ageless witch, etc.).
   const trimmedOverride = typeof subjectOverride === 'string' ? subjectOverride.trim() : '';
   if (trimmedOverride) {
+    const parsedAnchorAge = Number(age);
+    const anchorAgeYears = Number.isFinite(parsedAnchorAge)
+      ? Math.max(1, Math.round(parsedAnchorAge))
+      : null;
+    const anchorTokens = [];
+    if (gender === 'female' || gender === 'male') {
+      anchorTokens.push(gender === 'female' ? 'female' : 'male');
+    }
+    if (anchorAgeYears != null) {
+      anchorTokens.push(`approximately ${anchorAgeYears} years old`);
+    }
+    const anchoredSubject =
+      anchorTokens.length > 0
+        ? `${anchorTokens.join(', ')}, ${trimmedOverride}`
+        : trimmedOverride;
     if (isSdWebui) {
       const extraTags = [...getSdEmotionTags(extras.emotions)].filter(Boolean);
       return buildSdPrompt({
-        subject: `close-up portrait of ${trimmedOverride}, head and shoulders`,
+        subject: `close-up portrait of ${anchoredSubject}, head and shoulders`,
         tone: null,
         darkPalette,
         seriousness,
@@ -592,15 +607,15 @@ export function buildPortraitPrompt(species, gender, age, careerName, genre = 'F
     }
     const compositionTail = ' Sharp focus on the subject, intricate detail, moody atmospheric background, head and shoulders composition.';
     if (isSD) {
-      return `ART STYLE: ${styleDirective}. Close-up portrait of ${trimmedOverride}.${compositionTail}${darkDirective}${seriousnessDirective}${emotionDirective} No text, no watermarks.`;
+      return `ART STYLE: ${styleDirective}. Close-up portrait of ${anchoredSubject}.${compositionTail}${darkDirective}${seriousnessDirective}${emotionDirective} No text, no watermarks.`;
     }
     if (isGemini) {
-      return `Generate an image in this EXACT art style: ${styleDirective}. Portrait of ${trimmedOverride}.${compositionTail} Square 1:1 aspect ratio.${darkDirective}${seriousnessDirective}${emotionDirective} No text, no watermarks.`;
+      return `Generate an image in this EXACT art style: ${styleDirective}. Portrait of ${anchoredSubject}.${compositionTail} Square 1:1 aspect ratio.${darkDirective}${seriousnessDirective}${emotionDirective} No text, no watermarks.`;
     }
     if (provider === 'gpt-image') {
-      return `ART STYLE: ${styleDirective}. Portrait of ${trimmedOverride}.${compositionTail}${darkDirective}${seriousnessDirective}${emotionDirective} No text, no watermarks.`;
+      return `ART STYLE: ${styleDirective}. Portrait of ${anchoredSubject}.${compositionTail}${darkDirective}${seriousnessDirective}${emotionDirective} No text, no watermarks.`;
     }
-    return `ART STYLE: ${styleDirective}. Portrait of ${trimmedOverride}.${compositionTail}${darkDirective}${seriousnessDirective}${emotionDirective} No text, no watermarks, no borders.`;
+    return `ART STYLE: ${styleDirective}. Portrait of ${anchoredSubject}.${compositionTail}${darkDirective}${seriousnessDirective}${emotionDirective} No text, no watermarks, no borders.`;
   }
 
   const isHumanoid = isHumanoidSpecies(species);

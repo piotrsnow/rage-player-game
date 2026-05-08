@@ -77,6 +77,8 @@ const SYSTEM_PROMPT = [
   'Rules:',
   '- If `race` is set (Human, Dwarf, Halfling, Orc), describe a humanoid of that race.',
   '- If `creatureKind` is set instead (e.g. "legendarny ptak", "smok", "wilkołak", "zjawa"), describe THAT CREATURE LITERALLY — a bird is a bird, a dragon is a dragon. Do NOT render it as a humanoid. Ignore gender / age cues that only make sense for humanoids.',
+  '- For humanoids OR creatureKinds portrayed as a person (vague labels like "being", "spirit", "entity"), `gender` MUST show in the description — open with "woman"/"man"/"female"/"male" matching the `gender` field.',
+  '- When `age` is a number, the LOOKS must match that life stage (skin texture, hair color, posture) — do not ignore age unless rendering a non-humanoid creature.',
   '- Treat `role` and `personality` as VISUAL hints — translate them and turn them into appearance details (e.g. "zwiastun zmian" → "with an air of foreboding change", "pamięta stare czasy" → "ancient eyes, weathered by time").',
   '- Translate any non-English text to natural English. Polish without diacritics (ptak, smok, rycerz, zwiastun) is still Polish — translate it.',
   '- NEVER add art-style hints (no "oil painting", "anime", "photorealistic", "in the style of", etc.) — the rendering style is added separately.',

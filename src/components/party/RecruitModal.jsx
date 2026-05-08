@@ -15,6 +15,7 @@ import { MAX_COMPANIONS } from '../../stores/handlers/partyHandlers';
 import { generateNpcPortrait } from '../../services/npcPortraitGen';
 import { useGame } from '../../contexts/GameContext';
 import { useSettings } from '../../contexts/SettingsContext';
+import { useModals } from '../../contexts/ModalContext';
 import { calculateCost } from '../../services/costTracker';
 
 const BLOCK_REASON_KEYS = {
@@ -129,7 +130,7 @@ function ExpandedPortrait({ src, alt, startRect, onClose }) {
   );
 }
 
-function NpcCard({ npc, partySize, currentSceneIndex, onAttempt, lastResult, isGenerating }) {
+function NpcCard({ npc, partySize, currentSceneIndex, onAttempt, lastResult, isGenerating, onOpenNpcSheet }) {
   const { t } = useTranslation();
   const portraitUrl = npc?.portraitUrl ? apiClient.resolveMediaUrl(npc.portraitUrl) : null;
   const speciesLabel = t(`species.${npc.race}`, { defaultValue: npc.race || npc.creatureKind || '' });
@@ -149,11 +150,14 @@ function NpcCard({ npc, partySize, currentSceneIndex, onAttempt, lastResult, isG
   };
 
   return (
-    <div className={`flex items-center gap-4 px-4 py-3 rounded-lg border transition-all ${
-      recruitable
-        ? 'bg-surface-container/50 border-tertiary/30 shadow-sm shadow-tertiary/5 hover:shadow-md hover:shadow-tertiary/10'
-        : 'bg-surface-container/20 border-outline-variant/15 opacity-60'
-    }`}>
+    <div
+      className={`flex items-center gap-4 px-4 py-3 rounded-lg border transition-all cursor-pointer ${
+        recruitable
+          ? 'bg-surface-container/50 border-tertiary/30 shadow-sm shadow-tertiary/5 hover:shadow-md hover:shadow-tertiary/10'
+          : 'bg-surface-container/20 border-outline-variant/15 opacity-60'
+      }`}
+      onClick={() => onOpenNpcSheet?.(npc.name)}
+    >
       {/* Portrait */}
       <div
         ref={portraitRef}
@@ -261,7 +265,10 @@ function NpcCard({ npc, partySize, currentSceneIndex, onAttempt, lastResult, isG
       {recruitable && (
         <button
           type="button"
-          onClick={() => onAttempt(npc)}
+          onClick={(e) => {
+            e.stopPropagation();
+            onAttempt(npc);
+          }}
           disabled={partyFull}
           className="px-4 py-2 rounded-lg border text-xs font-bold uppercase tracking-wider transition-colors bg-tertiary/15 text-tertiary border-tertiary/30 hover:bg-tertiary/25 hover:border-tertiary/50 disabled:opacity-40 disabled:cursor-not-allowed shrink-0"
         >
@@ -274,6 +281,7 @@ function NpcCard({ npc, partySize, currentSceneIndex, onAttempt, lastResult, isG
 
 export default function RecruitModal({ scenes, world, party, dispatch, onClose }) {
   const { t } = useTranslation();
+  const { openNpcSheet } = useModals();
   const [results, setResults] = useState({});
   const [generatingIds, setGeneratingIds] = useState(new Set());
   const generationTriggered = useRef(false);
@@ -406,6 +414,7 @@ export default function RecruitModal({ scenes, world, party, dispatch, onClose }
                 onAttempt={handleAttempt}
                 lastResult={results[npc.id]}
                 isGenerating={generatingIds.has(npc.id)}
+                onOpenNpcSheet={openNpcSheet}
               />
             ))}
           </div>

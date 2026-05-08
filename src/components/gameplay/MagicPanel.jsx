@@ -6,6 +6,7 @@ import {
   learnFromScroll,
   useScrollOneShot,
   getSpellProgressionStatus,
+  resolveKnownSpellDisplay,
 } from '../../services/magicEngine';
 import { SPELL_TREES } from '../../data/rpgMagic';
 
@@ -77,6 +78,11 @@ export default function MagicPanel({ character, combat, onCastSpell }) {
     }
     return [...map.entries()];
   }, [spells.known]);
+
+  const customKnownSpellNames = useMemo(
+    () => spells.known.filter((name) => resolveKnownSpellDisplay(name).isCustom),
+    [spells.known],
+  );
 
   // Auto-select first available spell
   useEffect(() => {
@@ -226,6 +232,47 @@ export default function MagicPanel({ character, combat, onCastSpell }) {
                   </div>
                 </div>
               ))}
+              {customKnownSpellNames.length > 0 && (
+                <div className="space-y-1">
+                  <div className="flex items-center gap-1 text-[9px] font-bold text-amber-400/90 uppercase tracking-wide">
+                    <span className="material-symbols-outlined text-xs">draw</span>
+                    {t('magic.customSpellsSection', 'Fabularne / niestandardowe')}
+                  </div>
+                  <div className="space-y-1 pl-1 border-l border-amber-500/20">
+                    {customKnownSpellNames.map((name) => {
+                      const meta = resolveKnownSpellDisplay(name, character);
+                      const isSelected = selectedSpell === name;
+                      const hasEnoughMana = mana.current >= meta.manaCost;
+                      const uses = spells.usageCounts?.[name] || 0;
+                      return (
+                        <button
+                          key={name}
+                          type="button"
+                          onClick={() => setSelectedSpell(name)}
+                          className={`w-full text-left rounded-sm px-2 py-1 border transition-all ${
+                            isSelected
+                              ? 'border-tertiary/40 bg-tertiary/10'
+                              : 'border-transparent hover:border-outline-variant/20'
+                          } ${hasEnoughMana ? '' : 'opacity-45'}`}
+                        >
+                          <div className="flex items-center justify-between gap-2 min-w-0">
+                            <span className={`flex items-center gap-1.5 min-w-0 text-[10px] font-bold ${hasEnoughMana ? 'text-on-surface' : 'text-on-surface-variant'}`}>
+                              <span className="material-symbols-outlined text-xs text-tertiary shrink-0">{meta.icon}</span>
+                              <span className="truncate">{name}</span>
+                            </span>
+                            <span className="text-[9px] text-on-surface-variant tabular-nums shrink-0">
+                              {meta.manaCost} many · {uses} {t('magic.usesShort', 'uż.')}
+                            </span>
+                          </div>
+                          <div className="text-[9px] text-on-surface-variant/80 leading-tight">
+                            {t('magic.customSpellShortHint', { defaultValue: 'Poza standardowym drzewkiem — uproszczony koszt many.' })}
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
             </div>
           </SectionToggle>
 
@@ -269,7 +316,11 @@ export default function MagicPanel({ character, combat, onCastSpell }) {
                 </div>
                 {lastCastResult.success && (
                   <div className="text-on-surface-variant leading-tight">
-                    -{lastCastResult.manaCost} many · {lastCastResult.description}
+                    -{lastCastResult.manaCost} many ·{' '}
+                    {lastCastResult.description
+                      || (lastCastResult.isCustomSpell
+                        ? t('magic.customSpellCastBlurb', { defaultValue: 'Efekt opisuje scena / MG.' })
+                        : '')}
                   </div>
                 )}
                 {lastCastResult.error && (

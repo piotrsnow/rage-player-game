@@ -7,39 +7,110 @@ import {
 } from '../data/rpgMagic.js';
 import { rollPercentage } from './gameState.js';
 import { rollLuckCheck } from '../../shared/domain/luck.js';
+import { normalizeSpellMaterialIcon } from '../../shared/domain/spellMaterialIcons.js';
+
+/** Mana cost when the spell name is in known[] but not defined in SPELL_TREES (AI-invented / narrative picks). */
+export const CUSTOM_KNOWN_SPELL_MANA_COST = 2;
+
+function normalizeSpellName(name) {
+  return String(name || '').trim().toLowerCase();
+}
+
+/** Resolves the canonical string from character.spells.known (exact or case-insensitive match). */
+export function resolveKnownSpellNameFromCharacter(character, spellInputName) {
+  const known = character?.spells?.known;
+  if (!Array.isArray(known) || known.length === 0) return null;
+  if (known.includes(spellInputName)) return spellInputName;
+  const target = normalizeSpellName(spellInputName);
+  return known.find((n) => normalizeSpellName(n) === target) || null;
+}
+
+function spellIconOverrideForCharacter(character, spellName) {
+  const resolved = resolveKnownSpellNameFromCharacter(character, spellName);
+  if (!resolved) return null;
+  const icons = character?.spells?.icons;
+  if (!icons || typeof icons !== 'object') return null;
+  const raw = icons[resolved] ?? icons[spellName];
+  return normalizeSpellMaterialIcon(raw);
+}
+
+/**
+ * Metadata for UI: canonical spells from data vs narrative/custom names present only in known[].
+ * @param {string} spellName
+ * @param {object | null} [character] — when set, uses character.spells.icons for custom / override icons
+ */
+export function resolveKnownSpellDisplay(spellName, character = null) {
+  const found = findSpell(spellName);
+  const overrideIcon = character ? spellIconOverrideForCharacter(character, spellName) : null;
+  if (found) {
+    const tree = SPELL_TREES[found.treeId];
+    return {
+      name: spellName,
+      manaCost: found.spell.manaCost,
+      treeId: found.treeId,
+      treeName: tree?.name || found.treeId,
+      description: found.spell.description,
+      icon: overrideIcon || found.spell.icon || tree?.icon || 'auto_awesome',
+      level: found.spell.level,
+      isCustom: false,
+    };
+  }
+  return {
+    name: spellName,
+    manaCost: CUSTOM_KNOWN_SPELL_MANA_COST,
+    treeId: null,
+    treeName: null,
+    description: '',
+    icon: overrideIcon || 'auto_awesome',
+    level: null,
+    isCustom: true,
+  };
+}
 
 /**
  * Cast a known spell. Checks mana, deducts cost, tracks usage.
  * @returns {{ success, manaCost, spellUsage, manaChange, error }}
  */
-export function castSpell(character, spellName) {
+export function castSpell(character, spellInputName) {
   if (!character) return { success: false, error: 'No character' };
 
-  const found = findSpell(spellName);
-  if (!found) return { success: false, error: `Zaklecie "${spellName}" nie istnieje` };
-
-  const { spell, treeId } = found;
-  const spells = character.spells || { known: [], usageCounts: {}, scrolls: [] };
-
-  // Check if spell is known
-  if (!spells.known.includes(spellName)) {
-    return { success: false, error: `Nie znasz zaklecia "${spellName}"` };
+  const resolvedName = resolveKnownSpellNameFromCharacter(character, spellInputName);
+  if (!resolvedName) {
+    return { success: false, error: `Nie znasz zaklecia "${spellInputName}"` };
   }
 
-  // Check mana
+  const found = findSpell(resolvedName);
   const mana = character.mana || { current: 0, max: 0 };
-  if (mana.current < spell.manaCost) {
-    return { success: false, error: `Za malo many (${mana.current}/${spell.manaCost})` };
+
+  if (found) {
+    const { spell, treeId } = found;
+    if (mana.current < spell.manaCost) {
+      return { success: false, error: `Za malo many (${mana.current}/${spell.manaCost})` };
+    }
+    return {
+      success: true,
+      spellName: resolvedName,
+      treeId,
+      manaCost: spell.manaCost,
+      manaChange: -spell.manaCost,
+      spellUsage: { [resolvedName]: 1 },
+      description: spell.description,
+    };
+  }
+
+  if (mana.current < CUSTOM_KNOWN_SPELL_MANA_COST) {
+    return { success: false, error: `Za malo many (${mana.current}/${CUSTOM_KNOWN_SPELL_MANA_COST})` };
   }
 
   return {
     success: true,
-    spellName,
-    treeId,
-    manaCost: spell.manaCost,
-    manaChange: -spell.manaCost,
-    spellUsage: { [spellName]: 1 },
-    description: spell.description,
+    spellName: resolvedName,
+    treeId: null,
+    manaCost: CUSTOM_KNOWN_SPELL_MANA_COST,
+    manaChange: -CUSTOM_KNOWN_SPELL_MANA_COST,
+    spellUsage: { [resolvedName]: 1 },
+    description: '',
+    isCustomSpell: true,
   };
 }
 
@@ -215,9 +286,11 @@ export function formatMagicStatusForPrompt(character) {
     lines.push('Znane zaklecia:');
     for (const name of spells.known) {
       const found = findSpell(name);
+      const uses = spells.usageCounts[name] || 0;
       if (found) {
-        const uses = spells.usageCounts[name] || 0;
         lines.push(`  ${name} [${found.spell.manaCost} many, uzycia: ${uses}] — ${found.spell.description}`);
+      } else {
+        lines.push(`  ${name} [${CUSTOM_KNOWN_SPELL_MANA_COST} many, uzycia: ${uses}] — (niestandardowe / wymyslone)`);
       }
     }
   }

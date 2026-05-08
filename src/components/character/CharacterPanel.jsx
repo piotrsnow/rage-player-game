@@ -14,7 +14,7 @@ import CharacterHistoryPanel from './CharacterHistoryPanel';
 import CustomSelect from '../ui/CustomSelect';
 import { translateSkill, translateAttribute } from '../../utils/rpgTranslate';
 import { SKILLS, DIFFICULTY_THRESHOLDS } from '../../data/rpgSystem';
-import { findSpell, SPELL_TREES } from '../../data/rpgMagic';
+import { resolveKnownSpellDisplay } from '../../services/magicEngine';
 import SkillGainHistory from './SkillGainHistory';
 import FavoriteScenesList from './FavoriteScenesList';
 import BadgesSection from './BadgesSection';
@@ -241,7 +241,13 @@ function SpellDetailPanel({ spell, uses, currentMana, t, onClose }) {
           <div className="min-w-0">
             <h4 className="text-tertiary font-headline text-xl leading-tight">{spell.name}</h4>
             <p className="text-on-surface-variant/70 text-sm mt-1">
-              {spell.treeName} · {t('magic.level', { level: spell.level, defaultValue: `Poziom ${spell.level}` })}
+              {spell.isCustom
+                ? spell.treeName
+                : (
+                    <>
+                      {spell.treeName} · {t('magic.level', { level: spell.level, defaultValue: `Poziom ${spell.level}` })}
+                    </>
+                  )}
             </p>
           </div>
         </div>
@@ -354,21 +360,21 @@ export default function CharacterPanel({
   const selectedItem = inventoryItems.find((i) => i.id === selectedItemId) || null;
   const knownSpells = useMemo(() => {
     const usageCounts = character.spells?.usageCounts || {};
-    return (character.spells?.known || [])
-      .map((spellName) => {
-        const found = findSpell(spellName);
-        if (!found) return null;
-        const tree = SPELL_TREES[found.treeId];
-        return {
-          ...found.spell,
-          icon: found.spell.icon || tree?.icon || 'auto_awesome',
-          treeId: found.treeId,
-          treeName: tree?.name || found.treeId,
-          uses: usageCounts[spellName] || 0,
-        };
-      })
-      .filter(Boolean);
-  }, [character.spells?.known, character.spells?.usageCounts]);
+    return (character.spells?.known || []).map((spellName) => {
+      const base = resolveKnownSpellDisplay(spellName, character);
+      return {
+        ...base,
+        name: base.name,
+        uses: usageCounts[spellName] || 0,
+        treeName: base.isCustom
+          ? t('magic.customSpellSchool', { defaultValue: 'Niestandardowe' })
+          : base.treeName,
+        description: base.isCustom
+          ? t('magic.customSpellDescription', { defaultValue: 'Zaklęcie z fabuły lub wymyślone — nie należy do standardowego drzewka w grze.' })
+          : base.description,
+      };
+    });
+  }, [character.spells?.known, character.spells?.usageCounts, character.spells?.icons, t]);
   const selectedSpell = selectedSpellName
     ? knownSpells.find((spell) => spell.name === selectedSpellName) || null
     : null;

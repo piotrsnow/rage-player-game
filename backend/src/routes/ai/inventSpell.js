@@ -25,6 +25,7 @@ const INVENT_SPELL_BODY = {
     intent: { type: 'string', minLength: 10, maxLength: 500 },
     successRoll: { type: 'integer', minimum: 1, maximum: 50 },
     powerRoll: { type: 'integer', minimum: 1, maximum: 50 },
+    characterId: { type: 'string', format: 'uuid' },
   },
 };
 
@@ -122,13 +123,14 @@ async function resolveUniqueCodexKey(campaignId, spellName, description) {
   }
 }
 
-function buildSpellCard({ spellName, school, manaCost, description, effect }) {
+function buildSpellCard({ spellName, school, manaCost, description, effect, icon }) {
   return {
     name: spellName,
     school: school || 'Ogolna',
     manaCost,
     description,
     effect,
+    ...(icon ? { icon } : {}),
   };
 }
 
@@ -141,7 +143,7 @@ export async function inventSpellRoutes(fastify) {
     },
     async (request, reply) => {
       const { campaignId } = request.params;
-      const { intent, successRoll, powerRoll } = request.body;
+      const { intent, successRoll, powerRoll, characterId: requestedCharacterId } = request.body;
       const userId = request.user.id;
 
       const campaign = await prisma.campaign.findFirst({
@@ -171,7 +173,7 @@ export async function inventSpellRoutes(fastify) {
       recentScenes.reverse();
 
       const codexSpells = await prisma.campaignCodex.findMany({
-        where: { campaignId, tags: { has: 'spell' } },
+        where: { campaignId, tags: { array_contains: 'spell' } },
         select: {
           codexKey: true,
           name: true,
@@ -185,7 +187,13 @@ export async function inventSpellRoutes(fastify) {
       ]);
 
       const characterIds = await getCampaignCharacterIds(campaignId);
-      const activeCharacterId = characterIds[0] || null;
+      let activeCharacterId = characterIds[0] || null;
+      if (requestedCharacterId) {
+        if (!characterIds.includes(requestedCharacterId)) {
+          return reply.code(400).send({ error: 'Character does not belong to this campaign' });
+        }
+        activeCharacterId = requestedCharacterId;
+      }
       if (!activeCharacterId) {
         return reply.code(400).send({ error: 'No active character in campaign' });
       }
@@ -227,6 +235,9 @@ export async function inventSpellRoutes(fastify) {
           successRoll,
           powerRoll,
           powerTier,
+          luckRoll: analyzed.luckRoll,
+          luckySuccess: analyzed.luckySuccess,
+          luckAttribute: analyzed.luckAttribute,
           spell: null,
           isNew: false,
           verdict: analyzed.verdict,
@@ -256,6 +267,7 @@ export async function inventSpellRoutes(fastify) {
           manaCost,
           description: invented.description,
           effect: invented.effect,
+          icon: analyzed.spellIcon,
         });
 
         const codexKey = await resolveUniqueCodexKey(campaignId, invented.name, spellCard.effect || spellCard.description);
@@ -284,6 +296,7 @@ export async function inventSpellRoutes(fastify) {
           manaCost: manaCostFromPowerTier(powerTier),
           description: existing.summary || 'Znane zaklęcie opanowane podczas badań magicznych.',
           effect: existing.summary || 'Znane zaklęcie opanowane podczas badań magicznych.',
+          icon: analyzed.spellIcon,
         });
       }
 
@@ -300,6 +313,9 @@ export async function inventSpellRoutes(fastify) {
           successRoll,
           powerRoll,
           powerTier,
+          luckRoll: analyzed.luckRoll,
+          luckySuccess: analyzed.luckySuccess,
+          luckAttribute: analyzed.luckAttribute,
           spell: null,
           isNew: false,
           verdict: `To zaklęcie jest już ci znane: ${chosenSpellName}. Spróbuj wymyślić inną formułę.`,
@@ -308,7 +324,10 @@ export async function inventSpellRoutes(fastify) {
         });
       }
 
-      const stateChanges = { learnSpell: chosenSpellName };
+      const stateChanges = {
+        learnSpell: chosenSpellName,
+        ...(analyzed.spellIcon ? { learnSpellIcon: analyzed.spellIcon } : {}),
+      };
       const updatedCharacter = applyCharacterStateChanges(activeCharacter, stateChanges);
 
       try {
@@ -346,6 +365,9 @@ export async function inventSpellRoutes(fastify) {
         successRoll,
         powerRoll,
         powerTier,
+        luckRoll: analyzed.luckRoll,
+        luckySuccess: analyzed.luckySuccess,
+        luckAttribute: analyzed.luckAttribute,
         spell: spellCard,
         isNew,
         verdict: analyzed.verdict,

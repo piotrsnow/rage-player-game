@@ -4,12 +4,17 @@ import { buildNpcPortraitSubject } from './npcPortraitPromptLlm';
 function ageGuess(npc) {
   if (typeof npc?.age === 'number' && Number.isFinite(npc.age)) return npc.age;
   if (typeof npc?.stats?.age === 'number' && Number.isFinite(npc.stats.age)) return npc.stats.age;
+  if (npc?.age != null && npc.age !== '') {
+    const n = Number(String(npc.age).trim());
+    if (Number.isFinite(n)) return n;
+  }
   return 35;
 }
 
 function genderGuess(npc) {
-  const g = String(npc?.gender || '').toLowerCase();
-  if (g === 'female' || g === 'kobieta' || g === 'k') return 'female';
+  const g = String(npc?.gender || '').toLowerCase().trim();
+  if (g === 'female' || g === 'kobieta' || g === 'k' || g === 'ż') return 'female';
+  if (g === 'male' || g === 'mężczyzna' || g === 'm') return 'male';
   return 'male';
 }
 

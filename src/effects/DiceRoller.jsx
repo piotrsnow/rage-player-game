@@ -95,7 +95,8 @@ export default function DiceRoller({
     }
 
     const box = boxRef.current;
-    const requestedResults = getPercentileResults(diceRoll.roll);
+    const rawRoll = diceRoll.roll ?? diceRoll.rolledValue;
+    const requestedResults = getPercentileResults(rawRoll);
     setShowResult(false);
     setShowDice(true);
     rollTimeoutRef.current = window.setTimeout(() => {

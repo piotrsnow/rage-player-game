@@ -1,7 +1,8 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { gameData } from '../../../services/gameDataService';
 import { getDistance, getShoveCells, canCharge } from '../../../services/combatEngine';
-import { findSpell, SPELL_TREES } from '../../../data/rpgMagic';
+import { SPELL_TREES } from '../../../data/rpgMagic';
+import { resolveKnownSpellDisplay } from '../../../services/magicEngine';
 import Tooltip from '../../ui/Tooltip';
 import { typeIcons } from '../../character/inventory/constants';
 import { apiClient } from '../../../services/apiClient';
@@ -252,19 +253,18 @@ export default function ActionModal({
     const known = character?.spells?.known || [];
     const mana = character?.mana || myCombatant?.mana || { current: 0, max: 0 };
     return known.map((name) => {
-      const found = findSpell(name);
-      if (!found) return null;
-      const tree = SPELL_TREES[found.treeId];
+      const meta = resolveKnownSpellDisplay(name, character);
+      const tree = meta.treeId ? SPELL_TREES[meta.treeId] : null;
       return {
         name,
-        manaCost: found.spell.manaCost,
-        treeId: found.treeId,
+        manaCost: meta.manaCost,
+        treeId: meta.treeId,
         treeName: tree?.name || '',
-        icon: found.spell.icon || 'auto_awesome',
-        canCast: mana.current >= found.spell.manaCost,
+        icon: meta.icon || tree?.icon || 'auto_awesome',
+        canCast: mana.current >= meta.manaCost,
       };
-    }).filter(Boolean);
-  }, [character?.spells?.known, character?.mana, myCombatant?.mana]);
+    });
+  }, [character?.spells?.known, character?.spells?.icons, character?.mana, myCombatant?.mana]);
 
   const inventoryItems = useMemo(() => {
     return (character?.inventory || []).filter((item) => item && item.name);

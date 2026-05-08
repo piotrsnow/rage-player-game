@@ -49,7 +49,7 @@ export default function NpcSheetModal({ npc, onClose }) {
       <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} />
       <div
         ref={modalRef}
-        className="relative w-full max-w-2xl max-h-[85vh] bg-surface-container-highest/85 backdrop-blur-2xl border border-outline-variant/15 rounded-sm flex flex-col shadow-2xl animate-fade-in"
+        className="relative w-full max-w-[612px] max-h-[85vh] bg-surface-container-highest/85 backdrop-blur-2xl border border-outline-variant/15 rounded-sm flex flex-col shadow-2xl animate-fade-in"
       >
         <div className="flex items-center justify-between px-4 py-3 border-b border-outline-variant/10">
           <div className="flex items-center gap-2 min-w-0">
@@ -62,12 +62,13 @@ export default function NpcSheetModal({ npc, onClose }) {
         </div>
 
         <div className="flex-1 overflow-y-auto custom-scrollbar p-4 space-y-2 mr-3">
+          {/* Portrait frames match SD preset 832×1216 from imagePrompts getModelPreset */}
           <div
             className={`relative mx-auto mb-2 ${
               isZoomed
-                ? 'w-[20rem] h-[20rem] sm:w-[28rem] sm:h-[28rem]'
-                : 'w-48 h-48'
-            } transition-[width,height] duration-300 ease-out`}
+                ? 'w-[min(20rem,calc(100vw-2rem))] sm:w-[min(28rem,calc(100vw-2rem))]'
+                : 'w-48'
+            } transition-[width] duration-300 ease-out`}
           >
             <button
               type="button"
@@ -75,7 +76,7 @@ export default function NpcSheetModal({ npc, onClose }) {
               title={zoomTitle}
               aria-label={zoomTitle}
               aria-pressed={isZoomed}
-              className={`group relative block w-full h-full rounded-lg overflow-hidden border border-outline-variant/25 bg-surface-container hover:border-primary/40 ${
+              className={`group relative block w-full aspect-[832/1216] rounded-lg overflow-hidden border border-outline-variant/25 bg-black/25 hover:border-primary/40 ${
                 isZoomed ? 'cursor-zoom-out' : 'cursor-zoom-in'
               } transition-colors`}
             >
@@ -83,7 +84,7 @@ export default function NpcSheetModal({ npc, onClose }) {
                 <img
                   src={portraitUrl}
                   alt={npc.name}
-                  className="w-full h-full object-cover"
+                  className="w-full h-full object-contain"
                   onError={(e) => { e.currentTarget.style.display = 'none'; }}
                 />
               ) : (

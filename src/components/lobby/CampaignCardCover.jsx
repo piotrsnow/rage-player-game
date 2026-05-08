@@ -13,6 +13,7 @@ const ROTATION_INTERVAL_MS = 4000;
 export default function CampaignCardCover({ images = [], genre = 'Fantasy', campaignName = '' }) {
   const { t } = useTranslation();
   const [activeIndex, setActiveIndex] = useState(0);
+  const [coverHovered, setCoverHovered] = useState(false);
 
   const validImages = useMemo(
     () => images.filter((src) => typeof src === 'string' && src.trim().length > 0),
@@ -24,12 +25,19 @@ export default function CampaignCardCover({ images = [], genre = 'Fantasy', camp
   }, [validImages.length]);
 
   useEffect(() => {
-    if (validImages.length <= 1) return undefined;
+    if (!coverHovered || validImages.length <= 1) return undefined;
     const timer = setInterval(() => {
       setActiveIndex((prev) => (prev + 1) % validImages.length);
     }, ROTATION_INTERVAL_MS);
     return () => clearInterval(timer);
-  }, [validImages.length]);
+  }, [coverHovered, validImages.length]);
+
+  const displayIndex = coverHovered ? activeIndex : 0;
+
+  const handleCoverLeave = () => {
+    setCoverHovered(false);
+    setActiveIndex(0);
+  };
 
   if (validImages.length === 0) {
     return (
@@ -42,7 +50,11 @@ export default function CampaignCardCover({ images = [], genre = 'Fantasy', camp
   }
 
   return (
-    <div className="relative w-24 h-24 overflow-hidden rounded-sm border border-primary/10 shrink-0 group-hover:border-primary/25 transition-colors">
+    <div
+      className="relative w-24 h-24 overflow-hidden rounded-sm border border-primary/10 shrink-0 group-hover:border-primary/25 transition-colors"
+      onMouseEnter={() => setCoverHovered(true)}
+      onMouseLeave={handleCoverLeave}
+    >
       {validImages.map((src, index) => (
         <img
           key={`${src}-${index}`}
@@ -51,7 +63,7 @@ export default function CampaignCardCover({ images = [], genre = 'Fantasy', camp
             name: campaignName || 'Untitled',
           })}
           className={`absolute inset-0 w-full h-full object-cover transition-opacity duration-1000 ${
-            index === activeIndex ? 'opacity-100' : 'opacity-0'
+            index === displayIndex ? 'opacity-100' : 'opacity-0'
           }`}
           loading="lazy"
           decoding="async"

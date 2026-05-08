@@ -382,14 +382,20 @@ export default function GameplayPage({ readOnly = false, shareToken = null, onRe
   // Still surface the full-screen dice animation from the finalized scene row.
   const [fallbackDiceRoll, setFallbackDiceRoll] = useState(null);
   const dismissedDiceSceneIdRef = useRef(null);
+  /** True while a scene generation was in progress — used only to gate fallback dice on gen end, not on campaign mount/load. */
+  const wasGeneratingSceneRef = useRef(false);
   const latestSceneForDice = scenes[scenes.length - 1] || null;
 
   useEffect(() => {
     if (isGeneratingScene) {
+      wasGeneratingSceneRef.current = true;
       setFallbackDiceRoll(null);
       dismissedDiceSceneIdRef.current = null;
       return;
     }
+    const justFinishedGeneration = wasGeneratingSceneRef.current;
+    wasGeneratingSceneRef.current = false;
+
     if (earlyDiceRoll) {
       setFallbackDiceRoll(null);
       return;
@@ -397,6 +403,9 @@ export default function GameplayPage({ readOnly = false, shareToken = null, onRe
     const dr = latestSceneForDice?.diceRoll;
     if (!dr || !latestSceneForDice?.id) return;
     if (dismissedDiceSceneIdRef.current === latestSceneForDice.id) return;
+    // Without this guard, revisiting gameplay remounts with `dismissed` cleared and replays
+    // the last scene's dice overlay (e.g. after lobby → campaign or LOAD_CAMPAIGN refetch).
+    if (!justFinishedGeneration) return;
     setFallbackDiceRoll(dr);
   }, [isGeneratingScene, earlyDiceRoll, latestSceneForDice?.id, latestSceneForDice?.diceRoll]);
 

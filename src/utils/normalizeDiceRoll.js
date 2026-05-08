@@ -26,6 +26,8 @@ export function normalizeDiceRoll(dr) {
 
   return {
     ...dr,
+    // Scene/backend uses `roll`; local-only flows (rekrutacja, wymyślanie zaklęcia) use `rolledValue`
+    roll: dr.roll ?? dr.rolledValue,
     attributeKey,
     attributeValue,
     skillLevel: dr.skillLevel ?? dr.skillAdvances ?? 0,

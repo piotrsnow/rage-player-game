@@ -527,6 +527,7 @@ export default function ActionPanel({
       {inventSpellOpen && campaignId && dispatch && createPortal(
         <InventSpellModal
           campaignId={campaignId}
+          character={character}
           dispatch={dispatch}
           onClose={() => setInventSpellOpen(false)}
           onCorrectionsApplied={onIncidentCorrectionsApplied}
@@ -553,6 +554,7 @@ export default function ActionPanel({
             onOpenIncident={campaignId ? () => setIncidentOpen(true) : undefined}
             onOpenSelfQuest={campaignId && dispatch ? () => setSelfQuestOpen(true) : undefined}
             onOpenInventSpell={campaignId && dispatch ? () => setInventSpellOpen(true) : undefined}
+            onOpenTravelMap={onOpenTravelMap}
             recruitableCount={recruitableNpcs.length}
             partyHasSlot={partyHasSlot}
             forceRollState={isMultiplayer ? null : forceRoll}
@@ -560,18 +562,6 @@ export default function ActionPanel({
             onForceRollDouble={handleForceRollDouble}
             onForceRollRight={handleForceRollRight}
           />
-          {onOpenTravelMap && (
-            <button
-              type="button"
-              aria-label={t('gameplay.travelMapButton')}
-              title={t('gameplay.travelMapButtonDescription')}
-              onClick={onOpenTravelMap}
-              disabled={disabled || hasPendingAction}
-              className="shrink-0 inline-flex items-center justify-center w-11 h-11 border rounded-sm transition-all duration-200 hover:-translate-y-px hover:shadow-[0_10px_24px_rgba(0,0,0,0.3)] disabled:opacity-30 disabled:cursor-not-allowed text-on-surface-variant/90 hover:text-on-surface bg-surface-container-high/45 hover:bg-surface-container-high border-outline-variant/20 hover:border-outline-variant/35"
-            >
-              <span className="material-symbols-outlined text-[22px] leading-none">map</span>
-            </button>
-          )}
           <CustomActionForm
             inputRef={inputRef}
             customAction={customAction}

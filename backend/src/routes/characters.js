@@ -195,6 +195,7 @@ const STATE_CHANGES_SCHEMA = {
     skillProgress: { type: 'object' },
     spellUsage: { type: 'object' },
     learnSpell: { type: ['string', 'object', 'null'] },
+    learnSpellIcon: { type: ['string', 'null'], maxLength: 80 },
     consumeScroll: { type: ['string', 'object', 'null'] },
     addScroll: { type: ['string', 'object', 'null'] },
     newItems: { type: 'array', maxItems: 100 },

@@ -262,6 +262,7 @@ const StateChangesSchema = z.object({
   skillProgress: z.record(z.string(), z.number()).nullable().optional(),
   spellUsage: z.record(z.string(), z.number()).nullable().optional(),
   learnSpell: z.string().nullable().optional(),
+  learnSpellIcon: z.string().nullable().optional(),
   consumeScroll: z.string().nullable().optional(),
   addScroll: z.string().nullable().optional(),
   newItems: z.array(InventoryItemSchema).optional().default([]),

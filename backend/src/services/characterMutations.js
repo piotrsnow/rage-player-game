@@ -16,6 +16,7 @@
  */
 
 import { slugifyItemName } from '../../../shared/domain/itemKeys.js';
+import { normalizeSpellMaterialIcon } from '../../../shared/domain/spellMaterialIcons.js';
 import { addEffect, removeEffect, removeEffectsByName, migrateStatusStrings, deriveStatusNames } from '../../../shared/domain/statusEffects.js';
 import { SKILL_BY_NAME, canonicalizeSkillName } from './diceResolver.js';
 
@@ -257,6 +258,12 @@ export function applyCharacterStateChanges(character, changes) {
     const spells = { ...(next.spells || { known: [], usageCounts: {}, scrolls: [] }) };
     if (!(spells.known || []).includes(changes.learnSpell)) {
       spells.known = [...(spells.known || []), changes.learnSpell];
+    }
+    if (changes.learnSpellIcon) {
+      const icon = normalizeSpellMaterialIcon(changes.learnSpellIcon);
+      if (icon) {
+        spells.icons = { ...(spells.icons || {}), [changes.learnSpell]: icon };
+      }
     }
     next.spells = spells;
   }

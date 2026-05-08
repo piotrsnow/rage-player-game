@@ -2,6 +2,7 @@ import { SKILL_CAPS, xpForSkillLevel } from '../../../data/rpgSystem';
 import { calculateMaxWounds, normalizeMoney } from '../../../services/gameState';
 import { stackMaterials, stackInventory } from '../_shared';
 import { slugifyItemName } from '../../../../shared/domain/itemKeys.js';
+import { normalizeSpellMaterialIcon } from '../../../../shared/domain/spellMaterialIcons.js';
 import { addEffect, removeEffect, removeEffectsByName, migrateStatusStrings, deriveStatusNames } from '../../../../shared/domain/statusEffects.js';
 import { normalizeSkillName } from '../../../services/diceRollInference.js';
 
@@ -102,6 +103,13 @@ function applySpellBook(draft, changes) {
     ensureSpells();
     if (!draft.character.spells.known.includes(changes.learnSpell)) {
       draft.character.spells.known.push(changes.learnSpell);
+    }
+    if (changes.learnSpellIcon) {
+      const icon = normalizeSpellMaterialIcon(changes.learnSpellIcon);
+      if (icon) {
+        if (!draft.character.spells.icons) draft.character.spells.icons = {};
+        draft.character.spells.icons[changes.learnSpell] = icon;
+      }
     }
   }
 

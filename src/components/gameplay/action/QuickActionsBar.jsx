@@ -5,11 +5,13 @@ import { getSkillLevel } from '../../../data/rpgSystem.js';
 import { useGameSlice } from '../../../stores/gameSelectors';
 
 const TONE_STYLES = {
-  primary: 'text-primary/90 hover:text-primary bg-primary/8 hover:bg-primary/14 border-primary/20 hover:border-primary/40',
-  neutral: 'text-on-surface-variant/90 hover:text-on-surface bg-surface-container-high/45 hover:bg-surface-container-high border-outline-variant/20 hover:border-outline-variant/35',
-  tertiary: 'text-tertiary/85 hover:text-tertiary bg-tertiary/8 hover:bg-tertiary/14 border-tertiary/20 hover:border-tertiary/35',
-  danger: 'text-error/85 hover:text-error bg-error/8 hover:bg-error/14 border-error/20 hover:border-error/35',
-  indigo: 'text-indigo-300/90 hover:text-indigo-200 bg-indigo-500/8 hover:bg-indigo-500/14 border-indigo-400/20 hover:border-indigo-300/35',
+  blue:   'text-sky-300 hover:text-sky-200 bg-sky-500/12 hover:bg-sky-500/22 border-sky-400/30 hover:border-sky-300/55',
+  purple: 'text-violet-300 hover:text-violet-200 bg-violet-500/12 hover:bg-violet-500/22 border-violet-400/30 hover:border-violet-300/55',
+  red:    'text-rose-300 hover:text-rose-200 bg-rose-500/12 hover:bg-rose-500/22 border-rose-400/30 hover:border-rose-300/55',
+  pink:   'text-pink-300 hover:text-pink-200 bg-pink-500/12 hover:bg-pink-500/22 border-pink-400/30 hover:border-pink-300/55',
+  teal:   'text-cyan-300 hover:text-cyan-200 bg-cyan-500/12 hover:bg-cyan-500/22 border-cyan-400/30 hover:border-cyan-300/55',
+  gray:   'text-slate-300 hover:text-slate-200 bg-slate-500/12 hover:bg-slate-500/22 border-slate-400/30 hover:border-slate-300/55',
+  yellow: 'text-yellow-300 hover:text-yellow-200 bg-yellow-500/12 hover:bg-yellow-500/22 border-yellow-400/30 hover:border-yellow-300/55',
 };
 
 function GroupButton({ icon, label, tone = 'neutral', disabled, items, onSelect }) {
@@ -116,6 +118,7 @@ export default function QuickActionsBar({
   onOpenIncident,
   onOpenSelfQuest,
   onOpenInventSpell,
+  onOpenTravelMap,
   recruitableCount = 0,
   partyHasSlot = true,
   forceRollState = null,
@@ -138,7 +141,7 @@ export default function QuickActionsBar({
       description: lastChosenAction === '[CONTINUE]' ? t('gameplay.continueDisabledTooltip') : t('gameplay.continueChatMessage'),
       action: '[CONTINUE]',
       disabled: lastChosenAction === '[CONTINUE]',
-      tone: 'primary',
+      tone: 'blue',
       visible: true,
     },
     {
@@ -147,7 +150,7 @@ export default function QuickActionsBar({
       label: t('gameplay.waitButton'),
       description: t('gameplay.waitSystemMessage'),
       action: '[WAIT]',
-      tone: 'neutral',
+      tone: 'gray',
       visible: true,
     },
     {
@@ -156,7 +159,7 @@ export default function QuickActionsBar({
       label: t('gameplay.restButton'),
       description: t('gameplay.restAction'),
       action: t('gameplay.restAction'),
-      tone: 'indigo',
+      tone: 'purple',
       visible: !!needsSystemEnabled,
     },
   ];
@@ -168,7 +171,7 @@ export default function QuickActionsBar({
       label: t('gameplay.searchForQuests'),
       description: t('gameplay.searchForQuestsAction'),
       action: t('gameplay.searchForQuestsAction'),
-      tone: 'tertiary',
+      tone: 'teal',
       visible: true,
     },
     {
@@ -177,7 +180,7 @@ export default function QuickActionsBar({
       label: t('gameplay.selfQuestButton'),
       description: t('gameplay.selfQuestHint'),
       onClick: onOpenSelfQuest,
-      tone: 'primary',
+      tone: 'blue',
       visible: !!onOpenSelfQuest,
     },
     {
@@ -186,7 +189,7 @@ export default function QuickActionsBar({
       label: t('trade.tradeWith'),
       description: t('trade.tradeWith'),
       onClick: onToggleTradePicker,
-      tone: 'tertiary',
+      tone: 'teal',
       visible: npcs.length > 0 && !!dispatch && !tradeActive,
     },
     {
@@ -195,7 +198,7 @@ export default function QuickActionsBar({
       label: t('training.trainButton', 'Trening'),
       description: t('training.trainWith', 'Trenuj z...'),
       onClick: onToggleTrainerPicker,
-      tone: 'primary',
+      tone: 'blue',
       visible: hasTrainer && !!dispatch && !!onToggleTrainerPicker,
     },
     {
@@ -204,7 +207,7 @@ export default function QuickActionsBar({
       label: t('party.recruit', 'Rekrutuj'),
       description: t('party.recruitDescription', 'Poproś NPC z ostatnich scen o dołączenie do drużyny'),
       onClick: onToggleRecruitPicker,
-      tone: 'primary',
+      tone: 'pink',
       visible: recruitableCount > 0 && partyHasSlot && !!dispatch && !!onToggleRecruitPicker,
     },
   ];
@@ -216,7 +219,7 @@ export default function QuickActionsBar({
       label: t('crafting.title'),
       description: t('crafting.recipes'),
       onClick: () => dispatch({ type: 'START_CRAFTING' }),
-      tone: 'primary',
+      tone: 'purple',
       visible: !!dispatch && !craftingActive && getSkillLevel(character?.skills, 'Rzemioslo') > 0,
     },
     {
@@ -225,7 +228,7 @@ export default function QuickActionsBar({
       label: t('alchemy.title'),
       description: t('alchemy.recipes'),
       onClick: () => dispatch({ type: 'START_ALCHEMY' }),
-      tone: 'primary',
+      tone: 'teal',
       visible: !!dispatch && !alchemyActive && getSkillLevel(character?.skills, 'Alchemia') > 0,
     },
     {
@@ -234,7 +237,7 @@ export default function QuickActionsBar({
       label: t('gameplay.inventSpellButton'),
       description: t('gameplay.inventSpellDescription'),
       onClick: onOpenInventSpell,
-      tone: 'primary',
+      tone: 'pink',
       visible: !!onOpenInventSpell,
     },
   ];
@@ -254,7 +257,7 @@ export default function QuickActionsBar({
       <GroupButton
         icon="play_circle"
         label={t('gameplay.narrativeActions', 'Narracja')}
-        tone="primary"
+        tone="blue"
         disabled={isDisabled}
         items={narrativeItems}
         onSelect={onSuggestedAction}
@@ -266,7 +269,7 @@ export default function QuickActionsBar({
         title={t('gameplay.initiateCombat')}
         onClick={onToggleCombatPicker}
         disabled={isDisabled}
-        className={`shrink-0 inline-flex items-center justify-center w-11 h-11 border rounded-sm transition-all duration-200 hover:-translate-y-px hover:shadow-[0_10px_24px_rgba(0,0,0,0.3)] disabled:opacity-30 disabled:cursor-not-allowed ${TONE_STYLES.danger}`}
+        className={`shrink-0 inline-flex items-center justify-center w-11 h-11 border rounded-sm transition-all duration-200 hover:-translate-y-px hover:shadow-[0_10px_24px_rgba(0,0,0,0.3)] disabled:opacity-30 disabled:cursor-not-allowed ${TONE_STYLES.red}`}
       >
         <span className="material-symbols-outlined text-[22px] leading-none">swords</span>
       </button>
@@ -274,16 +277,16 @@ export default function QuickActionsBar({
       <GroupButton
         icon="people"
         label={t('gameplay.interactions', 'Interakcje')}
-        tone="tertiary"
+        tone="teal"
         disabled={isDisabled}
         items={interactionItems}
         onSelect={onSuggestedAction}
       />
 
       <GroupButton
-        icon="build"
+        icon="gavel"
         label={t('gameplay.craftingGroup', 'Rzemiosło')}
-        tone="primary"
+        tone="purple"
         disabled={isDisabled}
         items={craftItems}
       />
@@ -295,9 +298,22 @@ export default function QuickActionsBar({
           title={t('gameplay.incidentDescription')}
           onClick={onOpenIncident}
           disabled={isDisabled}
-          className={`shrink-0 inline-flex items-center justify-center w-11 h-11 border rounded-sm transition-all duration-200 hover:-translate-y-px hover:shadow-[0_10px_24px_rgba(0,0,0,0.3)] disabled:opacity-30 disabled:cursor-not-allowed ${TONE_STYLES.danger}`}
+          className={`shrink-0 inline-flex items-center justify-center w-11 h-11 border rounded-sm transition-all duration-200 hover:-translate-y-px hover:shadow-[0_10px_24px_rgba(0,0,0,0.3)] disabled:opacity-30 disabled:cursor-not-allowed ${TONE_STYLES.pink}`}
         >
           <span className="material-symbols-outlined text-[22px] leading-none">warning</span>
+        </button>
+      )}
+
+      {onOpenTravelMap && (
+        <button
+          type="button"
+          aria-label={t('gameplay.travelMapButton')}
+          title={t('gameplay.travelMapButtonDescription')}
+          onClick={onOpenTravelMap}
+          disabled={isDisabled}
+          className={`shrink-0 inline-flex items-center justify-center w-11 h-11 border rounded-sm transition-all duration-200 hover:-translate-y-px hover:shadow-[0_10px_24px_rgba(0,0,0,0.3)] disabled:opacity-30 disabled:cursor-not-allowed ${TONE_STYLES.yellow}`}
+        >
+          <span className="material-symbols-outlined text-[22px] leading-none">map</span>
         </button>
       )}
     </div>

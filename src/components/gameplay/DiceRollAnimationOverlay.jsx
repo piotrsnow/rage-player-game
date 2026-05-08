@@ -170,7 +170,7 @@ export default function DiceRollAnimationOverlay({ diceRoll, onDismiss, holdOpen
                 className={`font-mono text-3xl font-black leading-none ${getOutcomeColor(dr)}`}
                 style={{ textShadow: `0 0 12px ${getOutcomeGlow(dr)}` }}
               >
-                {dr.roll}
+                {nd.roll}
               </span>
             </div>
 
