@@ -19,6 +19,7 @@ import QuickActionsBar from './action/QuickActionsBar';
 import CustomActionForm from './action/CustomActionForm';
 import IncidentModal from './action/IncidentModal';
 import SelfQuestModal from './action/SelfQuestModal';
+import InventSpellModal from './action/InventSpellModal';
 import { useGameSlice } from '../../stores/gameSelectors';
 import {
   getRecentNpcsForRecruitment,
@@ -74,6 +75,7 @@ export default function ActionPanel({
   const [recruitPickerOpen, setRecruitPickerOpen] = useState(false);
   const [incidentOpen, setIncidentOpen] = useState(false);
   const [selfQuestOpen, setSelfQuestOpen] = useState(false);
+  const [inventSpellOpen, setInventSpellOpen] = useState(false);
   const [forceRoll, setForceRoll] = useState(FORCE_ROLL_INITIAL);
 
   const scenes = useGameSlice((s) => s.scenes);
@@ -522,6 +524,16 @@ export default function ActionPanel({
         document.body
       )}
 
+      {inventSpellOpen && campaignId && dispatch && createPortal(
+        <InventSpellModal
+          campaignId={campaignId}
+          dispatch={dispatch}
+          onClose={() => setInventSpellOpen(false)}
+          onCorrectionsApplied={onIncidentCorrectionsApplied}
+        />,
+        document.body
+      )}
+
       {/* Row 2: Utility buttons + Input */}
       {(!hasPendingAction || !isMultiplayer) && (
         <div className="flex items-center gap-3">
@@ -540,6 +552,7 @@ export default function ActionPanel({
             onToggleRecruitPicker={() => setRecruitPickerOpen((v) => !v)}
             onOpenIncident={campaignId ? () => setIncidentOpen(true) : undefined}
             onOpenSelfQuest={campaignId && dispatch ? () => setSelfQuestOpen(true) : undefined}
+            onOpenInventSpell={campaignId && dispatch ? () => setInventSpellOpen(true) : undefined}
             recruitableCount={recruitableNpcs.length}
             partyHasSlot={partyHasSlot}
             forceRollState={isMultiplayer ? null : forceRoll}

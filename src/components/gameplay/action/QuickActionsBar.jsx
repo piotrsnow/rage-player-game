@@ -115,6 +115,7 @@ export default function QuickActionsBar({
   onToggleRecruitPicker,
   onOpenIncident,
   onOpenSelfQuest,
+  onOpenInventSpell,
   recruitableCount = 0,
   partyHasSlot = true,
   forceRollState = null,
@@ -226,6 +227,15 @@ export default function QuickActionsBar({
       onClick: () => dispatch({ type: 'START_ALCHEMY' }),
       tone: 'primary',
       visible: !!dispatch && !alchemyActive && getSkillLevel(character?.skills, 'Alchemia') > 0,
+    },
+    {
+      id: 'inventSpell',
+      icon: 'auto_awesome',
+      label: t('gameplay.inventSpellButton'),
+      description: t('gameplay.inventSpellDescription'),
+      onClick: onOpenInventSpell,
+      tone: 'primary',
+      visible: !!onOpenInventSpell,
     },
   ];
 
