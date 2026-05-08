@@ -153,13 +153,39 @@ function CardContent({ nd, styles, modifierLines, expanded, t, showCharacter }) 
         </div>
 
         {threshold != null && (
-          <div className="flex justify-between items-baseline">
-            <span className="text-on-surface-variant">
-              {t('gameplay.diceRollVsThreshold')}
-              {diffLabel ? ` (${diffLabel})` : ''}
-            </span>
-            <span className="font-bold text-on-surface/80">{threshold}</span>
-          </div>
+          <>
+            <div className="flex justify-between items-baseline">
+              <span className="text-on-surface-variant">
+                {nd.thresholdBreakdown
+                  ? t('gameplay.thresholdBase')
+                  : t('gameplay.diceRollVsThreshold')}
+                {diffLabel ? ` (${diffLabel})` : ''}
+              </span>
+              <span className="font-bold text-on-surface/80">
+                {nd.thresholdBreakdown ? nd.thresholdBreakdown.base : threshold}
+              </span>
+            </div>
+
+            {nd.thresholdBreakdown?.modifiers?.length > 0 && (
+              <>
+                {nd.thresholdBreakdown.modifiers.map((mod, i) => (
+                  <div key={i} className="flex justify-between items-baseline">
+                    <span className="text-xs text-orange-300/80">{mod.reason}</span>
+                    <span className="font-bold text-orange-300">
+                      {mod.value >= 0 ? `+${mod.value}` : `−${Math.abs(mod.value)}`}
+                    </span>
+                  </div>
+                ))}
+                <div className="border-t border-outline-variant/20 my-1" />
+                <div className="flex justify-between items-baseline">
+                  <span className="text-on-surface-variant font-semibold">
+                    {t('gameplay.thresholdFinal')}
+                  </span>
+                  <span className="font-bold text-on-surface">{nd.thresholdBreakdown.final}</span>
+                </div>
+              </>
+            )}
+          </>
         )}
       </div>
 

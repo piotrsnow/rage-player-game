@@ -218,6 +218,20 @@ export default function DiceRollAnimationOverlay({ diceRoll, onDismiss, holdOpen
             </div>
           )}
 
+          {/* Situational modifier chips */}
+          {nd.thresholdBreakdown?.modifiers?.length > 0 && (
+            <div className="flex items-center justify-center gap-1.5 mt-1.5 flex-wrap">
+              {nd.thresholdBreakdown.modifiers.map((mod, i) => (
+                <span
+                  key={i}
+                  className="text-[9px] font-bold text-orange-300/80 bg-orange-400/10 border border-orange-400/20 rounded-full px-2 py-0.5"
+                >
+                  {mod.value >= 0 ? '+' : '−'}{Math.abs(mod.value)} {mod.reason}
+                </span>
+              ))}
+            </div>
+          )}
+
           {/* Outcome label */}
           <p
             className={`text-center text-sm font-black uppercase tracking-[0.25em] mt-3 ${getOutcomeColor(dr)}`}

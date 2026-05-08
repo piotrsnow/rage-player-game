@@ -2,23 +2,27 @@ import { useRef, useEffect, useCallback, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useTranslation } from 'react-i18next';
 import {
-  TOKEN_RADIUS,
-  BATTLEFIELD_PAD_TOP,
-  BATTLEFIELD_PAD_X,
-  xToYard,
-  yardToX,
+  getCellSize,
+  getTokenRadius,
+  pixelToCell,
+  cellToPixel,
   initParticles,
   drawBackground,
   drawBattlefield,
+  drawTerrainTiles,
   drawMovementZone,
   drawMeleeEngagements,
   drawRangeIndicator,
   computeTokenPositions,
   drawCombatOverOverlay,
+  drawProjectile,
 } from './combat/combatCanvasDraw';
+import { gameData } from '../../services/gameDataService';
+import { getDistance } from '../../services/combatEngine';
 import CombatToken from './combat/CombatToken';
 import InitiativeBar from './combat/InitiativeBar';
 import ActionModal from './combat/ActionModal';
+import ActiveEffectsRow from '../ui/ActiveEffectsRow';
 
 const FLOAT_TEXT_DURATION = 1200;
 
@@ -42,23 +46,33 @@ export default function CombatCanvas({
   character,
   onAiAction,
   actionAnim,
+  projectileAnim,
   expanded = false,
+  fillHeight = false,
+  hideMovementHint = false,
+  hideInitiativeBar = false,
+  tokenAnimations = {},
+  onEndCombat,
+  canControl = false,
 }) {
   const { t } = useTranslation();
   const canvasRef = useRef(null);
   const containerRef = useRef(null);
-  const [containerSize, setContainerSize] = useState({ w: 800, h: 260 });
+  const sizerRef = useRef(null);
+  const [containerSize, setContainerSize] = useState({ w: 800, h: 450 });
   const animRef = useRef({
     particles: [],
     combatOverStart: null,
     prevWounds: {},
   });
-  const hoverYardRef = useRef(null);
+  const hoverCellRef = useRef(null);
   const rafRef = useRef(0);
 
   const [actionModal, setActionModal] = useState(null);
   const [floatingTexts, setFloatingTexts] = useState([]);
   const floatIdRef = useRef(0);
+  const [tileTooltip, setTileTooltip] = useState(null);
+  const [hoveredCombatantId, setHoveredCombatantId] = useState(null);
 
   const friendlies = useMemo(
     () => combat.combatants.filter((c) => c.type === 'player' || c.type === 'ally'),
@@ -76,7 +90,6 @@ export default function CombatCanvas({
     return combat.combatants.find(c => c.id === actionModal.targetId) || null;
   }, [actionModal, combat.combatants]);
 
-  // Detect wound changes -> floating damage text
   useEffect(() => {
     for (const c of combat.combatants) {
       const prev = animRef.current.prevWounds[c.id];
@@ -95,7 +108,6 @@ export default function CombatCanvas({
     }
   }, [combat.combatants]);
 
-  // Clean up expired floating texts
   useEffect(() => {
     if (floatingTexts.length === 0) return;
     const timer = setInterval(() => {
@@ -113,31 +125,35 @@ export default function CombatCanvas({
   }, [combatOver]);
 
   useEffect(() => {
-    const el = containerRef.current;
+    const el = sizerRef.current;
     if (!el) return;
+    const ratio = gameData.BATTLEFIELD_WIDTH / gameData.BATTLEFIELD_HEIGHT;
     const ro = new ResizeObserver(([entry]) => {
-      const { width, height } = entry.contentRect;
-      if (width > 0 && height > 0) {
-        setContainerSize({ w: width, h: height });
-        animRef.current.particles = initParticles(width, height);
+      const { width: pw, height: ph } = entry.contentRect;
+      if (pw <= 0 || ph <= 0) return;
+      let w, h;
+      if (pw / ph > ratio) {
+        h = Math.floor(ph);
+        w = Math.floor(h * ratio);
+      } else {
+        w = Math.floor(pw);
+        h = Math.floor(w / ratio);
       }
+      setContainerSize({ w, h });
+      animRef.current.particles = initParticles(w, h);
     });
     ro.observe(el);
     return () => ro.disconnect();
   }, []);
 
-  // Battlefield layout constants
-  const bfTop = BATTLEFIELD_PAD_TOP;
-  const bfBot = containerSize.h - 16;
-  const bfH = bfBot - bfTop;
-  const bfCenterY = bfTop + bfH / 2;
-
   const tokenPositions = useMemo(
-    () => computeTokenPositions(combat.combatants, containerSize.w, bfCenterY, bfH),
-    [combat.combatants, containerSize.w, bfCenterY, bfH]
+    () => computeTokenPositions(combat.combatants, containerSize.w, containerSize.h),
+    [combat.combatants, containerSize.w, containerSize.h]
   );
 
-  // Canvas draw loop — background only
+  const cellSize = useMemo(() => getCellSize(containerSize.w, containerSize.h), [containerSize.w, containerSize.h]);
+  const tokenRadius = useMemo(() => getTokenRadius(containerSize.w, containerSize.h), [containerSize.w, containerSize.h]);
+
   const draw = useCallback(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -154,25 +170,30 @@ export default function CombatCanvas({
     const now = performance.now();
 
     drawBackground(ctx, w, h, now, animRef.current);
-    drawBattlefield(ctx, w, bfTop, bfH, now);
+    drawBattlefield(ctx, w, h, now);
+    drawTerrainTiles(ctx, w, h, combat.terrainTiles, gameData.terrainTiles, now);
 
     if (isMyTurn && myCombatant && !combatOver) {
-      drawMovementZone(ctx, w, bfTop, bfH, myCombatant, hoverYardRef.current);
+      drawMovementZone(ctx, w, h, myCombatant, hoverCellRef.current, now);
     }
 
-    drawMeleeEngagements(ctx, combat.combatants, w, bfCenterY, now);
+    drawMeleeEngagements(ctx, combat.combatants, w, h, now);
+
+    if (projectileAnim) {
+      drawProjectile(ctx, projectileAnim, w, h, now);
+    }
 
     if (actionModal?.targetId && myCombatant) {
       const target = combat.combatants.find(c => c.id === actionModal.targetId);
       if (target && target.id !== myCombatant.id) {
-        drawRangeIndicator(ctx, myCombatant, target, w, bfCenterY);
+        drawRangeIndicator(ctx, myCombatant, target, w, h);
       }
     }
 
     if (combatOver) {
       drawCombatOverOverlay(ctx, w, h, friendlies, now, animRef.current);
     }
-  }, [containerSize, combat, isMyTurn, myCombatant, combatOver, friendlies, bfTop, bfH, bfCenterY, actionModal]);
+  }, [containerSize, combat, isMyTurn, myCombatant, combatOver, friendlies, actionModal, projectileAnim]);
 
   useEffect(() => {
     let running = true;
@@ -188,118 +209,243 @@ export default function CombatCanvas({
     };
   }, [draw]);
 
+  const combatantAtCell = useCallback((cell) => {
+    if (!cell) return null;
+    return combat.combatants.find((c) => {
+      const p = c.position && typeof c.position === 'object' && 'x' in c.position
+        ? c.position
+        : typeof c.position === 'number' ? { x: c.position, y: 4 } : { x: 0, y: 0 };
+      return p.x === cell.x && p.y === cell.y && !c.isDefeated;
+    }) || null;
+  }, [combat.combatants]);
+
   const handleCanvasPointerMove = useCallback((e) => {
     const rect = canvasRef.current?.getBoundingClientRect();
     if (!rect) return;
     const x = e.clientX - rect.left;
-    const yard = xToYard(x, containerSize.w);
-    hoverYardRef.current = yard;
+    const y = e.clientY - rect.top;
+    const cell = pixelToCell(x, y, containerSize.w, containerSize.h);
+    hoverCellRef.current = cell;
 
-    const canvas = canvasRef.current;
-    if (canvas && isMyTurn && myCombatant && !combatOver) {
-      canvas.style.cursor = 'crosshair';
-    } else if (canvas) {
-      canvas.style.cursor = 'default';
+    if (cell && combat.terrainTiles?.length) {
+      const tile = combat.terrainTiles.find(tt => tt.x === cell.x && tt.y === cell.y && !tt.consumed);
+      if (tile) {
+        const def = gameData.terrainTiles[tile.type];
+        if (def) {
+          const px = cellToPixel(cell.x, cell.y, containerSize.w, containerSize.h);
+          setTileTooltip({ name: t(`combat.terrain.${tile.type}`, def.name), desc: t(`combat.terrain.${tile.type}_desc`, ''), x: px.x, y: px.y });
+        } else {
+          setTileTooltip(null);
+        }
+      } else {
+        setTileTooltip(null);
+      }
+    } else {
+      setTileTooltip(null);
     }
-  }, [containerSize.w, isMyTurn, myCombatant, combatOver]);
+
+    const hasCombatant = cell && combatantAtCell(cell);
+    const canvas = canvasRef.current;
+    if (canvas && isMyTurn && myCombatant && !combatOver && cell) {
+      canvas.style.cursor = hasCombatant ? 'pointer' : 'cell';
+    } else if (canvas) {
+      canvas.style.cursor = cell && hasCombatant ? 'pointer' : 'default';
+    }
+
+    const hovId = hasCombatant?.id || null;
+    setHoveredCombatantId(hovId);
+    onHoverCombatant?.(hovId);
+  }, [containerSize.w, containerSize.h, isMyTurn, myCombatant, combatOver, combat.terrainTiles, t, combatantAtCell, onHoverCombatant]);
 
   const handleCanvasClick = useCallback((e) => {
     if (!isMyTurn || combatOver) return;
     const rect = canvasRef.current?.getBoundingClientRect();
     if (!rect) return;
     const x = e.clientX - rect.left;
-    const yard = xToYard(x, containerSize.w);
-    const yPx = yardToX(yard, containerSize.w);
+    const y = e.clientY - rect.top;
+    const cell = pixelToCell(x, y, containerSize.w, containerSize.h);
+    if (!cell) return;
 
-    setActionModal({
-      targetId: null,
-      targetType: 'ground',
-      targetYard: yard,
-      anchorRect: { x: rect.left + yPx, y: rect.top + bfCenterY, width: 0, height: 0 },
-    });
-  }, [containerSize.w, isMyTurn, combatOver, bfCenterY]);
-
-  const handleTokenClick = useCallback((combatant) => {
-    if (combatOver) return;
-    if (!isMyTurn) return;
-
-    const pos = tokenPositions.find(p => p.combatant.id === combatant.id);
-    if (!pos) return;
-
+    const combatant = combatantAtCell(cell);
+    const px = cellToPixel(cell.x, cell.y, containerSize.w, containerSize.h);
     const containerRect = containerRef.current?.getBoundingClientRect();
     if (!containerRect) return;
 
-    const isSelf = combatant.id === myCombatant?.id;
-    const isEnemy = combatant.type === 'enemy';
-    const isAlly = combatant.type === 'ally';
+    if (combatant) {
+      const isSelf = combatant.id === myCombatant?.id;
+      const isEnemy = combatant.type === 'enemy';
+      const isAlly = combatant.type === 'ally';
 
-    let targetType = 'enemy';
-    if (isSelf) targetType = 'self';
-    else if (isAlly) targetType = 'ally';
-    else if (!isEnemy) targetType = 'self';
+      let targetType = 'enemy';
+      if (isSelf) targetType = 'self';
+      else if (isAlly) targetType = 'ally';
+      else if (!isEnemy) targetType = 'self';
 
-    if (combatant.isDefeated) return;
+      onSelectTarget?.(isEnemy ? combatant.id : null);
 
-    onSelectTarget?.(isEnemy ? combatant.id : null);
-
-    setActionModal({
-      targetId: combatant.id,
-      targetType,
-      targetYard: null,
-      anchorRect: {
-        x: containerRect.left + pos.x,
-        y: containerRect.top + pos.y - TOKEN_RADIUS - 10,
-        width: TOKEN_RADIUS * 2,
-        height: TOKEN_RADIUS * 2,
-      },
-    });
-  }, [combatOver, isMyTurn, tokenPositions, myCombatant, onSelectTarget]);
+      setActionModal({
+        targetId: combatant.id,
+        targetType,
+        targetCell: null,
+        anchorRect: {
+          x: containerRect.left + px.x,
+          y: containerRect.top + px.y - tokenRadius - 10,
+          width: tokenRadius * 2,
+          height: tokenRadius * 2,
+        },
+      });
+    } else {
+      setActionModal({
+        targetId: null,
+        targetType: 'ground',
+        targetCell: cell,
+        anchorRect: { x: containerRect.left + px.x, y: containerRect.top + px.y, width: 0, height: 0 },
+      });
+    }
+  }, [containerSize.w, containerSize.h, isMyTurn, combatOver, combatantAtCell, myCombatant, onSelectTarget, tokenRadius]);
 
   const handleExecuteFromModal = useCallback((manoeuvreKey, targetId, customDesc, extraOpts) => {
     onExecuteManoeuvre?.(manoeuvreKey, targetId, customDesc, extraOpts);
     setActionModal(null);
   }, [onExecuteManoeuvre]);
 
-  const handleMoveFromModal = useCallback((yard) => {
-    onMoveToPosition?.(yard);
+  const handleMoveFromModal = useCallback((targetCell) => {
+    onMoveToPosition?.(targetCell);
     setActionModal(null);
   }, [onMoveToPosition]);
 
   return (
-    <div className="space-y-1.5">
-      <InitiativeBar
-        combatants={combat.combatants}
-        turnIndex={combat.turnIndex}
-        myCombatantId={myCombatant?.id}
-        t={t}
-      />
+    <div className={fillHeight ? 'h-full flex flex-col gap-1' : 'space-y-1'}>
+      {!hideInitiativeBar && (
+        <InitiativeBar
+          combatants={combat.combatants}
+          turnIndex={combat.turnIndex}
+          myCombatantId={myCombatant?.id}
+          t={t}
+        />
+      )}
 
       <div
-        ref={containerRef}
-        className={`w-full relative rounded-md overflow-hidden border border-error/20 bg-surface-dim ${expanded ? 'h-[clamp(300px,45vh,600px)]' : ''}`}
-        style={expanded ? undefined : { height: 220 }}
+        ref={sizerRef}
+        className={`w-full flex items-center justify-center ${expanded ? 'h-[clamp(260px,40vh,480px)]' : fillHeight ? 'flex-1 min-h-0' : ''}`}
+        style={expanded || fillHeight ? undefined : { aspectRatio: `${gameData.BATTLEFIELD_WIDTH} / ${gameData.BATTLEFIELD_HEIGHT}` }}
       >
-        {/* Canvas background layer */}
+      <div
+        ref={containerRef}
+        className="relative rounded-md overflow-hidden border border-error/20"
+        style={{ width: containerSize.w, height: containerSize.h }}
+      >
         <canvas
           ref={canvasRef}
           className="w-full h-full absolute inset-0"
           style={{ display: 'block' }}
           onPointerMove={handleCanvasPointerMove}
           onClick={handleCanvasClick}
-          onPointerLeave={() => { hoverYardRef.current = null; }}
+          onPointerLeave={() => { hoverCellRef.current = null; setTileTooltip(null); setHoveredCombatantId(null); }}
         />
 
-        {/* DOM token overlay */}
         <div className="absolute inset-0 pointer-events-none">
+          {tileTooltip && (
+            <div
+              className="absolute z-20 px-2 py-1 rounded bg-surface-container/95 border border-outline-variant/30 shadow-lg text-[10px] whitespace-nowrap"
+              style={{ left: tileTooltip.x, top: tileTooltip.y - cellSize * 0.7, transform: 'translate(-50%, -100%)' }}
+            >
+              <div className="font-bold text-on-surface">{tileTooltip.name}</div>
+              {tileTooltip.desc && <div className="text-on-surface-variant">{tileTooltip.desc}</div>}
+            </div>
+          )}
+
+          {hoveredCombatantId && !actionModal && (() => {
+            const hc = combat.combatants.find(c => c.id === hoveredCombatantId);
+            const hPos = tokenPositions.find(p => p.combatant.id === hoveredCombatantId);
+            if (!hc || !hPos) return null;
+            const isEnemy = hc.type === 'enemy';
+            const dist = myCombatant && hc.id !== myCombatant.id ? getDistance(hc, myCombatant) : null;
+            const mainWeapon = (() => {
+              if (hc.equipped?.mainHand) {
+                const item = (hc.inventory || []).find(i => i.id === hc.equipped.mainHand);
+                if (item) return item.name;
+              }
+              return (hc.weapons || []).map(w => typeof w === 'string' ? w : w.name).find(Boolean);
+            })();
+            const armour = (() => {
+              if (hc.equipped?.armour) {
+                const item = (hc.inventory || []).find(i => i.id === hc.equipped.armour);
+                if (item) return item.name;
+              }
+              return hc.equippedArmour || (hc.armourDR ? `DR ${hc.armourDR}` : null);
+            })();
+            const conditions = (hc.conditions || []).filter(cond => cond !== 'fled' || hc.isDefeated);
+            const effects = hc.activeEffects || [];
+            return (
+              <div
+                className="absolute z-30 px-3 py-2.5 rounded-md bg-surface-container/95 border border-outline-variant/30 shadow-xl text-[12px] whitespace-nowrap"
+                style={{ left: hPos.x, top: hPos.y - tokenRadius - 14, transform: 'translate(-50%, -100%)', minWidth: 180 }}
+              >
+                <div className="flex items-center gap-2">
+                  <span className={`font-bold text-[15px] ${isEnemy ? 'text-error' : 'text-primary'}`}>{hc.name}</span>
+                  {hc.isDefeated && <span className="text-[10px] text-error bg-error/10 px-1.5 py-0.5 rounded-sm uppercase font-bold">KO</span>}
+                </div>
+                <div className="mt-1.5 space-y-1">
+                  <div className="flex items-center justify-between gap-3 text-on-surface">
+                    <span>{t('combat.wounds', 'Wounds')}:</span>
+                    <span className="font-bold tabular-nums">{hc.wounds}/{hc.maxWounds}</span>
+                  </div>
+                  <div className="w-full h-[7px] rounded-full overflow-hidden" style={{ background: 'rgba(72,71,74,0.5)' }}>
+                    <div
+                      className="h-full rounded-full transition-all"
+                      style={{
+                        width: `${hc.maxWounds > 0 ? Math.max(0, Math.min(100, (hc.wounds / hc.maxWounds) * 100)) : 0}%`,
+                        backgroundColor: isEnemy ? '#ff6e84' : (hc.wounds / hc.maxWounds > 0.5 ? '#c59aff' : hc.wounds / hc.maxWounds > 0.25 ? '#e8a040' : '#ff6e84'),
+                      }}
+                    />
+                  </div>
+                </div>
+                {dist != null && (
+                  <div className="text-on-surface-variant mt-1">{t('combat.distanceLabel', 'Distance')}: <span className="font-bold text-on-surface">{dist}</span></div>
+                )}
+                {mainWeapon && (
+                  <div className="text-on-surface-variant flex items-center gap-1.5 mt-0.5">
+                    <span className="material-symbols-outlined text-[14px]">swords</span>{mainWeapon}
+                  </div>
+                )}
+                {armour && (
+                  <div className="text-on-surface-variant flex items-center gap-1.5 mt-0.5">
+                    <span className="material-symbols-outlined text-[14px]">shield</span>{armour}
+                  </div>
+                )}
+                {conditions.length > 0 && (
+                  <div className="flex flex-wrap gap-1 mt-1.5">
+                    {conditions.map((cond, i) => (
+                      <span key={`${cond}_${i}`} className="px-1.5 py-0.5 rounded-sm bg-surface-container text-[10px] text-on-surface-variant uppercase tracking-wider">{cond}</span>
+                    ))}
+                  </div>
+                )}
+                {effects.length > 0 && (
+                  <div className="mt-1.5 pt-1.5 border-t border-outline-variant/20" style={{ whiteSpace: 'normal', maxWidth: 240 }}>
+                    <div className="text-[10px] text-on-surface-variant uppercase tracking-wider mb-1">
+                      {t('combat.effects', 'Effects')}
+                    </div>
+                    <ActiveEffectsRow effects={effects} maxVisible={8} />
+                  </div>
+                )}
+              </div>
+            );
+          })()}
+
           {tokenPositions.map((pos) => {
             const c = pos.combatant;
             const turnsUntil = (combat.combatants.indexOf(c) - combat.turnIndex + combat.combatants.length) % combat.combatants.length;
 
             let actDirection = 0;
+            let shoveOffset = null;
             if (actionAnim && actionAnim.actorId === c.id && actionAnim.targetId) {
               const targetPos = tokenPositions.find(p => p.combatant.id === actionAnim.targetId);
               if (targetPos) {
                 actDirection = targetPos.x > pos.x ? 1 : targetPos.x < pos.x ? -1 : 0;
+                if (actionAnim.type === 'shove') {
+                  shoveOffset = { dx: targetPos.x - pos.x, dy: targetPos.y - pos.y };
+                }
               }
             }
 
@@ -309,20 +455,22 @@ export default function CombatCanvas({
                 combatant={c}
                 x={pos.x}
                 y={pos.y}
+                cellSize={cellSize}
                 isActive={combat.combatants.indexOf(c) === combat.turnIndex}
                 isSelected={c.id === selectedTarget}
+                isHovered={hoveredCombatantId === c.id}
                 turnsUntil={c.isDefeated ? null : turnsUntil}
                 spriteUrl={c.spriteUrl || null}
                 myCombatant={myCombatant}
-                onClick={handleTokenClick}
                 isActing={actionAnim?.actorId === c.id}
                 actDirection={actDirection}
+                shoveOffset={shoveOffset}
+                transitionDuration={tokenAnimations[c.id]?.durationMs || 0}
                 t={t}
               />
             );
           })}
 
-          {/* Floating damage texts */}
           {floatingTexts.map((ft) => {
             const pos = tokenPositions.find(p => p.combatant.id === ft.combatantId);
             if (!pos) return null;
@@ -332,7 +480,7 @@ export default function CombatCanvas({
                 className="combat-float-text"
                 style={{
                   left: pos.x,
-                  top: pos.y - TOKEN_RADIUS - 10,
+                  top: pos.y - tokenRadius - 10,
                   color: ft.color,
                 }}
               >
@@ -342,15 +490,30 @@ export default function CombatCanvas({
           })}
         </div>
 
+        {combatOver && canControl && onEndCombat && (
+          <div className="absolute inset-0 z-40 flex items-center justify-center pointer-events-none">
+            <div className="flex flex-col items-center gap-5 pointer-events-auto" style={{ marginTop: '15%' }}>
+              <button
+                onClick={onEndCombat}
+                title={t('combat.leaveCombat', 'Opuść tryb walki')}
+                className="w-14 h-14 rounded-full border-2 border-primary/40 bg-surface-container/80 backdrop-blur-sm text-primary hover:bg-primary/20 hover:border-primary/60 hover:scale-110 transition-all shadow-lg shadow-primary/20"
+              >
+                <span className="material-symbols-outlined text-3xl">logout</span>
+              </button>
+            </div>
+          </div>
+        )}
+
+      </div>
       </div>
 
-      {/* Portal escapes ancestor transform/overflow containing blocks */}
       {actionModal && isMyTurn && !combatOver && createPortal(
         <ActionModal
           anchorRect={actionModal.anchorRect}
           target={actionModalTarget}
           targetType={actionModal.targetType}
           myCombatant={myCombatant}
+          combatants={combat.combatants}
           availableManoeuvres={availableManoeuvres || []}
           savedCustomAttacks={savedCustomAttacks || []}
           onExecute={handleExecuteFromModal}
@@ -362,22 +525,21 @@ export default function CombatCanvas({
           character={character}
           onAiAction={(actionText) => { onAiAction?.(actionText); setActionModal(null); }}
           t={t}
-          targetYard={actionModal.targetYard}
+          targetCell={actionModal.targetCell}
         />,
         document.body,
       )}
 
-      {isMyTurn && !combatOver && myCombatant && (
-        <div className="flex items-center gap-3 text-[11px]">
-          <div className="flex items-center gap-1.5 px-2.5 py-1 bg-surface-container/30 border border-outline-variant/10 rounded-sm">
-            <span className="material-symbols-outlined text-sm text-primary">directions_walk</span>
+      {!hideMovementHint && isMyTurn && !combatOver && myCombatant && (
+        <div className="flex items-center gap-2 text-[10px]">
+          <div className="flex items-center gap-1 px-2 py-0.5 bg-surface-container/30 border border-outline-variant/10 rounded-sm">
+            <span className="material-symbols-outlined text-xs text-primary">directions_walk</span>
             <span className="text-on-surface-variant">{t('combat.movement', 'Movement')}:</span>
             <span className="text-primary font-bold tabular-nums">
               {myCombatant.movementAllowance - (myCombatant.movementUsed || 0)}/{myCombatant.movementAllowance}
             </span>
-            <span className="text-outline-variant">y</span>
           </div>
-          <span className="text-[10px] text-outline-variant">{t('combat.clickToMove', 'Click battlefield to move')}</span>
+          <span className="text-[9px] text-outline-variant">{t('combat.clickToMove', 'Click grid cell to move')}</span>
         </div>
       )}
     </div>

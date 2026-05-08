@@ -125,6 +125,7 @@ export const COMBAT_TURN_RESOLVE_SCHEMA = {
   properties: {
     combatSnapshot: { type: 'object' },
     playerAction: { type: 'string', maxLength: 2000 },
+    diceRoll: { type: ['integer', 'null'], minimum: 1, maximum: 50 },
     language: LANGUAGE_SCHEMA,
     provider: PROVIDER_SCHEMA,
     model: MODEL_SCHEMA,

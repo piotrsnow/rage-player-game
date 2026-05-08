@@ -31,6 +31,8 @@ export function normalizeDiceRoll(dr) {
     skillLevel: dr.skillLevel ?? dr.skillAdvances ?? 0,
     difficulty: dr.difficulty || null,
     threshold: dr.threshold ?? dr.target ?? dr.dc ?? null,
+    thresholdBreakdown: dr.thresholdBreakdown ?? null,
+    modifiers: Array.isArray(dr.modifiers) ? dr.modifiers : [],
   };
 }
 

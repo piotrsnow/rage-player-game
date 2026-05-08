@@ -2,6 +2,7 @@ import { useState, useRef, useCallback, useEffect } from 'react';
 import { MOMENTUM_RANGE } from '../data/rpgSystem.js';
 
 const GAME_DURATION_MS = 8000;
+const COUNTDOWN_SECONDS = 3;
 const SAFE_MARGIN = 0.08;
 
 function randomPosition() {
@@ -22,18 +23,22 @@ const TIMEOUT_PENALTY = -2;
 
 export function useMomentumMinigame({ dispatch, momentumBonus, sceneId }) {
   const [phase, setPhase] = useState('idle');
+  const [countdownValue, setCountdownValue] = useState(0);
   const [diceVisible, setDiceVisible] = useState(false);
   const [position, setPosition] = useState({ top: 0.5, left: 0.5 });
+  const [result, setResult] = useState(null);
 
   const visibleSinceRef = useRef(0);
   const visibleDurationRef = useRef(0);
   const gameTimerRef = useRef(null);
   const cycleTimerRef = useRef(null);
+  const countdownTimerRef = useRef(null);
   const usedSceneRef = useRef(null);
 
   const cleanup = useCallback(() => {
     clearTimeout(gameTimerRef.current);
     clearTimeout(cycleTimerRef.current);
+    clearTimeout(countdownTimerRef.current);
   }, []);
 
   useEffect(() => cleanup, [cleanup]);
@@ -43,6 +48,8 @@ export function useMomentumMinigame({ dispatch, momentumBonus, sceneId }) {
       cleanup();
       setPhase('idle');
       setDiceVisible(false);
+      setCountdownValue(0);
+      setResult(null);
     }
   }, [sceneId, cleanup]);
 
@@ -67,12 +74,9 @@ export function useMomentumMinigame({ dispatch, momentumBonus, sceneId }) {
     }, visibleMs);
   }, []);
 
-  const startGame = useCallback(() => {
-    if (phase !== 'idle') return;
-    if (usedSceneRef.current === sceneId) return;
-
-    usedSceneRef.current = sceneId;
+  const beginActivePhase = useCallback(() => {
     setPhase('active');
+    setCountdownValue(0);
     setDiceVisible(false);
 
     const initialDelay = 400 + Math.random() * 600;
@@ -82,29 +86,56 @@ export function useMomentumMinigame({ dispatch, momentumBonus, sceneId }) {
       cleanup();
       setDiceVisible(false);
       applyDelta(TIMEOUT_PENALTY);
+      setResult({ delta: TIMEOUT_PENALTY, reactionMs: null });
       setPhase('cooldown');
     }, GAME_DURATION_MS);
-  }, [phase, sceneId, nextCycle, cleanup, applyDelta]);
+  }, [nextCycle, cleanup, applyDelta]);
+
+  const startGame = useCallback(() => {
+    if (phase !== 'idle') return;
+    if (usedSceneRef.current === sceneId) return;
+
+    usedSceneRef.current = sceneId;
+    setPhase('countdown');
+    setCountdownValue(COUNTDOWN_SECONDS);
+
+    let remaining = COUNTDOWN_SECONDS;
+    const tick = () => {
+      remaining -= 1;
+      if (remaining <= 0) {
+        beginActivePhase();
+        return;
+      }
+      setCountdownValue(remaining);
+      countdownTimerRef.current = setTimeout(tick, 1000);
+    };
+    countdownTimerRef.current = setTimeout(tick, 1000);
+  }, [phase, sceneId, beginActivePhase]);
 
   const handleDiceClick = useCallback(() => {
     if (phase !== 'active' || !diceVisible) return;
 
     const reactionMs = performance.now() - visibleSinceRef.current;
-    const ratio = Math.min(reactionMs / visibleDurationRef.current, 1);
+    const effectiveMs = Math.max(0, reactionMs - 100);
+    const ratio = Math.min(effectiveMs / visibleDurationRef.current, 1);
     const delta = getMomentumDelta(ratio);
 
     cleanup();
     setDiceVisible(false);
     applyDelta(delta);
+    setResult({ delta, reactionMs: Math.round(reactionMs) });
     setPhase('cooldown');
   }, [phase, diceVisible, cleanup, applyDelta]);
 
   return {
-    active: phase === 'active',
+    active: phase === 'active' || phase === 'countdown',
+    counting: phase === 'countdown',
+    countdownValue,
     diceVisible,
     position,
     startGame,
     handleDiceClick,
     cooldown: phase === 'cooldown',
+    result,
   };
 }

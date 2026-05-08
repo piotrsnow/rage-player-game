@@ -546,8 +546,15 @@ export const aiService = {
     }
   },
 
-  async resolveCombatTurn(combatSnapshot, playerAction, provider, language = 'pl', modelTier = 'standard') {
-    const requestBody = { combatSnapshot, playerAction, language, provider, modelTier };
+  async resolveCombatTurn(combatSnapshot, playerAction, provider, language = 'pl', modelTier = 'standard', options = {}) {
+    const requestBody = {
+      combatSnapshot,
+      playerAction,
+      language,
+      provider,
+      modelTier,
+      diceRoll: options?.diceRoll ?? null,
+    };
     const logId = aiCallLog.start({
       type: 'combat-turn-resolve',
       label: `Combat turn: ${shortLabel(playerAction)}`,

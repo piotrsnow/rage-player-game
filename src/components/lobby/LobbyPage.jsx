@@ -522,7 +522,7 @@ export default function LobbyPage() {
 
             {/* Not logged in — centered auth panel */}
             {!isLoggedIn && (
-              <div className="w-full max-w-sm">
+              <div className="w-full max-w-sm mt-10">
                 <AuthPanel />
               </div>
             )}
@@ -530,7 +530,7 @@ export default function LobbyPage() {
             {/* Logged in — single column: badge, then buttons */}
             {isLoggedIn && (
               <div
-                className="w-full max-w-2xl flex flex-col items-center gap-5 relative z-20"
+                className="w-full max-w-2xl flex flex-col items-center gap-5 relative z-20 mt-10"
                 style={{ transform: `translateY(-${badgeOverlapPx}px)` }}
               >
                 {/* Badge + CTAs at full CSS size; only outer hero uses fitScale when needed */}

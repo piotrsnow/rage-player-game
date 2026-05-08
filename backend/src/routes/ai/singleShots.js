@@ -244,6 +244,7 @@ export async function singleShotRoutes(fastify) {
     const {
       combatSnapshot,
       playerAction = '',
+      diceRoll = null,
       language = 'pl',
       provider = 'openai',
       model,
@@ -252,7 +253,7 @@ export async function singleShotRoutes(fastify) {
     const userApiKeys = await loadUserApiKeys(prisma, request.user?.id);
     try {
       return await resolveCombatTurn({
-        combatSnapshot, playerAction, language, provider, model, modelTier, userApiKeys,
+        combatSnapshot, playerAction, diceRoll, language, provider, model, modelTier, userApiKeys,
       });
     } catch (err) {
       const status = err.statusCode || 502;

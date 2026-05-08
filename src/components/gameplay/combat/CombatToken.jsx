@@ -1,12 +1,18 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
-import Tooltip from '../../ui/Tooltip';
-import { getDistance } from '../../../services/combatEngine';
+import { useState, useEffect, useRef } from 'react';
 
 const HEALTH_COLORS = {
   friendlyHigh: '#c59aff',
   friendlyMid: '#e8a040',
   friendlyLow: '#ff6e84',
   enemy: '#ff6e84',
+};
+
+const EFFECT_COLORS = {
+  buff: 'rgba(74, 222, 128, 0.95)',
+  debuff: 'rgba(248, 113, 113, 0.95)',
+  dot: 'rgba(251, 146, 60, 0.95)',
+  control: 'rgba(96, 165, 250, 0.95)',
+  mixed: 'rgba(209, 213, 219, 0.95)',
 };
 
 function getHealthColor(pct, isEnemy) {
@@ -16,6 +22,26 @@ function getHealthColor(pct, isEnemy) {
   return HEALTH_COLORS.friendlyLow;
 }
 
+function formatDuration(duration) {
+  if (!duration) return '';
+  if (duration.type === 'rounds' && duration.remaining != null) return `${duration.remaining}r`;
+  if (duration.type === 'scenes' && duration.remaining != null) return `${duration.remaining}s`;
+  if (duration.type === 'time' && duration.remaining != null) return `${duration.remaining}h`;
+  if (duration.type === 'permanent') return '∞';
+  if (duration.type === 'until_rest') return 'rest';
+  if (duration.type === 'manual') return 'manual';
+  return '';
+}
+
+function buildEffectsTooltip(effects) {
+  return effects
+    .map((effect) => {
+      const duration = formatDuration(effect.duration);
+      return duration ? `${effect.name} (${duration})` : effect.name;
+    })
+    .join('\n');
+}
+
 function getInitials(name) {
   if (!name) return '??';
   const parts = name.trim().split(/\s+/);
@@ -23,110 +49,70 @@ function getInitials(name) {
   return name.slice(0, 2).toUpperCase();
 }
 
-function HealthRing({ pct, isEnemy }) {
-  const r = 28;
-  const circumference = 2 * Math.PI * r;
-  const dashOffset = circumference * (1 - Math.max(0, Math.min(1, pct)));
+function HealthBar({ pct, isEnemy, wounds, maxWounds }) {
   const color = getHealthColor(pct, isEnemy);
-
   return (
-    <svg className="combat-health-ring" viewBox="0 0 60 60">
-      <circle className="combat-health-ring__bg" cx="30" cy="30" r={r} />
-      <circle
-        className="combat-health-ring__fill"
-        cx="30" cy="30" r={r}
-        stroke={color}
-        strokeDasharray={circumference}
-        strokeDashoffset={dashOffset}
+    <div className="combat-token__health-bar">
+      <div
+        className="combat-token__health-bar-fill"
+        style={{
+          width: `${Math.max(0, Math.min(100, pct * 100))}%`,
+          backgroundColor: color,
+        }}
       />
-    </svg>
+      <span className="combat-token__health-bar-text">{wounds}/{maxWounds}</span>
+    </div>
   );
 }
 
-function buildTooltipContent(c, myCombatant, t) {
-  const isEnemy = c.type === 'enemy';
-  const dist = myCombatant && c.id !== myCombatant.id ? getDistance(c, myCombatant) : null;
+function ActiveEffectsDots({ effects, t }) {
+  if (!effects?.length) return null;
 
-  const mainWeapon = (() => {
-    if (c.equipped?.mainHand) {
-      const item = (c.inventory || []).find(i => i.id === c.equipped.mainHand);
-      if (item) return item.name;
-    }
-    return (c.weapons || []).map((w) => (typeof w === 'string' ? w : w.name)).find(Boolean);
-  })();
-
-  const armour = (() => {
-    if (c.equipped?.armour) {
-      const item = (c.inventory || []).find(i => i.id === c.equipped.armour);
-      if (item) return item.name;
-    }
-    if (c.equippedArmour) return c.equippedArmour;
-    if (c.armourDR) return `DR ${c.armourDR}`;
-    return null;
-  })();
-
-  const conditions = (c.conditions || []).filter(cond => cond !== 'fled' || c.isDefeated);
+  const visibleEffects = effects.slice(0, 3);
+  const overflow = effects.length - visibleEffects.length;
+  const tooltipText = buildEffectsTooltip(effects);
 
   return (
-    <div className="space-y-1.5 min-w-[140px]">
-      <div className="flex items-center gap-2">
-        <span className={`font-bold text-[13px] ${isEnemy ? 'text-error' : 'text-primary'}`}>
-          {c.name}
+    <div
+      className="mt-1 flex items-center justify-center gap-1"
+      title={tooltipText}
+      aria-label={t?.('combat.activeEffects', 'Active effects')}
+    >
+      {visibleEffects.map((effect) => {
+        const color = EFFECT_COLORS[effect.category] || EFFECT_COLORS.mixed;
+        return (
+          <span
+            key={effect.id || effect.name}
+            className="inline-block h-1.5 w-1.5 rounded-full border border-black/40"
+            style={{ backgroundColor: color }}
+          />
+        );
+      })}
+      {overflow > 0 && (
+        <span className="rounded-full bg-surface-container/80 px-1 py-px text-[9px] font-bold leading-none text-on-surface-variant">
+          +{overflow}
         </span>
-        {c.isDefeated && (
-          <span className="text-[9px] text-error bg-error/10 px-1 py-0.5 rounded-sm uppercase font-bold">KO</span>
-        )}
-      </div>
-      <div className="text-[11px] text-on-surface">
-        {t('combat.wounds', 'Wounds')}: <span className="font-bold tabular-nums">{c.wounds}/{c.maxWounds}</span>
-      </div>
-      {dist != null && (
-        <div className="text-[10px] text-on-surface-variant">
-          {t('combat.distanceLabel', 'Distance')}: <span className="font-bold">{dist}y</span>
-        </div>
-      )}
-      {c.position != null && (
-        <div className="text-[10px] text-on-surface-variant">
-          {t('combat.position', 'Pos')}: <span className="font-bold">{c.position}y</span>
-        </div>
-      )}
-      {mainWeapon && (
-        <div className="text-[10px] text-on-surface-variant flex items-center gap-1">
-          <span className="material-symbols-outlined text-[11px]">swords</span>
-          {mainWeapon}
-        </div>
-      )}
-      {armour && (
-        <div className="text-[10px] text-on-surface-variant flex items-center gap-1">
-          <span className="material-symbols-outlined text-[11px]">shield</span>
-          {armour}
-        </div>
-      )}
-      {conditions.length > 0 && (
-        <div className="flex flex-wrap gap-0.5 pt-0.5">
-          {conditions.map((cond, i) => (
-            <span key={`${cond}_${i}`} className="px-1 py-0.5 rounded-sm bg-surface-container text-[8px] text-on-surface-variant uppercase tracking-wider">
-              {cond}
-            </span>
-          ))}
-        </div>
       )}
     </div>
   );
 }
 
+
 export default function CombatToken({
   combatant,
   x,
   y,
+  cellSize = 40,
   isActive,
   isSelected,
+  isHovered,
   turnsUntil,
   spriteUrl,
   myCombatant,
-  onClick,
   isActing,
   actDirection,
+  shoveOffset,
+  transitionDuration = 0,
   t,
 }) {
   const c = combatant;
@@ -135,6 +121,8 @@ export default function CombatToken({
   const healthPct = c.maxWounds > 0 ? c.wounds / c.maxWounds : 0;
   const [shaking, setShaking] = useState(false);
   const [spriteLoaded, setSpriteLoaded] = useState(false);
+  const tokenSize = Math.round(cellSize * 1.2);
+  const spriteImgSize = Math.round(cellSize * 1.05);
   const prevWoundsRef = useRef(c.wounds);
 
   useEffect(() => {
@@ -147,39 +135,42 @@ export default function CombatToken({
     prevWoundsRef.current = c.wounds;
   }, [c.wounds]);
 
-  const handleClick = useCallback((e) => {
-    e.stopPropagation();
-    onClick?.(c);
-  }, [onClick, c]);
-
   useEffect(() => {
     setSpriteLoaded(false);
   }, [spriteUrl]);
 
+  const isShoving = !!shoveOffset;
   const classNames = [
     'combat-token',
     isFriendly ? 'combat-token--friendly' : 'combat-token--enemy',
     isActive && 'combat-token--active',
     isSelected && 'combat-token--selected',
+    isHovered && !c.isDefeated && 'combat-token--hovered',
     c.isDefeated && 'combat-token--defeated',
     shaking && 'combat-token--shake',
     spriteLoaded && 'combat-token--has-sprite',
-    isActing && actDirection > 0 && 'combat-token--acting-right',
-    isActing && actDirection < 0 && 'combat-token--acting-left',
-    isActing && actDirection === 0 && 'combat-token--acting-right',
+    isShoving && 'combat-token--shoving',
+    !isShoving && isActing && actDirection > 0 && 'combat-token--acting-right',
+    !isShoving && isActing && actDirection < 0 && 'combat-token--acting-left',
+    !isShoving && isActing && actDirection === 0 && 'combat-token--acting-right',
   ].filter(Boolean).join(' ');
 
   const nameLabel = c.name;
 
-  const tooltipContent = buildTooltipContent(c, myCombatant, t);
+  const positionStyle = transitionDuration > 0
+    ? { left: x, top: y, transition: `left ${transitionDuration}ms ease-out, top ${transitionDuration}ms ease-out` }
+    : { left: x, top: y };
+
+  if (shoveOffset) {
+    positionStyle['--shove-dx'] = `${shoveOffset.dx}px`;
+    positionStyle['--shove-dy'] = `${shoveOffset.dy}px`;
+  }
 
   return (
-    <Tooltip content={tooltipContent} placement="top" offset={12} asChild hideOnClick>
-      <div
-        className={classNames}
-        style={{ left: x, top: y }}
-        onClick={handleClick}
-      >
+    <div
+      className={classNames}
+      style={positionStyle}
+    >
         {!c.isDefeated && turnsUntil != null && (
           <div className={`combat-token__turn-badge ${
             turnsUntil === 0 ? 'combat-token__turn-badge--now' : 'combat-token__turn-badge--waiting'
@@ -190,11 +181,9 @@ export default function CombatToken({
           </div>
         )}
 
-        <div className="combat-token__sprite-wrap">
-          {!spriteLoaded && <HealthRing pct={healthPct} isEnemy={isEnemy} />}
-
+        <div className="combat-token__sprite-wrap" style={{ width: tokenSize, height: tokenSize }}>
           {spriteUrl ? (
-            <img src={spriteUrl} alt={c.name} draggable={false} onLoad={() => setSpriteLoaded(true)} />
+            <img src={spriteUrl} alt={c.name} draggable={false} onLoad={() => setSpriteLoaded(true)} style={{ width: spriteImgSize, height: spriteImgSize }} />
           ) : (
             <div className="combat-token__initials">
               {c.isDefeated ? '\u2620' : getInitials(c.name)}
@@ -206,21 +195,12 @@ export default function CombatToken({
           )}
         </div>
 
-        {spriteLoaded && (
-          <div className="combat-token__health-bar">
-            <div
-              className="combat-token__health-bar-fill"
-              style={{
-                width: `${Math.max(0, Math.min(100, healthPct * 100))}%`,
-                backgroundColor: getHealthColor(healthPct, isEnemy),
-              }}
-            />
-          </div>
+        {!c.isDefeated && (
+          <HealthBar pct={healthPct} isEnemy={isEnemy} wounds={c.wounds} maxWounds={c.maxWounds} />
         )}
+        {!c.isDefeated && <ActiveEffectsDots effects={c.activeEffects} t={t} />}
 
         <span className="combat-token__name">{nameLabel}</span>
-        {!spriteLoaded && <span className="combat-token__hp">{c.wounds}/{c.maxWounds}</span>}
       </div>
-    </Tooltip>
   );
 }

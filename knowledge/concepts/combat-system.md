@@ -143,6 +143,39 @@ Status effects (`shared/domain/statusEffects.js`) are fully wired into combat:
 
 `characterBlock.js` renders active effects in the scene-generation system prompt so the premium model is aware of buffs/debuffs when narrating.
 
+## Terrain Tiles (Pola Specjalne)
+
+Random special tiles spawned on the 16×9 battlefield at combat start (5-8 tiles). Each tile applies a mechanical effect to any combatant standing on it.
+
+### Tile types
+
+| Type | Polish name | Effect | One-shot? |
+|------|-------------|--------|-----------|
+| `sureHit` | Pole Pewnego Trafienia | Attacker's next offensive attack auto-hits (bypass d50) | Yes |
+| `fury` | Pole Furii | +50% raw damage on attacks from this tile | No |
+| `damageReduction` | Pole Ochrony | Combatant takes 50% less damage | No |
+| `regeneration` | Pole Regeneracji | Heal 1 wound at round start | No |
+| `extraTurn` | Pole Dodatkowej Tury | Grants a bonus turn on entry | Yes |
+| `teleport` | Pole Teleportacji | Teleports combatant to random empty cell on entry | No |
+| `poison` | Pole Trucizny | 2 damage at round start | No |
+| `freeze` | Pole Zamrożenia | Double movement cost to enter; 50% chance to skip next turn | No |
+
+### Data flow
+
+- **Definitions:** `backend/src/data/equipment/combatConstants.js` (`TERRAIN_TILES`, `TERRAIN_SPAWN_CONFIG`)
+- **Served:** via `/game-data/combat` → `gameDataService.terrainTiles`
+- **Spawned:** `spawnTerrainTiles()` in `combatEngine.js`, called from `createCombatState` / `createMultiplayerCombatState`
+- **State:** `combat.terrainTiles: [{ x, y, type, consumed }]`
+- **Mechanics:** integrated into `resolveManoeuvre` (sureHit, fury, damageReduction), `moveCombatant` (extraTurn, teleport, freeze cost), `advanceRound` (regeneration, poison, freeze skip), `advanceTurn` (bonus turn)
+- **Enemy AI:** basic tile awareness — avoids poison/freeze, prefers fury/sureHit when multiple paths are equal
+- **Rendering:** `drawTerrainTiles()` in `combatCanvasDraw.js` — radial glow + emoji, animated pulse, consumed tiles dimmed
+
+### Spawn rules
+
+- 5-8 tiles per combat (random count)
+- Placed in middle columns only (margin of 4 cols from each edge to avoid spawn zones)
+- No two tiles on the same cell; no tiles on occupied cells
+
 ## Related
 
 - [rpgon-mechanics.md](rpgon-mechanics.md) — d50 resolution, szczęście auto-success, the pre-rolled dice fallback

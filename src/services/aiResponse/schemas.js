@@ -18,6 +18,11 @@ const DialogueSegmentSchema = z.object({
   gender: z.string().optional(),
 }).passthrough();
 
+const DiceRollModifierSchema = z.object({
+  reason: z.string().max(40),
+  value: z.number().int().min(-10).max(15),
+}).passthrough();
+
 const DiceRollSchema = z.object({
   type: z.string().optional(),
   roll: z.number().optional(),         // d50 roll
@@ -33,6 +38,12 @@ const DiceRollSchema = z.object({
   luckySuccess: z.boolean().optional().default(false), // auto-success from Szczescie
   momentum: z.number().optional(),
   creativityBonus: z.number().optional(),
+  modifiers: z.array(DiceRollModifierSchema).max(4).optional().default([]),
+  thresholdBreakdown: z.object({
+    base: z.number(),
+    modifiers: z.array(DiceRollModifierSchema),
+    final: z.number(),
+  }).passthrough().optional(),
 }).passthrough().nullable().optional();
 
 const NpcRelationshipSchema = z.object({

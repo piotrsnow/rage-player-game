@@ -24,7 +24,7 @@ const CRIT_EFFECTS = [
     name: 'Oszołomienie',
     source: 'combat',
     category: 'control',
-    duration: { type: 'rounds', remaining: 1 },
+    duration: { type: 'rounds', remaining: 2 },
     mechanics: { testMod: -10 },
     stackable: false,
     description: 'Potężne uderzenie ogłusza na chwilę.',
@@ -82,19 +82,179 @@ function getMovementAllowance(combatant) {
   return gameData.DEFAULT_MOVEMENT;
 }
 
+function spawnTerrainTiles(W, H, combatants) {
+  const cfg = gameData.terrainSpawnConfig;
+  const tileDefs = gameData.terrainTiles;
+  if (!tileDefs || typeof tileDefs !== 'object') return [];
+  const tileTypes = Object.keys(tileDefs);
+  if (tileTypes.length === 0) return [];
+
+  const count = cfg.minCount + Math.floor(Math.random() * (cfg.maxCount - cfg.minCount + 1));
+  const margin = cfg.spawnMarginCols;
+
+  const occupied = new Set();
+  for (const c of combatants) {
+    const p = normalizePos(c.position);
+    occupied.add(`${p.x}:${p.y}`);
+  }
+
+  const candidates = [];
+  for (let x = margin; x < W - margin; x++) {
+    for (let y = 0; y < H; y++) {
+      if (!occupied.has(`${x}:${y}`)) candidates.push({ x, y });
+    }
+  }
+
+  const tiles = [];
+  const usedCells = new Set();
+  const shuffledTypes = [...tileTypes].sort(() => Math.random() - 0.5);
+
+  for (let i = 0; i < count && candidates.length > 0; i++) {
+    const idx = Math.floor(Math.random() * candidates.length);
+    const cell = candidates[idx];
+    if (usedCells.has(`${cell.x}:${cell.y}`)) { candidates.splice(idx, 1); i--; continue; }
+
+    const type = shuffledTypes[i % shuffledTypes.length];
+    tiles.push({ x: cell.x, y: cell.y, type, consumed: false });
+    usedCells.add(`${cell.x}:${cell.y}`);
+    candidates.splice(idx, 1);
+  }
+
+  return tiles;
+}
+
+export function getTileAt(terrainTiles, x, y) {
+  if (!terrainTiles) return null;
+  return terrainTiles.find(t => t.x === x && t.y === y && !t.consumed) || null;
+}
+
 function assignInitialPositions(combatants) {
+  const W = gameData.BATTLEFIELD_WIDTH;
+  const H = gameData.BATTLEFIELD_HEIGHT;
   const friendlies = combatants.filter((c) => c.type === 'player' || c.type === 'ally');
   const enemies = combatants.filter((c) => c.type === 'enemy');
-  friendlies.forEach((c, i) => { c.position = 4 + i * 3; });
-  enemies.forEach((c, i) => { c.position = gameData.BATTLEFIELD_MAX - 4 - i * 3; });
+  const spreadY = (group, startX) => {
+    const gap = Math.max(1, Math.floor(H / (group.length + 1)));
+    group.forEach((c, i) => {
+      c.position = { x: Math.min(startX + i, W - 1), y: Math.min(gap * (i + 1), H - 1) };
+    });
+  };
+  spreadY(friendlies, 1);
+  spreadY(enemies, W - 3);
+}
+
+function normalizePos(p) {
+  if (p && typeof p === 'object' && 'x' in p) return p;
+  if (typeof p === 'number') return { x: p, y: 4 };
+  return { x: 0, y: 0 };
 }
 
 export function getDistance(a, b) {
-  return Math.abs((a.position ?? 0) - (b.position ?? 0));
+  const pa = normalizePos(a.position);
+  const pb = normalizePos(b.position);
+  return Math.max(Math.abs(pa.x - pb.x), Math.abs(pa.y - pb.y));
 }
 
 export function isInMeleeRange(a, b) {
   return getDistance(a, b) <= gameData.MELEE_RANGE;
+}
+
+/**
+ * Check whether actor can charge target in a straight line (cardinal or diagonal)
+ * with no non-defeated combatant blocking the path.
+ */
+export function canCharge(actor, target, combatants) {
+  const ap = normalizePos(actor.position);
+  const tp = normalizePos(target.position);
+  const dx = tp.x - ap.x;
+  const dy = tp.y - ap.y;
+
+  if (dx === 0 && dy === 0) return { valid: false, reason: 'not_straight_line' };
+  if (dx !== 0 && dy !== 0 && Math.abs(dx) !== Math.abs(dy)) {
+    return { valid: false, reason: 'not_straight_line' };
+  }
+
+  const sx = dx === 0 ? 0 : (dx > 0 ? 1 : -1);
+  const sy = dy === 0 ? 0 : (dy > 0 ? 1 : -1);
+
+  const occupied = new Set(
+    combatants
+      .filter(c => !c.isDefeated && c.id !== actor.id && c.id !== target.id)
+      .map(c => { const p = normalizePos(c.position); return `${p.x}:${p.y}`; })
+  );
+
+  let cx = ap.x + sx;
+  let cy = ap.y + sy;
+  while (cx !== tp.x || cy !== tp.y) {
+    if (occupied.has(`${cx}:${cy}`)) return { valid: false, reason: 'path_blocked' };
+    cx += sx;
+    cy += sy;
+  }
+
+  return { valid: true };
+}
+
+/**
+ * Compute the valid cells a target can be shoved into from actor's position.
+ * Returns cells at distance 1 AND distance 2 behind the target (away from actor),
+ * including the straight-behind cell and two diagonal neighbors at each distance.
+ * Distance-2 cells require at least one clear intermediate cell along the push path.
+ * Filters out cells that are out of bounds or occupied by non-defeated combatants.
+ */
+export function getShoveCells(actor, target, combatants) {
+  const ap = normalizePos(actor.position);
+  const tp = normalizePos(target.position);
+  const dx = tp.x - ap.x;
+  const dy = tp.y - ap.y;
+  const sx = dx === 0 ? 0 : (dx > 0 ? 1 : -1);
+  const sy = dy === 0 ? 0 : (dy > 0 ? 1 : -1);
+
+  const W = gameData.BATTLEFIELD_WIDTH;
+  const H = gameData.BATTLEFIELD_HEIGHT;
+  const occupied = new Set(
+    combatants
+      .filter(c => !c.isDefeated && c.id !== target.id)
+      .map(c => { const p = normalizePos(c.position); return `${p.x}:${p.y}`; })
+  );
+
+  const ok = (c) => c.x >= 0 && c.x < W && c.y >= 0 && c.y < H && !occupied.has(`${c.x}:${c.y}`);
+
+  // Distance-1 candidates (straight + 2 diagonals)
+  const d1 = [];
+  const mid = { x: tp.x + sx, y: tp.y + sy };
+  d1.push(mid);
+  if (sx === 0) {
+    d1.push({ x: tp.x - 1, y: tp.y + sy });
+    d1.push({ x: tp.x + 1, y: tp.y + sy });
+  } else if (sy === 0) {
+    d1.push({ x: tp.x + sx, y: tp.y - 1 });
+    d1.push({ x: tp.x + sx, y: tp.y + 1 });
+  } else {
+    d1.push({ x: tp.x + sx, y: tp.y });
+    d1.push({ x: tp.x, y: tp.y + sy });
+  }
+
+  // Distance-2 candidates — same 3 directions but 2 tiles away.
+  // Each entry has the final cell and possible intermediate cells (any one being free suffices).
+  const d2 = [];
+  d2.push({ cell: { x: tp.x + 2 * sx, y: tp.y + 2 * sy }, via: [mid] });
+  if (sx === 0) {
+    d2.push({ cell: { x: tp.x - 1, y: tp.y + 2 * sy }, via: [mid, { x: tp.x - 1, y: tp.y + sy }] });
+    d2.push({ cell: { x: tp.x + 1, y: tp.y + 2 * sy }, via: [mid, { x: tp.x + 1, y: tp.y + sy }] });
+  } else if (sy === 0) {
+    d2.push({ cell: { x: tp.x + 2 * sx, y: tp.y - 1 }, via: [mid, { x: tp.x + sx, y: tp.y - 1 }] });
+    d2.push({ cell: { x: tp.x + 2 * sx, y: tp.y + 1 }, via: [mid, { x: tp.x + sx, y: tp.y + 1 }] });
+  } else {
+    d2.push({ cell: { x: tp.x + 2 * sx, y: tp.y + sy }, via: [mid, { x: tp.x + sx, y: tp.y }] });
+    d2.push({ cell: { x: tp.x + sx, y: tp.y + 2 * sy }, via: [mid, { x: tp.x, y: tp.y + sy }] });
+  }
+
+  const result = [];
+  for (const c of d1) if (ok(c)) result.push(c);
+  for (const { cell, via } of d2) {
+    if (ok(cell) && via.some(m => ok(m))) result.push(cell);
+  }
+  return result;
 }
 
 function getWeaponSkillName(actor) {
@@ -296,6 +456,7 @@ function createCombatantFromCharacter(character, id, type) {
     equippedArmour: character.equippedArmour || null,
     equippedShield: character.equippedShield || null,
     spriteUrl: character.spriteUrl || null,
+    portraitUrl: character.portraitUrl || null,
     species: character.species || character.race || null,
     gender: character.gender || null,
     description: character.description || null,
@@ -303,7 +464,7 @@ function createCombatantFromCharacter(character, id, type) {
     initiative: 0,
     conditions: [],
     isDefeated: false,
-    position: 0,
+    position: { x: 0, y: 0 },
     movementUsed: 0,
     movementAllowance: getMovementAllowance(character),
   };
@@ -326,6 +487,10 @@ export function createCombatState(playerCharacter, enemies, allies = []) {
 
   assignInitialPositions(combatants);
 
+  const W = gameData.BATTLEFIELD_WIDTH;
+  const H = gameData.BATTLEFIELD_HEIGHT;
+  const terrainTiles = spawnTerrainTiles(W, H, combatants);
+
   for (const c of combatants) {
     c.initiative = rollInitiative(c);
   }
@@ -336,6 +501,7 @@ export function createCombatState(playerCharacter, enemies, allies = []) {
     round: 1,
     turnIndex: 0,
     combatants,
+    terrainTiles,
     log: ['Combat begins! Round 1.'],
     resolved: false,
     playerStats: {
@@ -352,21 +518,67 @@ export function createCombatState(playerCharacter, enemies, allies = []) {
 }
 
 export function moveCombatant(combat, actorId, targetPosition) {
-  const state = { ...combat, combatants: combat.combatants.map((c) => ({ ...c })) };
+  const state = {
+    ...combat,
+    combatants: combat.combatants.map((c) => ({ ...c })),
+    terrainTiles: (combat.terrainTiles || []).map(t => ({ ...t })),
+  };
   const actor = state.combatants.find((c) => c.id === actorId);
   if (!actor || actor.isDefeated) return { combat: state, moved: false };
   if (isRestricted(actor.activeEffects, 'no_movement')) return { combat: state, moved: false };
 
-  const clampedTarget = Math.max(0, Math.min(gameData.BATTLEFIELD_MAX, Math.round(targetPosition)));
-  const dist = Math.abs(clampedTarget - (actor.position ?? 0));
+  const W = gameData.BATTLEFIELD_WIDTH;
+  const H = gameData.BATTLEFIELD_HEIGHT;
+  const target = typeof targetPosition === 'object'
+    ? { x: Math.max(0, Math.min(W - 1, Math.round(targetPosition.x))), y: Math.max(0, Math.min(H - 1, Math.round(targetPosition.y))) }
+    : { x: Math.max(0, Math.min(W - 1, Math.round(targetPosition))), y: normalizePos(actor.position).y };
+  const cur = normalizePos(actor.position);
+
+  // Freeze tile doubles movement cost to enter
+  const destTile = getTileAt(state.terrainTiles, target.x, target.y);
+  const freezeMultiplier = destTile?.type === 'freeze' ? 2 : 1;
+
+  const dist = Math.max(Math.abs(target.x - cur.x), Math.abs(target.y - cur.y));
+  const moveCost = dist * freezeMultiplier;
   const moveMods = computeEffectiveMods(actor.activeEffects);
   const effectiveAllowance = Math.max(0, actor.movementAllowance + moveMods.movementMod);
   const remaining = effectiveAllowance - (actor.movementUsed || 0);
-  if (dist === 0 || dist > remaining) return { combat: state, moved: false };
+  if (dist === 0 || moveCost > remaining) return { combat: state, moved: false };
 
-  actor.movementUsed = (actor.movementUsed || 0) + dist;
-  actor.position = clampedTarget;
-  return { combat: state, moved: true, distance: dist };
+  actor.movementUsed = (actor.movementUsed || 0) + moveCost;
+  actor.position = target;
+
+  const result = { combat: state, moved: true, distance: dist };
+
+  // Extra Turn tile: grant bonus turn (one-shot)
+  if (destTile?.type === 'extraTurn') {
+    actor.bonusTurn = true;
+    const tile = state.terrainTiles.find(t => t.x === target.x && t.y === target.y);
+    if (tile) tile.consumed = true;
+    result.extraTurn = true;
+  }
+
+  // Teleport tile: warp to a random empty cell
+  if (destTile?.type === 'teleport') {
+    const occupiedCells = new Set(state.combatants.map(c => {
+      const p = normalizePos(c.position);
+      return `${p.x}:${p.y}`;
+    }));
+    const tileCells = new Set(state.terrainTiles.filter(t => !t.consumed).map(t => `${t.x}:${t.y}`));
+    const emptyCells = [];
+    for (let x = 0; x < W; x++) {
+      for (let y = 0; y < H; y++) {
+        const key = `${x}:${y}`;
+        if (!occupiedCells.has(key) && !tileCells.has(key)) emptyCells.push({ x, y });
+      }
+    }
+    if (emptyCells.length > 0) {
+      actor.position = emptyCells[Math.floor(Math.random() * emptyCells.length)];
+      result.teleported = true;
+    }
+  }
+
+  return result;
 }
 
 // --- Manoeuvre resolution ---
@@ -399,6 +611,7 @@ export function resolveManoeuvre(combat, actorId, manoeuvreKey, targetId, option
           Object.entries(combat.skillXpAccumulator).map(([k, v]) => [k, { ...v }]),
         )
       : combat.skillXpAccumulator,
+    terrainTiles: (combat.terrainTiles || []).map(t => ({ ...t })),
     log: [...(combat.log || [])],
   };
   const actor = state.combatants.find((c) => c.id === actorId);
@@ -432,9 +645,30 @@ export function resolveManoeuvre(combat, actorId, manoeuvreKey, targetId, option
   }
 
   if (target && manoeuvre.closesDistance) {
-    const dir = target.position > actor.position ? 1 : -1;
-    actor.position = target.position - dir;
-    actor.position = Math.max(0, Math.min(gameData.BATTLEFIELD_MAX, actor.position));
+    const chargeCheck = canCharge(actor, target, state.combatants);
+    if (!chargeCheck.valid) {
+      return {
+        combat: state,
+        result: {
+          actor: actor.name, actorId: actor.id, actorType: actor.type,
+          manoeuvre: manoeuvre.name, manoeuvreKey,
+          targetId: target.id, targetName: target.name,
+          outcome: 'charge_blocked', reason: chargeCheck.reason, rolls: [],
+        },
+      };
+    }
+    const ap = normalizePos(actor.position);
+    const tp = normalizePos(target.position);
+    const dx = tp.x - ap.x;
+    const dy = tp.y - ap.y;
+    const sx = dx === 0 ? 0 : (dx > 0 ? 1 : -1);
+    const sy = dy === 0 ? 0 : (dy > 0 ? 1 : -1);
+    const W = gameData.BATTLEFIELD_WIDTH;
+    const H = gameData.BATTLEFIELD_HEIGHT;
+    actor.position = {
+      x: Math.max(0, Math.min(W - 1, tp.x - sx)),
+      y: Math.max(0, Math.min(H - 1, tp.y - sy)),
+    };
   }
 
   const log = [];
@@ -443,6 +677,7 @@ export function resolveManoeuvre(combat, actorId, manoeuvreKey, targetId, option
     manoeuvre: manoeuvre.name, manoeuvreKey,
     targetId: target?.id || null, targetType: target?.type || null,
     rolls: [],
+    appliedEffects: [],
   };
 
   // Defensive manoeuvres
@@ -510,10 +745,15 @@ export function resolveManoeuvre(combat, actorId, manoeuvreKey, targetId, option
     }
 
     const inteligencja = actor.attributes?.inteligencja || 10;
+    const castEffectMods = computeEffectiveMods(actor.activeEffects || []);
+    const castEffectBonus = Object.values(castEffectMods.attributeMods).reduce((s, v) => s + v, 0) + castEffectMods.testMod;
     const test = resolveCombatTest(actor, inteligencja, 0, 0, DIFFICULTY_THRESHOLDS.medium);
     result.rolls.push({ skill: 'Inteligencja', ...test, attributeKey: 'inteligencja', attributeValue: inteligencja, side: 'caster' });
     result.castBreakdown = {
       attribute: inteligencja,
+      attributeKey: 'inteligencja',
+      effectBonus: castEffectBonus,
+      spellName: spellName || null,
       baseTarget: DIFFICULTY_THRESHOLDS.medium,
       target: DIFFICULTY_THRESHOLDS.medium,
     };
@@ -522,7 +762,14 @@ export function resolveManoeuvre(combat, actorId, manoeuvreKey, targetId, option
       const baseDamage = Math.max(1, Math.floor(inteligencja / 2));
       const toughness = getToughness(target);
       const magicTargetMods = computeEffectiveMods(target.activeEffects);
-      const totalDamage = Math.max(1, baseDamage - Math.floor(toughness / 3) - magicTargetMods.damageReduction);
+      let totalDamage = Math.max(1, baseDamage - Math.floor(toughness / 3) - magicTargetMods.damageReduction);
+
+      const magicTargetPos = normalizePos(target.position);
+      const magicTargetTile = getTileAt(state.terrainTiles, magicTargetPos.x, magicTargetPos.y);
+      if (magicTargetTile?.type === 'damageReduction') {
+        totalDamage = Math.max(1, Math.ceil(totalDamage * 0.5));
+      }
+
       target.wounds = Math.max(0, target.wounds - totalDamage);
       if (target.wounds <= 0) target.isDefeated = true;
 
@@ -534,6 +781,7 @@ export function resolveManoeuvre(combat, actorId, manoeuvreKey, targetId, option
         if (!fxTarget.activeEffects) fxTarget.activeEffects = [];
         fxTarget.activeEffects = addEffect(fxTarget.activeEffects, fx);
         log.push(`${fxTarget.name} gains effect: ${fx.name}.`);
+        result.appliedEffects.push({ target: fxTarget.name, action: 'add', effectName: fx.name, category: fx.category });
 
         // all_enemies: apply to every active enemy (besides primary target already handled)
         if (spellFx.target === 'all_enemies') {
@@ -542,10 +790,20 @@ export function resolveManoeuvre(combat, actorId, manoeuvreKey, targetId, option
             if ((actor.type === 'player' || actor.type === 'ally') && c.type === 'enemy') {
               if (!c.activeEffects) c.activeEffects = [];
               c.activeEffects = addEffect(c.activeEffects, { ...spellFx.effect, id: `sfx_${shortId(6)}` });
+              result.appliedEffects.push({ target: c.name, action: 'add', effectName: spellFx.effect.name, category: spellFx.effect.category });
             }
           }
         }
       }
+
+      result.damageBreakdown = {
+        weaponDmg: baseDamage,
+        marginBonus: 0,
+        blocked: false,
+        dr: Math.floor(toughness / 3) + magicTargetMods.damageReduction,
+        totalDamage,
+        isMagic: true,
+      };
 
       const spellLabel = spellName ? `"${spellName}"` : 'a spell';
       log.push(`${actor.name} casts ${spellLabel} at ${target.name}: ${test.total} vs ${test.threshold}. Damage: ${totalDamage}.${target.isDefeated ? ` ${target.name} is defeated!` : ''}`);
@@ -555,6 +813,76 @@ export function resolveManoeuvre(combat, actorId, manoeuvreKey, targetId, option
     } else {
       log.push(`${actor.name} tries to cast a spell at ${target.name}: ${test.total} vs ${test.threshold}. Spell fizzles!`);
       result.outcome = 'miss';
+    }
+    state.log = [...state.log, ...log];
+    return { combat: state, result };
+  }
+
+  // Shove — push target one cell in a chosen direction (requires adjacency)
+  if (manoeuvre.modifiers.shove && target) {
+    if (getDistance(actor, target) > 1) {
+      return {
+        combat: state,
+        result: {
+          actor: actor.name, actorId: actor.id, actorType: actor.type,
+          manoeuvre: manoeuvre.name, manoeuvreKey,
+          targetId: target.id, targetName: target.name,
+          outcome: 'out_of_range', distance: getDistance(actor, target), rolls: [],
+        },
+      };
+    }
+    result.targetName = target.name;
+    const pushCell = options.pushTarget;
+    if (!pushCell || typeof pushCell.x !== 'number' || typeof pushCell.y !== 'number') {
+      return { combat: state, result: { ...result, outcome: 'invalid', reason: 'no_push_target', rolls: [] } };
+    }
+
+    const actorStr = getAttackAttribute(actor);
+    const targetTough = getToughness(target);
+    const skillLevel = getCombatSkillLevel(actor, 'Walka bronia jednoręczna');
+    const threshold = DIFFICULTY_THRESHOLDS.easy + targetTough;
+    const test = resolveCombatTest(actor, actorStr, skillLevel, 0, threshold);
+
+    result.rolls.push({ skill: 'Walka bronia jednoręczna', ...test, attributeKey: 'sila', attributeValue: actorStr, side: 'attacker' });
+    result.shoveBreakdown = { actorStr, targetTough, threshold };
+
+    const W = gameData.BATTLEFIELD_WIDTH;
+    const H = gameData.BATTLEFIELD_HEIGHT;
+    const inBounds = pushCell.x >= 0 && pushCell.x < W && pushCell.y >= 0 && pushCell.y < H;
+    const occupied = state.combatants.some(c => !c.isDefeated && c.id !== target.id && normalizePos(c.position).x === pushCell.x && normalizePos(c.position).y === pushCell.y);
+
+    if (test.success && inBounds && !occupied) {
+      target.position = { x: pushCell.x, y: pushCell.y };
+      log.push(`${actor.name} shoves ${target.name}! (${test.total} vs ${threshold}, margin ${test.margin})`);
+      result.outcome = 'shoved';
+      result.pushTarget = pushCell;
+
+      // Off-balance chance: margin-based probability to debuff the target
+      const offBalanceChance = Math.min(70, 30 + test.margin * 3);
+      const offBalanceRoll = rollPercentage();
+      if (offBalanceRoll <= offBalanceChance) {
+        const fx = {
+          id: `shove_${shortId(6)}`,
+          name: 'Wytrącenie z równowagi',
+          source: 'combat',
+          category: 'control',
+          duration: { type: 'rounds', remaining: 2 },
+          mechanics: { testMod: -10 },
+          stackable: false,
+          description: 'Pchnięcie wytrąca z równowagi — kara do testów.',
+        };
+        if (!target.activeEffects) target.activeEffects = [];
+        target.activeEffects = addEffect(target.activeEffects, fx);
+        log.push(`${target.name} is knocked off-balance!`);
+        result.offBalance = true;
+        result.appliedEffects.push({ target: target.name, action: 'add', effectName: fx.name, category: fx.category });
+      }
+    } else if (!test.success) {
+      log.push(`${actor.name} tries to shove ${target.name} but fails! (${test.total} vs ${threshold}, margin ${test.margin})`);
+      result.outcome = 'shove_failed';
+    } else {
+      log.push(`${actor.name} shoves ${target.name} but the position is blocked!`);
+      result.outcome = 'shove_blocked';
     }
     state.log = [...state.log, ...log];
     return { combat: state, result };
@@ -577,7 +905,18 @@ export function resolveManoeuvre(combat, actorId, manoeuvreKey, targetId, option
     const defenseSkillLevel = dodging ? Math.max(0, getCombatSkillLevel(target, 'Uniki') + dodgePenalty) : 0;
     const effectiveThreshold = DIFFICULTY_THRESHOLDS.medium + defendBonus + defenseAttr + defenseSkillLevel;
 
-    const test = resolveCombatTest(actor, attackAttr, attackSkillLevel, creativityBonus, effectiveThreshold);
+    const actorPos = normalizePos(actor.position);
+    const actorTile = getTileAt(state.terrainTiles, actorPos.x, actorPos.y);
+    const isSureHit = actorTile?.type === 'sureHit';
+
+    let test;
+    if (isSureHit) {
+      test = { roll: 2, total: 999, threshold: effectiveThreshold, margin: 999, success: true, luckySuccess: false };
+      const tile = state.terrainTiles.find(t => t.x === actorPos.x && t.y === actorPos.y);
+      if (tile) tile.consumed = true;
+    } else {
+      test = resolveCombatTest(actor, attackAttr, attackSkillLevel, creativityBonus, effectiveThreshold);
+    }
 
     result.rolls.push({
       skill: attackSkillName, ...test,
@@ -587,17 +926,27 @@ export function resolveManoeuvre(combat, actorId, manoeuvreKey, targetId, option
     });
     result.customDescription = customDescription || null;
     result.creativityBonus = creativityBonus;
+    result.terrainTile = actorTile?.type || null;
+    const actorEffectMods = computeEffectiveMods(actor.activeEffects || []);
+    const effectBonus = Object.values(actorEffectMods.attributeMods).reduce((s, v) => s + v, 0) + actorEffectMods.testMod;
     result.attackBreakdown = {
       attribute: attackAttr,
+      attributeKey: isRanged ? 'zrecznosc' : 'sila',
+      skillName: attackSkillName,
       skillLevel: attackSkillLevel,
       creativityBonus,
+      effectBonus,
       baseTarget: DIFFICULTY_THRESHOLDS.medium,
       target: effectiveThreshold,
+      sureHit: isSureHit,
     };
     result.defenseBreakdown = {
       attribute: defenseAttr,
+      attributeKey: 'zrecznosc',
+      skillName: 'Uniki',
       skillLevel: defenseSkillLevel,
       defendBonus,
+      dodging,
       baseTarget: DIFFICULTY_THRESHOLDS.medium,
       target: DIFFICULTY_THRESHOLDS.medium + defendBonus + defenseAttr + defenseSkillLevel,
     };
@@ -618,10 +967,22 @@ export function resolveManoeuvre(combat, actorId, manoeuvreKey, targetId, option
       const blockResult = resolveShieldBlock(target, rawDamage, weaponData);
       if (blockResult.blocked) rawDamage = blockResult.damage;
 
+      // Fury tile: +50% raw damage
+      if (actorTile?.type === 'fury') {
+        rawDamage = Math.ceil(rawDamage * 1.5);
+      }
+
       // Armour DR + effect-based DR (e.g. Ochrona, Wielka Ochrona)
       const targetMods = computeEffectiveMods(target.activeEffects);
       const dr = getCombatantDR(target) + targetMods.damageReduction;
-      const totalDamage = Math.max(1, rawDamage - dr);
+      let totalDamage = Math.max(1, rawDamage - dr);
+
+      // Damage Reduction tile: target takes 50% less
+      const targetPos = normalizePos(target.position);
+      const targetTile = getTileAt(state.terrainTiles, targetPos.x, targetPos.y);
+      if (targetTile?.type === 'damageReduction') {
+        totalDamage = Math.max(1, Math.ceil(totalDamage * 0.5));
+      }
 
       target.wounds = Math.max(0, target.wounds - totalDamage);
       if (target.wounds <= 0) target.isDefeated = true;
@@ -633,6 +994,7 @@ export function resolveManoeuvre(combat, actorId, manoeuvreKey, targetId, option
         if (!target.activeEffects) target.activeEffects = [];
         target.activeEffects = addEffect(target.activeEffects, fx);
         log.push(`CRITICAL! ${target.name} suffers: ${fx.name}.`);
+        result.appliedEffects.push({ target: target.name, action: 'add', effectName: fx.name, category: fx.category });
       }
 
       if (manoeuvre.modifiers.feint) {
@@ -706,14 +1068,41 @@ export function resolveManoeuvre(combat, actorId, manoeuvreKey, targetId, option
 // --- Turn/round management ---
 
 export function advanceRound(combat) {
-  const state = { ...combat, combatants: combat.combatants.map((c) => ({ ...c, activeEffects: [...(c.activeEffects || [])] })) };
+  const state = {
+    ...combat,
+    combatants: combat.combatants.map((c) => ({ ...c, activeEffects: [...(c.activeEffects || [])] })),
+    terrainTiles: (combat.terrainTiles || []).map(t => ({ ...t })),
+  };
   const dotLog = [];
+  const roundEffectEvents = [];
 
   for (const c of state.combatants) {
     c.conditions = c.conditions.filter((cond) => cond !== 'defending' && cond !== 'dodging');
     c.movementUsed = 0;
 
-    if (c.isDefeated || !c.activeEffects?.length) continue;
+    if (c.isDefeated) continue;
+
+    // Terrain tile round effects
+    const pos = normalizePos(c.position);
+    const tile = getTileAt(state.terrainTiles, pos.x, pos.y);
+
+    if (tile?.type === 'regeneration') {
+      if (c.wounds < c.maxWounds) {
+        c.wounds = Math.min(c.maxWounds, c.wounds + 1);
+        dotLog.push(`${c.name} regenerates 1 wound (terrain).`);
+      }
+    }
+    if (tile?.type === 'poison') {
+      c.wounds = Math.max(0, c.wounds - 2);
+      dotLog.push(`${c.name} takes 2 poison damage (terrain).`);
+      if (c.wounds <= 0) { c.isDefeated = true; dotLog.push(`${c.name} is defeated by poison!`); }
+    }
+    if (tile?.type === 'freeze' && Math.random() < 0.5) {
+      c.frozenSkip = true;
+      dotLog.push(`${c.name} is frozen and will skip next turn!`);
+    }
+
+    if (!c.activeEffects?.length) continue;
 
     const { remaining, expired, dotDamage, dotHeal } = tickEffects(c.activeEffects, 'rounds');
     c.activeEffects = remaining;
@@ -721,25 +1110,42 @@ export function advanceRound(combat) {
     if (dotDamage > 0) {
       c.wounds = Math.max(0, c.wounds - dotDamage);
       dotLog.push(`${c.name} takes ${dotDamage} DoT damage.`);
+      roundEffectEvents.push({ target: c.name, action: 'dot', damage: dotDamage });
       if (c.wounds <= 0) { c.isDefeated = true; dotLog.push(`${c.name} is defeated by DoT!`); }
     }
     if (dotHeal > 0) {
       c.wounds = Math.min(c.maxWounds, c.wounds + dotHeal);
       dotLog.push(`${c.name} heals ${dotHeal} from effects.`);
+      roundEffectEvents.push({ target: c.name, action: 'heal', heal: dotHeal });
     }
     if (expired.length > 0) {
       dotLog.push(`${c.name}: ${expired.map((e) => e.name).join(', ')} expired.`);
+      for (const e of expired) {
+        roundEffectEvents.push({ target: c.name, action: 'expired', effectName: e.name, category: e.category });
+      }
     }
   }
 
   state.round += 1;
   state.turnIndex = 0;
   state.log = [...state.log, ...dotLog, `--- Round ${state.round} ---`];
+  state.roundEffectEvents = roundEffectEvents;
   return state;
 }
 
 export function advanceTurn(combat) {
-  const state = { ...combat };
+  const state = {
+    ...combat,
+    combatants: combat.combatants.map(c => ({ ...c })),
+  };
+  const current = state.combatants[state.turnIndex];
+
+  // Bonus turn from Extra Turn tile: consume and keep the same turnIndex
+  if (current && current.bonusTurn) {
+    current.bonusTurn = false;
+    return state;
+  }
+
   let nextIndex = state.turnIndex + 1;
   while (nextIndex < state.combatants.length && state.combatants[nextIndex].isDefeated) {
     nextIndex++;
@@ -747,6 +1153,16 @@ export function advanceTurn(combat) {
   if (nextIndex >= state.combatants.length) {
     return advanceRound(state);
   }
+
+  // Frozen skip: auto-skip this combatant's turn
+  const next = state.combatants[nextIndex];
+  if (next?.frozenSkip) {
+    next.frozenSkip = false;
+    state.turnIndex = nextIndex;
+    state.log = [...(state.log || []), `${next.name} is frozen and skips their turn!`];
+    return advanceTurn(state);
+  }
+
   return { ...state, turnIndex: nextIndex };
 }
 
@@ -805,7 +1221,10 @@ export function getEnemyAction(combat, enemyId) {
   const inMelee = dist <= gameData.MELEE_RANGE;
 
   if (!inMelee) {
-    return { manoeuvre: 'charge', targetId: target.id, moveToward: target.id };
+    if (canCharge(enemy, target, combat.combatants).valid) {
+      return { manoeuvre: 'charge', targetId: target.id, moveToward: target.id };
+    }
+    return { manoeuvre: 'attack', targetId: target.id, moveToward: target.id };
   }
 
   if (Math.random() < 0.15) {
@@ -815,8 +1234,20 @@ export function getEnemyAction(combat, enemyId) {
   return { manoeuvre: 'attack', targetId: target.id };
 }
 
+const TILE_SCORE = { sureHit: 3, fury: 2, damageReduction: 1, regeneration: 1, extraTurn: 2, teleport: -1, poison: -3, freeze: -3 };
+
+function scoreTileAt(terrainTiles, x, y) {
+  const tile = getTileAt(terrainTiles, x, y);
+  if (!tile) return 0;
+  return TILE_SCORE[tile.type] || 0;
+}
+
 export function resolveEnemyTurns(combat) {
-  let state = { ...combat, combatants: combat.combatants.map((c) => ({ ...c })) };
+  let state = {
+    ...combat,
+    combatants: combat.combatants.map((c) => ({ ...c })),
+    terrainTiles: (combat.terrainTiles || []).map(t => ({ ...t })),
+  };
   const results = [];
 
   while (state.turnIndex < state.combatants.length) {
@@ -836,13 +1267,39 @@ export function resolveEnemyTurns(combat) {
       if (action.moveToward) {
         const moveTarget = state.combatants.find((c) => c.id === action.moveToward);
         if (moveTarget && !isInMeleeRange(current, moveTarget) && !gameData.manoeuvres[action.manoeuvre]?.closesDistance) {
-          const dir = moveTarget.position > current.position ? 1 : -1;
+          const cp = normalizePos(current.position);
+          const tp = normalizePos(moveTarget.position);
           const enemyMoveMods = computeEffectiveMods(current.activeEffects);
           const effAllowance = Math.max(0, current.movementAllowance + enemyMoveMods.movementMod);
           const remaining = effAllowance - (current.movementUsed || 0);
-          const moveDist = Math.min(remaining, getDistance(current, moveTarget) - 1);
+          const totalDist = Math.max(Math.abs(tp.x - cp.x), Math.abs(tp.y - cp.y));
+          const moveDist = Math.min(remaining, Math.max(0, totalDist - 1));
           if (moveDist > 0) {
-            current.position = Math.max(0, Math.min(gameData.BATTLEFIELD_MAX, current.position + dir * moveDist));
+            const W = gameData.BATTLEFIELD_WIDTH;
+            const H = gameData.BATTLEFIELD_HEIGHT;
+            let nx = cp.x, ny = cp.y;
+            for (let step = 0; step < moveDist; step++) {
+              const dx = tp.x - nx;
+              const dy = tp.y - ny;
+              if (dx === 0 && dy === 0) break;
+              const sx = dx === 0 ? 0 : (dx > 0 ? 1 : -1);
+              const sy = dy === 0 ? 0 : (dy > 0 ? 1 : -1);
+              // Try direct step; if hazardous, try axis-only alternatives
+              const directScore = scoreTileAt(state.terrainTiles, nx + sx, ny + sy);
+              let bx = sx, by = sy;
+              if (directScore < 0 && (sx !== 0 || sy !== 0)) {
+                const altMoves = [];
+                if (sx !== 0) altMoves.push({ ax: sx, ay: 0 });
+                if (sy !== 0) altMoves.push({ ax: 0, ay: sy });
+                for (const { ax, ay } of altMoves) {
+                  const alt = scoreTileAt(state.terrainTiles, nx + ax, ny + ay);
+                  if (alt > directScore) { bx = ax; by = ay; break; }
+                }
+              }
+              nx += bx;
+              ny += by;
+            }
+            current.position = { x: Math.max(0, Math.min(W - 1, nx)), y: Math.max(0, Math.min(H - 1, ny)) };
             current.movementUsed = (current.movementUsed || 0) + moveDist;
           }
         }
@@ -865,6 +1322,13 @@ export function resolveEnemyTurns(combat) {
 
 // --- Combat end ---
 
+function computeManaDelta(combatant, original) {
+  const combatMana = combatant?.mana?.current ?? null;
+  const origMana = original?.mana?.current ?? null;
+  if (combatMana === null || origMana === null) return 0;
+  return combatMana - origMana;
+}
+
 function buildCombatStats(combat) {
   const ps = combat.playerStats || {};
   return {
@@ -880,7 +1344,8 @@ function buildCombatStats(combat) {
 
 export function endCombat(combat, playerCharacter) {
   const playerCombatant = combat.combatants.find((c) => c.type === 'player');
-  const woundsLost = playerCombatant ? playerCharacter.wounds - playerCombatant.wounds : 0;
+  const woundsDelta = playerCombatant ? playerCombatant.wounds - playerCharacter.wounds : 0;
+  const manaDelta = computeManaDelta(playerCombatant, playerCharacter);
   const enemiesDefeated = combat.combatants.filter((c) => c.type === 'enemy' && c.isDefeated).length;
   const totalEnemies = combat.combatants.filter((c) => c.type === 'enemy').length;
 
@@ -895,7 +1360,8 @@ export function endCombat(combat, playerCharacter) {
 
   return {
     outcome: isVictory ? 'victory' : 'defeat',
-    woundsChange: woundsLost > 0 ? -woundsLost : 0,
+    woundsChange: woundsDelta,
+    manaChange: manaDelta,
     skillProgress: playerSkillXp,
     combatStats,
     enemiesDefeated,
@@ -909,7 +1375,8 @@ export function endCombat(combat, playerCharacter) {
 
 export function surrenderCombat(combat, playerCharacter) {
   const playerCombatant = combat.combatants.find((c) => c.type === 'player');
-  const woundsLost = playerCombatant ? playerCharacter.wounds - playerCombatant.wounds : 0;
+  const woundsDelta = playerCombatant ? playerCombatant.wounds - playerCharacter.wounds : 0;
+  const manaDelta = computeManaDelta(playerCombatant, playerCharacter);
   const enemiesDefeated = combat.combatants.filter((c) => c.type === 'enemy' && c.isDefeated).length;
   const totalEnemies = combat.combatants.filter((c) => c.type === 'enemy').length;
   const remainingEnemies = combat.combatants
@@ -922,7 +1389,8 @@ export function surrenderCombat(combat, playerCharacter) {
 
   return {
     outcome: 'surrender',
-    woundsChange: woundsLost > 0 ? -woundsLost : 0,
+    woundsChange: woundsDelta,
+    manaChange: manaDelta,
     skillProgress: playerSkillXp,
     combatStats: buildCombatStats(combat),
     enemiesDefeated, totalEnemies, remainingEnemies,
@@ -932,7 +1400,8 @@ export function surrenderCombat(combat, playerCharacter) {
 
 export function forceTruceCombat(combat, playerCharacter) {
   const playerCombatant = combat.combatants.find((c) => c.type === 'player');
-  const woundsLost = playerCombatant ? playerCharacter.wounds - playerCombatant.wounds : 0;
+  const woundsDelta = playerCombatant ? playerCombatant.wounds - playerCharacter.wounds : 0;
+  const manaDelta = computeManaDelta(playerCombatant, playerCharacter);
   const enemiesDefeated = combat.combatants.filter((c) => c.type === 'enemy' && c.isDefeated).length;
   const totalEnemies = combat.combatants.filter((c) => c.type === 'enemy').length;
   const remainingEnemies = combat.combatants
@@ -945,7 +1414,8 @@ export function forceTruceCombat(combat, playerCharacter) {
 
   return {
     outcome: 'truce',
-    woundsChange: woundsLost > 0 ? -woundsLost : 0,
+    woundsChange: woundsDelta,
+    manaChange: manaDelta,
     skillProgress: playerSkillXp,
     combatStats: buildCombatStats(combat),
     enemiesDefeated, totalEnemies, remainingEnemies,
@@ -975,12 +1445,17 @@ export function createMultiplayerCombatState(playerCharacters, enemies, allies =
   }
 
   assignInitialPositions(combatants);
+
+  const W = gameData.BATTLEFIELD_WIDTH;
+  const H = gameData.BATTLEFIELD_HEIGHT;
+  const terrainTiles = spawnTerrainTiles(W, H, combatants);
+
   for (const c of combatants) { c.initiative = rollInitiative(c); }
   combatants.sort((a, b) => b.initiative - a.initiative);
 
   return {
     active: true, multiplayer: true, round: 1, turnIndex: 0,
-    combatants, log: ['Combat begins! Round 1.'], resolved: false,
+    combatants, terrainTiles, log: ['Combat begins! Round 1.'], resolved: false,
   };
 }
 
@@ -993,9 +1468,9 @@ export function endMultiplayerCombat(combat, playerCharacters) {
   for (const pc of playerCharacters) {
     const combatant = combat.combatants.find((c) => c.odId === pc.odId);
     if (!combatant) continue;
-    const woundsLost = pc.wounds - combatant.wounds;
     perCharacter[pc.name] = {
-      wounds: woundsLost > 0 ? -woundsLost : 0,
+      wounds: combatant.wounds - pc.wounds,
+      manaChange: computeManaDelta(combatant, pc),
       xp: baseXp, survived: !combatant.isDefeated,
     };
   }
@@ -1016,8 +1491,7 @@ export function surrenderMultiplayerCombat(combat, playerCharacters) {
   for (const pc of playerCharacters) {
     const combatant = combat.combatants.find((c) => c.odId === pc.odId);
     if (!combatant) continue;
-    const woundsLost = pc.wounds - combatant.wounds;
-    perCharacter[pc.name] = { wounds: woundsLost > 0 ? -woundsLost : 0, xp: baseXp, survived: true };
+    perCharacter[pc.name] = { wounds: combatant.wounds - pc.wounds, manaChange: computeManaDelta(combatant, pc), xp: baseXp, survived: true };
   }
 
   return { outcome: 'surrender', perCharacter, enemiesDefeated, totalEnemies, remainingEnemies,
@@ -1036,8 +1510,7 @@ export function forceTruceMultiplayerCombat(combat, playerCharacters) {
   for (const pc of playerCharacters) {
     const combatant = combat.combatants.find((c) => c.odId === pc.odId);
     if (!combatant) continue;
-    const woundsLost = pc.wounds - combatant.wounds;
-    perCharacter[pc.name] = { wounds: woundsLost > 0 ? -woundsLost : 0, xp: baseXp, survived: true };
+    perCharacter[pc.name] = { wounds: combatant.wounds - pc.wounds, manaChange: computeManaDelta(combatant, pc), xp: baseXp, survived: true };
   }
 
   return { outcome: 'truce', perCharacter, enemiesDefeated, totalEnemies, remainingEnemies,

@@ -50,6 +50,7 @@ export const StatusEffectSchema = z.object({
 // ── Helpers ──
 
 const MAX_STACKS = 5;
+export const MIN_EFFECT_DURATION_ROUNDS = 2;
 
 /**
  * Sum all attribute/skill/test modifiers from active effects into a single
@@ -171,19 +172,28 @@ export function isRestricted(effects, action) {
  */
 export function addEffect(effects, newEffect) {
   const arr = Array.isArray(effects) ? [...effects] : [];
-  const existing = arr.filter((fx) => fx.name === newEffect.name);
 
-  if (!newEffect.stackable) {
-    // Replace existing same-name effect (refresh)
-    const filtered = arr.filter((fx) => fx.name !== newEffect.name);
-    filtered.push(newEffect);
+  const clamped = clampEffectDuration(newEffect);
+  const existing = arr.filter((fx) => fx.name === clamped.name);
+
+  if (!clamped.stackable) {
+    const filtered = arr.filter((fx) => fx.name !== clamped.name);
+    filtered.push(clamped);
     return filtered;
   }
 
-  // Stackable: cap at MAX_STACKS
   if (existing.length >= MAX_STACKS) return arr;
-  arr.push(newEffect);
+  arr.push(clamped);
   return arr;
+}
+
+function clampEffectDuration(effect) {
+  const dur = effect.duration;
+  if (!dur || dur.type !== 'rounds') return effect;
+  if (dur.remaining != null && dur.remaining < MIN_EFFECT_DURATION_ROUNDS) {
+    return { ...effect, duration: { ...dur, remaining: MIN_EFFECT_DURATION_ROUNDS } };
+  }
+  return effect;
 }
 
 /**

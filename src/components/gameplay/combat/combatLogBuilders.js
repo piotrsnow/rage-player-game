@@ -35,10 +35,12 @@ export function buildResultLogEntries(result, { isActorFriendly, t }) {
       });
     }
   } else if (result.outcome === 'miss') {
+    const verbKey = result.manoeuvreKey;
+    const actionVerb = verbKey ? t(`combat.actionVerbs.${verbKey}`, '→') : '→';
     entries.push({
       type: 'miss',
       actor: result.actor,
-      action: `→ ${t('combat.miss', 'Miss!')}`,
+      action: actionVerb,
       target: result.targetName || '?',
       highlightText: t('combat.missShort', 'PUDŁO'),
       highlightTone: 'miss',
@@ -67,6 +69,60 @@ export function buildResultLogEntries(result, { isActorFriendly, t }) {
       details: buildCombatLogDetails(result, t),
       id: `failed_flee_${uid}`,
     });
+  } else if (result.outcome === 'shoved') {
+    entries.push({
+      type: 'hit',
+      actor: result.actor,
+      action: t('combat.shoved', 'shoved {{target}}', { target: result.targetName || '?' }),
+      target: '',
+      actorColor,
+      details: buildCombatLogDetails(result, t),
+      id: `shove_${uid}`,
+    });
+    if (result.offBalance) {
+      entries.push({
+        type: 'info',
+        actor: result.targetName || '?',
+        action: t('combat.shoveOffBalance', '{{target}} is knocked off-balance!', { target: result.targetName || '?' }),
+        target: '',
+        actorColor: targetColor,
+        id: `shove_offbal_${uid}`,
+      });
+    }
+  } else if (result.outcome === 'shove_failed') {
+    entries.push({
+      type: 'miss',
+      actor: result.actor,
+      action: t('combat.shoveFailed', 'failed to shove {{target}}', { target: result.targetName || '?' }),
+      target: '',
+      highlightText: t('combat.missShort', 'MISS'),
+      highlightTone: 'miss',
+      actorColor,
+      details: buildCombatLogDetails(result, t),
+      id: `shove_fail_${uid}`,
+    });
+  } else if (result.outcome === 'shove_blocked') {
+    entries.push({
+      type: 'miss',
+      actor: result.actor,
+      action: t('combat.shoveBlocked', 'shoved but the tile is blocked'),
+      target: '',
+      actorColor,
+      details: buildCombatLogDetails(result, t),
+      id: `shove_blocked_${uid}`,
+    });
+  } else if (result.outcome === 'charge_blocked') {
+    const reasonLabel = result.reason === 'not_straight_line'
+      ? t('combat.chargeNotStraight', 'Nie w linii prostej')
+      : t('combat.chargePathBlocked', 'Droga zablokowana');
+    entries.push({
+      type: 'info',
+      actor: result.actor,
+      action: `${t('combat.chargeBlocked', 'Szarża zablokowana')} — ${reasonLabel}`,
+      target: '',
+      actorColor,
+      id: `charge_blocked_${uid}`,
+    });
   } else if (result.outcome === 'defensive') {
     entries.push({
       type: 'info',
@@ -79,6 +135,61 @@ export function buildResultLogEntries(result, { isActorFriendly, t }) {
     });
   }
 
+  if (result.appliedEffects?.length) {
+    for (const eff of result.appliedEffects) {
+      const isDebuff = eff.category === 'dot' || eff.category === 'control' || eff.category === 'debuff';
+      entries.push({
+        type: 'effect',
+        actor: eff.target,
+        action: isDebuff
+          ? t('combat.effectDebuffApplied', '{{effect}}', { effect: eff.effectName })
+          : t('combat.effectBuffApplied', '{{effect}}', { effect: eff.effectName }),
+        target: '',
+        actorColor: isDebuff ? '#ff6e84' : '#74c0fc',
+        highlightText: isDebuff ? t('combat.debuff', 'DEBUFF') : t('combat.buff', 'BUFF'),
+        highlightTone: isDebuff ? 'debuff' : 'buff',
+        id: `fx_${uid}_${eff.effectName}`,
+      });
+    }
+  }
+
+  return entries;
+}
+
+export function buildRoundEffectLogEntries(events, { t }) {
+  if (!events?.length) return [];
+  const entries = [];
+  for (const ev of events) {
+    const uid = shortId();
+    if (ev.action === 'dot') {
+      entries.push({
+        type: 'effect',
+        actor: ev.target,
+        action: t('combat.effectDot', '-{{damage}} (efekt)', { damage: ev.damage }),
+        target: '',
+        actorColor: '#ff6e84',
+        id: `dot_${uid}`,
+      });
+    } else if (ev.action === 'heal') {
+      entries.push({
+        type: 'effect',
+        actor: ev.target,
+        action: t('combat.effectHealTick', '+{{heal}} (efekt)', { heal: ev.heal }),
+        target: '',
+        actorColor: '#74c0fc',
+        id: `heal_${uid}`,
+      });
+    } else if (ev.action === 'expired') {
+      entries.push({
+        type: 'effect',
+        actor: ev.target,
+        action: t('combat.effectExpired', '{{effect}} wygasł', { effect: ev.effectName }),
+        target: '',
+        actorColor: '#8b8b8f',
+        id: `expired_${uid}`,
+      });
+    }
+  }
   return entries;
 }
 

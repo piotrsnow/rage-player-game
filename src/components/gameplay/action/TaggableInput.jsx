@@ -53,7 +53,21 @@ const TaggableInput = forwardRef(function TaggableInput(
   );
 
   const segmentsToPlainText = useCallback(
-    (segs) => segs.map((s) => (s.type === 'tag' ? s.tag.name : s.value)).join(''),
+    (segs) => {
+      let out = '';
+      for (let i = 0; i < segs.length; i++) {
+        const s = segs[i];
+        if (s.type === 'tag') {
+          if (out.length > 0 && !out.endsWith(' ')) out += ' ';
+          out += s.tag.name;
+          const next = segs[i + 1];
+          if (next && !(next.type === 'text' && next.value.startsWith(' '))) out += ' ';
+        } else {
+          out += s.value;
+        }
+      }
+      return out;
+    },
     [],
   );
 

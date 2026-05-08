@@ -23,13 +23,14 @@ vi.mock('./gameDataService.js', () => ({
       attack: { name: 'Attack', type: 'offensive', range: 'melee', modifiers: {}, closesDistance: false },
       defend: { name: 'Defend', type: 'defensive', range: 'self', modifiers: {} },
       dodge: { name: 'Dodge', type: 'defensive', range: 'self', modifiers: {} },
-      charge: { name: 'Charge', type: 'offensive', range: 'melee', modifiers: {}, closesDistance: true },
+      charge: { name: 'Charge', type: 'offensive', range: 'charge', modifiers: {}, closesDistance: true },
       feint: { name: 'Feint', type: 'offensive', range: 'melee', modifiers: { feint: true }, closesDistance: false },
       flee: { name: 'Flee', type: 'utility', range: 'self', modifiers: { flee: true } },
       magic: { name: 'Magic', type: 'magic', range: 'ranged', modifiers: {} },
     },
-    MELEE_RANGE: 4,
-    BATTLEFIELD_MAX: 40,
+    MELEE_RANGE: 1,
+    BATTLEFIELD_WIDTH: 16,
+    BATTLEFIELD_HEIGHT: 9,
     DEFAULT_MOVEMENT: 8,
   },
 }));
@@ -42,6 +43,7 @@ import {
   endCombat,
   getDistance,
   isInMeleeRange,
+  canCharge,
   advanceTurn,
   advanceRound,
   getCurrentTurnCombatant,
@@ -68,7 +70,7 @@ function makeCombatState({ actor = {}, target = {} } = {}) {
         wounds: 12,
         maxWounds: 12,
         isDefeated: false,
-        position: 4,
+        position: { x: 2, y: 3 },
         movementUsed: 0,
         movementAllowance: 9,
         traits: [],
@@ -88,7 +90,7 @@ function makeCombatState({ actor = {}, target = {} } = {}) {
         wounds: 10,
         maxWounds: 10,
         isDefeated: false,
-        position: 6,
+        position: { x: 3, y: 3 },
         movementUsed: 0,
         movementAllowance: 8,
         traits: [],
@@ -219,8 +221,8 @@ describe('resolveManoeuvre — new combat system', () => {
 
   it('returns out_of_range when target too far for melee', () => {
     const combat = makeCombatState({
-      actor: { position: 0 },
-      target: { position: 10 },
+      actor: { position: { x: 0, y: 0 } },
+      target: { position: { x: 10, y: 0 } },
     });
     const { result } = resolveManoeuvre(combat, 'player', 'attack', 'enemy_guard');
 
@@ -282,15 +284,18 @@ describe('endCombat', () => {
 });
 
 describe('distance and melee range', () => {
-  it('calculates distance between combatants', () => {
-    expect(getDistance({ position: 2 }, { position: 5 })).toBe(3);
-    expect(getDistance({ position: 5 }, { position: 2 })).toBe(3);
+  it('calculates Chebyshev distance between combatants', () => {
+    expect(getDistance({ position: { x: 2, y: 3 } }, { position: { x: 3, y: 3 } })).toBe(1);
+    expect(getDistance({ position: { x: 5, y: 1 } }, { position: { x: 2, y: 4 } })).toBe(3);
+    expect(getDistance({ position: { x: 0, y: 0 } }, { position: { x: 3, y: 7 } })).toBe(7);
   });
 
-  it('detects melee range (distance <= 4)', () => {
-    expect(isInMeleeRange({ position: 2 }, { position: 3 })).toBe(true);
-    expect(isInMeleeRange({ position: 2 }, { position: 6 })).toBe(true);
-    expect(isInMeleeRange({ position: 2 }, { position: 7 })).toBe(false);
+  it('detects melee range (Chebyshev distance <= 1)', () => {
+    expect(isInMeleeRange({ position: { x: 2, y: 2 } }, { position: { x: 3, y: 3 } })).toBe(true);
+    expect(isInMeleeRange({ position: { x: 2, y: 2 } }, { position: { x: 3, y: 2 } })).toBe(true);
+    expect(isInMeleeRange({ position: { x: 2, y: 2 } }, { position: { x: 2, y: 2 } })).toBe(true);
+    expect(isInMeleeRange({ position: { x: 2, y: 2 } }, { position: { x: 4, y: 2 } })).toBe(false);
+    expect(isInMeleeRange({ position: { x: 0, y: 0 } }, { position: { x: 2, y: 0 } })).toBe(false);
   });
 });
 
@@ -313,5 +318,91 @@ describe('turn management', () => {
     const combat = makeCombatState();
     const current = getCurrentTurnCombatant(combat);
     expect(current.id).toBe('player');
+  });
+});
+
+describe('canCharge', () => {
+  it('allows charge on same row (horizontal)', () => {
+    const actor = { id: 'a', position: { x: 1, y: 3 }, isDefeated: false };
+    const target = { id: 'b', position: { x: 8, y: 3 }, isDefeated: false };
+    expect(canCharge(actor, target, [actor, target])).toEqual({ valid: true });
+  });
+
+  it('allows charge on same column (vertical)', () => {
+    const actor = { id: 'a', position: { x: 4, y: 0 }, isDefeated: false };
+    const target = { id: 'b', position: { x: 4, y: 7 }, isDefeated: false };
+    expect(canCharge(actor, target, [actor, target])).toEqual({ valid: true });
+  });
+
+  it('allows charge on exact diagonal', () => {
+    const actor = { id: 'a', position: { x: 2, y: 2 }, isDefeated: false };
+    const target = { id: 'b', position: { x: 5, y: 5 }, isDefeated: false };
+    expect(canCharge(actor, target, [actor, target])).toEqual({ valid: true });
+  });
+
+  it('rejects charge on non-straight path', () => {
+    const actor = { id: 'a', position: { x: 2, y: 2 }, isDefeated: false };
+    const target = { id: 'b', position: { x: 5, y: 4 }, isDefeated: false };
+    expect(canCharge(actor, target, [actor, target])).toEqual({ valid: false, reason: 'not_straight_line' });
+  });
+
+  it('rejects charge when a combatant blocks the path', () => {
+    const actor = { id: 'a', position: { x: 1, y: 3 }, isDefeated: false };
+    const blocker = { id: 'c', position: { x: 4, y: 3 }, isDefeated: false };
+    const target = { id: 'b', position: { x: 8, y: 3 }, isDefeated: false };
+    expect(canCharge(actor, target, [actor, blocker, target])).toEqual({ valid: false, reason: 'path_blocked' });
+  });
+
+  it('allows charge over defeated combatants', () => {
+    const actor = { id: 'a', position: { x: 1, y: 3 }, isDefeated: false };
+    const dead = { id: 'c', position: { x: 4, y: 3 }, isDefeated: true };
+    const target = { id: 'b', position: { x: 8, y: 3 }, isDefeated: false };
+    expect(canCharge(actor, target, [actor, dead, target])).toEqual({ valid: true });
+  });
+});
+
+describe('resolveManoeuvre — charge validation', () => {
+  beforeEach(() => {
+    vi.mocked(rollD50).mockReset();
+  });
+
+  it('returns charge_blocked when target is not on a straight line', () => {
+    const combat = makeCombatState({
+      actor: { position: { x: 1, y: 1 } },
+      target: { position: { x: 4, y: 3 } },
+    });
+    const { result } = resolveManoeuvre(combat, 'player', 'charge', 'enemy_guard');
+    expect(result.outcome).toBe('charge_blocked');
+    expect(result.reason).toBe('not_straight_line');
+  });
+
+  it('returns charge_blocked when path is blocked by another combatant', () => {
+    const combat = makeCombatState({
+      actor: { position: { x: 0, y: 3 } },
+      target: { position: { x: 8, y: 3 } },
+    });
+    combat.combatants.push({
+      id: 'blocker', name: 'Blocker', type: 'enemy',
+      attributes: { sila: 10, zrecznosc: 8, wytrzymalosc: 10, szczescie: 0 },
+      skills: {}, inventory: [], weapons: [], equipped: {}, armour: {},
+      conditions: [], wounds: 10, maxWounds: 10, isDefeated: false,
+      position: { x: 4, y: 3 }, movementUsed: 0, movementAllowance: 8, traits: [],
+    });
+    const { result } = resolveManoeuvre(combat, 'player', 'charge', 'enemy_guard');
+    expect(result.outcome).toBe('charge_blocked');
+    expect(result.reason).toBe('path_blocked');
+  });
+
+  it('allows charge on a clear straight line and resolves attack', () => {
+    vi.mocked(rollD50).mockReturnValue(40);
+    const combat = makeCombatState({
+      actor: { position: { x: 0, y: 3 } },
+      target: { position: { x: 8, y: 3 } },
+    });
+    const { result, combat: updated } = resolveManoeuvre(combat, 'player', 'charge', 'enemy_guard');
+    expect(result.outcome).not.toBe('charge_blocked');
+    const actor = updated.combatants.find(c => c.id === 'player');
+    expect(actor.position.x).toBe(7);
+    expect(actor.position.y).toBe(3);
   });
 });

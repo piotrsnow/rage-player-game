@@ -113,7 +113,7 @@ export default function CombatDetailPanel({ combatant, myCombatant, allCombatant
         {combatant.position != null && (
           <div className="flex items-center gap-1">
             <span className="text-on-surface-variant">{t('combat.position', 'Pos')}</span>
-            <span className="text-on-surface font-bold">{combatant.position}y</span>
+            <span className="text-on-surface font-bold">[{typeof combatant.position === 'object' ? `${combatant.position.x},${combatant.position.y}` : combatant.position}]</span>
           </div>
         )}
         {combatant.movementAllowance > 0 && !combatant.isDefeated && (

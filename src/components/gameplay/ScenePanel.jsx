@@ -535,23 +535,71 @@ export default function ScenePanel({
         </>
       )}
 
+      {/* Momentum minigame: countdown overlay */}
+      {momentumDice?.counting && momentumDice.countdownValue > 0 && (
+        <div className="absolute inset-0 flex items-center justify-center" style={{ zIndex: 10 }}>
+          <span
+            key={momentumDice.countdownValue}
+            className="text-[min(20vw,10rem)] font-black tabular-nums text-amber-300 animate-countdown-digit select-none"
+            style={{
+              textShadow: '0 0 40px rgba(251,191,36,0.7), 0 0 80px rgba(251,191,36,0.3), 0 4px 12px rgba(0,0,0,0.6)',
+            }}
+          >
+            {momentumDice.countdownValue}
+          </span>
+        </div>
+      )}
+
       {/* Momentum minigame dice target */}
       {momentumDice?.visible && (
         <button
           type="button"
           onClick={momentumDice.onDiceClick}
-          className="absolute z-[3] w-16 h-16 flex items-center justify-center rounded-xl cursor-pointer animate-scale-in hover:scale-110 transition-transform"
+          className="absolute w-16 h-16 flex items-center justify-center rounded-xl cursor-pointer animate-scale-in group transition-all duration-150"
           style={{
+            zIndex: 10,
             top: `${(momentumDice.position?.top ?? 0.5) * 100}%`,
             left: `${(momentumDice.position?.left ?? 0.5) * 100}%`,
             transform: 'translate(-50%, -50%)',
-            filter: 'drop-shadow(0 0 18px rgba(251,191,36,0.6)) drop-shadow(0 0 40px rgba(251,191,36,0.25))',
           }}
         >
-          <span className="material-symbols-outlined text-[56px] text-amber-300/90 drop-shadow-lg">
+          <span className="absolute inset-0 rounded-xl bg-amber-400/0 group-hover:bg-amber-400/20 transition-colors duration-150" />
+          <span
+            className="material-symbols-outlined text-[56px] text-amber-300/90 group-hover:text-white group-hover:scale-125 transition-all duration-150 drop-shadow-lg"
+            style={{
+              filter: 'drop-shadow(0 0 18px rgba(251,191,36,0.6)) drop-shadow(0 0 40px rgba(251,191,36,0.25))',
+            }}
+          >
             casino
           </span>
         </button>
+      )}
+
+      {/* Momentum minigame result feedback */}
+      {momentumDice?.result && !momentumDice.visible && !momentumDice.counting && (
+        <div className="absolute inset-0 flex items-center justify-center pointer-events-none" style={{ zIndex: 10 }}>
+          <div
+            key={`result-${momentumDice.result.delta}-${momentumDice.result.reactionMs}`}
+            className="animate-momentum-result flex flex-col items-center gap-1"
+          >
+            <span className={`text-[min(14vw,5rem)] font-black tabular-nums select-none ${
+              momentumDice.result.delta > 0 ? 'text-emerald-400' : 'text-red-400'
+            }`}
+              style={{
+                textShadow: momentumDice.result.delta > 0
+                  ? '0 0 30px rgba(52,211,153,0.6), 0 4px 12px rgba(0,0,0,0.6)'
+                  : '0 0 30px rgba(248,113,113,0.6), 0 4px 12px rgba(0,0,0,0.6)',
+              }}
+            >
+              {momentumDice.result.delta > 0 ? '+' : ''}{momentumDice.result.delta}
+            </span>
+            <span className="text-sm font-label uppercase tracking-widest text-on-surface/70 bg-black/50 backdrop-blur-sm rounded-sm px-3 py-1">
+              {momentumDice.result.reactionMs != null
+                ? `${(momentumDice.result.reactionMs / 1000).toFixed(2)}s`
+                : t('gameplay.momentumTimeout', 'Czas minął!')}
+            </span>
+          </div>
+        </div>
       )}
 
       {/* Dice Roll Overlay — top-right */}

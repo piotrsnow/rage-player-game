@@ -69,7 +69,7 @@ export default function SidebarPartyList({ party = [], activeCharacterId, isMult
             onClick={() => setRecruitOpen(true)}
             title={t('party.recruitTitle', 'Werbunek towarzysza')}
             aria-label={t('party.recruitTitle', 'Werbunek towarzysza')}
-            className="aspect-square w-full rounded-sm border border-dashed border-outline-variant/30 bg-surface-container/30 text-on-surface-variant hover:border-tertiary/50 hover:text-tertiary hover:bg-tertiary/5 transition-colors flex items-center justify-center"
+            className="aspect-[3/4] w-full rounded-sm border border-dashed border-outline-variant/30 bg-surface-container/30 text-on-surface-variant hover:border-tertiary/50 hover:text-tertiary hover:bg-tertiary/5 transition-colors flex items-center justify-center"
           >
             <span className="material-symbols-outlined text-2xl">add</span>
           </button>

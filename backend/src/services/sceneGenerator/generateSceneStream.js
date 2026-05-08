@@ -487,6 +487,9 @@ export async function generateSceneStream(campaignId, playerAction, options = {}
       if (typeof combatResult.woundsChange === 'number') {
         sceneResult.stateChanges.woundsChange = combatResult.woundsChange;
       }
+      if (typeof combatResult.manaChange === 'number' && combatResult.manaChange !== 0) {
+        sceneResult.stateChanges.manaChange = combatResult.manaChange;
+      }
       if (combatResult.skillProgress && typeof combatResult.skillProgress === 'object') {
         sceneResult.stateChanges.skillProgress = {
           ...(sceneResult.stateChanges.skillProgress || {}),

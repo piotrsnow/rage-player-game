@@ -7,17 +7,17 @@ function CombatLog({ combatLog, legacyLog, expanded = false }) {
   const newestId = combatLog.length > 0 ? combatLog[combatLog.length - 1].id : null;
 
   const wrapperClass = expanded
-    ? 'flex-1 min-w-0 flex flex-col rounded-md border border-outline-variant/10 bg-surface-container/20 overflow-hidden h-[clamp(200px,30vh,400px)]'
-    : 'flex-1 min-w-0 flex flex-col rounded-md border border-outline-variant/10 bg-surface-container/20 overflow-hidden max-h-[360px] xl:h-[300px] xl:max-h-[300px]';
+    ? 'flex-1 min-w-0 flex flex-col rounded border border-outline-variant/10 bg-surface-container/20 overflow-hidden h-[clamp(160px,25vh,320px)] font-headline'
+    : 'flex-1 min-w-0 flex flex-col overflow-hidden h-full font-headline';
 
   if (combatLog.length === 0 && (!legacyLog || legacyLog.length === 0)) {
     return (
       <div className={wrapperClass}>
-        <div className="text-xs font-label uppercase tracking-widest text-on-surface-variant px-3 py-2 border-b border-outline-variant/10 shrink-0">
+        <div className="text-sm font-headline uppercase tracking-wide text-on-surface-variant px-2.5 py-2 border-b border-outline-variant/10 shrink-0">
           {t('combat.battleProgress', 'Battle Progress')}
         </div>
-        <div className="flex-1 flex items-center justify-center p-4">
-          <span className="text-xs text-outline-variant/50 italic">
+        <div className="flex-1 flex items-center justify-center p-3">
+          <span className="text-[10px] text-outline-variant/50 italic">
             {t('combat.logEmpty', 'Waiting for first action...')}
           </span>
         </div>
@@ -28,12 +28,12 @@ function CombatLog({ combatLog, legacyLog, expanded = false }) {
   if (combatLog.length === 0 && legacyLog?.length > 0) {
     return (
       <div className={wrapperClass}>
-        <div className="text-xs font-label uppercase tracking-widest text-on-surface-variant px-3 py-2 border-b border-outline-variant/10 shrink-0">
+        <div className="text-sm font-headline uppercase tracking-wide text-on-surface-variant px-2.5 py-2 border-b border-outline-variant/10 shrink-0">
           {t('combat.battleProgress', 'Battle Progress')}
         </div>
-        <div className="flex-1 overflow-y-auto custom-scrollbar p-2 flex flex-col gap-1">
+        <div className="flex-1 overflow-y-auto custom-scrollbar p-1.5 flex flex-col gap-0.5">
           {legacyLog.slice(-5).reverse().map((entry, i) => (
-            <div key={`legacy_${i}`} className="text-sm text-outline-variant leading-snug px-2 py-1">
+            <div key={`legacy_${i}`} className="text-xs text-outline-variant leading-snug px-1.5 py-0.5">
               {entry}
             </div>
           ))}
@@ -44,10 +44,10 @@ function CombatLog({ combatLog, legacyLog, expanded = false }) {
 
   return (
     <div className={wrapperClass}>
-      <div className="text-xs font-label uppercase tracking-widest text-on-surface-variant px-3 py-2 border-b border-outline-variant/10 shrink-0">
+      <div className="text-sm font-headline uppercase tracking-wide text-on-surface-variant px-2.5 py-2 border-b border-outline-variant/10 shrink-0">
         {t('combat.battleProgress', 'Battle Progress')}
       </div>
-      <div className="flex-1 overflow-y-auto custom-scrollbar p-2 flex flex-col gap-1">
+      <div className="flex-1 overflow-y-auto custom-scrollbar p-1.5 flex flex-col gap-0.5">
         {[...combatLog].reverse().map((entry) => (
           <CombatLogEntry
             key={entry.id}

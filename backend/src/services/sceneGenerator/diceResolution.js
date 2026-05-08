@@ -133,13 +133,13 @@ export function resolveModelDiceRolls(sceneResult, character, preRolls, creativi
 
   const resolved = [];
   for (let i = 0; i < Math.min(modelRolls.length, 3); i++) {
-    const { skill, difficulty, success: modelSaysSuccess } = modelRolls[i] || {};
+    const { skill, difficulty, success: modelSaysSuccess, modifiers: rollModifiers } = modelRolls[i] || {};
     const preRoll = preRolls[i];
     if (!skill || !preRoll) continue;
 
     const roll = resolveBackendDiceRollWithPreRoll(
       character, skill, difficulty || 'medium',
-      preRoll.d50, preRoll.luckySuccess, clampedCreativity,
+      preRoll.d50, preRoll.luckySuccess, clampedCreativity, rollModifiers,
     );
     if (!roll) continue;
 
@@ -149,7 +149,7 @@ export function resolveModelDiceRolls(sceneResult, character, preRolls, creativi
         const attr = character.attributes[skillDef.attribute] || 0;
         const skillLvl = getSkillLevel(character, skill);
         const momentum = clamp(character.momentumBonus || 0, -10, 10);
-        const threshold = DIFFICULTY_THRESHOLDS[difficulty] || DIFFICULTY_THRESHOLDS.medium;
+        const threshold = roll.threshold;
         const staticBonus = attr + skillLvl + momentum + clampedCreativity;
 
         if (modelSaysSuccess && !roll.success) {

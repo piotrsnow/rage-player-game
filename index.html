@@ -17,9 +17,7 @@
   <body class="bg-surface-dim text-on-surface font-body selection:bg-primary-container selection:text-on-primary-container">
     <div id="root">
       <div id="splash" style="position:fixed;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;background:#0e0e10;gap:1.5rem;">
-        <div style="padding:2.5rem 3rem;border-radius:1rem;background:rgba(34,34,38,0.7);backdrop-filter:blur(12px);border:1px solid rgba(197,154,255,0.15);animation:splash-pulse 2s ease-in-out infinite;">
-          <img src="/nikczemnu_logo.png" alt="Nikczemny Krzemuch" style="height:12rem;width:auto;filter:drop-shadow(0 4px 24px rgba(197,154,255,0.25));" />
-        </div>
+        <img class="splash-logo" src="/nikczemnu_logo.png" alt="Nikczemny Krzemuch" />
         <div style="display:flex;align-items:center;gap:1rem;">
           <div class="splash-spinner"></div>
           <p style="color:rgba(200,200,210,0.7);font-size:11px;text-transform:uppercase;letter-spacing:0.1em;animation:splash-shimmer 2s ease-in-out infinite;">Łączenie z serwerem...</p>
@@ -27,9 +25,15 @@
         <div id="boot-log"></div>
       </div>
       <style>
-        @keyframes splash-pulse {
+        .splash-logo {
+          height:15rem;
+          width:auto;
+          filter:drop-shadow(0 4px 28px rgba(197,154,255,0.28));
+          animation:splash-logo-blink 2.4s ease-in-out infinite;
+        }
+        @keyframes splash-logo-blink {
           0%,100% { opacity:1; }
-          50% { opacity:0.85; }
+          50% { opacity:0.82; }
         }
         @keyframes splash-shimmer {
           0% { opacity:0.5; }

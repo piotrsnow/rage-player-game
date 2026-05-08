@@ -1,4 +1,5 @@
 import { useState, useMemo, useRef, useEffect, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import { useTranslation } from 'react-i18next';
 import { gameData } from '../../services/gameDataService';
 import { useCombatAudio } from '../../hooks/useCombatAudio';
@@ -6,6 +7,7 @@ import { useAI } from '../../hooks/useAI';
 import { useSettings } from '../../contexts/SettingsContext';
 import { shortId } from '../../utils/ids';
 import { aiService } from '../../services/ai/service';
+import { rollD50 } from '../../services/gameState';
 import {
   resolveManoeuvre,
   advanceTurn,
@@ -19,15 +21,18 @@ import {
   surrenderMultiplayerCombat,
   forceTruceMultiplayerCombat,
   moveCombatant,
+  isInMeleeRange,
 } from '../../services/combatEngine';
 import CombatCanvas from './CombatCanvas';
+import { PROJECTILE_TOTAL_MS } from './combat/combatCanvasDraw';
 import { useCombatCommentary } from '../../hooks/useCombatCommentary';
 import CombatLog from './combat/CombatLog';
 import CombatantsList from './combat/CombatantsList';
 import CombatHeader from './combat/CombatHeader';
 import { TruceConfirmDialog, SurrenderConfirmDialog } from './combat/CombatConfirmDialogs';
 import CombatTurnStatus from './combat/CombatTurnStatus';
-import { buildResultLogEntries, buildResultChatMessages } from './combat/combatLogBuilders';
+import InitiativeBar from './combat/InitiativeBar';
+import { buildResultLogEntries, buildResultChatMessages, buildRoundEffectLogEntries } from './combat/combatLogBuilders';
 import { useEnemyTurnResolver } from '../../hooks/useEnemyTurnResolver';
 import { useCombatResultSync } from '../../hooks/useCombatResultSync';
 import { useCombatHostResolve } from '../../hooks/useCombatHostResolve';
@@ -49,7 +54,82 @@ function summarizeLogEntry(entry) {
   return [core, extras.join(', ')].filter(Boolean).join(' — ');
 }
 
+function buildAiDiceLogDetails(diceResult, t) {
+  if (!diceResult || typeof diceResult !== 'object') return null;
+  const roll = Number(diceResult.roll);
+  const total = Number(diceResult.total);
+  const threshold = Number(diceResult.threshold);
+  if (!Number.isFinite(roll) || !Number.isFinite(total) || !Number.isFinite(threshold)) return null;
+
+  const attributeValue = Number(diceResult.attributeValue) || 0;
+  const skillLevel = Number(diceResult.skillLevel) || 0;
+  const momentumBonus = Number(diceResult.momentumBonus) || 0;
+  const creativityBonus = Number(diceResult.creativityBonus) || 0;
+  const margin = Number(diceResult.margin) || (total - threshold);
+
+  const modifiers = [
+    {
+      label: t('gameplay.diceRollAttribute', 'Cecha'),
+      value: attributeValue > 0 ? `+${attributeValue}` : `${attributeValue}`,
+      color: 'text-purple-300',
+    },
+    {
+      label: t('gameplay.diceRollSkill', 'Umiejętność'),
+      value: skillLevel > 0 ? `+${skillLevel}` : `${skillLevel}`,
+      color: 'text-emerald-300',
+    },
+  ];
+  if (momentumBonus !== 0) {
+    modifiers.push({
+      label: t('gameplay.diceRollMomentum', 'Momentum'),
+      value: momentumBonus > 0 ? `+${momentumBonus}` : `${momentumBonus}`,
+      color: momentumBonus > 0 ? 'text-cyan-300' : 'text-rose-300',
+    });
+  }
+  if (creativityBonus !== 0) {
+    modifiers.push({
+      label: t('gameplay.diceRollCreativity', 'Kreatywność'),
+      value: creativityBonus > 0 ? `+${creativityBonus}` : `${creativityBonus}`,
+      color: 'text-amber-300',
+    });
+  }
+
+  const thresholdBreakdown = diceResult.thresholdBreakdown && typeof diceResult.thresholdBreakdown === 'object'
+    ? {
+      base: Number(diceResult.thresholdBreakdown.base) || threshold,
+      final: Number(diceResult.thresholdBreakdown.final) || threshold,
+      modifiers: Array.isArray(diceResult.thresholdBreakdown.modifiers)
+        ? diceResult.thresholdBreakdown.modifiers
+          .filter((m) => m && typeof m.value === 'number')
+          .map((m) => ({ label: m.reason || t('gameplay.modifier', 'Modyfikator'), value: m.value }))
+        : [],
+    }
+    : null;
+
+  const rollItem = {
+    kind: 'roll',
+    label: t('combat.aiRollLabel', 'Test akcji'),
+    roll,
+    total,
+    threshold,
+    margin,
+    success: Boolean(diceResult.success),
+    criticalSuccess: roll === 1,
+    criticalFailure: roll === 50 && !Boolean(diceResult.success),
+    modifiers,
+    ...(thresholdBreakdown ? { thresholdBreakdown } : {}),
+  };
+
+  const details = [rollItem];
+  if (typeof diceResult.reasoning === 'string' && diceResult.reasoning.trim()) {
+    details.push({ kind: 'effect', text: diceResult.reasoning.trim() });
+  }
+  return details;
+}
+
 const ACTION_ANIM_MS = 1500;
+const CHARGE_SLIDE_MS = 500;
+const SHOVE_ANIM_MS = 750;
 
 export default function CombatPanel({
   combat, dispatch, onEndCombat, onSurrender, onForceTruce, character,
@@ -68,7 +148,34 @@ export default function CombatPanel({
   const [combatLog, setCombatLog] = useState([]);
   const [isAwaitingAiTurn, setIsAwaitingAiTurn] = useState(false);
   const [actionAnim, setActionAnim] = useState(null);
+  const [projectileAnim, setProjectileAnim] = useState(null);
+  const [tokenAnimations, setTokenAnimations] = useState({});
+  const [scenePortalTarget, setScenePortalTarget] = useState(null);
+  const tokenAnimTimers = useRef([]);
   const combatAudio = useCombatAudio(combat);
+
+  const scheduleTokenAnim = useCallback((anims) => {
+    setTokenAnimations((prev) => ({ ...prev, ...anims }));
+    const maxDuration = Math.max(...Object.values(anims).map((a) => a.durationMs));
+    const timer = setTimeout(() => {
+      setTokenAnimations((prev) => {
+        const next = { ...prev };
+        for (const id of Object.keys(anims)) delete next[id];
+        return next;
+      });
+    }, maxDuration + 50);
+    tokenAnimTimers.current.push(timer);
+  }, []);
+
+  useEffect(() => {
+    return () => tokenAnimTimers.current.forEach(clearTimeout);
+  }, []);
+
+  useEffect(() => {
+    if (expandedLayout) { setScenePortalTarget(null); return; }
+    const el = document.getElementById('scene-panel-container');
+    setScenePortalTarget(el);
+  }, [expandedLayout]);
 
   const currentTurn = getCurrentTurnCombatant(combat);
   const isMyTurn = isMultiplayer
@@ -130,6 +237,11 @@ export default function CombatPanel({
     setCombatLog((prev) => [...prev.slice(-49), entry]);
   }, []);
 
+  const updateLogEntry = useCallback((id, patch) => {
+    if (!id) return;
+    setCombatLog((prev) => prev.map((entry) => (entry.id === id ? { ...entry, ...patch } : entry)));
+  }, []);
+
   const prevRoundRef = useRef(combat.round);
   useEffect(() => {
     if (combat.round !== prevRoundRef.current) {
@@ -148,6 +260,13 @@ export default function CombatPanel({
     const entries = buildResultLogEntries(result, { isActorFriendly, t });
     for (const entry of entries) addLogEntry(entry);
   }, [combatAudio, isActorFriendly, t, addLogEntry]);
+
+  const flushRoundEffectEvents = useCallback((combatState) => {
+    if (!combatState?.roundEffectEvents?.length) return;
+    const entries = buildRoundEffectLogEntries(combatState.roundEffectEvents, { t });
+    for (const entry of entries) addLogEntry(entry);
+    combatState.roundEffectEvents = [];
+  }, [t, addLogEntry]);
 
   const dispatchCombatChatMessage = useCallback((result) => {
     if (!result || isMultiplayer) return;
@@ -179,10 +298,38 @@ export default function CombatPanel({
     onEmitMessage: handleCommentaryMessage,
   });
 
-  const triggerActionAnim = useCallback((actorId, targetId) => {
-    setActionAnim({ actorId, targetId });
-    return new Promise((resolve) => setTimeout(resolve, ACTION_ANIM_MS));
+  const triggerActionAnim = useCallback((actorId, targetId, type) => {
+    setActionAnim({ actorId, targetId, type });
+    const duration = type === 'shove' ? SHOVE_ANIM_MS : ACTION_ANIM_MS;
+    return new Promise((resolve) => setTimeout(resolve, duration));
   }, []);
+
+  const getCombatantCell = useCallback((id) => {
+    const c = combat.combatants.find((cb) => cb.id === id);
+    if (!c) return { x: 0, y: 0 };
+    const p = c.position;
+    if (p && typeof p === 'object' && 'x' in p) return p;
+    if (typeof p === 'number') return { x: p, y: 4 };
+    return { x: 0, y: 0 };
+  }, [combat.combatants]);
+
+  const triggerProjectileAnim = useCallback((actorId, targetId, hit = true) => {
+    const fromCell = getCombatantCell(actorId);
+    const toCell = getCombatantCell(targetId);
+    const angle = Math.random() * Math.PI * 2;
+    setProjectileAnim({
+      fromCell,
+      toCell,
+      startTime: performance.now(),
+      hit,
+      missOffsetX: Math.cos(angle),
+      missOffsetY: Math.sin(angle),
+    });
+    return new Promise((resolve) => setTimeout(() => {
+      setProjectileAnim(null);
+      resolve();
+    }, PROJECTILE_TOTAL_MS));
+  }, [getCombatantCell]);
 
   const handleEnemyBeforeResolve = useCallback(async (currentCombat) => {
     const current = getCurrentTurnCombatant(currentCombat);
@@ -195,9 +342,34 @@ export default function CombatPanel({
       const d = Math.abs((current.position ?? 0) - (t.position ?? 0));
       return !best || d < best.dist ? { target: t, dist: d } : best;
     }, null);
-    await triggerActionAnim(current.id, closest?.target?.id || null);
-    setActionAnim(null);
-  }, [triggerActionAnim]);
+    const targetId = closest?.target?.id || null;
+    if (targetId && closest?.target && !isInMeleeRange(current, closest.target)) {
+      await triggerProjectileAnim(current.id, targetId, true);
+    } else {
+      await triggerActionAnim(current.id, targetId);
+      setActionAnim(null);
+    }
+  }, [triggerActionAnim, triggerProjectileAnim]);
+
+  const handleEnemyAfterSlide = useCallback(async (currentCombat) => {
+    const current = getCurrentTurnCombatant(currentCombat);
+    if (!current || current.type === 'player') return;
+    const playerTargets = currentCombat.combatants.filter(
+      (c) => (c.type === 'player' || c.type === 'ally') && !c.isDefeated
+    );
+    if (!playerTargets.length) return;
+    const closest = playerTargets.reduce((best, t) => {
+      const d = Math.abs((current.position ?? 0) - (t.position ?? 0));
+      return !best || d < best.dist ? { target: t, dist: d } : best;
+    }, null);
+    const targetId = closest?.target?.id || null;
+    if (targetId && closest?.target && !isInMeleeRange(current, closest.target)) {
+      await triggerProjectileAnim(current.id, targetId, true);
+    } else {
+      await triggerActionAnim(current.id, targetId);
+      setActionAnim(null);
+    }
+  }, [triggerActionAnim, triggerProjectileAnim]);
 
   useEnemyTurnResolver({
     combat,
@@ -210,6 +382,9 @@ export default function CombatPanel({
     dispatchCombatChatMessage: (r) => dispatchCombatChatMessage(r),
     setIsAwaitingAiTurn,
     onBeforeResolve: handleEnemyBeforeResolve,
+    onAfterSlide: handleEnemyAfterSlide,
+    scheduleTokenAnim,
+    flushRoundEffectEvents,
   });
 
   useCombatResultSync({
@@ -242,7 +417,7 @@ export default function CombatPanel({
   }, [dispatch, onPersistState]);
 
   const handleExecuteManoeuvre = useCallback(async (manoeuvreKey, targetId, customDesc, extraOpts = {}) => {
-    if (!manoeuvreKey || !isMyTurn || actionAnim) return;
+    if (!manoeuvreKey || !isMyTurn || actionAnim || projectileAnim) return;
 
     if (isCustomAttackManoeuvre(manoeuvreKey) && customDesc) {
       persistCustomAttack(customDesc);
@@ -254,17 +429,125 @@ export default function CombatPanel({
     }
 
     const actorId = isMultiplayer ? myPlayerId : 'player';
-    await triggerActionAnim(actorId, targetId || null);
+    const isCharge = gameData.manoeuvres[manoeuvreKey]?.closesDistance;
+
+    const positionsBefore = {};
+    for (const c of combat.combatants) {
+      const p = c.position && typeof c.position === 'object' && 'x' in c.position
+        ? c.position : typeof c.position === 'number' ? { x: c.position, y: 4 } : { x: 0, y: 0 };
+      positionsBefore[c.id] = p;
+    }
+
+    if (isCharge) {
+      const { combat: updatedCombat, result } = resolveManoeuvre(
+        combat, actorId, manoeuvreKey, targetId, { customDescription: customDesc, ...extraOpts }
+      );
+
+      // Phase 1: slide token to new position (only position change visible)
+      const slideState = {
+        ...combat,
+        combatants: combat.combatants.map((c) => {
+          const updated = updatedCombat.combatants.find((u) => u.id === c.id);
+          if (!updated) return c;
+          return { ...c, position: updated.position };
+        }),
+      };
+
+      const anims = {};
+      for (const c of updatedCombat.combatants) {
+        const after = c.position && typeof c.position === 'object' && 'x' in c.position
+          ? c.position : typeof c.position === 'number' ? { x: c.position, y: 4 } : { x: 0, y: 0 };
+        const before = positionsBefore[c.id];
+        if (before && (before.x !== after.x || before.y !== after.y)) {
+          anims[c.id] = { durationMs: CHARGE_SLIDE_MS };
+        }
+      }
+      if (Object.keys(anims).length) scheduleTokenAnim(anims);
+
+      dispatch({ type: 'UPDATE_COMBAT', payload: slideState });
+      await new Promise((r) => setTimeout(r, CHARGE_SLIDE_MS + 50));
+
+      // Phase 2: attack lunge animation + apply full result
+      await triggerActionAnim(actorId, targetId || null);
+      setActionAnim(null);
+
+      dispatchCombatChatMessage(result);
+      addResultToLog(result);
+      const allResults = result ? [result] : [];
+      let finalCombat = advanceTurn(updatedCombat);
+      flushRoundEffectEvents(finalCombat);
+
+      if (isMultiplayer) {
+        finalCombat.lastResults = allResults;
+        finalCombat.lastResultsTs = Date.now();
+        onHostResolve?.(finalCombat);
+      } else {
+        dispatch({ type: 'UPDATE_COMBAT', payload: finalCombat });
+      }
+      return;
+    }
+
+    const isRanged = gameData.manoeuvres[manoeuvreKey]?.range === 'ranged';
+
+    if (isRanged && targetId) {
+      const { combat: updatedCombat, result } = resolveManoeuvre(
+        combat, actorId, manoeuvreKey, targetId, { customDescription: customDesc, ...extraOpts }
+      );
+      const hit = result?.outcome === 'hit';
+      await triggerProjectileAnim(actorId, targetId, hit);
+
+      const anims = {};
+      for (const c of updatedCombat.combatants) {
+        const after = c.position && typeof c.position === 'object' && 'x' in c.position
+          ? c.position : typeof c.position === 'number' ? { x: c.position, y: 4 } : { x: 0, y: 0 };
+        const before = positionsBefore[c.id];
+        if (before && (before.x !== after.x || before.y !== after.y)) {
+          anims[c.id] = { durationMs: 1000 };
+        }
+      }
+      if (Object.keys(anims).length) scheduleTokenAnim(anims);
+
+      dispatchCombatChatMessage(result);
+      addResultToLog(result);
+      const allResults = result ? [result] : [];
+      let finalCombat = advanceTurn(updatedCombat);
+      flushRoundEffectEvents(finalCombat);
+
+      if (isMultiplayer) {
+        finalCombat.lastResults = allResults;
+        finalCombat.lastResultsTs = Date.now();
+        onHostResolve?.(finalCombat);
+      } else {
+        dispatch({ type: 'UPDATE_COMBAT', payload: finalCombat });
+      }
+      return;
+    }
+
+    const isShove = gameData.manoeuvres[manoeuvreKey]?.modifiers?.shove;
+    await triggerActionAnim(actorId, targetId || null, isShove ? 'shove' : undefined);
     setActionAnim(null);
 
     const { combat: updatedCombat, result } = resolveManoeuvre(
       combat, actorId, manoeuvreKey, targetId, { customDescription: customDesc, ...extraOpts }
     );
+
+    const anims = {};
+    for (const c of updatedCombat.combatants) {
+      const after = c.position && typeof c.position === 'object' && 'x' in c.position
+        ? c.position : typeof c.position === 'number' ? { x: c.position, y: 4 } : { x: 0, y: 0 };
+      const before = positionsBefore[c.id];
+      if (before && (before.x !== after.x || before.y !== after.y)) {
+        anims[c.id] = { durationMs: 1000 };
+      }
+    }
+    if (Object.keys(anims).length) scheduleTokenAnim(anims);
+
     dispatchCombatChatMessage(result);
     addResultToLog(result);
     const allResults = result ? [result] : [];
 
     let finalCombat = advanceTurn(updatedCombat);
+    flushRoundEffectEvents(finalCombat);
 
     if (isMultiplayer) {
       finalCombat.lastResults = allResults;
@@ -273,20 +556,22 @@ export default function CombatPanel({
     } else {
       dispatch({ type: 'UPDATE_COMBAT', payload: finalCombat });
     }
-  }, [isMyTurn, actionAnim, isMultiplayer, isHost, myPlayerId, combat, dispatch, onHostResolve, onSendManoeuvre, dispatchCombatChatMessage, addResultToLog, persistCustomAttack, triggerActionAnim]);
+  }, [isMyTurn, actionAnim, isMultiplayer, isHost, myPlayerId, combat, dispatch, onHostResolve, onSendManoeuvre, dispatchCombatChatMessage, addResultToLog, persistCustomAttack, triggerActionAnim, triggerProjectileAnim, scheduleTokenAnim, flushRoundEffectEvents]);
 
-  const handleMoveToPosition = useCallback((targetYard) => {
+  const handleMoveToPosition = useCallback((targetCell) => {
     if (!isMyTurn || combatOver) return;
     const actorId = isMultiplayer ? myPlayerId : 'player';
-    const { combat: updated, moved, distance: dist } = moveCombatant(combat, actorId, targetYard);
+    const { combat: updated, moved, distance: dist } = moveCombatant(combat, actorId, targetCell);
     if (!moved) return;
+
+    scheduleTokenAnim({ [actorId]: { durationMs: dist * 1500 } });
 
     const actor = updated.combatants.find((c) => c.id === actorId);
     const uid = shortId(4);
     addLogEntry({
       type: 'info',
       actor: actor?.name || '?',
-      action: t('combat.movedAction', 'moved {{dist}}y', { dist }),
+      action: t('combat.movedAction', 'moved {{dist}} cells', { dist }),
       target: '',
       actorColor: '#c59aff',
       id: `move_${uid}`,
@@ -297,11 +582,17 @@ export default function CombatPanel({
     } else {
       dispatch({ type: 'UPDATE_COMBAT', payload: updated });
     }
-  }, [combat, isMyTurn, combatOver, isMultiplayer, myPlayerId, dispatch, onHostResolve, t, addLogEntry]);
+  }, [combat, isMyTurn, combatOver, isMultiplayer, myPlayerId, dispatch, onHostResolve, t, addLogEntry, scheduleTokenAnim]);
 
   const handleAiAction = useCallback(async (actionText) => {
-    if (!isMyTurn || combatOver || actionAnim) return;
+    if (!isMyTurn || combatOver || actionAnim || projectileAnim) return;
     setIsAwaitingAiTurn(true);
+    const pendingLogId = `ai_turn_${Date.now()}_${shortId(4)}`;
+    addLogEntry({
+      type: 'ai_pending',
+      text: t('combat.awaitingAiAction', 'Oczekiwanie...'),
+      id: pendingLogId,
+    });
 
     const actorId = isMultiplayer ? myPlayerId : 'player';
     const closestEnemy = combat.combatants
@@ -328,6 +619,11 @@ export default function CombatPanel({
           remaining: fx.duration?.remaining,
           restrictions: fx.mechanics?.restrictions || [],
         })),
+        ...(c.type === 'player' ? {
+          attributes: c.attributes || {},
+          skills: c.skills || {},
+          momentumBonus: c.momentumBonus || 0,
+        } : {}),
       }));
     const defeatedCombatants = combat.combatants
       .filter((c) => c.isDefeated)
@@ -339,13 +635,19 @@ export default function CombatPanel({
       activeCombatants,
       defeatedCombatants,
     };
+    const aiRoll = rollD50();
 
     const provider = settings.dmSettings?.aiProvider || 'openai';
     const language = settings.language || 'pl';
 
     try {
       const { result } = await aiService.resolveCombatTurn(
-        combatSnapshot, actionText, provider, language, 'standard'
+        combatSnapshot,
+        actionText,
+        provider,
+        language,
+        'standard',
+        { diceRoll: aiRoll },
       );
 
       const updatedCombatants = combat.combatants.map((c) => {
@@ -395,13 +697,54 @@ export default function CombatPanel({
 
       let updatedCombat = { ...combat, combatants: updatedCombatants };
       updatedCombat = advanceTurn(updatedCombat);
+      flushRoundEffectEvents(updatedCombat);
+
+      if (result.statusEffects?.length) {
+        for (const eff of result.statusEffects) {
+          const effectName = eff.effect?.name || (typeof eff.effect === 'string' ? eff.effect : '?');
+          const category = eff.effect?.category || 'debuff';
+          const isDebuff = category === 'dot' || category === 'control' || category === 'debuff';
+          if (eff.action === 'remove') {
+            addLogEntry({
+              type: 'effect',
+              actor: eff.target,
+              action: t('combat.effectRemoved', '{{effect}} usunięty', { effect: effectName }),
+              target: '',
+              actorColor: '#8b8b8f',
+              id: `fx_ai_rem_${shortId()}`,
+            });
+          } else {
+            addLogEntry({
+              type: 'effect',
+              actor: eff.target,
+              action: isDebuff
+                ? t('combat.effectDebuffApplied', '{{effect}}', { effect: effectName })
+                : t('combat.effectBuffApplied', '{{effect}}', { effect: effectName }),
+              target: '',
+              actorColor: isDebuff ? '#ff6e84' : '#74c0fc',
+              highlightText: isDebuff ? t('combat.debuff', 'DEBUFF') : t('combat.buff', 'BUFF'),
+              highlightTone: isDebuff ? 'debuff' : 'buff',
+              id: `fx_ai_${shortId()}`,
+            });
+          }
+        }
+      }
 
       if (result.narration) {
-        addLogEntry({
+        const details = buildAiDiceLogDetails(result.diceResult, t);
+        updateLogEntry(pendingLogId, {
           type: 'ai_action',
           text: result.narration,
-          id: `ai_turn_${shortId(4)}`,
+          ...(details ? { details } : {}),
         });
+      } else {
+        updateLogEntry(pendingLogId, {
+          type: 'info',
+          text: t('combat.aiTurnNoNarration', 'AI resolved the action, but no narration was returned.'),
+        });
+      }
+
+      if (result.narration) {
         dispatch({
           type: 'ADD_CHAT_MESSAGE',
           payload: {
@@ -421,15 +764,14 @@ export default function CombatPanel({
       }
     } catch (err) {
       console.error('[CombatPanel] AI combat turn failed:', err);
-      addLogEntry({
+      updateLogEntry(pendingLogId, {
         type: 'info',
         text: t('combat.aiTurnFailed', 'AI turn resolution failed — try again.'),
-        id: `ai_fail_${shortId(4)}`,
       });
     } finally {
       setIsAwaitingAiTurn(false);
     }
-  }, [combat, isMyTurn, combatOver, actionAnim, isMultiplayer, myPlayerId, settings, dispatch, onHostResolve, addLogEntry, t, triggerActionAnim]);
+  }, [combat, isMyTurn, combatOver, actionAnim, projectileAnim, isMultiplayer, myPlayerId, settings, dispatch, onHostResolve, addLogEntry, updateLogEntry, t, triggerActionAnim, flushRoundEffectEvents]);
 
   const handleEndCombat = () => {
     if (isMultiplayer) {
@@ -471,20 +813,57 @@ export default function CombatPanel({
     }
   };
 
+  const collapsedMovementInfo = (!expandedLayout && isMyTurn && !combatOver && myCombatant) ? {
+    remaining: myCombatant.movementAllowance - (myCombatant.movementUsed || 0),
+    total: myCombatant.movementAllowance,
+  } : null;
+
   return (
-    <div className="space-y-3" data-testid="combat-panel">
+    <div className="space-y-2" data-testid="combat-panel">
       <CombatHeader
         round={combat.round}
         combatOver={combatOver}
         canControl={canControl}
         playerWinning={playerWinning}
         isMultiplayer={isMultiplayer}
+        isMyTurn={isMyTurn}
         onRequestTruce={() => setShowTruceConfirm(true)}
         onRequestSurrender={() => setShowSurrenderConfirm(true)}
         onEndCombat={handleEndCombat}
+        onSkipTurn={() => {
+          if (!isMyTurn || combatOver) return;
+          const actorId = isMultiplayer ? myPlayerId : 'player';
+          const actor = combat.combatants.find((c) => c.id === actorId);
+          addLogEntry({
+            type: 'info',
+            actor: actor?.name || '?',
+            action: t('combat.skippedTurn', 'skipped turn'),
+            target: '',
+            actorColor: '#c59aff',
+            id: `skip_${shortId(4)}`,
+          });
+          const finalCombat = advanceTurn(combat);
+          flushRoundEffectEvents(finalCombat);
+          if (isMultiplayer) {
+            onHostResolve?.(finalCombat);
+          } else {
+            dispatch({ type: 'UPDATE_COMBAT', payload: finalCombat });
+          }
+        }}
         expandedLayout={expandedLayout}
         onToggleLayout={() => onLayoutChange?.(!expandedLayout)}
+        movementInfo={collapsedMovementInfo}
       />
+
+      {!expandedLayout && (
+        <CombatantsList
+          combatants={combat.combatants}
+          currentTurn={currentTurn}
+          onHoverCombatant={() => {}}
+          t={t}
+          horizontal
+        />
+      )}
 
       {showTruceConfirm && (
         <TruceConfirmDialog
@@ -500,39 +879,103 @@ export default function CombatPanel({
         />
       )}
 
-      <CombatCanvas
-        combat={enrichedCombat}
-        myPlayerId={myPlayerId}
-        isMultiplayer={isMultiplayer}
-        selectedTarget={selectedTarget}
-        onSelectTarget={setSelectedTarget}
-        onHoverCombatant={() => {}}
-        onMoveToPosition={handleMoveToPosition}
-        combatOver={combatOver}
-        isMyTurn={isMyTurn && !actionAnim}
-        myCombatantId={myCombatant?.id}
-        availableManoeuvres={availableManoeuvres}
-        actionAnim={actionAnim}
-        savedCustomAttacks={savedCustomAttacks}
-        onExecuteManoeuvre={handleExecuteManoeuvre}
-        onPersistCustomAttack={persistCustomAttack}
-        onRemoveCustomAttack={removeCustomAttack}
-        onRegenerateSprite={regenerateSprite}
-        character={character}
-        onAiAction={handleAiAction}
-        expanded={expandedLayout}
-      />
-
-      <div className="grid grid-cols-1 xl:grid-cols-[1fr_5fr] gap-3 items-stretch">
-        <CombatantsList
-          combatants={combat.combatants}
-          currentTurn={currentTurn}
+      {(expandedLayout || !scenePortalTarget) && (
+        <CombatCanvas
+          combat={enrichedCombat}
+          myPlayerId={myPlayerId}
+          isMultiplayer={isMultiplayer}
+          selectedTarget={selectedTarget}
+          onSelectTarget={setSelectedTarget}
           onHoverCombatant={() => {}}
-          t={t}
+          onMoveToPosition={handleMoveToPosition}
+          combatOver={combatOver}
+          isMyTurn={isMyTurn && !actionAnim && !projectileAnim}
+          myCombatantId={myCombatant?.id}
+          availableManoeuvres={availableManoeuvres}
+          actionAnim={actionAnim}
+          projectileAnim={projectileAnim}
+          savedCustomAttacks={savedCustomAttacks}
+          onExecuteManoeuvre={handleExecuteManoeuvre}
+          onPersistCustomAttack={persistCustomAttack}
+          onRemoveCustomAttack={removeCustomAttack}
+          onRegenerateSprite={regenerateSprite}
+          character={character}
+          onAiAction={handleAiAction}
+          expanded={expandedLayout}
+          hideInitiativeBar={expandedLayout}
+          tokenAnimations={tokenAnimations}
+          onEndCombat={handleEndCombat}
+          canControl={canControl}
         />
+      )}
 
-        <CombatLog combatLog={combatLog} legacyLog={combat.log} expanded={expandedLayout} />
-      </div>
+      {expandedLayout && (
+        <div className="grid grid-cols-1 xl:grid-cols-[1fr_5fr] gap-2 items-stretch">
+          <CombatantsList
+            combatants={combat.combatants}
+            currentTurn={currentTurn}
+            onHoverCombatant={() => {}}
+            t={t}
+          />
+          <div className="flex flex-col gap-1 min-h-0">
+            <InitiativeBar
+              combatants={combat.combatants}
+              turnIndex={combat.turnIndex}
+              myCombatantId={myCombatant?.id}
+              t={t}
+            />
+            <CombatLog combatLog={combatLog} legacyLog={combat.log} expanded={expandedLayout} />
+          </div>
+        </div>
+      )}
+
+      {!expandedLayout && scenePortalTarget && createPortal(
+        <div className="absolute inset-2 z-[10] pointer-events-auto flex gap-2">
+          <div className="w-[32rem] shrink-0 flex flex-col gap-1.5" style={{ maxHeight: '100%' }}>
+            <InitiativeBar
+              combatants={combat.combatants}
+              turnIndex={combat.turnIndex}
+              myCombatantId={myCombatant?.id}
+              t={t}
+            />
+            <div className="bg-black/60 backdrop-blur-sm overflow-hidden rounded-lg border border-outline-variant/20 flex-1 min-h-0">
+              <CombatLog combatLog={combatLog} legacyLog={combat.log} expanded={false} />
+            </div>
+          </div>
+          <div className="flex-1 min-w-0 relative">
+            <CombatCanvas
+              combat={enrichedCombat}
+              myPlayerId={myPlayerId}
+              isMultiplayer={isMultiplayer}
+              selectedTarget={selectedTarget}
+              onSelectTarget={setSelectedTarget}
+              onHoverCombatant={() => {}}
+              onMoveToPosition={handleMoveToPosition}
+              combatOver={combatOver}
+              isMyTurn={isMyTurn && !actionAnim && !projectileAnim}
+              myCombatantId={myCombatant?.id}
+              availableManoeuvres={availableManoeuvres}
+              actionAnim={actionAnim}
+              projectileAnim={projectileAnim}
+              savedCustomAttacks={savedCustomAttacks}
+              onExecuteManoeuvre={handleExecuteManoeuvre}
+              onPersistCustomAttack={persistCustomAttack}
+              onRemoveCustomAttack={removeCustomAttack}
+              onRegenerateSprite={regenerateSprite}
+              character={character}
+              onAiAction={handleAiAction}
+              expanded={false}
+              fillHeight
+              hideMovementHint
+              hideInitiativeBar
+              tokenAnimations={tokenAnimations}
+              onEndCombat={handleEndCombat}
+              canControl={canControl}
+            />
+          </div>
+        </div>,
+        scenePortalTarget,
+      )}
 
       <CombatTurnStatus
         isMyTurn={isMyTurn}

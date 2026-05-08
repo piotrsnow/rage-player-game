@@ -694,7 +694,7 @@ export default function GameplayPage({ readOnly = false, shareToken = null, onRe
         {!(combat?.active && combatExpandedLayout) && (
         <div className="shrink-0 px-4 md:px-6 pb-2">
         {/* Scene Panel */}
-        <div className="relative">
+        <div className="relative" id="scene-panel-container">
           <ScenePanel
             scene={viewedScene}
             combat={combat}
@@ -729,10 +729,13 @@ export default function GameplayPage({ readOnly = false, shareToken = null, onRe
             mpErrorCode={mpErrorCode}
             isMultiplayer={isMultiplayer}
             onOpenSettings={openSettings}
-            momentumDice={!readOnly && momentum.active ? {
+            momentumDice={!readOnly && (momentum.active || momentum.result) ? {
               visible: momentum.diceVisible,
               position: momentum.position,
               onDiceClick: momentum.handleDiceClick,
+              counting: momentum.counting,
+              countdownValue: momentum.countdownValue,
+              result: momentum.result,
             } : null}
           />
           {overlayText && (
@@ -875,7 +878,7 @@ export default function GameplayPage({ readOnly = false, shareToken = null, onRe
         />
         </div>
 
-        <div className="flex-1 min-h-0 overflow-y-auto lg:overflow-y-hidden lg:overflow-x-hidden custom-scrollbar px-4 md:px-6 pb-3 pt-1 space-y-3">
+        <div className="flex-1 min-h-0 overflow-y-auto lg:overflow-x-hidden custom-scrollbar px-4 md:px-6 pb-3 pt-1 space-y-3">
         {viewedScene?.cutscene && <CutscenePanel cutscene={viewedScene.cutscene} />}
 
         {/* Read-only: always show readable narrative text */}

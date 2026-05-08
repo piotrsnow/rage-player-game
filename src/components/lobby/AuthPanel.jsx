@@ -2,6 +2,9 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSettings } from '../../contexts/SettingsContext';
 import { storage } from '../../services/storage';
+import { findLastDiceRollInScenes } from '../../services/characterHistory.js';
+import { normalizeDiceRoll } from '../../utils/normalizeDiceRoll.js';
+import { translateSkill } from '../../utils/rpgTranslate.js';
 import { apiClient } from '../../services/apiClient';
 import { elevenlabsService } from '../../services/elevenlabs';
 import { SKILLS, SPECIES } from '../../data/rpgSystem';
@@ -18,6 +21,12 @@ function OrnamentalDivider() {
 }
 
 const BADGE_SESSION_KEY = 'rpgon_badge_fetched';
+
+function characterIdsMatch(a, b) {
+  const ia = a?.backendId ?? a?.id;
+  const ib = b?.backendId ?? b?.id;
+  return ia != null && ib != null && String(ia) === String(ib);
+}
 
 const ATTR_LABELS = {
   sila: { icon: 'fitness_center', short: 'STR', label: 'Siła' },
@@ -66,8 +75,12 @@ function LoggedInBanner({ user }) {
   const suppressNextClickRef = useRef(false);
   const audioRef = useRef(null);
 
+  const [charCount, setCharCount] = useState(0);
+  const [lastLobbyDiceRoll, setLastLobbyDiceRoll] = useState(null);
+
   useEffect(() => {
     const chars = storage.getCharacters();
+    setCharCount(chars.length);
     if (chars.length > 0) {
       const sorted = [...chars].sort(
         (a, b) => (b.characterLevel || 1) - (a.characterLevel || 1),
@@ -75,6 +88,30 @@ function LoggedInBanner({ user }) {
       setTopChar(sorted[0]);
     }
   }, []);
+
+  const refreshLastLobbyDice = useCallback(() => {
+    if (!topChar) {
+      setLastLobbyDiceRoll(null);
+      return;
+    }
+    const snap = storage.loadLocalSnapshot();
+    const snapChar = snap?.character;
+    if (!snapChar || !characterIdsMatch(snapChar, topChar)) {
+      setLastLobbyDiceRoll(null);
+      return;
+    }
+    setLastLobbyDiceRoll(findLastDiceRollInScenes(snap?.scenes));
+  }, [topChar]);
+
+  useEffect(() => {
+    refreshLastLobbyDice();
+  }, [refreshLastLobbyDice]);
+
+  useEffect(() => {
+    const onFocus = () => refreshLastLobbyDice();
+    window.addEventListener('focus', onFocus);
+    return () => window.removeEventListener('focus', onFocus);
+  }, [refreshLastLobbyDice]);
 
   const fetchBadge = useCallback(async (charId, force = false) => {
     if (!charId || !apiClient.isConnected()) return;
@@ -310,8 +347,9 @@ function LoggedInBanner({ user }) {
   const level = topChar?.characterLevel || topChar?.level || 1;
   const species = topChar?.species;
   const speciesLabel = species ? (SPECIES[species]?.name || species) : null;
-  const portraitSrc = topChar?.portraitUrl
-    ? apiClient.resolveMediaUrl(topChar.portraitUrl)
+  const portraitRaw = fullChar?.portraitUrl || topChar?.portraitUrl;
+  const portraitSrc = portraitRaw
+    ? apiClient.resolveMediaUrl(portraitRaw)
     : null;
   const attrs = (fullChar?.attributes || topChar?.attributes) || null;
 
@@ -347,6 +385,18 @@ function LoggedInBanner({ user }) {
 
   const ttsAvailable = !!(voicePools?.narratorVoiceId && hasApiKey('elevenlabs'));
   const ttsBusy = ttsState === 'loading' || ttsState === 'playing';
+
+  const ndLastLobby = normalizeDiceRoll(lastLobbyDiceRoll);
+  const lastRollSummary = ndLastLobby
+    ? (() => {
+        const skill = translateSkill(ndLastLobby.skill, t);
+        const th = ndLastLobby.threshold;
+        const mark = ndLastLobby.success ? '✓' : '✗';
+        return th != null
+          ? `${skill} ${ndLastLobby.roll} vs ${th} ${mark}`
+          : `${skill} ${ndLastLobby.roll} ${mark}`;
+      })()
+    : null;
 
   return (
     <div
@@ -444,12 +494,23 @@ function LoggedInBanner({ user }) {
             </div>
           )}
 
-          {/* Footer */}
-          <div className="flex items-center gap-3 mt-auto pt-4 border-t border-outline-variant/8">
-            {user?.email && (
-              <span className="text-outline/40 text-sm font-mono truncate">{user.email}</span>
+          {/* Footer (awers) */}
+          <div className="flex items-center gap-2 sm:gap-3 mt-auto pt-4 border-t border-outline-variant/8">
+         
+            {lastRollSummary && (
+              <span
+                className="min-w-0 flex-1 inline-flex items-center gap-1.5 text-xs text-on-surface-variant/70"
+                title={lastRollSummary}
+              >
+                <span className="material-symbols-outlined text-sm text-primary/40 shrink-0">casino</span>
+                <span className="truncate">
+                  <span className="text-on-surface-variant/50">{t('lobby.lastRollShort', 'Ostatni rzut:')}</span>
+                  {' '}
+                  <span className="font-headline text-on-surface-variant/85">{lastRollSummary}</span>
+                </span>
+              </span>
             )}
-            <div className="ml-auto flex items-center gap-2">
+            <div className="ml-auto flex items-center gap-2 shrink-0">
               <button
                 onClick={handleRefresh}
                 title={t('lobby.refreshBadge', 'Refresh')}

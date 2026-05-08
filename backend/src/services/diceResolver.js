@@ -153,7 +153,24 @@ export function getSkillLevel(character, skillName) {
  * Core dice resolution with explicit d50 and luckySuccess values.
  * Used by both nano-resolved and model-resolved paths.
  */
-export function resolveBackendDiceRollWithPreRoll(character, skillName, difficulty, preD50, luckySuccess, creativityBonus = 0) {
+const MODIFIER_VALUE_MIN = -10;
+const MODIFIER_VALUE_MAX = 15;
+const MODIFIER_SUM_MIN = -15;
+const MODIFIER_SUM_MAX = 20;
+const MODIFIER_MAX_COUNT = 4;
+
+function sanitizeModifiers(rawModifiers) {
+  if (!Array.isArray(rawModifiers) || rawModifiers.length === 0) return [];
+  const capped = rawModifiers.slice(0, MODIFIER_MAX_COUNT);
+  return capped
+    .filter(m => m && typeof m.reason === 'string' && typeof m.value === 'number')
+    .map(m => ({
+      reason: m.reason.slice(0, 40),
+      value: clamp(Math.trunc(m.value), MODIFIER_VALUE_MIN, MODIFIER_VALUE_MAX),
+    }));
+}
+
+export function resolveBackendDiceRollWithPreRoll(character, skillName, difficulty, preD50, luckySuccess, creativityBonus = 0, rawModifiers = []) {
   if (!character?.attributes) return null;
 
   const skillDef = SKILL_BY_NAME[skillName];
@@ -166,10 +183,22 @@ export function resolveBackendDiceRollWithPreRoll(character, skillName, difficul
   const clampedCreativity = clamp(Number(creativityBonus) || 0, 0, CREATIVITY_BONUS_MAX);
 
   const difficultyKey = difficulty || 'medium';
-  const threshold = DIFFICULTY_THRESHOLDS[difficultyKey] || DIFFICULTY_THRESHOLDS.medium;
+  const baseThreshold = DIFFICULTY_THRESHOLDS[difficultyKey] || DIFFICULTY_THRESHOLDS.medium;
+
+  const modifiers = sanitizeModifiers(rawModifiers);
+  const modifierSum = clamp(
+    modifiers.reduce((sum, m) => sum + m.value, 0),
+    MODIFIER_SUM_MIN,
+    MODIFIER_SUM_MAX,
+  );
+  const finalThreshold = baseThreshold + modifierSum;
+
+  const thresholdBreakdown = modifiers.length > 0
+    ? { base: baseThreshold, modifiers, final: finalThreshold }
+    : undefined;
 
   const total = preD50 + attributeValue + skillLevel + momentum + clampedCreativity;
-  const margin = total - threshold;
+  const margin = total - finalThreshold;
   const success = luckySuccess || margin >= 0;
 
   return {
@@ -179,7 +208,7 @@ export function resolveBackendDiceRollWithPreRoll(character, skillName, difficul
     skill: skillName,
     skillLevel,
     difficulty: difficultyKey,
-    threshold,
+    threshold: finalThreshold,
     creativityBonus: clampedCreativity,
     momentumBonus: momentum,
     dispositionBonus: 0,
@@ -188,6 +217,7 @@ export function resolveBackendDiceRollWithPreRoll(character, skillName, difficul
     margin,
     success,
     luckySuccess,
+    ...(thresholdBreakdown && { thresholdBreakdown }),
   };
 }
 
@@ -230,10 +260,17 @@ export function formatResolvedCheck(diceRoll) {
     : diceRoll.success ? (diceRoll.margin >= 15 ? 'GREAT SUCCESS' : 'SUCCESS')
       : (diceRoll.margin <= -15 ? 'HARD FAILURE' : 'FAILURE');
 
+  let thresholdLine = `Threshold: ${diceRoll.threshold} (${diceRoll.difficulty})`;
+  if (diceRoll.thresholdBreakdown) {
+    const tb = diceRoll.thresholdBreakdown;
+    const modParts = tb.modifiers.map(m => `${m.value >= 0 ? '+' : ''}${m.value} ${m.reason}`);
+    thresholdLine = `Threshold: ${tb.base} (${diceRoll.difficulty}) ${modParts.join(' ')} = ${tb.final}`;
+  }
+
   const parts = [
     `Skill: ${diceRoll.skill || 'untrained'} (${diceRoll.attribute?.toUpperCase() || '?'})`,
     `Roll: d50=${diceRoll.roll} + attr=${diceRoll.attributeValue} + skill=${diceRoll.skillLevel} + momentum=${diceRoll.momentumBonus} = ${diceRoll.total}`,
-    `Threshold: ${diceRoll.threshold} (${diceRoll.difficulty})`,
+    thresholdLine,
     `Result: ${outcome} (margin ${diceRoll.margin >= 0 ? '+' : ''}${diceRoll.margin})`,
   ];
 
