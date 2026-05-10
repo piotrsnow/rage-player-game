@@ -420,6 +420,11 @@ const StateChangesSchema = z.object({
   factionChanges: z.any().nullable().optional(),
   combatUpdate: z.object({
     active: z.boolean(),
+    mode: z.enum(['combat', 'beer_duel']).optional().default('combat'),
+    modeConfig: z.object({
+      beerCountMin: z.number().int().min(1).optional(),
+      beerCountMax: z.number().int().min(1).optional(),
+    }).passthrough().nullable().optional(),
     enemies: z.array(z.object({
       name: z.string(),
       characteristics: z.object({}).passthrough().optional().default({}),

@@ -61,6 +61,7 @@ Include stateChanges: timeAdvance, currentLocation, npcs (introduce at least 1),
   const isTruce = isPostCombat && playerAction.includes('forced a truce');
   const isPostCombatDefeat = isPostCombat && (playerAction.includes('LOST') || playerAction.includes('did NOT win'));
   const isGeneralCombatInitiation = playerAction?.startsWith('[INITIATE COMBAT]');
+  const isBeerDuelInitiation = playerAction?.startsWith('[INITIATE BEER DUEL]');
   const attackNpcMatch = playerAction?.match(/^\[ATTACK:\s*(.+?)\]$/);
   const talkNpcMatch = playerAction?.match(/^\[TALK:\s*(.+?)\]$/);
 
@@ -143,7 +144,9 @@ Do NOT re-emit the same questUpdates / npcs / location changes — they're alrea
 
   // Combat intent
   if (!isPostCombat && !isIdleWorldEvent && !isWait && !isProvidenceAfterIncident) {
-    if (isGeneralCombatInitiation) {
+    if (isBeerDuelInitiation) {
+      parts.push('BEER DUEL INITIATED. MUST include combatUpdate with mode="beer_duel". Keep regular enemies array/enemyHints for participants, but this is NOT lethal combat. Set modeConfig.beerCountMin=20 and modeConfig.beerCountMax=30.');
+    } else if (isGeneralCombatInitiation) {
       parts.push(`COMBAT INITIATED. MUST include combatUpdate. PREFERRED: use enemyHints {location, budget, maxDifficulty, count, race} — engine selects from bestiary. Available races: ${BESTIARY_RACES_STR}. Available locations: ${BESTIARY_LOCATIONS_STR}.`);
     } else if (attackNpcMatch) {
       parts.push(`PLAYER ATTACKS "${attackNpcMatch[1]}". MUST include combatUpdate. Use enemyHints with appropriate budget/maxDifficulty/count. If tension should build first, use pendingThreat instead.`);

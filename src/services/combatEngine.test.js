@@ -32,6 +32,8 @@ vi.mock('./gameDataService.js', () => ({
     BATTLEFIELD_WIDTH: 16,
     BATTLEFIELD_HEIGHT: 9,
     DEFAULT_MOVEMENT: 8,
+    terrainSpawnConfig: { minCount: 0, maxCount: 0, spawnMarginCols: 1 },
+    terrainTiles: {},
   },
 }));
 
@@ -128,6 +130,29 @@ describe('createCombatState', () => {
     expect(combat.combatants.some((c) => c.type === 'player')).toBe(true);
     expect(combat.combatants.some((c) => c.type === 'enemy')).toBe(true);
     expect(combat.log.length).toBeGreaterThan(0);
+  });
+
+  it('creates beer duel skirmish metadata when mode is beer_duel', () => {
+    const player = {
+      name: 'Hero',
+      attributes: { sila: 12, zrecznosc: 10, wytrzymalosc: 10, szczescie: 5 },
+      wounds: 12,
+      maxWounds: 12,
+      skills: {},
+    };
+    const enemies = [
+      { name: 'Goblin', attributes: { sila: 6, zrecznosc: 8 }, wounds: 5, maxWounds: 5, skills: {} },
+    ];
+
+    const combat = createCombatState(player, enemies, [], {
+      mode: 'beer_duel',
+      modeConfig: { beerCountMin: 2, beerCountMax: 2 },
+    });
+
+    expect(combat.mode).toBe('beer_duel');
+    expect(combat.skirmish).toBeTruthy();
+    expect(combat.skirmish.beerTokens).toHaveLength(2);
+    expect(combat.skirmish.beersRemaining).toBe(2);
   });
 });
 
@@ -252,6 +277,26 @@ describe('isCombatOver', () => {
     });
     expect(isCombatOver(combat)).toBe(true);
   });
+
+  it('returns true in beer duel when all beers are collected', () => {
+    const combat = makeCombatState();
+    combat.mode = 'beer_duel';
+    combat.skirmish = {
+      beerTokens: [{ id: 'beer_1', x: 4, y: 3, collectedBy: null }],
+      beersRemaining: 1,
+      scoreByCombatantId: {},
+      winnerIds: [],
+      winnerScore: 0,
+      isComplete: false,
+    };
+    combat.combatants[0].position = { x: 3, y: 3 };
+    combat.combatants[1].position = { x: 10, y: 3 };
+
+    const { combat: afterMove } = moveCombatant(combat, 'player', { x: 4, y: 3 });
+    expect(afterMove.skirmish.beersRemaining).toBe(0);
+    expect(afterMove.skirmish.winnerIds).toContain('player');
+    expect(isCombatOver(afterMove)).toBe(true);
+  });
 });
 
 describe('endCombat', () => {
@@ -283,6 +328,25 @@ describe('endCombat', () => {
 
     expect(summary.playerSurvived).toBe(false);
     expect(summary.woundsChange).toBe(-12);
+  });
+
+  it('returns beer duel tie metadata', () => {
+    const combat = makeCombatState();
+    combat.mode = 'beer_duel';
+    combat.skirmish = {
+      beerTokens: [],
+      beersRemaining: 0,
+      scoreByCombatantId: { player: 3, enemy_guard: 3 },
+      winnerIds: ['player', 'enemy_guard'],
+      winnerScore: 3,
+      isComplete: true,
+    };
+
+    const summary = endCombat(combat, { wounds: 12 });
+    expect(summary.mode).toBe('beer_duel');
+    expect(summary.skirmishSummary?.isTie).toBe(true);
+    expect(summary.skirmishSummary?.winnerIds).toEqual(['player', 'enemy_guard']);
+    expect(summary.outcome).toBe('victory');
   });
 });
 
