@@ -357,6 +357,7 @@ model Campaign {
   campaignEdges               CampaignEdge[]
   favoriteScenes              FavoriteScene[]
   incidents                   CampaignIncident[]
+  snapshots                   CampaignSnapshot[]
 
   @@index([userId])
   @@index([isPublic])
@@ -445,6 +446,25 @@ model CampaignIncident {
   @@index([userId])
 }
 
+// Admin panel — point-in-time snapshot of full campaign graph (Campaign + all
+// child rows + linked Characters + referenced WorldNPCs/WorldLocations). Created
+// automatically before each admin edit, plus manual user-pinned snapshots.
+// Restore: deleteMany children → recreate from payload → reconstructFromNormalized.
+// FIFO trim to 20 non-pinned per campaign.
+model CampaignSnapshot {
+  id         String   @id @default(uuid(7)) @db.Uuid
+  campaignId String   @db.Uuid
+  createdBy  String   @db.Uuid
+  reason     String?
+  pinned     Boolean  @default(false)
+  payload    Json
+  createdAt  DateTime @default(now()) @db.Timestamptz
+
+  campaign Campaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+
+  @@index([campaignId, createdAt])
+}
+
 model CampaignKnowledge {
   id            String                       @id @default(uuid(7)) @db.Uuid
   campaignId    String                       @db.Uuid
@@ -509,6 +529,14 @@ model CampaignNPC {
   stats        Json    @default("{}")
   portraitUrl  String?
   spriteUrl    String?
+
+  // Stable physical description (PL, ~1 sentence) used as the canonical
+  // source for portrait generation and player-facing NPC modals.
+  appearance String?
+  // Way of speaking (PL, ~1 sentence): dialect, accent, characteristic
+  // turns of phrase. Injected into the dialog system prompt; NOT shown
+  // in player UI.
+  dialect String?
 
   embeddingText String?
   embedding     Unsupported("vector(1536)")?
@@ -1024,6 +1052,14 @@ model WorldNPC {
   level        Int     @default(1)
   stats        Json    @default("{}")
   spriteUrl    String?
+
+  // Stable physical description (PL, ~1 sentence) used as the canonical
+  // source for portrait generation and player-facing NPC modals.
+  appearance String?
+  // Way of speaking (PL, ~1 sentence): dialect, accent, characteristic
+  // turns of phrase. Injected into the dialog system prompt; NOT shown
+  // in player UI.
+  dialect String?
 
   embeddingText String?
   embedding     Unsupported("vector(1536)")?

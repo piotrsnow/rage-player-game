@@ -154,6 +154,17 @@ export async function processNpcChanges(campaignId, npcs, { livingWorldEnabled =
         }
 
         if (npcChange.acknowledgedFame === true) contentUpdate.hasAcknowledgedFame = true;
+        if (typeof npcChange.role === 'string' && npcChange.role.trim() && existing.role !== npcChange.role) contentUpdate.role = npcChange.role;
+        if (typeof npcChange.personality === 'string' && npcChange.personality.trim() && existing.personality !== npcChange.personality) contentUpdate.personality = npcChange.personality;
+        // Backfill / refresh appearance + dialect. Only overwrite when the
+        // LLM actually sent something — empty strings must NOT clobber a
+        // previously stored canonical description.
+        if (typeof npcChange.appearance === 'string' && npcChange.appearance.trim() && existing.appearance !== npcChange.appearance) {
+          contentUpdate.appearance = npcChange.appearance.trim();
+        }
+        if (typeof npcChange.dialect === 'string' && npcChange.dialect.trim() && existing.dialect !== npcChange.dialect) {
+          contentUpdate.dialect = npcChange.dialect.trim();
+        }
         // Backfill gender on existing NPCs: either the LLM just sent a valid
         // value (upgrade path) or the row was persisted earlier with
         // "unknown" and now we can coerce it deterministically so voice
@@ -242,6 +253,8 @@ export async function processNpcChanges(campaignId, npcs, { livingWorldEnabled =
 
         try {
           const locRef = await getCampaignLocationRef();
+          const trimmedAppearance = typeof npcChange.appearance === 'string' && npcChange.appearance.trim() ? npcChange.appearance.trim() : null;
+          const trimmedDialect = typeof npcChange.dialect === 'string' && npcChange.dialect.trim() ? npcChange.dialect.trim() : null;
 
           // Check if the LLM is mentioning a canonical WorldNPC the player
           // hasn't physically met yet. If so, route through the sandbox
@@ -257,6 +270,8 @@ export async function processNpcChanges(campaignId, npcs, { livingWorldEnabled =
                   gender: coerceGender(npcChange.gender, npcChange.name),
                   role: npcChange.role || cloned.role || null,
                   personality: npcChange.personality || cloned.personality || null,
+                  appearance: trimmedAppearance || cloned.appearance || null,
+                  dialect: trimmedDialect || cloned.dialect || null,
                   attitude: npcChange.attitude || cloned.attitude || 'neutral',
                   disposition: npcChange.disposition ?? cloned.disposition ?? 0,
                   race: stats.race,
@@ -280,6 +295,8 @@ export async function processNpcChanges(campaignId, npcs, { livingWorldEnabled =
                 gender: coerceGender(npcChange.gender, npcChange.name),
                 role: npcChange.role || null,
                 personality: npcChange.personality || null,
+                appearance: trimmedAppearance,
+                dialect: trimmedDialect,
                 attitude: npcChange.attitude || 'neutral',
                 disposition: npcChange.disposition ?? 0,
                 race: stats.race,

@@ -10,6 +10,7 @@ const GameplayPage = lazy(() => import('./components/gameplay/GameplayPage'));
 const JoinRoomPage = lazy(() => import('./components/multiplayer/JoinRoomPage'));
 const GalleryPage = lazy(() => import('./components/gallery/GalleryPage'));
 const CampaignViewerPage = lazy(() => import('./components/viewer/CampaignViewerPage'));
+const AdminPanelPage = lazy(() => import('./components/admin/panel/AdminPanelPage'));
 
 function RouteFallback() {
   return (
@@ -70,6 +71,30 @@ export default function App() {
             element={
               <Suspense fallback={<RouteFallback />}>
                 <GalleryPage />
+              </Suspense>
+            }
+          />
+          <Route
+            path="/admin"
+            element={
+              <Suspense fallback={<RouteFallback />}>
+                <AdminPanelPage />
+              </Suspense>
+            }
+          />
+          <Route
+            path="/admin/campaigns/:campaignId"
+            element={
+              <Suspense fallback={<RouteFallback />}>
+                <AdminPanelPage />
+              </Suspense>
+            }
+          />
+          <Route
+            path="/admin/campaigns/:campaignId/:tab"
+            element={
+              <Suspense fallback={<RouteFallback />}>
+                <AdminPanelPage />
               </Suspense>
             }
           />

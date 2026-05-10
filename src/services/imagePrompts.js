@@ -569,6 +569,12 @@ export function buildPortraitPrompt(species, gender, age, careerName, genre = 'F
   const emotionDirective = buildEmotionDirective(extras.emotions);
   const darkDirective = darkPalette ? ' Dark moody color palette, deep shadows, low-key lighting, muted desaturated tones.' : '';
   const seriousnessDirective = seriousness != null ? ` ${getSeriousnessDirective(seriousness)}.` : '';
+  // Canonical NPC appearance text (already translated to English upstream).
+  // Used as the authoritative description so retries stay visually consistent
+  // — without it, every regeneration would produce a different face.
+  const appearanceDirective = typeof extras.appearance === 'string' && extras.appearance.trim()
+    ? ` Distinctive appearance: ${extras.appearance.trim()}.`
+    : '';
 
   // LLM-built subject mode (NPC portraits). The caller prepared an English
   // subject; species/career templating is skipped, but we prefix explicit
@@ -607,15 +613,15 @@ export function buildPortraitPrompt(species, gender, age, careerName, genre = 'F
     }
     const compositionTail = ' Sharp focus on the subject, intricate detail, moody atmospheric background, head and shoulders composition.';
     if (isSD) {
-      return `ART STYLE: ${styleDirective}. Close-up portrait of ${anchoredSubject}.${compositionTail}${darkDirective}${seriousnessDirective}${emotionDirective} No text, no watermarks.`;
+      return `ART STYLE: ${styleDirective}. Close-up portrait of ${anchoredSubject}.${appearanceDirective}${compositionTail}${darkDirective}${seriousnessDirective}${emotionDirective} No text, no watermarks.`;
     }
     if (isGemini) {
-      return `Generate an image in this EXACT art style: ${styleDirective}. Portrait of ${anchoredSubject}.${compositionTail} Square 1:1 aspect ratio.${darkDirective}${seriousnessDirective}${emotionDirective} No text, no watermarks.`;
+      return `Generate an image in this EXACT art style: ${styleDirective}. Portrait of ${anchoredSubject}.${appearanceDirective}${compositionTail} Square 1:1 aspect ratio.${darkDirective}${seriousnessDirective}${emotionDirective} No text, no watermarks.`;
     }
     if (provider === 'gpt-image') {
-      return `ART STYLE: ${styleDirective}. Portrait of ${anchoredSubject}.${compositionTail}${darkDirective}${seriousnessDirective}${emotionDirective} No text, no watermarks.`;
+      return `ART STYLE: ${styleDirective}. Portrait of ${anchoredSubject}.${appearanceDirective}${compositionTail}${darkDirective}${seriousnessDirective}${emotionDirective} No text, no watermarks.`;
     }
-    return `ART STYLE: ${styleDirective}. Portrait of ${anchoredSubject}.${compositionTail}${darkDirective}${seriousnessDirective}${emotionDirective} No text, no watermarks, no borders.`;
+    return `ART STYLE: ${styleDirective}. Portrait of ${anchoredSubject}.${appearanceDirective}${compositionTail}${darkDirective}${seriousnessDirective}${emotionDirective} No text, no watermarks, no borders.`;
   }
 
   const isHumanoid = isHumanoidSpecies(species);
@@ -680,7 +686,10 @@ export function buildPortraitPrompt(species, gender, age, careerName, genre = 'F
     // likeness tags in the prompt are unnecessary. When IP-Adapter is NOT
     // available the backend falls back to img2img and these tags are still
     // harmless, so we simply skip them unconditionally for cleaner prompts.
-    const sdSubject = `close-up portrait of a ${genderLabel} ${speciesDesc}${ageDirective}${career}, head and shoulders`;
+    const sdAppearance = typeof extras.appearance === 'string' && extras.appearance.trim()
+      ? `, ${extras.appearance.trim()}`
+      : '';
+    const sdSubject = `close-up portrait of a ${genderLabel} ${speciesDesc}${ageDirective}${career}${sdAppearance}, head and shoulders`;
     const extraTags = [
       ...getSdEmotionTags(extras.emotions),
     ].filter(Boolean);
@@ -698,16 +707,16 @@ export function buildPortraitPrompt(species, gender, age, careerName, genre = 'F
   }
 
   if (isSD) {
-    return `ART STYLE: ${styleDirective}. ${fantasyAnchor}Close-up portrait of a ${genderLabel} ${speciesDesc}${ageDirective}${career}. ${likenessDirective} Highly detailed facial features: expressive eyes with visible iris detail, defined nose and lips, skin imperfections, scars and character lines. Sharp focus on the face, intricate costume, moody atmospheric background, head and shoulders composition.${darkDirective}${seriousnessDirective}${emotionDirective} No text, no watermarks.`;
+    return `ART STYLE: ${styleDirective}. ${fantasyAnchor}Close-up portrait of a ${genderLabel} ${speciesDesc}${ageDirective}${career}.${appearanceDirective} ${likenessDirective} Highly detailed facial features: expressive eyes with visible iris detail, defined nose and lips, skin imperfections, scars and character lines. Sharp focus on the face, intricate costume, moody atmospheric background, head and shoulders composition.${darkDirective}${seriousnessDirective}${emotionDirective} No text, no watermarks.`;
   }
 
   if (isGemini) {
-    return `Generate an image in this EXACT art style: ${styleDirective}. Portrait of a ${genderLabel} ${speciesDesc}${ageDirective}${career}. ${likenessDirective} Detailed face with expressive eyes, sharp focus, head and shoulders composition, dark atmospheric background.${darkDirective}${seriousnessDirective}${emotionDirective} Square 1:1 aspect ratio. No text, no watermarks.`;
+    return `Generate an image in this EXACT art style: ${styleDirective}. Portrait of a ${genderLabel} ${speciesDesc}${ageDirective}${career}.${appearanceDirective} ${likenessDirective} Detailed face with expressive eyes, sharp focus, head and shoulders composition, dark atmospheric background.${darkDirective}${seriousnessDirective}${emotionDirective} Square 1:1 aspect ratio. No text, no watermarks.`;
   }
 
   if (provider === 'gpt-image') {
-    return `ART STYLE: ${styleDirective}. Portrait of a ${genderLabel} ${speciesDesc}${ageDirective}${career}. ${likenessDirective} Highly detailed facial features: expressive eyes with visible iris detail, defined nose and lips, skin texture and character. Sharp focus on the face, intricate costume details, moody atmospheric background, head and shoulders composition.${darkDirective}${seriousnessDirective}${emotionDirective} No text, no watermarks.`;
+    return `ART STYLE: ${styleDirective}. Portrait of a ${genderLabel} ${speciesDesc}${ageDirective}${career}.${appearanceDirective} ${likenessDirective} Highly detailed facial features: expressive eyes with visible iris detail, defined nose and lips, skin texture and character. Sharp focus on the face, intricate costume details, moody atmospheric background, head and shoulders composition.${darkDirective}${seriousnessDirective}${emotionDirective} No text, no watermarks.`;
   }
 
-  return `ART STYLE: ${styleDirective}. Portrait of a ${genderLabel} ${speciesDesc}${ageDirective}${career}. Detailed face, expressive eyes, sharp focus, head and shoulders composition, dark atmospheric background.${darkDirective}${seriousnessDirective}${emotionDirective} No text, no watermarks, no borders.`;
+  return `ART STYLE: ${styleDirective}. Portrait of a ${genderLabel} ${speciesDesc}${ageDirective}${career}.${appearanceDirective} Detailed face, expressive eyes, sharp focus, head and shoulders composition, dark atmospheric background.${darkDirective}${seriousnessDirective}${emotionDirective} No text, no watermarks, no borders.`;
 }

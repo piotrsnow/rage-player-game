@@ -540,6 +540,8 @@ export async function promoteCampaignNpcToWorld(campaignNpcId, { reviewedBy = nu
         name,
         role,
         personality: shadow.personality || null,
+        appearance: shadow.appearance || null,
+        dialect: shadow.dialect || null,
         alignment: 'neutral',
         alive: true,
         currentLocationId: canonicalLastLocId,

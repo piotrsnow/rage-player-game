@@ -42,6 +42,12 @@ export default function NpcStatCard({ npc }) {
         </div>
       </div>
 
+      {npc.appearance && (
+        <div className="text-[11px] text-on-surface-variant">
+          <span className="text-outline">{t('worldState.appearance')}:</span> {npc.appearance}
+        </div>
+      )}
+
       <div>
         <div className="text-sm uppercase tracking-wider text-outline mb-1.5">{t('worldState.attributes')}</div>
         <div className="grid grid-cols-6 gap-1">

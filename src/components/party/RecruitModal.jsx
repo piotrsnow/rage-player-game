@@ -208,6 +208,11 @@ function NpcCard({ npc, partySize, currentSceneIndex, onAttempt, lastResult, isG
         <div className="text-xs text-on-surface-variant truncate mt-0.5">
           {speciesLabel}{npc.role ? ` · ${npc.role}` : ''}
         </div>
+        {npc.appearance && (
+          <div className="text-[11px] text-on-surface-variant/80 italic mt-0.5 line-clamp-2">
+            {npc.appearance}
+          </div>
+        )}
         {npc.personality && (
           <div
             className="text-[11px] text-on-surface-variant/70 italic truncate mt-0.5"

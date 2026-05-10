@@ -55,6 +55,14 @@ const NpcChangeSchema = z.object({
   action: z.string().optional().default('introduce'),
   name: z.string(),
   gender: z.string().optional(),
+  role: z.string().optional(),
+  personality: z.string().optional(),
+  // 1-zdaniowy opis fizyczny po polsku — używany jako kanoniczne źródło
+  // dla generatora portretów oraz wyświetlany w modalach NPC.
+  appearance: z.string().optional(),
+  // 1-zdaniowy opis sposobu mówienia po polsku (gwara, akcent,
+  // charakterystyczne zwroty) — używany TYLKO przy generowaniu dialogów.
+  dialect: z.string().optional(),
   factionId: z.string().nullable().optional(),
   relatedQuestIds: z.array(z.string()).optional().default([]),
   relationships: z.array(NpcRelationshipSchema).optional().default([]),
@@ -154,6 +162,24 @@ const QuestDeadlineSchema = z.object({
 const QuestObjectiveSchema = z.object({
   id: z.string(),
   description: z.string(),
+  // Graph-aware fields (oś 1 + 5). Wszystkie optional + passthrough, więc
+  // legacy linear questy bez tych pól dalej walidują się czysto. BE
+  // dostarcza je gdy questGraphEnabled (nowe kampanie).
+  nodeKey: z.string().optional(),
+  status: z.enum(['pending', 'done', 'locked', 'skipped', 'failed']).optional(),
+  parents: z.array(z.string()).optional(),
+  unlocks: z.array(z.string()).optional(),
+  branchType: z.enum(['and', 'path', 'or']).optional(),
+  branchGroup: z.string().optional(),
+  choiceLabel: z.string().optional(),
+  placeholderHint: z.string().optional(),
+  discovered: z.boolean().optional(),
+  failsOn: z.object({
+    npcDead: z.array(z.string()).optional(),
+    locationDestroyed: z.array(z.string()).optional(),
+    deadline: z.string().nullable().optional(),
+  }).passthrough().optional(),
+  lastKnownLocation: z.string().nullable().optional(),
 }).passthrough();
 
 const QuestRewardSchema = z.object({
@@ -175,6 +201,16 @@ const QuestSchema = z.object({
   objectives: z.array(QuestObjectiveSchema).optional().default([]),
   questGiverId: z.string().nullable().optional(),
   turnInNpcId: z.string().nullable().optional(),
+  // Oś 4 — quest status (active|stalled|failed|completed) + mutation audit
+  // log. Optional dla zgodności wstecznej.
+  status: z.enum(['active', 'stalled', 'failed', 'completed']).optional(),
+  mutationLog: z.array(z.object({
+    ts: z.string().optional(),
+    mutation: z.enum(['stall', 'fail', 'reroute']),
+    reason: z.string().optional(),
+    sceneIndex: z.number().nullable().optional(),
+    source: z.string().optional(),
+  }).passthrough()).optional(),
   // Faza 2 — `locationId` legacy (do Fazy 3a zachowane). `locationRef`
   // (composite "world:UUID" / "campaign:UUID") jest preferowane; BE resolver
   // (aiResolver.js) mapuje legacy locationId stringi na composite ref przed
@@ -238,9 +274,34 @@ const QuestOfferSchema = QuestSchema.extend({
 
 const QuestUpdateSchema = z.object({
   questId: z.string(),
-  objectiveId: z.string(),
-  completed: z.boolean(),
-  addProgress: z.string().optional(),
+  // Graph-aware: nodeKey preferred over objectiveId (oś 1).
+  nodeKey: z.string().optional(),
+  objectiveId: z.string().optional(),
+  completed: z.boolean().optional(),
+  addProgress: z.union([z.string(), z.number()]).optional(),
+  branchChoice: z.object({
+    group: z.string(),
+    chosen: z.string(),
+  }).passthrough().optional(),
+}).passthrough();
+
+const ObjectiveRevealSchema = z.object({
+  questId: z.string(),
+  nodeKey: z.string(),
+  revealSource: z.string().optional(),
+}).passthrough();
+
+const BranchGroupRevealSchema = z.object({
+  questId: z.string(),
+  branchGroup: z.string(),
+  revealedNodeKeys: z.array(z.string()).min(1),
+  revealSource: z.string().optional(),
+}).passthrough();
+
+const QuestMutationSchema = z.object({
+  questId: z.string(),
+  mutation: z.enum(['stall', 'fail', 'reroute']),
+  reason: z.string(),
 }).passthrough();
 
 const CombatCrySchema = z.object({
@@ -297,6 +358,19 @@ const StateChangesSchema = z.object({
   newQuests: z.array(QuestSchema).optional().default([]),
   completedQuests: z.array(z.string()).optional().default([]),
   questUpdates: z.array(QuestUpdateSchema).optional().default([]),
+  // Oś 5 — diegetic discovery; oś 4 — explicit narrative mutations.
+  // Wszystkie optional, BE schema robi gating per-pole.
+  objectiveReveals: z.array(ObjectiveRevealSchema).optional().default([]),
+  branchGroupReveals: z.array(BranchGroupRevealSchema).optional().default([]),
+  questMutations: z.array(QuestMutationSchema).optional().default([]),
+  // npcMemoryUpdates — actionType jest dorzucony jako passthrough field;
+  // BE waliduje enum w schemas.js (NPC_ACTION_TYPES).
+  npcMemoryUpdates: z.array(z.object({
+    npcName: z.string(),
+    memory: z.string(),
+    importance: z.enum(['minor', 'major']).optional(),
+    actionType: z.enum(['killed', 'saved', 'betrayed', 'aided', 'insulted', 'broke_promise', 'kept_promise']).nullable().optional(),
+  }).passthrough()).optional().default([]),
   worldFacts: z.array(z.string()).optional().default([]),
   journalEntries: z.array(z.string()).optional().default([]),
   statuses: z.any().nullable().optional(),

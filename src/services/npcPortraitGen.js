@@ -1,5 +1,6 @@
 import { imageService } from './imageGen';
 import { buildNpcPortraitSubject } from './npcPortraitPromptLlm';
+import { apiClient } from './apiClient';
 
 function ageGuess(npc) {
   if (typeof npc?.age === 'number' && Number.isFinite(npc.age)) return npc.age;
@@ -45,7 +46,40 @@ export function buildNpcPortraitSpec(npc, genre) {
     gender: genderGuess(npc),
     careerName: careerGuess(npc),
     genre: genre || 'Fantasy',
+    // Kanoniczny opis fizyczny (PL) — używany przez generator promptu obrazu
+    // jako twarde źródło, tłumaczony na angielski przez imageGen przed
+    // wstawieniem do template'u.
+    appearanceText: typeof npc?.appearance === 'string' && npc.appearance.trim() ? npc.appearance.trim() : null,
   };
+}
+
+// Lazy backfill: jeśli rekord NPC nie ma jeszcze appearance, prosimy backend
+// żeby go wygenerował i zapisał. Mutuje obiekt npc (przypisuje appearance) i
+// zwraca zaktualizowaną referencję, żeby kolejne odczyty (modale, retry
+// portretu) widziały ten sam tekst. Bezpieczne w razie 4xx/5xx — wracamy z
+// oryginalnym obiektem.
+async function ensureNpcAppearance(npc) {
+  if (!npc) return npc;
+  if (typeof npc.appearance === 'string' && npc.appearance.trim()) return npc;
+  // Backend backfill wymaga albo worldNpcId, albo campaignNpcId. Frontowy
+  // model NPC w `world.npcs` nosi `id` (lokalny optimistic id) — szukamy
+  // też pól wskazujących na rekord backendowy.
+  const worldNpcId = npc.worldNpcId || null;
+  const campaignNpcId = npc.campaignNpcId || null;
+  if (!worldNpcId && !campaignNpcId) return npc;
+  try {
+    const data = await apiClient.post('/ai/npc-missing-fields', {
+      worldNpcId,
+      campaignNpcId,
+      fields: ['appearance'],
+    });
+    if (data?.appearance) {
+      npc.appearance = data.appearance;
+    }
+  } catch {
+    // best-effort — dziurawe pole najwyżej da mniej spójny portret
+  }
+  return npc;
 }
 
 export async function generateNpcPortrait(npc, options = {}) {
@@ -60,6 +94,11 @@ export async function generateNpcPortrait(npc, options = {}) {
     sdSeed = null,
     forcePromptRefresh = false,
   } = options;
+  // Lazy backfill: dla legacy NPC bez canonical `appearance` poprosimy backend
+  // o jego dogenerowanie. Działa równolegle z subjectOverride — appearance jest
+  // stabilnym opisem z DB, subjectOverride to świeżo zbudowany przez nano-LLM
+  // angielski subject. Łącząc oba, retry produkuje ten sam wygląd.
+  const enriched = await ensureNpcAppearance(npc);
 
   // Ask the nano LLM for a polished English subject built from the full NPC
   // card (race, creatureKind, role, personality, gender, age, level). When
@@ -67,11 +106,11 @@ export async function generateNpcPortrait(npc, options = {}) {
   // and feed the subject straight into buildPortraitPrompt. When it fails
   // we fall back to the deterministic spec — image generation never blocks
   // on the prompt LLM.
-  const subjectOverride = await buildNpcPortraitSubject(npc, { force: forcePromptRefresh });
+  const subjectOverride = await buildNpcPortraitSubject(enriched, { force: forcePromptRefresh });
 
   const spec = subjectOverride
-    ? { ...buildNpcPortraitSpec(npc, genre), subjectOverride }
-    : buildNpcPortraitSpec(npc, genre);
+    ? { ...buildNpcPortraitSpec(enriched, genre), subjectOverride }
+    : buildNpcPortraitSpec(enriched, genre);
 
   return imageService.generatePortrait(
     null,

@@ -76,6 +76,8 @@ export async function getOrCloneCampaignNpc(campaignId, worldNpcId) {
         name: world.name,
         role: world.role || null,
         personality: world.personality || null,
+        appearance: world.appearance || null,
+        dialect: world.dialect || null,
         alive: world.alive !== false,
         lastLocation: null, // flavor string; authoritative FK is lastLocationKind+lastLocationId
         // F5b — `world.currentLocationId` is canonical FK (WorldNPC →
