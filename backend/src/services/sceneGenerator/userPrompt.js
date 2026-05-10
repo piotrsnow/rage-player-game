@@ -63,6 +63,8 @@ Include stateChanges: timeAdvance, currentLocation, npcs (introduce at least 1),
   const isGeneralCombatInitiation = playerAction?.startsWith('[INITIATE COMBAT]');
   const attackNpcMatch = playerAction?.match(/^\[ATTACK:\s*(.+?)\]$/);
   const talkNpcMatch = playerAction?.match(/^\[TALK:\s*(.+?)\]$/);
+  const creatureEncounterMatch = playerAction?.match(/^\[CREATURE_ENCOUNTER:\s*(.+?)\]\s*(.*)/s);
+  const creatureFleeFailedMatch = playerAction?.match(/^\[CREATURE_FLEE_FAILED:\s*(.+?)(?:,\s*roll:\s*(\d+)\s*vs\s*(\d+))?\]/);
 
   // Action block
   if (isProvidenceAfterIncident) {
@@ -95,6 +97,23 @@ Do NOT re-emit the same questUpdates / npcs / location changes — they're alrea
     if (isTruce) {
       parts.push(`TRUCE: Player forced ceasefire from strength. Enemies concede. Player keeps belongings. Narrate enemies backing off. Player is dominant — suggest: interrogate, loot fallen, press advantage.`);
     }
+  } else if (creatureEncounterMatch) {
+    const creatureName = creatureEncounterMatch[1].trim();
+    const playerReaction = creatureEncounterMatch[2]?.trim() || '';
+    parts.push(`CREATURE ENCOUNTER — player is interacting with a magical creature: "${creatureName}".
+Player's reaction: ${wrapPlayerInput(playerReaction || 'approaches the creature')}
+Narrate the outcome of this encounter. The creature can be friendly, hostile, curious, or flee. Consequences should be proportional — gentle creatures reward kindness (item, blessing, information), aggressive ones may fight (include combatUpdate if appropriate), unpredictable ones could do anything.
+Include stateChanges as normal — this is a FULL scene. timeAdvance: 0.25-0.5h.`);
+  } else if (creatureFleeFailedMatch) {
+    const creatureName = creatureFleeFailedMatch[1].trim();
+    const rollVal = creatureFleeFailedMatch[2] || '?';
+    const targetVal = creatureFleeFailedMatch[3] || '?';
+    parts.push(`CREATURE FLEE FAILED — player tried to flee from "${creatureName}" but failed their dodge roll (rolled ${rollVal} vs target ${targetVal}).
+Narrate a NEGATIVE consequence proportional to the creature's nature:
+- Aggressive creature: initiate combat (include combatUpdate with enemyHints), wound, or item loss
+- Neutral creature: minor wound, embarrassment, item damage, or lost time
+- Gentle creature: the creature follows the player insistently, minor inconvenience
+Keep it dramatic but fair. Include stateChanges. timeAdvance: 0.25h.`);
   } else {
     // Extract action vs speech
     const speechMatch = playerAction?.match(/(?:mówię|mówi|say|tell|shout|speak|krzyczę)[:\s]*["""](.+?)["""]/i)

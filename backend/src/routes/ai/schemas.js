@@ -330,6 +330,22 @@ export const SCENE_BULK_SCHEMA = {
   required: ['scenes'],
 };
 
+export const CREATURE_ENCOUNTER_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    provider: PROVIDER_SCHEMA,
+    language: LANGUAGE_SCHEMA,
+    dmSettings: {
+      type: 'object',
+      additionalProperties: true,
+      properties: {
+        llmNanoTimeoutMs: { type: 'integer', minimum: 1000, maximum: 120000 },
+      },
+    },
+  },
+};
+
 export const SCENE_IMAGE_PATCH_SCHEMA = {
   type: 'object',
   additionalProperties: false,

@@ -1717,6 +1717,17 @@
     "fastForward": "Fast forward x5",
     "normalSpeed": "Normal speed"
   },
+  "creatureEncounter": {
+    "actionPlaceholder": "How do you react to this creature?",
+    "respond": "Respond",
+    "flee": "Flee",
+    "dodgeTarget": "Dodge: {{target}}",
+    "fleeSuccess": "You managed to escape!",
+    "fleeFailed": "Failed to escape!",
+    "fleeRoll": "Roll: {{roll}} vs target {{target}}",
+    "escapeMessage": "You manage to slip away from the creature and continue your journey.",
+    "encounterTitle": "Creature Encounter"
+  },
   "autoPlayer": {
     "title": "AI Auto-Player",
     "toggle": "Toggle AI auto-player",

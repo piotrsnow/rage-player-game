@@ -180,6 +180,24 @@ export function classifyIntentHeuristic(playerAction, { isFirstScene = false, en
     };
   }
 
+  // [CREATURE_ENCOUNTER: ...]
+  if (playerAction.startsWith('[CREATURE_ENCOUNTER:')) {
+    return {
+      ...emptySelection(),
+      expand_location: true,
+      _intent: 'creature_encounter',
+    };
+  }
+
+  // [CREATURE_FLEE_FAILED: ...]
+  if (playerAction.startsWith('[CREATURE_FLEE_FAILED:')) {
+    return {
+      ...emptySelection(),
+      expand_location: true,
+      _intent: 'creature_encounter',
+    };
+  }
+
   // Combat intent from freeform text (regex)
   if (detectCombatIntent(playerAction)) {
     return { ...emptySelection(), _intent: 'combat' };

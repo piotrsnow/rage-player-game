@@ -416,6 +416,78 @@ export const aiService = {
     }
   },
 
+  async creatureEncounterViaBackend(campaignId, {
+    provider = 'openai',
+    language = 'pl',
+    dmSettings = {},
+  } = {}) {
+    const baseUrl = apiClient.getBaseUrl();
+
+    const requestBody = { provider, language, dmSettings };
+
+    const logId = aiCallLog.start({
+      type: 'creature-encounter',
+      label: 'Creature encounter',
+      provider,
+      request: { campaignId },
+    });
+
+    try {
+      const response = await apiClient.fetchAuthed(`${baseUrl}/v1/ai/campaigns/${campaignId}/creature-encounter`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(requestBody),
+      });
+
+      if (!response.ok) {
+        const err = await response.json().catch(() => ({}));
+        const e = new Error(err.error || `Stream error: ${response.status}`);
+        e.code = err.code || 'HTTP_ERROR';
+        throw e;
+      }
+
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let outcome = null;
+      let buffer = '';
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop();
+
+        let stop = false;
+        for (const line of lines) {
+          if (!line.startsWith('data: ')) continue;
+          try {
+            const event = JSON.parse(line.slice(6));
+            if (event.type === 'complete') {
+              outcome = { kind: 'complete', data: event.data };
+              stop = true;
+            } else if (event.type === 'error') {
+              outcome = { kind: 'error', message: event.error || 'Creature encounter failed', code: event.code || 'CREATURE_ERROR' };
+              stop = true;
+            }
+          } catch (e) {
+            if (e.message && !e.message.includes('JSON')) throw e;
+          }
+        }
+        if (stop) break;
+      }
+
+      if (!outcome) outcome = { kind: 'error', message: 'Stream ended without event', code: 'EMPTY_STREAM' };
+
+      aiCallLog.finish(logId, outcome);
+      return outcome;
+    } catch (err) {
+      aiCallLog.fail(logId, err);
+      throw err;
+    }
+  },
+
   async generateRecap(
     gameState,
     _dmSettings,

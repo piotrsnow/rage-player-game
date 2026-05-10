@@ -1690,6 +1690,17 @@
     "fastForward": "Przyśpiesz x5",
     "normalSpeed": "Normalna prędkość"
   },
+  "creatureEncounter": {
+    "actionPlaceholder": "Jak reagujesz na to stworzenie?",
+    "respond": "Reaguj",
+    "flee": "Uciekaj",
+    "dodgeTarget": "Uniki: {{target}}",
+    "fleeSuccess": "Udało ci się uciec!",
+    "fleeFailed": "Nie udało się uciec!",
+    "fleeRoll": "Rzut: {{roll}} vs cel {{target}}",
+    "escapeMessage": "Udaje ci się umknąć stworzeniu i kontynuujesz podróż.",
+    "encounterTitle": "Spotkanie z istotą"
+  },
   "autoPlayer": {
     "title": "AI Auto-Gracz",
     "toggle": "Przełącz AI auto-gracza",

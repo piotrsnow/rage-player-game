@@ -1,8 +1,8 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { rollPercentage } from '../services/gameState.js';
 
-const INTERVAL_SECONDS = 30;
-const THRESHOLD_STEP = 5;
+const INTERVAL_SECONDS = 60;
+const THRESHOLD_STEP = 10;
 const GRACE_PERIOD_MS = 15_000;
 const ROLL_DISPLAY_MS = 3000;
 const SPEED_MULTIPLIER = 5;

@@ -9,6 +9,7 @@ import { incidentRoutes } from './incidents.js';
 import { selfQuestRoutes } from './selfQuest.js';
 import { inventSpellRoutes } from './inventSpell.js';
 import { classifySpellSchoolRoutes } from './classifySpellSchool.js';
+import { creatureEncounterStreamRoutes } from './creatureEncounterStream.js';
 import { setLlmCallUserId } from '../../services/llmCallLogger.js';
 
 /**
@@ -36,4 +37,5 @@ export async function aiRoutes(fastify) {
   await fastify.register(selfQuestRoutes);
   await fastify.register(inventSpellRoutes);
   await fastify.register(classifySpellSchoolRoutes);
+  await fastify.register(creatureEncounterStreamRoutes);
 }
