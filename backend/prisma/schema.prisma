@@ -357,6 +357,7 @@ model Campaign {
   campaignEdges               CampaignEdge[]
   favoriteScenes              FavoriteScene[]
   incidents                   CampaignIncident[]
+  snapshots                   CampaignSnapshot[]
 
   @@index([userId])
   @@index([isPublic])
@@ -443,6 +444,25 @@ model CampaignIncident {
 
   @@index([campaignId, sceneIndex])
   @@index([userId])
+}
+
+// Admin panel — point-in-time snapshot of full campaign graph (Campaign + all
+// child rows + linked Characters + referenced WorldNPCs/WorldLocations). Created
+// automatically before each admin edit, plus manual user-pinned snapshots.
+// Restore: deleteMany children → recreate from payload → reconstructFromNormalized.
+// FIFO trim to 20 non-pinned per campaign.
+model CampaignSnapshot {
+  id         String   @id @default(uuid(7)) @db.Uuid
+  campaignId String   @db.Uuid
+  createdBy  String   @db.Uuid
+  reason     String?
+  pinned     Boolean  @default(false)
+  payload    Json
+  createdAt  DateTime @default(now()) @db.Timestamptz
+
+  campaign Campaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+
+  @@index([campaignId, createdAt])
 }
 
 model CampaignKnowledge {

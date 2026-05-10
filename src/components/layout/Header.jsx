@@ -633,6 +633,16 @@ export default function Header() {
                     admin_panel_settings
                   </button>
                 </Tooltip>
+                <Tooltip content="Edytor kampanii" placement="bottom" variant="compact" asChild>
+                  <button
+                    type="button"
+                    onClick={() => navigate('/admin')}
+                    aria-label="Edytor kampanii"
+                    className="material-symbols-outlined text-on-surface-variant hover:text-tertiary transition-all active:scale-95 duration-200 cursor-pointer w-9 h-9 flex items-center justify-center rounded-full hover:bg-surface-container-high/40"
+                  >
+                    edit_note
+                  </button>
+                </Tooltip>
                 <DevEventLogButton />
               </>
             )}

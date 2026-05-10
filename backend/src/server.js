@@ -36,6 +36,7 @@ import { livingWorldRoutes } from './routes/livingWorld.js';
 import { adminLivingWorldRoutes } from './routes/adminLivingWorld.js';
 import { adminUserRoutes } from './routes/adminUsers.js';
 import { adminBillingRoutes } from './routes/adminBilling.js';
+import { adminCampaignRoutes } from './routes/adminCampaigns.js';
 import { creditsRoutes, creditsWebhookRoute } from './routes/credits.js';
 import { playgroundRoutes } from './routes/playground.js';
 import { topicHistoryRoutes } from './routes/topicHistory.js';
@@ -270,6 +271,19 @@ await fastify.register(async (app) => {
   });
   app.register(adminBillingRoutes);
 }, { prefix: '/v1/admin/billing' });
+
+// Admin campaign editor — full CRUD over a campaign's saved world (quests,
+// NPCs, locations, characters, scenes) with auto-snapshot before each
+// mutation and a consistency validator. Same admin gate as the others.
+await fastify.register(async (app) => {
+  app.addHook('onRoute', (routeOptions) => {
+    routeOptions.config = {
+      ...routeOptions.config,
+      rateLimit: routeOptions.config?.rateLimit || { max: 60, timeWindow: '1 minute' },
+    };
+  });
+  app.register(adminCampaignRoutes);
+}, { prefix: '/v1/admin/campaigns' });
 
 // Credits — authed routes for balance + Stripe checkout
 await fastify.register(async (app) => {
