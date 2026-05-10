@@ -1,11 +1,17 @@
 import { useMemo, useRef, useState, useCallback, useEffect } from 'react';
-import { forceDirectedLayout } from '../../../services/graphLayout.js';
+import {
+  forceDirectedLayout,
+  geoProjectLayout,
+  GRAPH_LAYOUT_W,
+  GRAPH_LAYOUT_H,
+  GRAPH_LAYOUT_PAD,
+} from '../../../services/graphLayout.js';
 import { getNodeVisual, getEdgeVisual, getNodeRadius } from './graphVisuals.js';
 import { SHAPE_PATHS } from './nodeShapes.js';
 import { apiClient } from '../../../services/apiClient.js';
 
-const LAYOUT_W = 1200;
-const LAYOUT_H = 900;
+const LAYOUT_W = GRAPH_LAYOUT_W;
+const LAYOUT_H = GRAPH_LAYOUT_H;
 const GRID_STEP = 40;
 
 export default function GraphCanvas({
@@ -14,6 +20,8 @@ export default function GraphCanvas({
   positionOverrides, onNodeDragEnd, snapToGrid,
   highlightedNodeId = null, highlightedAdjacentIds = null,
   occupantSpriteMap = {},
+  /** 'auto' = geo from regionX/Y when spread exists, else force; 'geo' | 'force' = fixed basis */
+  layoutBasis = 'auto',
 }) {
   const svgRef = useRef(null);
   const containerRef = useRef(null);
@@ -42,10 +50,14 @@ export default function GraphCanvas({
     if (nodes.length === 0) return new Map();
     const nodeNames = nodes.map((n) => n.id);
     const edgeLinks = edges.map((e) => ({ from: e.fromId, to: e.toId }));
-    return forceDirectedLayout(nodeNames, edgeLinks, {
+    const force = () => forceDirectedLayout(nodeNames, edgeLinks, {
       width: LAYOUT_W, height: LAYOUT_H, iterations: 150,
     });
-  }, [nodes, edges]);
+    if (layoutBasis === 'force') return force();
+    const geo = geoProjectLayout(nodes, { width: LAYOUT_W, height: LAYOUT_H, pad: GRAPH_LAYOUT_PAD });
+    if (layoutBasis === 'geo') return geo ?? force();
+    return geo ?? force();
+  }, [nodes, edges, layoutBasis]);
 
   const positions = useMemo(() => {
     const merged = new Map(basePositions);
@@ -188,6 +200,7 @@ export default function GraphCanvas({
 
   const handleNodeMouseDown = useCallback((nodeId, e) => {
     if (addingEdge || addingNode) return;
+    if (!onNodeDragEnd) return;
     e.stopPropagation();
     const layoutPos = clientToLayout(e.clientX, e.clientY);
     const nodePos = positions.get(nodeId);
@@ -196,7 +209,7 @@ export default function GraphCanvas({
     didDragRef.current = false;
     setDraggingNodeId(nodeId);
     setDragNodePos(nodePos);
-  }, [addingEdge, addingNode, clientToLayout, positions]);
+  }, [addingEdge, addingNode, onNodeDragEnd, clientToLayout, positions]);
 
   const handleSvgClick = useCallback((e) => {
     if (addingNode && (e.target === svgRef.current || e.target.closest('[data-bg]'))) {
@@ -308,7 +321,9 @@ export default function GraphCanvas({
           const isHighlightedAdjacent = highlightedAdjacentIds?.has?.(node.id) && !isHighlightedCurrent;
           const nodeCursor = addingEdge || addingNode
             ? 'crosshair'
-            : 'move';
+            : onNodeDragEnd
+              ? 'move'
+              : 'pointer';
           const shapeName = vis.shape || 'circle';
           const shapeGen = SHAPE_PATHS[shapeName];
           const useCircle = !shapeGen;
@@ -455,14 +470,14 @@ export default function GraphCanvas({
 
               {locOccupants.map((occ, i) => {
                 const angle = (2 * Math.PI * i) / Math.max(locOccupants.length, 1) - Math.PI / 2;
-                const orbitR = imgR + 12;
-                const ox = Math.cos(angle) * orbitR;
-                const oy = Math.sin(angle) * orbitR;
                 const isPlayer = occ.type === 'player';
-                const dotR = isPlayer ? 5 : 4;
+                const dotR = isPlayer ? 10 : 8;
                 const color = isPlayer ? '#22d3ee' : '#f472b6';
                 const spriteHref = occupantSpriteMap[occ.id];
-                const tokenPx = isPlayer ? 18 : 16;
+                const tokenPx = isPlayer ? 36 : 32;
+                const orbitR = imgR + 3 + tokenPx / 2;
+                const ox = Math.cos(angle) * orbitR;
+                const oy = Math.sin(angle) * orbitR;
                 const labelY = (spriteHref ? tokenPx / 2 : dotR) + 8;
                 return (
                   <g key={occ.id} transform={`translate(${ox},${oy})`}>

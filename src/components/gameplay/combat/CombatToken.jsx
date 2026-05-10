@@ -121,6 +121,7 @@ export default function CombatToken({
   const healthPct = c.maxWounds > 0 ? c.wounds / c.maxWounds : 0;
   const [shaking, setShaking] = useState(false);
   const [spriteLoaded, setSpriteLoaded] = useState(false);
+  const [spriteFailed, setSpriteFailed] = useState(false);
   const tokenSize = Math.round(cellSize * 1.2);
   const spriteImgSize = Math.round(cellSize * 1.05);
   const prevWoundsRef = useRef(c.wounds);
@@ -137,7 +138,10 @@ export default function CombatToken({
 
   useEffect(() => {
     setSpriteLoaded(false);
+    setSpriteFailed(false);
   }, [spriteUrl]);
+
+  const showSpriteImage = Boolean(spriteUrl && !spriteFailed);
 
   const isShoving = !!shoveOffset;
   const classNames = [
@@ -182,8 +186,18 @@ export default function CombatToken({
         )}
 
         <div className="combat-token__sprite-wrap" style={{ width: tokenSize, height: tokenSize }}>
-          {spriteUrl ? (
-            <img src={spriteUrl} alt={c.name} draggable={false} onLoad={() => setSpriteLoaded(true)} style={{ width: spriteImgSize, height: spriteImgSize }} />
+          {showSpriteImage ? (
+            <img
+              src={spriteUrl}
+              alt={c.name}
+              draggable={false}
+              onLoad={() => setSpriteLoaded(true)}
+              onError={() => {
+                setSpriteFailed(true);
+                setSpriteLoaded(false);
+              }}
+              style={{ width: spriteImgSize, height: spriteImgSize }}
+            />
           ) : (
             <div className="combat-token__initials">
               {c.isDefeated ? '\u2620' : getInitials(c.name)}

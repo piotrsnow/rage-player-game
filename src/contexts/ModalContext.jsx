@@ -18,12 +18,17 @@ export function ModalProvider({ children }) {
   // rather than a reference so the latest world.npcs entry is always read
   // fresh (disposition / stats can change between open and close).
   const [locationGraphOpen, setLocationGraphOpen] = useState(false);
+  /** Incremented on each openLocationGraph — forces fresh GET in LocationGraphModal. */
+  const [locationGraphRefreshKey, setLocationGraphRefreshKey] = useState(0);
   const [gmModalOpen, setGmModalOpen] = useState(false);
   const [npcSheetName, setNpcSheetName] = useState(null);
 
   const openCharacterSheet = useCallback(() => setCharacterSheetOpen(true), []);
   const closeCharacterSheet = useCallback(() => setCharacterSheetOpen(false), []);
-  const openLocationGraph = useCallback(() => setLocationGraphOpen(true), []);
+  const openLocationGraph = useCallback(() => {
+    setLocationGraphRefreshKey((k) => k + 1);
+    setLocationGraphOpen(true);
+  }, []);
   const closeLocationGraph = useCallback(() => setLocationGraphOpen(false), []);
   const openGmModal = useCallback(() => setGmModalOpen(true), []);
   const closeGmModal = useCallback(() => setGmModalOpen(false), []);
@@ -58,6 +63,7 @@ export function ModalProvider({ children }) {
       value={{
         characterSheetOpen,
         locationGraphOpen,
+        locationGraphRefreshKey,
         gmModalOpen,
         worldStateOpen,
         tasksInfoOpen,

@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react';
 import { useSettings } from '../contexts/SettingsContext';
+import { silencePeerDialogAudio } from '../utils/readAloudExclusive';
 
 /**
  * Auto-play narrator reaction to new chat messages.
@@ -8,6 +9,9 @@ import { useSettings } from '../contexts/SettingsContext';
  * by count, so that messages arriving while autoplay is temporarily suppressed
  * (e.g. the player-action typewriter overlay is showing) are NOT lost — they
  * get narrated as soon as conditions allow.
+ *
+ * When a newer DM message arrives while narration is already playing another
+ * message, the previous playback is stopped — only one narration runs at a time.
  *
  * Uses backend TTS when `narrator.isNarratorReady`; otherwise falls back to
  * browser `speechSynthesis` (same contract as manual play / viewer mode in
@@ -43,14 +47,9 @@ export function useChatAutoNarration({ messages, narrator, autoPlay }) {
 
     if (!autoPlay || !narrator) return;
 
-    const alreadyActive =
-      narrator.playbackState === narrator.STATES?.PLAYING
-      || narrator.playbackState === narrator.STATES?.LOADING
-      || narrator.playbackState === narrator.STATES?.PAUSED;
-    if (alreadyActive) return;
-
     const speakBrowser = () => {
       try {
+        silencePeerDialogAudio();
         const synth = typeof window !== 'undefined' ? window.speechSynthesis : null;
         if (!synth || typeof window.SpeechSynthesisUtterance === 'undefined') return false;
         const raw = latestSpoken.content ?? latestSpoken.narrative ?? '';

@@ -54,6 +54,7 @@ function ModalLayer() {
     adminUsersOpen,
     closeAdminUsers,
     locationGraphOpen,
+    locationGraphRefreshKey,
     closeLocationGraph,
     gmModalOpen,
     closeGmModal,
@@ -105,7 +106,11 @@ function ModalLayer() {
       {privacyOpen && <PrivacyPolicyModal onClose={closePrivacy} />}
       {locationGraphOpen && campaign?.backendId && (
         <Suspense fallback={null}>
-          <LocationGraphModal campaignId={campaign.backendId} onClose={closeLocationGraph} />
+          <LocationGraphModal
+            campaignId={campaign.backendId}
+            openGeneration={locationGraphRefreshKey}
+            onClose={closeLocationGraph}
+          />
         </Suspense>
       )}
       {gmModalOpen && (

@@ -1,9 +1,34 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { apiClient } from '../services/apiClient.js';
+import { useGameSlice } from '../stores/gameSelectors';
 
 const BASE = '/livingWorld/campaigns';
 
-export function useLocationGraph(campaignId) {
+/** Cross-widget sync: MapTab + LocationGraphModal each mount their own hook instance. */
+export const LOCATION_GRAPH_MUTATED_EVENT = 'rpgon:location-graph-mutated';
+
+export function notifyLocationGraphMutated(campaignId) {
+  if (typeof window === 'undefined' || !campaignId) return;
+  window.dispatchEvent(new CustomEvent(LOCATION_GRAPH_MUTATED_EVENT, { detail: { campaignId } }));
+}
+
+/**
+ * @param {string} campaignId
+ * @param {{ openGeneration?: number }} [options] — pass `openGeneration` from modal refresh key so graph refetches every time the location-graph modal opens.
+ */
+export function useLocationGraph(campaignId, options = {}) {
+  const { openGeneration } = options;
+  // Subskrypcja do currentLocationRef + currentLocation (string fallback)
+  // żeby otwarty modal sam się odświeżał, gdy gracz przeszedł do nowej
+  // lokacji (zwykła scena z create-on-miss, korekta incydentu, ręczne move).
+  // Klucz złożony z obu — ref ID jest preferowany; gdy ref pusty (legacy),
+  // wpada na string. Zmiana któregokolwiek triggeruje refetch.
+  const currentRefKey = useGameSlice((s) => {
+    const r = s.world?.currentLocationRef;
+    if (r && r.kind && r.id) return `${r.kind}:${r.id}`;
+    const name = s.world?.currentLocation;
+    return name ? `name:${name}` : null;
+  });
   const [nodes, setNodes] = useState([]);
   const [edges, setEdges] = useState([]);
   const [occupants, setOccupants] = useState([]);
@@ -42,13 +67,25 @@ export function useLocationGraph(campaignId) {
     }
   }, [campaignId]);
 
-  useEffect(() => { fetchGraph({ hops: 3 }); }, [fetchGraph]);
+  useEffect(() => {
+    fetchGraph({ hops: 3 });
+  }, [fetchGraph, currentRefKey, openGeneration]);
+
+  useEffect(() => {
+    if (!campaignId) return;
+    const onMutated = (e) => {
+      if (e.detail?.campaignId !== campaignId) return;
+      fetchGraph({ hops: 3 });
+    };
+    window.addEventListener(LOCATION_GRAPH_MUTATED_EVENT, onMutated);
+    return () => window.removeEventListener(LOCATION_GRAPH_MUTATED_EVENT, onMutated);
+  }, [campaignId, fetchGraph]);
 
   const createNode = useCallback(async (body) => {
     setError(null);
     try {
       const data = await apiClient.request(`${BASE}/${campaignId}/location-graph/nodes`, { method: 'POST', body });
-      await fetchGraph({ hops: 3 });
+      notifyLocationGraphMutated(campaignId);
       return data.node;
     } catch (err) {
       setError(err.message);
@@ -67,6 +104,7 @@ export function useLocationGraph(campaignId) {
         if ('icon' in patch) { patch.nodeIcon = patch.icon || null; delete patch.icon; }
         return { ...n, ...patch };
       }));
+      notifyLocationGraphMutated(campaignId);
     } catch (err) {
       setError(err.message);
       throw err;
@@ -80,6 +118,7 @@ export function useLocationGraph(campaignId) {
       setNodes((prev) => prev.filter((n) => n.id !== nodeId));
       setEdges((prev) => prev.filter((e) => e.fromId !== nodeId && e.toId !== nodeId));
       if (selected?.id === nodeId) setSelected(null);
+      notifyLocationGraphMutated(campaignId);
     } catch (err) {
       setError(err.message);
       throw err;
@@ -90,7 +129,7 @@ export function useLocationGraph(campaignId) {
     setError(null);
     try {
       const data = await apiClient.request(`${BASE}/${campaignId}/location-graph/edges`, { method: 'POST', body });
-      await fetchGraph({ hops: 3 });
+      notifyLocationGraphMutated(campaignId);
       return data.edge;
     } catch (err) {
       setError(err.message);
@@ -103,6 +142,7 @@ export function useLocationGraph(campaignId) {
     try {
       await apiClient.request(`${BASE}/${campaignId}/location-graph/edges/${edgeId}`, { method: 'PUT', body });
       setEdges((prev) => prev.map((e) => e.id === edgeId ? { ...e, ...body } : e));
+      notifyLocationGraphMutated(campaignId);
     } catch (err) {
       setError(err.message);
       throw err;
@@ -115,6 +155,7 @@ export function useLocationGraph(campaignId) {
       await apiClient.request(`${BASE}/${campaignId}/location-graph/edges/${edgeId}`, { method: 'DELETE' });
       setEdges((prev) => prev.filter((e) => e.id !== edgeId));
       if (selected?.id === edgeId) setSelected(null);
+      notifyLocationGraphMutated(campaignId);
     } catch (err) {
       setError(err.message);
       throw err;
@@ -125,6 +166,7 @@ export function useLocationGraph(campaignId) {
     await apiClient.request(`${BASE}/${campaignId}/location-graph/move-npc`, {
       method: 'POST', body: { npcId, toKind, toId },
     });
+    notifyLocationGraphMutated(campaignId);
   }, [campaignId]);
 
   const search = useCallback(async (q) => {

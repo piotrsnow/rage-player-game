@@ -72,6 +72,7 @@ import { useMomentumMinigame } from '../../hooks/useMomentumMinigame';
 import { useFavoriteScenes } from '../../hooks/useFavoriteScenes';
 import MainQuestCompleteModal from './MainQuestCompleteModal';
 import { ActionTagProvider } from '../../contexts/ActionTagContext';
+import { claimExclusiveReadAloud } from '../../utils/readAloudExclusive';
 
 function hashCode(str) {
   let h = 0;
@@ -298,6 +299,8 @@ export default function GameplayPage({ readOnly = false, shareToken = null, onRe
 
   const playSceneNarration = useCallback((scene, fallbackIndex = null) => {
     if (!scene?.narrative) return;
+
+    claimExclusiveReadAloud();
 
     // Preferred: ElevenLabs narrator (requires backend auth + voice configured)
     if (narrator.isNarratorReady) {

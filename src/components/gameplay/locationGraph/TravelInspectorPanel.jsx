@@ -9,6 +9,7 @@ export default function TravelInspectorPanel({
   currentNode,
   adjacentIds,
   occupants = [],
+  occupantSpriteMap = {},
   canAttemptDistantTravel,
   onTravel,
 }) {
@@ -20,6 +21,21 @@ export default function TravelInspectorPanel({
     () => occupants.filter((o) => o.locationId === selectedNode?.id),
     [occupants, selectedNode?.id],
   );
+
+  const players = useMemo(
+    () => selectedOccupants.filter((o) => o.type === 'player'),
+    [selectedOccupants],
+  );
+  const npcs = useMemo(
+    () => selectedOccupants.filter((o) => o.type !== 'player'),
+    [selectedOccupants],
+  );
+
+  const tags = useMemo(() => {
+    const raw = selectedNode?.tags;
+    if (Array.isArray(raw)) return raw.filter(Boolean);
+    return [];
+  }, [selectedNode?.tags]);
 
   const travelState = useMemo(() => {
     if (!selectedNode) return 'none';
@@ -95,15 +111,43 @@ export default function TravelInspectorPanel({
           <span className="w-3 h-3 rounded-full" style={{ backgroundColor: visual.color }} />
           <h3 className="text-base font-semibold text-on-surface">{selectedNode.name}</h3>
         </div>
-        <div className="text-xs text-on-surface-variant">
-          {t('locationGraph.travelInspector.type')}: {visual.label}
-        </div>
-        <div className="text-xs text-on-surface-variant">
-          {t('locationGraph.travelInspector.dangerLevel')}: {t(`locationGraph.danger.${selectedNode.dangerLevel || 'safe'}`)}
+        <div className="flex flex-wrap gap-x-3 gap-y-0.5 text-xs text-on-surface-variant">
+          <span>{t('locationGraph.travelInspector.type')}: {visual.label}</span>
+          <span>
+            {t('locationGraph.travelInspector.dangerLevel')}: {t(`locationGraph.danger.${selectedNode.dangerLevel || 'safe'}`)}
+          </span>
+          {selectedNode.region && (
+            <span>{t('locationGraph.travelInspector.region')}: {selectedNode.region}</span>
+          )}
+          {selectedNode.biome && (
+            <span>{t('locationGraph.travelInspector.biome')}: {selectedNode.biome}</span>
+          )}
+          {selectedNode.visitCount > 0 && (
+            <span>
+              {t('locationGraph.travelInspector.visits', { count: selectedNode.visitCount })}
+            </span>
+          )}
         </div>
         {selectedNode.atmosphere && (
-          <div className="text-sm text-on-surface-variant leading-relaxed">
+          <div className="text-sm italic text-on-surface-variant leading-relaxed">
             {selectedNode.atmosphere}
+          </div>
+        )}
+        {selectedNode.description && (
+          <div className="text-sm text-on-surface-variant leading-relaxed whitespace-pre-line">
+            {selectedNode.description}
+          </div>
+        )}
+        {tags.length > 0 && (
+          <div className="flex flex-wrap gap-1 pt-1">
+            {tags.map((tag) => (
+              <span
+                key={tag}
+                className="inline-flex items-center bg-primary/12 text-primary rounded-full px-2 py-0.5 text-[11px] leading-tight"
+              >
+                {tag}
+              </span>
+            ))}
           </div>
         )}
       </div>
@@ -111,6 +155,11 @@ export default function TravelInspectorPanel({
       <div className="space-y-2">
         <div className="text-xs uppercase tracking-widest text-on-surface-variant/70">
           {t('locationGraph.travelInspector.occupants')}
+          {selectedOccupants.length > 0 && (
+            <span className="ml-1 text-outline normal-case tracking-normal">
+              ({selectedOccupants.length})
+            </span>
+          )}
         </div>
         {selectedOccupants.length === 0 ? (
           <div className="text-xs text-on-surface-variant">
@@ -118,10 +167,11 @@ export default function TravelInspectorPanel({
           </div>
         ) : (
           <ul className="space-y-1">
-            {selectedOccupants.map((occ) => (
-              <li key={occ.id} className="text-sm text-on-surface-variant">
-                {occ.name}
-              </li>
+            {players.map((occ) => (
+              <OccupantRow key={occ.id} occ={occ} sprite={occupantSpriteMap[occ.id]} t={t} />
+            ))}
+            {npcs.map((occ) => (
+              <OccupantRow key={occ.id} occ={occ} sprite={occupantSpriteMap[occ.id]} t={t} />
             ))}
           </ul>
         )}
@@ -149,5 +199,46 @@ export default function TravelInspectorPanel({
           : t('locationGraph.travelInspector.travelHere')}
       </button>
     </div>
+  );
+}
+
+function OccupantRow({ occ, sprite, t }) {
+  const isPlayer = occ.type === 'player';
+  const dotColor = isPlayer ? '#22d3ee' : '#f472b6';
+  const subtitle = isPlayer
+    ? (occ.species || t('locationGraph.travelInspector.playerBadge'))
+    : (occ.role || occ.category || t('locationGraph.travelInspector.npcBadge'));
+
+  return (
+    <li className="flex items-center gap-2 px-2 py-1.5 rounded bg-white/5">
+      {sprite ? (
+        <img
+          src={sprite}
+          alt={occ.name}
+          className="w-7 h-7 rounded-sm object-cover bg-black/20 flex-shrink-0"
+          style={{ imageRendering: 'pixelated' }}
+        />
+      ) : (
+        <span
+          className="w-2.5 h-2.5 rounded-full flex-shrink-0"
+          style={{ backgroundColor: dotColor }}
+        />
+      )}
+      <div className="flex-1 min-w-0">
+        <div className="text-sm text-on-surface truncate">{occ.name}</div>
+        {subtitle && (
+          <div className="text-[10px] text-outline truncate">{subtitle}</div>
+        )}
+      </div>
+      <span
+        className={`text-[9px] uppercase tracking-widest px-1.5 py-0.5 rounded flex-shrink-0 ${
+          isPlayer ? 'bg-cyan-500/15 text-cyan-300' : 'bg-pink-500/15 text-pink-300'
+        }`}
+      >
+        {isPlayer
+          ? t('locationGraph.travelInspector.playerBadge')
+          : t('locationGraph.travelInspector.npcBadge')}
+      </span>
+    </li>
   );
 }

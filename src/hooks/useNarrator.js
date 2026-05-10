@@ -11,6 +11,7 @@ import {
   resolveSegmentVoice as resolveSegmentVoiceShared,
 } from '../services/characterVoiceResolver';
 import { hasNamedSpeaker } from '../services/dialogueSegments';
+import { registerMainNarratorStop, silencePeerDialogAudio } from '../utils/readAloudExclusive';
 
 const STATES = {
   IDLE: 'idle',
@@ -535,6 +536,8 @@ export function useNarrator({ viewerMode = false, shareToken = null, backendUrl 
       return;
     }
 
+    silencePeerDialogAudio();
+
     const item = queueRef.current[0];
     const { dialogueSegments, narrative, messageId, scenePacing, segmentPrefetchWindow } = item;
     setCurrentMessageId(messageId);
@@ -848,7 +851,7 @@ export function useNarrator({ viewerMode = false, shareToken = null, backendUrl 
     }
   }, [playbackState]);
 
-  const stop = useCallback(() => {
+  const stopNarratorPlayback = useCallback(() => {
     generationRef.current++;
     abortRef.current = true;
     queueRef.current = [];
@@ -868,6 +871,13 @@ export function useNarrator({ viewerMode = false, shareToken = null, backendUrl 
     setHighlightInfo(null);
     setCurrentChunk(null);
   }, [cleanup]);
+
+  const stop = useCallback(() => {
+    stopNarratorPlayback();
+    silencePeerDialogAudio();
+  }, [stopNarratorPlayback]);
+
+  useEffect(() => registerMainNarratorStop(stopNarratorPlayback), [stopNarratorPlayback]);
 
   // --------------- Streaming narration ---------------
   // Allows feeding segments incrementally during AI streaming.

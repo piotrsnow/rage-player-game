@@ -37,6 +37,7 @@ import { useEnemyTurnResolver } from '../../hooks/useEnemyTurnResolver';
 import { useCombatResultSync } from '../../hooks/useCombatResultSync';
 import { useCombatHostResolve } from '../../hooks/useCombatHostResolve';
 import { useCombatSprites } from '../../hooks/useCombatSprites';
+import { apiClient } from '../../services/apiClient';
 import { addEffect, migrateStatusStrings } from '../../../shared/domain/statusEffects.js';
 
 function isCustomAttackManoeuvre(manoeuvreKey) {
@@ -206,11 +207,14 @@ export default function CombatPanel({
   const { sprites: spriteMap, regenerateSprite } = useCombatSprites(combat.combatants);
 
   const enrichedCombat = useMemo(() => {
-    if (!Object.keys(spriteMap).length) return combat;
-    const enrichedCombatants = combat.combatants.map(c => {
-      const url = spriteMap[c.id];
-      if (url && !c.spriteUrl) return { ...c, spriteUrl: url };
-      return c;
+    const enrichedCombatants = combat.combatants.map((c) => {
+      if (Object.prototype.hasOwnProperty.call(spriteMap, c.id)) {
+        return { ...c, spriteUrl: spriteMap[c.id] };
+      }
+      return {
+        ...c,
+        spriteUrl: c.spriteUrl ? apiClient.resolveMediaUrl(c.spriteUrl) : null,
+      };
     });
     return { ...combat, combatants: enrichedCombatants };
   }, [combat, spriteMap]);

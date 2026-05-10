@@ -16,19 +16,19 @@ function getOutcomeLabel(dr, t) {
 function getOutcomeColor(dr) {
   if (dr.criticalSuccess) return 'text-pink-300';
   if (dr.criticalFailure) return 'text-rose-500';
-  return dr.success ? 'text-pink-400' : 'text-rose-400';
+  return dr.success ? 'text-sky-300' : 'text-rose-400';
 }
 
 function getOutcomeGlow(dr) {
   if (dr.criticalSuccess) return 'rgba(249, 168, 212, 0.35)';
   if (dr.criticalFailure) return 'rgba(190, 24, 93, 0.3)';
-  return dr.success ? 'rgba(236, 72, 153, 0.25)' : 'rgba(190, 24, 93, 0.25)';
+  return dr.success ? 'rgba(56, 189, 248, 0.25)' : 'rgba(190, 24, 93, 0.25)';
 }
 
 function getOutcomeBorder(dr) {
   if (dr.criticalSuccess) return 'border-pink-300/50';
   if (dr.criticalFailure) return 'border-pink-700/50';
-  return dr.success ? 'border-pink-400/40' : 'border-pink-600/40';
+  return dr.success ? 'border-sky-400/40' : 'border-pink-600/40';
 }
 
 export default function DiceRollAnimationOverlay({ diceRoll, onDismiss, holdOpen = false, mode = 'fullscreen' }) {
@@ -121,8 +121,8 @@ export default function DiceRollAnimationOverlay({ diceRoll, onDismiss, holdOpen
           diceRoll={dr}
           onComplete={handleRollComplete}
           showOverlayResult={false}
-          sizeMultiplier={3}
-          durationMultiplier={2.6}
+          sizeMultiplier={2}
+          durationMultiplier={1.25}
           variant="overlay"
           isVisible
         />
@@ -199,7 +199,7 @@ export default function DiceRollAnimationOverlay({ diceRoll, onDismiss, holdOpen
                   {t('gameplay.margin', 'Margines')}
                 </span>
                 <span className={`font-mono text-3xl font-black leading-none ${
-                  (dr.margin ?? dr.sl) >= 0 ? 'text-pink-300' : 'text-rose-400'
+                  (dr.margin ?? dr.sl) >= 0 ? 'text-sky-300' : 'text-rose-400'
                 }`}>
                   {(dr.margin ?? dr.sl) > 0 ? '+' : ''}{dr.margin ?? dr.sl}
                 </span>

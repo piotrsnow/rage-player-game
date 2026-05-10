@@ -1,4 +1,4 @@
-import { useMemo, useState, useCallback, useEffect } from 'react';
+import { useMemo, useState, useEffect } from 'react';
 import { useCharacterSprites } from '../../../hooks/useCharacterSprites';
 import { apiClient } from '../../../services/apiClient';
 import { useTranslation } from 'react-i18next';
@@ -8,19 +8,11 @@ import { useGameScenes } from '../../../stores/gameSelectors';
 import { isQuietScene } from '../../../services/quietSceneCheck';
 import GraphCanvas from '../locationGraph/GraphCanvas.jsx';
 import TravelInspectorPanel from '../locationGraph/TravelInspectorPanel.jsx';
-
-const STORAGE_KEY_PREFIX = 'rpgon:playerMapLayout:';
-
-function loadMapLayout(campaignId) {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY_PREFIX + campaignId);
-    if (!raw) return {};
-    const parsed = JSON.parse(raw);
-    return parsed?.overrides || {};
-  } catch {
-    return {};
-  }
-}
+import {
+  loadGraphLayout,
+  GRAPH_LAYOUT_STORAGE_PREFIX,
+  GRAPH_LAYOUT_STORAGE_CHANGED,
+} from '../../../utils/graphLayoutStorage.js';
 
 export default function MapTab({ campaignId, onTravel }) {
   const { t } = useTranslation();
@@ -29,7 +21,7 @@ export default function MapTab({ campaignId, onTravel }) {
   const scenes = useGameScenes();
 
   const [selected, setSelected] = useState(null);
-  const [positionOverrides, setPositionOverrides] = useState(() => loadMapLayout(campaignId));
+  const [positionOverrides, setPositionOverrides] = useState(() => loadGraphLayout(campaignId).overrides);
 
   const { nodes, edges } = graph;
 
@@ -54,7 +46,29 @@ export default function MapTab({ campaignId, onTravel }) {
   }, [graph.occupants, extraOccupantSprites]);
 
   useEffect(() => {
-    setPositionOverrides(loadMapLayout(campaignId));
+    setPositionOverrides(loadGraphLayout(campaignId).overrides);
+  }, [campaignId]);
+
+  useEffect(() => {
+    if (graph.loading) return;
+    setPositionOverrides(loadGraphLayout(campaignId).overrides);
+  }, [graph.loading, campaignId]);
+
+  useEffect(() => {
+    const onLayoutStorage = (e) => {
+      if (e.detail?.campaignId !== campaignId) return;
+      setPositionOverrides(loadGraphLayout(campaignId).overrides);
+    };
+    const onNativeStorage = (e) => {
+      if (e.key !== GRAPH_LAYOUT_STORAGE_PREFIX + campaignId) return;
+      setPositionOverrides(loadGraphLayout(campaignId).overrides);
+    };
+    window.addEventListener(GRAPH_LAYOUT_STORAGE_CHANGED, onLayoutStorage);
+    window.addEventListener('storage', onNativeStorage);
+    return () => {
+      window.removeEventListener(GRAPH_LAYOUT_STORAGE_CHANGED, onLayoutStorage);
+      window.removeEventListener('storage', onNativeStorage);
+    };
   }, [campaignId]);
 
   useEffect(() => {
@@ -80,21 +94,6 @@ export default function MapTab({ campaignId, onTravel }) {
     if (selected?.type !== 'node') return null;
     return nodes.find((node) => node.id === selected.id) || null;
   }, [selected, nodes]);
-
-  const handleNodeDragEnd = useCallback((nodeId, pos) => {
-    setPositionOverrides((prev) => {
-      const next = { ...prev, [nodeId]: pos };
-      try {
-        localStorage.setItem(
-          STORAGE_KEY_PREFIX + campaignId,
-          JSON.stringify({ overrides: next }),
-        );
-      } catch {
-        // Ignore storage quota errors.
-      }
-      return next;
-    });
-  }, [campaignId]);
 
   if (graph.loading) {
     return (
@@ -125,7 +124,6 @@ export default function MapTab({ campaignId, onTravel }) {
           selected={selected}
           onSelect={setSelected}
           positionOverrides={positionOverrides}
-          onNodeDragEnd={handleNodeDragEnd}
           highlightedNodeId={currentNode?.id || null}
           highlightedAdjacentIds={adjacentIds}
         />
@@ -138,6 +136,7 @@ export default function MapTab({ campaignId, onTravel }) {
           currentNode={currentNode}
           adjacentIds={adjacentIds}
           occupants={graph.occupants}
+          occupantSpriteMap={occupantSpriteMap}
           canAttemptDistantTravel={canAttemptDistantTravel}
           onTravel={onTravel}
         />

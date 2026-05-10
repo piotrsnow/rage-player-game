@@ -15,28 +15,20 @@ import AddEdgeFlow from './AddEdgeFlow.jsx';
 import ModalNavBar from './ModalNavBar.jsx';
 import EntityBrowserPanel from './EntityBrowserPanel.jsx';
 import EntityInspector from './EntityInspector.jsx';
+import {
+  getGeoProjectionParams,
+  layoutPxToRegion,
+  GRAPH_LAYOUT_W,
+  GRAPH_LAYOUT_H,
+  GRAPH_LAYOUT_PAD,
+} from '../../../services/graphLayout.js';
+import { loadGraphLayout, saveGraphLayout } from '../../../utils/graphLayoutStorage.js';
 
-const STORAGE_KEY_PREFIX = 'rpgon:graphLayout:';
-
-function loadGraphLayout(campaignId) {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY_PREFIX + campaignId);
-    if (!raw) return { overrides: {}, snap: false };
-    const parsed = JSON.parse(raw);
-    return { overrides: parsed.overrides || {}, snap: !!parsed.snap };
-  } catch { return { overrides: {}, snap: false }; }
-}
-
-function saveGraphLayout(campaignId, overrides, snap) {
-  try {
-    localStorage.setItem(STORAGE_KEY_PREFIX + campaignId, JSON.stringify({ overrides, snap }));
-  } catch { /* quota exceeded — silently ignore */ }
-}
-
-export default function LocationGraphModal({ campaignId, onClose }) {
+export default function LocationGraphModal({ campaignId, onClose, openGeneration = 0 }) {
   const { t } = useTranslation();
   const modalRef = useModalA11y(onClose);
-  const graph = useLocationGraph(campaignId);
+  const graph = useLocationGraph(campaignId, { openGeneration });
+
   const spriteItems = useMemo(
     () => (graph.occupants || []).map((o) => ({
       id: o.id,
@@ -70,13 +62,33 @@ export default function LocationGraphModal({ campaignId, onClose }) {
   const [positionOverrides, setPositionOverrides] = useState(layoutState.overrides);
   const [snapToGrid, setSnapToGrid] = useState(layoutState.snap);
 
-  const handleNodeDragEnd = useCallback((nodeId, pos) => {
+  const handleNodeDragEnd = useCallback(async (nodeId, pos) => {
+    const params = getGeoProjectionParams(graph.allNodes, {
+      width: GRAPH_LAYOUT_W,
+      height: GRAPH_LAYOUT_H,
+      pad: GRAPH_LAYOUT_PAD,
+    });
+    const km = params ? layoutPxToRegion(pos.x, pos.y, params) : null;
+    if (km) {
+      try {
+        await graph.updateNode(nodeId, { regionX: km.regionX, regionY: km.regionY });
+        setPositionOverrides((prev) => {
+          const next = { ...prev };
+          delete next[nodeId];
+          saveGraphLayout(campaignId, next, snapToGrid);
+          return next;
+        });
+        return;
+      } catch (err) {
+        console.error(err);
+      }
+    }
     setPositionOverrides((prev) => {
       const next = { ...prev, [nodeId]: pos };
       saveGraphLayout(campaignId, next, snapToGrid);
       return next;
     });
-  }, [campaignId, snapToGrid]);
+  }, [campaignId, snapToGrid, graph]);
 
   const handleResetLayout = useCallback(() => {
     setPositionOverrides({});

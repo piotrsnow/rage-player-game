@@ -90,7 +90,7 @@ window.DICE = (function() {
 
     // @brief constructor; create a new instance of this to initialize the canvas
     // @param container element to contain canvas; canvas will fill container
-    // @param options optional: { scaleMultiplier, hideDeskVisual, durationMultiplier }
+    // @param options optional: { scaleMultiplier, hideDeskVisual, durationMultiplier, maxPixelRatio, antialias, physicsSolverIterations }
     that.dice_box = function(container, options) {
         options = options || {};
         apply_theme_options(options);
@@ -100,6 +100,12 @@ window.DICE = (function() {
         this.durationMultiplier = (typeof options.durationMultiplier === 'number' && options.durationMultiplier > 0)
             ? options.durationMultiplier : 1;
 
+        var maxPixelRatio = (typeof options.maxPixelRatio === 'number' && options.maxPixelRatio > 0)
+            ? options.maxPixelRatio : 2;
+        var webglAntialias = options.antialias !== false;
+        var solverIterations = (typeof options.physicsSolverIterations === 'number' && options.physicsSolverIterations >= 1)
+            ? Math.min(24, Math.floor(options.physicsSolverIterations)) : 8;
+
         this.dices = [];
         this.scene = new THREE.Scene();
         this.world = new CANNON.World();
@@ -107,10 +113,10 @@ window.DICE = (function() {
         this.container = container;
 
         this.renderer = window.WebGLRenderingContext
-            ? new THREE.WebGLRenderer({ antialias: true, alpha: true, powerPreference: 'high-performance' })
-            : new THREE.CanvasRenderer({ antialias: true, alpha: true });
+            ? new THREE.WebGLRenderer({ antialias: webglAntialias, alpha: true, powerPreference: 'high-performance' })
+            : new THREE.CanvasRenderer({ antialias: webglAntialias, alpha: true });
         container.appendChild(this.renderer.domElement);
-        this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+        this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, maxPixelRatio));
         this.renderer.shadowMap.enabled = vars.use_shadows;
         this.renderer.shadowMap.type = THREE.PCFShadowMap;
         this.renderer.setClearColor(0xffffff, 0); //color, alpha
@@ -123,7 +129,7 @@ window.DICE = (function() {
 
         this.world.gravity.set(0, 0, -9.8 * 800);
         this.world.broadphase = new CANNON.NaiveBroadphase();
-        this.world.solver.iterations = 8;
+        this.world.solver.iterations = solverIterations;
 
         var ambientLight = new THREE.AmbientLight(vars.ambient_light_color);
         ambientLight.intensity = vars.ambient_light_intensity;
