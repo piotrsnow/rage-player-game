@@ -1,4 +1,5 @@
 import { callAIJson } from './aiJsonCall.js';
+import { prisma } from '../lib/prisma.js';
 
 const MAX_STATE_CHANGES_BYTES = 16 * 1024;
 
@@ -122,10 +123,40 @@ function renderRecentResolvedBlock(recentResolved) {
 }
 
 /**
+ * Render the active-quests + objectives block for the AI judge prompt.
+ * Indices are aligned with displayOrder so that emitted `questUpdates[]
+ * .objectiveId` values can be resolved deterministically by the same
+ * `resolveObjective(objectives, raw)` used in scene flow
+ * (`processStateChanges/quests.js`).
+ */
+function renderActiveQuestsBlock(activeQuests) {
+  if (!Array.isArray(activeQuests) || activeQuests.length === 0) {
+    return '\nNo active quests.';
+  }
+  const lines = ['## Active Quests (with objective indices for questUpdates)'];
+  for (const q of activeQuests) {
+    const type = q.type ? `, type: ${q.type}` : '';
+    lines.push(`- Quest "${q.name || '(unnamed)'}" (questId: ${q.questId}${type}):`);
+    const objectives = Array.isArray(q.objectives) ? q.objectives : [];
+    if (objectives.length === 0) {
+      lines.push('    (no objectives)');
+    } else {
+      objectives.forEach((obj, idx) => {
+        const status = obj.status || 'pending';
+        const desc = (obj.description || '').replace(/\s+/g, ' ').trim();
+        lines.push(`    [${idx}] (status: ${status}) "${desc}"`);
+      });
+    }
+  }
+  return lines.join('\n');
+}
+
+/**
  * Analyze a player's incident report against recent scene history.
  * Uses the premium model to make a fair judgment.
  *
  * @param {Object} params
+ * @param {string} params.campaignId - required for fresh quest+objectives fetch
  * @param {Array} params.recentScenes
  * @param {string} params.playerComplaint
  * @param {Object} params.campaignState
@@ -136,6 +167,7 @@ function renderRecentResolvedBlock(recentResolved) {
  * @returns {Promise<{verdict, isPlayerRight, technicalDetails, stateChanges, correctionSummary, narrativeComment, dedupedAgainst?}>}
  */
 export async function analyzeIncident({
+  campaignId,
   recentScenes,
   playerComplaint,
   campaignState,
@@ -166,8 +198,25 @@ export async function analyzeIncident({
       name: n.name, alive: n.alive, attitude: n.attitude,
       disposition: n.disposition, lastLocation: n.lastLocation,
     })),
-    activeQuests: (campaignState.quests?.active || []).map(q => ({ id: q.id, name: q.name })),
   }) : 'N/A';
+
+  // Fresh active-quests fetch with objectives — coreState.quests is stale and
+  // does NOT carry per-objective rows, so the judge previously had no way to
+  // emit usable questUpdates[] (objectiveId resolution always missed).
+  let activeQuestsBlock = '\nNo active quests.';
+  if (campaignId) {
+    try {
+      const activeQuests = await prisma.campaignQuest.findMany({
+        where: { campaignId, status: 'active' },
+        include: { objectives: { orderBy: { displayOrder: 'asc' } } },
+        orderBy: { createdAt: 'asc' },
+      });
+      activeQuestsBlock = renderActiveQuestsBlock(activeQuests);
+    } catch {
+      // Non-fatal — judge still gets the rest of the context.
+      activeQuestsBlock = '\n(Active quests fetch failed — no objective indices available.)';
+    }
+  }
 
   const recentResolvedBlock = renderRecentResolvedBlock(recentResolvedIncidents);
 
@@ -252,7 +301,12 @@ LOCATION:
   currentX, currentY (continuous coords for wandering)
 
 QUESTS:
-  questUpdates: [{ questId, objectiveId?, completed? }],
+  questUpdates: [{ questId, objectiveId, completed?, addProgress? }],
+    ⚠ "objectiveId" MUST be the numeric INDEX (as string, e.g. "0", "1") shown
+       in the "Active Quests" block above. Never invent ids — only use indices
+       you can see there. The quest auto-completes when ALL its objectives are
+       done, so you do NOT need to also add it to "completedQuests" after
+       marking the last objective.
   completedQuests: [questId, ...],
   failedQuests: [questId, ...]
 
@@ -262,6 +316,29 @@ KNOWLEDGE / CODEX:
 
 NPC MEMORY:
   npcMemoryUpdates: [{ npcName, memory, importance? }]
+
+COMBAT (FE-only — corrections to a wrong/missing combat state):
+  combatUpdate: { active?, participants?, round?, ... }
+
+TIME / NEEDS:
+  timeAdvance: hours (number, e.g. 0.5),
+  needsChanges: { hunger|thirst|bladder|hygiene|rest: delta },
+  restRecovery: { wounds?, mana?, ... }
+
+FACTION:
+  factionChanges: [{ factionId, reputation, ... }]
+
+STATUSES / EFFECTS:
+  activeEffects: [{ name, duration, ... }]
+
+MAP MODE:
+  mapMode: 'overworld'|'sublocation'|'dungeon'
+
+NARRATIVE STATE:
+  narrativeState: { currentAct?, ... }
+
+TRADE:
+  startTrade: { npcName, ... }
 
 LIVING WORLD (only if relevant): locationMentioned[], dungeonRoom{}, worldImpact,
   dungeonComplete{}, locationLiberated, defeatedDeadlyEncounter
@@ -301,6 +378,8 @@ ${sceneSummaries}
 ## Current Game State
 
 ${currentState}
+
+${activeQuestsBlock}
 ${recentResolvedBlock}
 
 ## Player's Complaint

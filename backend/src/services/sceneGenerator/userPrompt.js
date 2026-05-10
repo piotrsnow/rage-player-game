@@ -19,6 +19,7 @@ export function buildUserPrompt(playerAction, {
   creativityEligible = false,
   forceRoll = null,
   pendingSlip = null,
+  pendingProvidence = null,
   entityTags = null,
 } = {}) {
   if (isFirstScene) {
@@ -50,6 +51,7 @@ Include stateChanges: timeAdvance, currentLocation, npcs (introduce at least 1),
 
   // Special action types
   const isIdleWorldEvent = playerAction?.startsWith('[IDLE_WORLD_EVENT');
+  const isProvidenceAfterIncident = playerAction === '[PROVIDENCE_AFTER_INCIDENT]';
   const isContinue = playerAction === '[CONTINUE]';
   const isWait = playerAction === '[WAIT]';
   const isPostCombat = playerAction?.startsWith('[Combat resolved:');
@@ -61,7 +63,20 @@ Include stateChanges: timeAdvance, currentLocation, npcs (introduce at least 1),
   const talkNpcMatch = playerAction?.match(/^\[TALK:\s*(.+?)\]$/);
 
   // Action block
-  if (isIdleWorldEvent) {
+  if (isProvidenceAfterIncident) {
+    const summaryArr = Array.isArray(pendingProvidence?.summary) ? pendingProvidence.summary : [];
+    const summaryLine = summaryArr.length > 0 ? summaryArr.join('; ') : '(no specific corrections recorded)';
+    const narratorLine = pendingProvidence?.narrativeComment
+      ? String(pendingProvidence.narrativeComment).replace(/\s+/g, ' ').trim()
+      : '';
+    parts.push(`PROVIDENCE EVENT — last scene the player flagged a continuity error and the judge ruled in their favour. The world has been silently corrected. Now weave a SHORT (1-2 paragraphs) atmospheric scene where the correction manifests through a fitting in-world mechanism — adapt the flavour to the campaign's genre and tone:
+  • fantasy / mythic     → providence, fate, omen, divine whim
+  • sci-fi / cyberpunk   → quirk of probability, glitch, lucky data drop
+  • horror / gothic      → uncanny synchronicity, half-seen pattern
+  • grounded / realistic → coincidence, overlooked detail surfacing, stroke of luck
+No combat. Minimal stateChanges (mostly timeAdvance ~0.25h). Narrative MUST naturally reference the corrections: ${summaryLine}.${narratorLine ? `\nNarrator's prior comment was: "${narratorLine}".` : ''}
+Do NOT re-emit the same questUpdates / npcs / location changes — they're already applied. Focus purely on the in-world flavour of "fate aligning".`);
+  } else if (isIdleWorldEvent) {
     parts.push(`IDLE WORLD EVENT — no player action. Something happens in the world: atmospheric event, NPC activity, overheard rumor, or foreshadowing. Keep SHORT (1-2 para). No combat. Minimal stateChanges. timeAdvance 0.25-0.5h.`);
   } else if (isWait) {
     parts.push(`PLAYER WAITS — passive observation. Do not narrate player initiative. Something develops: NPCs act, news arrives, opportunity/threat emerges. Include modest timeAdvance.`);
@@ -111,7 +126,7 @@ Include stateChanges: timeAdvance, currentLocation, npcs (introduce at least 1),
   }
 
   // Combat intent
-  if (!isPostCombat && !isIdleWorldEvent && !isWait) {
+  if (!isPostCombat && !isIdleWorldEvent && !isWait && !isProvidenceAfterIncident) {
     if (isGeneralCombatInitiation) {
       parts.push(`COMBAT INITIATED. MUST include combatUpdate. PREFERRED: use enemyHints {location, budget, maxDifficulty, count, race} — engine selects from bestiary. Available races: ${BESTIARY_RACES_STR}. Available locations: ${BESTIARY_LOCATIONS_STR}.`);
     } else if (attackNpcMatch) {
@@ -152,7 +167,7 @@ ${rollLines.join('\n')}
 Each ADDITIONAL roll MUST be on a DIFFERENT skill than the engine-resolved one (${r.skill}). Never roll twice for the same skill in one scene — collapse multiple uses of ${r.skill} into the resolved check above.
 ${buildPreRollInstructions()}`);
     }
-  } else if (!isPostCombat && !isIdleWorldEvent) {
+  } else if (!isPostCombat && !isIdleWorldEvent && !isProvidenceAfterIncident) {
     if (preRolls && preRolls.length > 0) {
       const rollLines = preRolls.map((pr, i) => {
         if (pr.luckySuccess) return `  Roll ${i + 1}: LUCKY SUCCESS — auto-success, narrate fortunate twist. No calculation needed.`;
