@@ -6,6 +6,7 @@ import {
   ALCHEMY_RECIPES, MATERIALS, MATERIAL_CATEGORIES_BY_ARCHETYPE,
   buildBaseTypeIndex,
 } from '../data/equipment/index.js';
+import { prisma } from '../lib/prisma.js';
 
 export async function gameDataRoutes(fastify) {
   // No auth required — static game rules data
@@ -40,5 +41,48 @@ export async function gameDataRoutes(fastify) {
       materialArchetypes: MATERIAL_CATEGORIES_BY_ARCHETYPE,
       baseTypeIndex,
     };
+  });
+
+  // ── Global spell catalog + images ──
+
+  fastify.get('/custom-spells', async () => {
+    const rows = await prisma.customSpell.findMany({
+      orderBy: { createdAt: 'desc' },
+      select: { name: true, school: true, description: true, icon: true, manaCost: true },
+    });
+    return rows;
+  });
+
+  fastify.get('/spell-images', async () => {
+    const rows = await prisma.spellImage.findMany({
+      select: { name: true, imageUrl: true },
+    });
+    const map = {};
+    for (const row of rows) map[row.name] = row.imageUrl;
+    return map;
+  });
+
+  fastify.post('/spell-image', {
+    onRequest: [fastify.authenticate],
+    schema: {
+      body: {
+        type: 'object',
+        required: ['name', 'imageUrl'],
+        additionalProperties: false,
+        properties: {
+          name: { type: 'string', minLength: 1, maxLength: 200 },
+          imageUrl: { type: 'string', minLength: 1, maxLength: 2000 },
+          imagePrompt: { type: 'string', maxLength: 5000 },
+        },
+      },
+    },
+  }, async (request) => {
+    const { name, imageUrl, imagePrompt } = request.body;
+    const row = await prisma.spellImage.upsert({
+      where: { name },
+      create: { name, imageUrl, imagePrompt: imagePrompt || null },
+      update: { imageUrl, imagePrompt: imagePrompt || null },
+    });
+    return { name: row.name, imageUrl: row.imageUrl };
   });
 }

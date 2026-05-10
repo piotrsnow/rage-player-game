@@ -90,6 +90,7 @@ model User {
   topicHistory        TopicHistory[]
   llmCallLogs         LlmCallLog[]
   incidents           CampaignIncident[]
+  customSpells        CustomSpell[]
 }
 
 model RefreshToken {
@@ -1763,4 +1764,32 @@ model SystemMeta {
   key       String   @id
   value     String
   updatedAt DateTime @updatedAt @db.Timestamptz
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// Global spell catalog — player-invented spells visible to all campaigns
+// (characters still need to learn them individually).
+// ═══════════════════════════════════════════════════════════════════════
+
+model CustomSpell {
+  name        String   @id
+  school      String?
+  description String?
+  icon        String?
+  manaCost    Int      @default(2)
+  createdById String?  @db.Uuid
+  createdBy   User?    @relation(fields: [createdById], references: [id])
+  createdAt   DateTime @default(now()) @db.Timestamptz
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// Global spell images — once generated for a spell name, shared across
+// all players and campaigns.
+// ═══════════════════════════════════════════════════════════════════════
+
+model SpellImage {
+  name        String   @id
+  imageUrl    String
+  imagePrompt String?
+  updatedAt   DateTime @default(now()) @updatedAt @db.Timestamptz
 }

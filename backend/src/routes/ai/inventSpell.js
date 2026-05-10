@@ -345,6 +345,23 @@ export async function inventSpellRoutes(fastify) {
 
       if (isNew && codexUpdates) {
         try {
+          await prisma.customSpell.upsert({
+            where: { name: chosenSpellName },
+            create: {
+              name: chosenSpellName,
+              school: spellCard.school || null,
+              description: spellCard.description || null,
+              icon: spellCard.icon || null,
+              manaCost: spellCard.manaCost || 2,
+              createdById: userId,
+            },
+            update: {},
+          });
+        } catch (err) {
+          log.warn({ err: err?.message, campaignId, spell: chosenSpellName }, 'CustomSpell upsert failed (non-fatal)');
+        }
+
+        try {
           const currentRef = (campaign.currentLocationKind && campaign.currentLocationId)
             ? { kind: campaign.currentLocationKind, id: campaign.currentLocationId, name: campaign.currentLocationName }
             : null;
