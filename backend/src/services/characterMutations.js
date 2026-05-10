@@ -249,7 +249,14 @@ export function applyCharacterStateChanges(character, changes) {
     }
     next.spells = { ...spells, usageCounts: counts };
   }
-  if (changes.learnSpell) {
+  if (changes.learnCustomSpellId) {
+    const spells = { ...(next.spells || { known: [], usageCounts: {}, scrolls: [], customKnown: [] }) };
+    spells.customKnown = [...(spells.customKnown || [])];
+    if (!spells.customKnown.includes(changes.learnCustomSpellId)) {
+      spells.customKnown.push(changes.learnCustomSpellId);
+    }
+    next.spells = spells;
+  } else if (changes.learnSpell) {
     const spells = { ...(next.spells || { known: [], usageCounts: {}, scrolls: [] }) };
     if (!(spells.known || []).includes(changes.learnSpell)) {
       spells.known = [...(spells.known || []), changes.learnSpell];

@@ -54,12 +54,20 @@ export function buildCharacterBlock(character) {
   );
 
   if (character.spells?.known?.length) {
-    // Spell refs may be spellIds (e.g. "ogien_iskra") or legacy names.
-    // Show both the ref and the human name when distinguishable.
     lines.push(`Known spells: ${character.spells.known.map((ref) => {
       if (ref.includes('_')) return `${ref}`;
       return ref;
     }).join(', ')}`);
+  }
+  if (Array.isArray(character.customSpells) && character.customSpells.length > 0) {
+    const customLines = character.customSpells.map((cs) => {
+      const parts = [cs.name];
+      if (cs.school) parts.push(`[${cs.school}]`);
+      parts.push(`${cs.manaCost} mana`);
+      if (cs.description) parts.push(`— ${cs.description}`);
+      return parts.join(' ');
+    });
+    lines.push(`Custom spells: ${customLines.join(', ')}`);
   }
   if (character.inventory?.length) {
     const isUniqueItem = (i) => {

@@ -20,22 +20,40 @@ function normalizeSpellName(name) {
 }
 
 /**
+ * Find a custom spell by name (or UUID) in the character's hydrated
+ * customSpells array. Returns the entry or null.
+ */
+function findCustomSpellOnCharacter(character, spellInput) {
+  const customs = character?.customSpells;
+  if (!Array.isArray(customs) || customs.length === 0) return null;
+  const byId = customs.find((cs) => cs.id === spellInput);
+  if (byId) return byId;
+  const target = normalizeSpellName(spellInput);
+  return customs.find((cs) => normalizeSpellName(cs.name) === target) || null;
+}
+
+/**
  * Resolves a spell reference (ID or name) to the canonical entry in
- * character.spells.known. Tries exact match, then spellId↔name cross-lookup,
- * then case-insensitive name match.
+ * character.spells.known or customSpells[]. Tries exact match, then
+ * spellId↔name cross-lookup, then case-insensitive name match.
  */
 export function resolveKnownSpellNameFromCharacter(character, spellInput) {
   const known = character?.spells?.known;
-  if (!Array.isArray(known) || known.length === 0) return null;
-  if (known.includes(spellInput)) return spellInput;
-  const catalogEntry = findSpell(spellInput);
-  if (catalogEntry) {
-    const { spell } = catalogEntry;
-    if (known.includes(spell.id)) return spell.id;
-    if (known.includes(spell.name)) return spell.name;
+  if (Array.isArray(known) && known.length > 0) {
+    if (known.includes(spellInput)) return spellInput;
+    const catalogEntry = findSpell(spellInput);
+    if (catalogEntry) {
+      const { spell } = catalogEntry;
+      if (known.includes(spell.id)) return spell.id;
+      if (known.includes(spell.name)) return spell.name;
+    }
+    const target = normalizeSpellName(spellInput);
+    const match = known.find((n) => normalizeSpellName(n) === target);
+    if (match) return match;
   }
-  const target = normalizeSpellName(spellInput);
-  return known.find((n) => normalizeSpellName(n) === target) || null;
+  const custom = findCustomSpellOnCharacter(character, spellInput);
+  if (custom) return custom.name;
+  return null;
 }
 
 function spellIconOverrideForCharacter(character, spellName) {
@@ -66,6 +84,21 @@ export function resolveKnownSpellDisplay(spellName, character = null) {
       icon: overrideIcon || found.spell.icon || tree?.icon || 'auto_awesome',
       level: found.spell.level,
       isCustom: false,
+    };
+  }
+  const custom = character ? findCustomSpellOnCharacter(character, spellName) : null;
+  if (custom) {
+    return {
+      name: custom.name,
+      manaCost: custom.manaCost ?? CUSTOM_KNOWN_SPELL_MANA_COST,
+      treeId: null,
+      treeName: null,
+      school: custom.school || null,
+      description: custom.description || '',
+      icon: overrideIcon || custom.icon || 'auto_awesome',
+      level: null,
+      isCustom: true,
+      customSpellId: custom.id,
     };
   }
   return {
@@ -112,19 +145,23 @@ export function castSpell(character, spellInputName) {
     };
   }
 
-  if (mana.current < CUSTOM_KNOWN_SPELL_MANA_COST) {
-    return { success: false, error: `Za malo many (${mana.current}/${CUSTOM_KNOWN_SPELL_MANA_COST})` };
+  const custom = findCustomSpellOnCharacter(character, resolvedName);
+  const cost = custom?.manaCost ?? CUSTOM_KNOWN_SPELL_MANA_COST;
+
+  if (mana.current < cost) {
+    return { success: false, error: `Za malo many (${mana.current}/${cost})` };
   }
 
   return {
     success: true,
     spellName: resolvedName,
     treeId: null,
-    manaCost: CUSTOM_KNOWN_SPELL_MANA_COST,
-    manaChange: -CUSTOM_KNOWN_SPELL_MANA_COST,
+    manaCost: cost,
+    manaChange: -cost,
     spellUsage: { [resolvedName]: 1 },
-    description: '',
+    description: custom?.description || '',
     isCustomSpell: true,
+    customSpellId: custom?.id || null,
   };
 }
 
@@ -307,6 +344,16 @@ export function formatMagicStatusForPrompt(character) {
       } else {
         lines.push(`  ${spellRef} [${CUSTOM_KNOWN_SPELL_MANA_COST} many, uzycia: ${uses}] — (niestandardowe / wymyslone)`);
       }
+    }
+  }
+
+  const customs = character.customSpells;
+  if (Array.isArray(customs) && customs.length > 0) {
+    lines.push('Zaklecia niestandardowe:');
+    for (const cs of customs) {
+      const uses = spells.usageCounts[cs.name] || 0;
+      const desc = cs.description || '(brak opisu)';
+      lines.push(`  ${cs.name} [${cs.school || '?'}] [${cs.manaCost} many, uzycia: ${uses}] — ${desc}`);
     }
   }
 

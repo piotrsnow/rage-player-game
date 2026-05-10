@@ -287,6 +287,22 @@ export function clearStaleEquipped(snapshot) {
   return snapshot;
 }
 
+// ── Custom spell hydration ──
+
+async function hydrateCustomSpells(snapshot, client = prisma) {
+  const ids = snapshot?.spells?.customKnown;
+  if (!Array.isArray(ids) || ids.length === 0) {
+    snapshot.customSpells = [];
+    return;
+  }
+  const rows = await client.customSpell.findMany({
+    where: { id: { in: ids } },
+    select: { id: true, name: true, school: true, description: true, manaCost: true, icon: true },
+  });
+  const byId = new Map(rows.map((r) => [r.id, r]));
+  snapshot.customSpells = ids.map((id) => byId.get(id)).filter(Boolean);
+}
+
 // ── DB ops ──
 
 /**
@@ -295,7 +311,9 @@ export function clearStaleEquipped(snapshot) {
  */
 export async function loadCharacterSnapshot(where, client = prisma) {
   const row = await client.character.findFirst({ where, include: CHARACTER_INCLUDE });
-  return reconstructCharacterSnapshot(row);
+  const snapshot = reconstructCharacterSnapshot(row);
+  if (snapshot) await hydrateCustomSpells(snapshot, client);
+  return snapshot;
 }
 
 export async function loadCharacterSnapshotById(id, client = prisma) {

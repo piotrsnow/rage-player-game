@@ -46,6 +46,56 @@ import { detectMagicExposure } from './magicExposure.js';
 const log = childLogger({ module: 'sceneGenerator' });
 
 /**
+ * If AI's learnSpell is a custom (non-canonical) spell, upsert it to
+ * CustomSpell and route the UUID to customKnown[] on the character.
+ * Discriminator: a spell that already has a CustomSpell row is custom.
+ * A spell with no DB row but carrying metadata (school/description) is
+ * a new custom spell. Anything else is assumed canonical.
+ * Returns the (possibly mutated) character snapshot.
+ */
+async function upsertCustomSpellIfNeeded(character, stateChanges, { campaignId, userId }) {
+  const spellName = stateChanges.learnSpell;
+  if (!spellName || typeof spellName !== 'string') return character;
+
+  let existing = await prisma.customSpell.findUnique({
+    where: { name: spellName },
+    select: { id: true },
+  });
+
+  const hasMetadata = stateChanges.learnSpellSchool
+    || stateChanges.learnSpellDescription
+    || stateChanges.learnSpellManaCost;
+
+  if (!existing && !hasMetadata) return character;
+
+  if (!existing) {
+    existing = await prisma.customSpell.create({
+      data: {
+        name: spellName,
+        school: stateChanges.learnSpellSchool || null,
+        description: stateChanges.learnSpellDescription || null,
+        icon: stateChanges.learnSpellIcon || null,
+        manaCost: stateChanges.learnSpellManaCost || 2,
+        createdById: userId || null,
+        globallyActive: true,
+        originCampaignId: campaignId,
+      },
+      select: { id: true },
+    });
+    log.info({ campaignId, spell: spellName, id: existing.id }, 'Created new CustomSpell from scene learnSpell');
+  }
+
+  const spells = { ...(character.spells || { known: [], usageCounts: {}, scrolls: [], customKnown: [] }) };
+  spells.known = (spells.known || []).filter((n) => n !== spellName);
+  spells.customKnown = [...(spells.customKnown || [])];
+  if (!spells.customKnown.includes(existing.id)) {
+    spells.customKnown.push(existing.id);
+  }
+
+  return { ...character, spells };
+}
+
+/**
  * Generate a scene with SSE streaming. Emits events via the onEvent callback.
  * Events: { type: 'intent', data }, { type: 'context_ready' },
  * { type: 'chunk', text }, { type: 'complete', data }, { type: 'error', error }
@@ -610,6 +660,20 @@ export async function generateSceneStream(campaignId, playerAction, options = {}
         }
       } catch (err) {
         log.error({ err, characterId: activeCharacterId }, 'Failed to compute character state changes');
+      }
+    }
+
+    // 8c. Custom spell upsert — if AI learned a non-canonical spell,
+    // upsert it to CustomSpell and route to customKnown[] (UUID).
+    if (updatedCharacter && sceneResult.stateChanges?.learnSpell) {
+      try {
+        updatedCharacter = await upsertCustomSpellIfNeeded(
+          updatedCharacter,
+          sceneResult.stateChanges,
+          { campaignId, userId },
+        );
+      } catch (err) {
+        log.warn({ err: err?.message, spell: sceneResult.stateChanges.learnSpell }, 'Custom spell upsert failed (non-fatal)');
       }
     }
 

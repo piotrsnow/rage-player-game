@@ -324,11 +324,44 @@ export async function inventSpellRoutes(fastify) {
         });
       }
 
-      const stateChanges = {
-        learnSpell: chosenSpellName,
-        ...(analyzed.spellIcon ? { learnSpellIcon: analyzed.spellIcon } : {}),
-        ...(spellCard?.school ? { learnSpellSchool: spellCard.school } : {}),
-      };
+      let customSpellId = null;
+
+      if (isNew) {
+        try {
+          const row = await prisma.customSpell.upsert({
+            where: { name: chosenSpellName },
+            create: {
+              name: chosenSpellName,
+              school: spellCard.school || null,
+              description: spellCard.description || null,
+              icon: spellCard.icon || null,
+              manaCost: spellCard.manaCost || 2,
+              createdById: userId,
+              globallyActive: true,
+              originCampaignId: campaignId,
+            },
+            update: {},
+            select: { id: true },
+          });
+          customSpellId = row.id;
+        } catch (err) {
+          log.warn({ err: err?.message, campaignId, spell: chosenSpellName }, 'CustomSpell upsert failed — falling back to known[]');
+        }
+      } else {
+        const existing = await prisma.customSpell.findUnique({
+          where: { name: chosenSpellName },
+          select: { id: true },
+        }).catch(() => null);
+        if (existing) customSpellId = existing.id;
+      }
+
+      const stateChanges = customSpellId
+        ? { learnCustomSpellId: customSpellId }
+        : {
+          learnSpell: chosenSpellName,
+          ...(analyzed.spellIcon ? { learnSpellIcon: analyzed.spellIcon } : {}),
+          ...(spellCard?.school ? { learnSpellSchool: spellCard.school } : {}),
+        };
       const updatedCharacter = applyCharacterStateChanges(activeCharacter, stateChanges);
 
       try {
@@ -344,25 +377,6 @@ export async function inventSpellRoutes(fastify) {
       }
 
       if (isNew && codexUpdates) {
-        try {
-          await prisma.customSpell.upsert({
-            where: { name: chosenSpellName },
-            create: {
-              name: chosenSpellName,
-              school: spellCard.school || null,
-              description: spellCard.description || null,
-              icon: spellCard.icon || null,
-              manaCost: spellCard.manaCost || 2,
-              createdById: userId,
-              globallyActive: false,
-              originCampaignId: campaignId,
-            },
-            update: {},
-          });
-        } catch (err) {
-          log.warn({ err: err?.message, campaignId, spell: chosenSpellName }, 'CustomSpell upsert failed (non-fatal)');
-        }
-
         try {
           const currentRef = (campaign.currentLocationKind && campaign.currentLocationId)
             ? { kind: campaign.currentLocationKind, id: campaign.currentLocationId, name: campaign.currentLocationName }
@@ -389,6 +403,7 @@ export async function inventSpellRoutes(fastify) {
         luckySuccess: analyzed.luckySuccess,
         luckAttribute: analyzed.luckAttribute,
         spell: spellCard,
+        customSpellId: customSpellId || null,
         isNew,
         verdict: analyzed.verdict,
         narrativeComment: analyzed.narrativeComment,

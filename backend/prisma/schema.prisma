@@ -1804,7 +1804,8 @@ model SystemMeta {
 // ═══════════════════════════════════════════════════════════════════════
 
 model CustomSpell {
-  name        String   @id
+  id          String   @id @default(uuid(7)) @db.Uuid
+  name        String   @unique
   school      String?
   description String?
   icon        String?
@@ -1813,7 +1814,6 @@ model CustomSpell {
   createdBy   User?    @relation(fields: [createdById], references: [id])
   createdAt   DateTime @default(now()) @db.Timestamptz
 
-  // Entity registry lifecycle
   globallyActive   Boolean   @default(true)
   softDeletedAt    DateTime? @db.Timestamptz
   originCampaignId String?   @db.Uuid
