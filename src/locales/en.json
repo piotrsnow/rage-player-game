@@ -1355,6 +1355,7 @@
     "emptyJournal": "No journal entries yet",
     "role": "Role",
     "personality": "Personality",
+    "appearance": "Appearance",
     "location": "Location",
     "placedBy": "Placed by",
     "dead": "Dead",

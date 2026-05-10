@@ -510,6 +510,14 @@ model CampaignNPC {
   portraitUrl  String?
   spriteUrl    String?
 
+  // Stable physical description (PL, ~1 sentence) used as the canonical
+  // source for portrait generation and player-facing NPC modals.
+  appearance String?
+  // Way of speaking (PL, ~1 sentence): dialect, accent, characteristic
+  // turns of phrase. Injected into the dialog system prompt; NOT shown
+  // in player UI.
+  dialect String?
+
   embeddingText String?
   embedding     Unsupported("vector(1536)")?
 
@@ -1024,6 +1032,14 @@ model WorldNPC {
   level        Int     @default(1)
   stats        Json    @default("{}")
   spriteUrl    String?
+
+  // Stable physical description (PL, ~1 sentence) used as the canonical
+  // source for portrait generation and player-facing NPC modals.
+  appearance String?
+  // Way of speaking (PL, ~1 sentence): dialect, accent, characteristic
+  // turns of phrase. Injected into the dialog system prompt; NOT shown
+  // in player UI.
+  dialect String?
 
   embeddingText String?
   embedding     Unsupported("vector(1536)")?

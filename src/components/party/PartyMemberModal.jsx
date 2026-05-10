@@ -106,6 +106,14 @@ export default function PartyMemberModal({ member, onClose, onManageCompanion, d
         </div>
 
         <div className="sm:col-span-2 space-y-3">
+          {member.appearance && (
+            <div>
+              <div className="text-[10px] font-label uppercase tracking-widest text-on-surface-variant mb-1">
+                {t('worldState.appearance', 'Wygląd')}
+              </div>
+              <p className="text-[11px] text-on-surface leading-snug italic">{member.appearance}</p>
+            </div>
+          )}
           <div>
             <div className="text-[10px] font-label uppercase tracking-widest text-on-surface-variant mb-1">
               {t('party.attributes', 'Atrybuty')}

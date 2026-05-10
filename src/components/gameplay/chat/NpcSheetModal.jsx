@@ -116,6 +116,7 @@ export default function NpcSheetModal({ npc, onClose }) {
           <div className="text-sm text-on-surface-variant space-y-1.5">
             {npc.role && <div><span className="text-outline">{t('worldState.role')}:</span> {npc.role}</div>}
             {npc.personality && <div><span className="text-outline">{t('worldState.personality')}:</span> {npc.personality}</div>}
+            {npc.appearance && <div><span className="text-outline">{t('worldState.appearance')}:</span> {npc.appearance}</div>}
             {npc.lastLocation && <div><span className="text-outline">{t('worldState.location')}:</span> {npc.lastLocation}</div>}
             {npc.attitude && (
               <div>

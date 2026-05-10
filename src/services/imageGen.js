@@ -263,6 +263,7 @@ const _imageServiceImpl = {
     return { url, prompt };
   },
 
+<<<<<<< ours
   async generatePortrait(imageBlob, { species, age, gender, careerName, genre, subjectOverride = null } = {}, _apiKeyIgnored, strength = 0.45, provider = 'stability', imageStyle = 'painting', darkPalette = false, seriousness = null, sdModel = null, extras = {}, sdSeed = null) {
     // NPC pipeline supplies a fully-formed English subject from the LLM
     // prompt builder (see services/npcPortraitPromptLlm.js). When present we
@@ -286,6 +287,18 @@ const _imageServiceImpl = {
       ]);
       prompt = buildPortraitPrompt(enSpecies, gender, age, enCareerName, genre, provider, imageStyle, Boolean(imageBlob), darkPalette, seriousness, extras, sdModel);
     }
+=======
+  async generatePortrait(imageBlob, { species, age, gender, careerName, genre, appearanceText } = {}, _apiKeyIgnored, strength = 0.45, provider = 'stability', imageStyle = 'painting', darkPalette = false, seriousness = null, sdModel = null, extras = {}, sdSeed = null) {
+    // `careerName` is the only free-form user-content field here — species/gender
+    // are enums and genre comes from a fixed picker list. Translate if PL.
+    // `appearanceText` is the canonical NPC appearance (PL) — also free-form,
+    // also translated. When present it acts as the authoritative description
+    // so retries/regenerations stay visually consistent.
+    const enCareerName = await ensureEnglish(careerName);
+    const enAppearance = appearanceText ? await ensureEnglish(appearanceText) : null;
+    const enrichedExtras = enAppearance ? { ...extras, appearance: enAppearance } : extras;
+    const prompt = buildPortraitPrompt(species, gender, age, enCareerName, genre, provider, imageStyle, Boolean(imageBlob), darkPalette, seriousness, enrichedExtras, sdModel);
+>>>>>>> theirs
 
     let url;
     if (provider === 'dalle') {
