@@ -27,7 +27,7 @@ export function coreRulesBlock() {
   return `## CORE RULES
 - Dice/skill checks: may be engine-resolved (see user prompt) or self-resolved using pre-rolled d50 values.
 - If engine-resolved: narrate the provided result. DO NOT recalculate.
-- If pre-rolled d50 values are available and action has genuine risk: pick the correct skill from PC Skills below (format: skill:level→ATTR:value). Calculate total = base + attribute_value + skill_level + creativityBonus. Compare vs difficulty threshold (adjusted by situational modifiers). If luckySuccess → auto-success. Unlisted skills = level 0; use Attributes line for base value.
+- If pre-rolled d50 values are available and action has genuine risk: pick the correct skill from PC Skills below (format: skill:level→ATTR:value). Calculate total = base + attribute_value + skill_level + creativityBonus + szczescie. Compare vs difficulty threshold (adjusted by situational modifiers). If luckySuccess → auto-success. Unlisted skills = level 0; use Attributes line for base value.
 - Include results in diceRolls array (max 3) — format in RESPONSE section.
 - Situational modifiers: for each roll you may add up to 4 modifiers reflecting observable scene conditions (darkness, rain, slippery ground, NPC suspicion, time pressure, injury, superior/inferior tools, cramped space, etc.). Each modifier: {reason: max 40 chars, value: -10 to +15}. Positive = harder, negative = easier. Do NOT duplicate what's already in character attributes/skills/momentum — modifiers are ONLY for external circumstances. Backend clamps the total modifier sum to -15..+20.
 - Margin scaling: lucky success=fortunate twist, margin 15+=decisive success, margin 0-14=success (low margin may add complication), margin -1 to -14=failure with opportunity, margin≤-15=hard fail+consequence.
@@ -36,9 +36,17 @@ export function coreRulesBlock() {
 - Currency: 1GC=10SS=100CP. stateChanges.moneyChange for purchase costs (negative deltas). For income/loot use stateChanges.rewards with type:'money'. Engine validates affordability.
 - Character XP is NOT awarded per scene. It cascades automatically from skill level-ups and from completed quest rewards (quest.reward.xp). Do not emit stateChanges.xp.
 - The world is grim and perilous. Death is real. Consequences are lasting.
-- creativityBonus (TOP-LEVEL, int 0-10): ONLY for player_input_kind=custom (suggested/auto=ALWAYS 0).
-  0=none | 1-3=detail/environment use | 4-6=clever tactic | 7-9=brilliant combo | 10=genius.
-  Quality > length. Score creativityBonus BEFORE resolving any dice in this scene, then ADD it to every skill-check total (both engine-resolved and self-resolved). Narrate success/failure based on the total WITH creativity already included.`;
+- creativityBonus (TOP-LEVEL, int 0-20): ONLY for player_input_kind=custom (suggested/auto=ALWAYS 0).
+  Reward players who INVEST in describing HOW they act — tactical thinking, environment use, character voice, in-world logic.
+  0 = blank / single generic word ("atakuję", "idę").
+  1-4 = minimal effort — short sentence, no tactical or narrative detail.
+  5-8 = solid — uses environment, names a specific approach, or shows character personality.
+  9-13 = creative — combines multiple elements (skill+environment, bluff+knowledge, tactical positioning), references game state (inventory, NPC relationships, earlier events).
+  14-17 = brilliant — an approach the GM wouldn't have thought of, exploits the situation in a clever non-obvious way, or weaves multiple game systems together.
+  18-20 = masterful — a plan that makes the GM grin; tactically sound, narratively rich, and perfectly in-character. Should happen a few times per session for an engaged player.
+  BIAS UPWARD: if in doubt between two tiers, pick the higher one. The system REWARDS creativity — don't be stingy.
+  Quality > length, but detail > vagueness. "Rzucam piaskiem w oczy strażnika i próbuję go ogłuszyć rękojeścią" (specific, tactical, uses environment) = 9-13, not 5-8.
+  Score creativityBonus BEFORE resolving any dice in this scene, then ADD it to every skill-check total (both engine-resolved and self-resolved). Narrate success/failure based on the total WITH creativity already included.`;
 }
 
 export function scenePacingBlock() {

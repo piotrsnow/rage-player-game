@@ -156,6 +156,20 @@ export function getDistance(a, b) {
   return Math.max(Math.abs(pa.x - pb.x), Math.abs(pa.y - pb.y));
 }
 
+export function getOccupiedCells(combatants, excludeId = null) {
+  const occupied = new Set();
+  for (const c of combatants) {
+    if (c.isDefeated || c.id === excludeId) continue;
+    const p = normalizePos(c.position);
+    occupied.add(`${p.x}:${p.y}`);
+  }
+  return occupied;
+}
+
+export function isCellOccupied(combatants, x, y, excludeId = null) {
+  return getOccupiedCells(combatants, excludeId).has(`${x}:${y}`);
+}
+
 export function isInMeleeRange(a, b) {
   return getDistance(a, b) <= gameData.MELEE_RANGE;
 }
@@ -435,6 +449,193 @@ function getDualWieldPenalties(skillLevel) {
   return { mainPenalty, offPenalty };
 }
 
+// --- Pre-roll preview (pure, no dice) ---
+
+/**
+ * Compute all the numbers for an attack preview WITHOUT rolling dice.
+ * Returns a breakdown of actor bonuses, target threshold, and the minimum d50 roll needed.
+ */
+export function computeAttackPreview(combat, actorId, manoeuvreKey, targetId, options = {}) {
+  const actor = combat.combatants.find(c => c.id === actorId);
+  const target = targetId ? combat.combatants.find(c => c.id === targetId) : null;
+  const manoeuvre = gameData.manoeuvres[manoeuvreKey];
+  if (!actor || !manoeuvre) return null;
+
+  const customDescription = sanitizeCombatDescription(options.customDescription);
+
+  // Flee
+  if (manoeuvre.modifiers.flee) {
+    const zrecznosc = getDefenseAttribute(actor);
+    const skillLevel = getCombatSkillLevel(actor, 'Atletyka');
+    const mods = computeEffectiveMods(actor.activeEffects);
+    const effectBonus = Object.values(mods.attributeMods).reduce((s, v) => s + v, 0) + mods.testMod;
+    const luck = getLuck(actor);
+    const baseThreshold = DIFFICULTY_THRESHOLDS.medium;
+
+    const totalBonus = zrecznosc + effectBonus + skillLevel + luck;
+    const minRoll = Math.max(1, baseThreshold - totalBonus);
+
+    return {
+      type: 'flee',
+      actor: {
+        name: actor.name, attributeKey: 'zrecznosc', attributeValue: zrecznosc,
+        skillName: 'Atletyka', skillLevel, effectBonus, creativityBonus: 0, luckChance: luck,
+      },
+      target: null,
+      threshold: { base: baseThreshold, final: baseThreshold, modifiers: [] },
+      bonuses: {
+        total: totalBonus,
+        modifiers: _buildBonusModifiers({ attributeValue: zrecznosc, attributeKey: 'zrecznosc', skillName: 'Atletyka', skillLevel, effectBonus, creativityBonus: 0, luck }),
+      },
+      minRoll,
+      sureHit: false,
+      terrainTile: null,
+      weaponName: null,
+    };
+  }
+
+  // Shove
+  if (manoeuvre.modifiers.shove && target) {
+    const actorStr = getAttackAttribute(actor);
+    const targetTough = getToughness(target);
+    const skillLevel = getCombatSkillLevel(actor, 'Walka bronia jednoręczna');
+    const mods = computeEffectiveMods(actor.activeEffects);
+    const effectBonus = Object.values(mods.attributeMods).reduce((s, v) => s + v, 0) + mods.testMod;
+    const luck = getLuck(actor);
+    const baseThreshold = DIFFICULTY_THRESHOLDS.easy;
+    const finalThreshold = baseThreshold + targetTough;
+
+    const totalBonus = actorStr + effectBonus + skillLevel + luck;
+    const minRoll = Math.max(1, finalThreshold - totalBonus);
+
+    return {
+      type: 'shove',
+      actor: {
+        name: actor.name, attributeKey: 'sila', attributeValue: actorStr,
+        skillName: 'Walka bronia jednoręczna', skillLevel, effectBonus, creativityBonus: 0, luckChance: luck,
+      },
+      target: {
+        name: target.name, attributeKey: 'wytrzymalosc', defenseValue: targetTough,
+        defenseSkillName: null, defenseSkillLevel: 0, defendBonus: 0, dodging: false,
+      },
+      threshold: {
+        base: baseThreshold, final: finalThreshold,
+        modifiers: [{ label: 'Wytrzymałość celu', value: targetTough }],
+      },
+      bonuses: {
+        total: totalBonus,
+        modifiers: _buildBonusModifiers({ attributeValue: actorStr, attributeKey: 'sila', skillName: 'Walka bronia jednoręczna', skillLevel, effectBonus, creativityBonus: 0, luck }),
+      },
+      minRoll,
+      sureHit: false,
+      terrainTile: null,
+      weaponName: null,
+    };
+  }
+
+  // Magic
+  if (manoeuvre.type === 'magic' && target) {
+    const inteligencja = actor.attributes?.inteligencja || 10;
+    const mods = computeEffectiveMods(actor.activeEffects);
+    const effectBonus = Object.values(mods.attributeMods).reduce((s, v) => s + v, 0) + mods.testMod;
+    const luck = getLuck(actor);
+    const baseThreshold = DIFFICULTY_THRESHOLDS.medium;
+
+    const totalBonus = inteligencja + effectBonus + luck;
+    const minRoll = Math.max(1, baseThreshold - totalBonus);
+
+    return {
+      type: 'magic',
+      actor: {
+        name: actor.name, attributeKey: 'inteligencja', attributeValue: inteligencja,
+        skillName: null, skillLevel: 0, effectBonus, creativityBonus: 0, luckChance: luck,
+      },
+      target: {
+        name: target.name, attributeKey: null, defenseValue: 0,
+        defenseSkillName: null, defenseSkillLevel: 0, defendBonus: 0, dodging: false,
+      },
+      threshold: { base: baseThreshold, final: baseThreshold, modifiers: [] },
+      bonuses: {
+        total: totalBonus,
+        modifiers: _buildBonusModifiers({ attributeValue: inteligencja, attributeKey: 'inteligencja', skillName: null, skillLevel: 0, effectBonus, creativityBonus: 0, luck }),
+      },
+      minRoll,
+      sureHit: false,
+      terrainTile: null,
+      weaponName: null,
+    };
+  }
+
+  // Offensive (attack, charge, feint, rangedAttack)
+  if (manoeuvre.type === 'offensive' && target) {
+    const isRanged = manoeuvre.skill?.startsWith('Ranged');
+    const attackAttr = isRanged ? getDefenseAttribute(actor) : getAttackAttribute(actor);
+    const attackAttrKey = isRanged ? 'zrecznosc' : 'sila';
+    const attackSkillName = isRanged ? 'Strzelectwo' : 'Walka bronia jednoręczna';
+    const attackSkillLevel = getCombatSkillLevel(actor, attackSkillName);
+    const creativityBonus = getCombatCreativityBonus(customDescription);
+
+    const defendBonus = target.conditions.includes('defending') ? 10 : 0;
+    const dodging = target.conditions.includes('dodging');
+    const defenseAttr = getDefenseAttribute(target);
+    const dodgePenalty = getArmourDodgePenalty(target) + (getShieldDataWithRarity(target)?.shield?.dodgePenalty ?? 0);
+    const defenseSkillLevel = dodging ? Math.max(0, getCombatSkillLevel(target, 'Uniki') + dodgePenalty) : 0;
+    const baseThreshold = DIFFICULTY_THRESHOLDS.medium;
+    const finalThreshold = baseThreshold + defendBonus + defenseAttr + defenseSkillLevel;
+
+    const actorPos = normalizePos(actor.position);
+    const actorTile = getTileAt(combat.terrainTiles, actorPos.x, actorPos.y);
+    const isSureHit = actorTile?.type === 'sureHit';
+
+    const mods = computeEffectiveMods(actor.activeEffects);
+    const effectBonus = Object.values(mods.attributeMods).reduce((s, v) => s + v, 0) + mods.testMod;
+    const luck = getLuck(actor);
+
+    const totalBonus = attackAttr + effectBonus + attackSkillLevel + creativityBonus + luck;
+    const minRoll = isSureHit ? 0 : Math.max(1, finalThreshold - totalBonus);
+
+    const mainWeapon = getMainWeapon(actor);
+
+    const thresholdModifiers = [];
+    if (defenseAttr > 0) thresholdModifiers.push({ label: 'Zręczność celu', value: defenseAttr });
+    if (defenseSkillLevel > 0) thresholdModifiers.push({ label: 'Uniki celu', value: defenseSkillLevel });
+    if (defendBonus > 0) thresholdModifiers.push({ label: 'Premia obrony', value: defendBonus });
+
+    return {
+      type: 'offensive',
+      actor: {
+        name: actor.name, attributeKey: attackAttrKey, attributeValue: attackAttr,
+        skillName: attackSkillName, skillLevel: attackSkillLevel, effectBonus, creativityBonus, luckChance: luck,
+      },
+      target: {
+        name: target.name, attributeKey: 'zrecznosc', defenseValue: defenseAttr,
+        defenseSkillName: 'Uniki', defenseSkillLevel, defendBonus, dodging,
+      },
+      threshold: { base: baseThreshold, final: finalThreshold, modifiers: thresholdModifiers },
+      bonuses: {
+        total: totalBonus,
+        modifiers: _buildBonusModifiers({ attributeValue: attackAttr, attributeKey: attackAttrKey, skillName: attackSkillName, skillLevel: attackSkillLevel, effectBonus, creativityBonus, luck }),
+      },
+      minRoll,
+      sureHit: isSureHit,
+      terrainTile: actorTile?.type || null,
+      weaponName: mainWeapon,
+    };
+  }
+
+  return null;
+}
+
+function _buildBonusModifiers({ attributeValue, attributeKey, skillName, skillLevel, effectBonus, creativityBonus, luck }) {
+  const mods = [];
+  if (attributeValue) mods.push({ label: attributeKey, value: attributeValue, color: 'text-purple-300' });
+  if (skillName && skillLevel) mods.push({ label: skillName, value: skillLevel, color: 'text-emerald-300' });
+  if (effectBonus) mods.push({ label: 'effects', value: effectBonus, color: effectBonus > 0 ? 'text-cyan-300' : 'text-rose-300' });
+  if (creativityBonus) mods.push({ label: 'creativity', value: creativityBonus, color: 'text-amber-300' });
+  if (luck) mods.push({ label: 'luck', value: luck, color: 'text-yellow-300' });
+  return mods;
+}
+
 // --- Combat state creation ---
 
 function createCombatantFromCharacter(character, id, type) {
@@ -541,6 +742,10 @@ export function moveCombatant(combat, actorId, targetPosition) {
   const destTile = getTileAt(state.terrainTiles, target.x, target.y);
   const freezeMultiplier = destTile?.type === 'freeze' ? 2 : 1;
 
+  if (isCellOccupied(state.combatants, target.x, target.y, actorId)) {
+    return { combat: state, moved: false };
+  }
+
   const dist = Math.max(Math.abs(target.x - cur.x), Math.abs(target.y - cur.y));
   const moveCost = dist * freezeMultiplier;
   const moveMods = computeEffectiveMods(actor.activeEffects);
@@ -563,10 +768,7 @@ export function moveCombatant(combat, actorId, targetPosition) {
 
   // Teleport tile: warp to a random empty cell
   if (destTile?.type === 'teleport') {
-    const occupiedCells = new Set(state.combatants.map(c => {
-      const p = normalizePos(c.position);
-      return `${p.x}:${p.y}`;
-    }));
+    const occupiedCells = getOccupiedCells(state.combatants, actorId);
     const tileCells = new Set(state.terrainTiles.filter(t => !t.consumed).map(t => `${t.x}:${t.y}`));
     const emptyCells = [];
     for (let x = 0; x < W; x++) {
@@ -1282,26 +1484,32 @@ export function resolveEnemyTurns(combat) {
             const W = gameData.BATTLEFIELD_WIDTH;
             const H = gameData.BATTLEFIELD_HEIGHT;
             let nx = cp.x, ny = cp.y;
+            const enemyOccupied = getOccupiedCells(state.combatants, current.id);
             for (let step = 0; step < moveDist; step++) {
               const dx = tp.x - nx;
               const dy = tp.y - ny;
               if (dx === 0 && dy === 0) break;
               const sx = dx === 0 ? 0 : (dx > 0 ? 1 : -1);
               const sy = dy === 0 ? 0 : (dy > 0 ? 1 : -1);
-              // Try direct step; if hazardous, try axis-only alternatives
               const directScore = scoreTileAt(state.terrainTiles, nx + sx, ny + sy);
               let bx = sx, by = sy;
-              if (directScore < 0 && (sx !== 0 || sy !== 0)) {
+              if (enemyOccupied.has(`${nx + bx}:${ny + by}`) || (directScore < 0 && (sx !== 0 || sy !== 0))) {
                 const altMoves = [];
                 if (sx !== 0) altMoves.push({ ax: sx, ay: 0 });
                 if (sy !== 0) altMoves.push({ ax: 0, ay: sy });
+                let found = false;
                 for (const { ax, ay } of altMoves) {
-                  const alt = scoreTileAt(state.terrainTiles, nx + ax, ny + ay);
-                  if (alt > directScore) { bx = ax; by = ay; break; }
+                  if (!enemyOccupied.has(`${nx + ax}:${ny + ay}`)) {
+                    const alt = scoreTileAt(state.terrainTiles, nx + ax, ny + ay);
+                    if (alt >= 0) { bx = ax; by = ay; found = true; break; }
+                  }
                 }
+                if (!found && enemyOccupied.has(`${nx + bx}:${ny + by}`)) break;
               }
               nx += bx;
               ny += by;
+              enemyOccupied.delete(`${cp.x}:${cp.y}`);
+              enemyOccupied.add(`${nx}:${ny}`);
             }
             current.position = { x: Math.max(0, Math.min(W - 1, nx)), y: Math.max(0, Math.min(H - 1, ny)) };
             current.movementUsed = (current.movementUsed || 0) + moveDist;

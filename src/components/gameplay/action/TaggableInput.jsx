@@ -106,6 +106,16 @@ const TaggableInput = forwardRef(function TaggableInput(
     if (!suppressSyncRef.current) return;
     suppressSyncRef.current = false;
     renderSegmentsToDOM(el, segments);
+    requestAnimationFrame(() => {
+      if (document.activeElement !== el && !el.contains(document.activeElement)) return;
+      const sel = window.getSelection();
+      if (!sel) return;
+      const range = document.createRange();
+      range.selectNodeContents(el);
+      range.collapse(false);
+      sel.removeAllRanges();
+      sel.addRange(range);
+    });
   }, [segments]);
 
   // ----- read DOM back to segments (on input) -----
@@ -469,6 +479,10 @@ function renderSegmentsToDOM(el, segments) {
     } else if (seg.type === 'tag') {
       el.appendChild(buildChipNode(seg.tag));
     }
+  }
+  const last = el.lastChild;
+  if (!last || last.nodeType !== Node.TEXT_NODE) {
+    el.appendChild(document.createTextNode(''));
   }
 }
 

@@ -39,12 +39,21 @@ export async function handleCombatManoeuvre(ctx, session, msg) {
   if (!manRoom) throw new Error('Room not found');
   if (!manRoom.gameState?.combat?.active) throw new Error('No active combat');
 
+  const safeExtra = {};
+  if (msg.extraOpts && typeof msg.extraOpts === 'object') {
+    if (typeof msg.extraOpts.spellName === 'string') safeExtra.spellName = msg.extraOpts.spellName;
+    if (msg.extraOpts.pushTarget && typeof msg.extraOpts.pushTarget === 'object') {
+      safeExtra.pushTarget = { x: Number(msg.extraOpts.pushTarget.x), y: Number(msg.extraOpts.pushTarget.y) };
+    }
+  }
+
   sendTo(manRoom, manRoom.hostId, {
     type: 'COMBAT_MANOEUVRE',
     fromOdId: session.odId,
     manoeuvre: msg.manoeuvre,
     targetId: msg.targetId,
     customDescription: msg.customDescription,
+    extraOpts: safeExtra,
   });
 }
 

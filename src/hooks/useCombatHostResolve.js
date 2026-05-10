@@ -25,7 +25,7 @@ export function useCombatHostResolve({
       fromPlayerId,
       pending.manoeuvre,
       pending.targetId,
-      { customDescription: pending.customDescription ?? '' },
+      { customDescription: pending.customDescription ?? '', ...(pending.extraOpts || {}) },
     );
     addResultToLog(result);
     const finalCombat = advanceTurn(updatedCombat);

@@ -1,6 +1,11 @@
 import { useEffect, useRef } from 'react';
 import { useSettings } from '../contexts/SettingsContext';
-import { silencePeerDialogAudio } from '../utils/readAloudExclusive';
+import {
+  silencePeerDialogAudio,
+  beginDialogSession,
+  setDialogSessionState,
+  endDialogSession,
+} from '../utils/readAloudExclusive';
 
 /**
  * Auto-play narrator reaction to new chat messages.
@@ -56,9 +61,13 @@ export function useChatAutoNarration({ messages, narrator, autoPlay }) {
         const text = typeof raw === 'string' ? raw : '';
         if (!text.trim()) return false;
         synth.cancel();
+        const csid = beginDialogSession({ source: 'autoplay-synth', messageId: latestId });
         const utter = new window.SpeechSynthesisUtterance(text);
         utter.lang = settings.language || 'pl';
         utter.rate = Math.max(0.7, Math.min(1.2, (settings.dialogueSpeed || 100) / 100));
+        setDialogSessionState(csid, 'playing');
+        utter.onend = () => endDialogSession(csid);
+        utter.onerror = () => endDialogSession(csid);
         synth.speak(utter);
         return true;
       } catch {

@@ -228,6 +228,10 @@ export function useSceneGeneration({ ensureMissingInventoryImages, ensureMissing
           scenePacing: result.scenePacing || 'exploration',
         };
 
+        if (result.creativityBonus > 0) {
+          dispatch({ type: 'ADD_CHAT_MESSAGE', payload: { id: `msg_${Date.now()}_creativity`, role: 'system', subtype: 'creativity_score', content: t('gameplay.creativityScoreChat', { bonus: result.creativityBonus }), creativityBonus: result.creativityBonus, timestamp: Date.now() } });
+        }
+
         const { effectiveDiceRolls } = stream.processServerDiceRolls(result, resolved);
 
         if (effectiveDiceRolls.length > 0) {
@@ -262,12 +266,12 @@ export function useSceneGeneration({ ensureMissingInventoryImages, ensureMissing
         // Early image resolve
         if (earlyImagePromise) {
           const capturedSceneId = sceneId;
+          const capturedSceneIndex = serverSceneIndex ?? state.scenes.length - 1;
           earlyImagePromise.then((imageUrl) => {
             if (imageUrl) {
               dispatch({ type: 'UPDATE_SCENE_IMAGE', payload: { sceneId: capturedSceneId, image: imageUrl } });
               autoSave();
-              const idx = state.scenes.findIndex((s) => s.id === capturedSceneId);
-              if (idx >= 0) storage.saveSceneImageUpdate(state.campaign?.backendId, idx, { imageUrl });
+              if (capturedSceneIndex >= 0) storage.saveSceneImageUpdate(state.campaign?.backendId, capturedSceneIndex, { imageUrl });
             }
             dispatch({ type: 'SET_GENERATING_IMAGE', payload: false });
           });
@@ -349,8 +353,8 @@ export function useSceneGeneration({ ensureMissingInventoryImages, ensureMissing
             );
             dispatch({ type: 'UPDATE_SCENE_IMAGE', payload: { sceneId, image: imageUrl, fullImagePrompt } });
             autoSave();
-            const idx = state.scenes.findIndex((s) => s.id === sceneId);
-            if (idx >= 0) storage.saveSceneImageUpdate(state.campaign?.backendId, idx, { imageUrl, fullImagePrompt });
+            const deferredIdx = serverSceneIndex ?? state.scenes.length - 1;
+            if (deferredIdx >= 0) storage.saveSceneImageUpdate(state.campaign?.backendId, deferredIdx, { imageUrl, fullImagePrompt });
           } catch (imgErr) {
             console.warn('Image generation failed:', imgErr.message);
           } finally {

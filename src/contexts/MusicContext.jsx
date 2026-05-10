@@ -3,6 +3,7 @@ import { useLocation } from 'react-router-dom';
 import { useSettings } from './SettingsContext';
 import { useGameSlice } from '../stores/gameSelectors';
 import { useLocalMusic } from '../hooks/useLocalMusic';
+import { useDialogAudioSnapshot } from '../hooks/useDialogAudioSnapshot';
 
 const GENRE_MUSIC_FOLDER = { 'Sci-Fi': 'scifi' };
 
@@ -14,7 +15,9 @@ export function MusicProvider({ children }) {
   const { settings, updateSettings } = useSettings();
   const campaignGenre = useGameSlice((s) => s.campaign?.genre);
 
-  const [narratorState, setNarratorState] = useState(null);
+  const dialogSnapshot = useDialogAudioSnapshot();
+  const dialogAudioState = dialogSnapshot.state !== 'idle' ? dialogSnapshot.state : null;
+
   const [suppressLobbyMusicForIntroVideo, setSuppressLobbyMusicForIntroVideo] = useState(false);
   const [pendingCampaignGenre, setPendingCampaignGenre] = useState(null);
 
@@ -30,7 +33,7 @@ export function MusicProvider({ children }) {
     active: !isCampaignActive,
     silenced: suppressLobbyMusicForIntroVideo,
   });
-  const campaign = useLocalMusic(isCampaignActive ? narratorState : null, { folder: campaignMusicFolder, active: isCampaignActive });
+  const campaign = useLocalMusic(isCampaignActive ? dialogAudioState : null, { folder: campaignMusicFolder, active: isCampaignActive });
 
   useEffect(() => {
     const wasCampaignActive = prevIsCampaignActiveRef.current;
@@ -44,10 +47,6 @@ export function MusicProvider({ children }) {
       if (ambient.hasMusic) ambient.resume();
     }
   }, [isCampaignActive]);
-
-  useEffect(() => {
-    if (!isGameplay) setNarratorState(null);
-  }, [isGameplay]);
 
   const active = isCampaignActive ? campaign : ambient;
 
@@ -76,7 +75,6 @@ export function MusicProvider({ children }) {
         togglePlayPause,
         skip,
         setVolume,
-        setNarratorState,
         ambient,
         campaign,
         setSuppressLobbyMusicForIntroVideo,

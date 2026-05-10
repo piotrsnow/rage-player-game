@@ -138,6 +138,8 @@ const defaultSettings = {
   effectIntensity: 'medium',
   sfxEnabled: true,
   sfxVolume: 70,
+  combatAudioMix: 'hybrid',
+  generatedSfxVolume: 60,
   dialogueVolume: 80,
   musicVolume: 40,
   localMusicEnabled: true,

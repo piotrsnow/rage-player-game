@@ -26,13 +26,56 @@ export function SfxSection({ settings, updateSettings }) {
       </div>
 
       {settings.sfxEnabled && (
-        <Slider
-          label={t('settings.sfxVolume')}
-          description={t('settings.sfxVolumeDesc')}
-          value={settings.sfxVolume ?? 70}
-          onChange={(v) => updateSettings({ sfxVolume: v })}
-          displayValue={`${settings.sfxVolume ?? 70}%`}
-        />
+        <>
+          <Slider
+            label={t('settings.sfxVolume')}
+            description={t('settings.sfxVolumeDesc')}
+            value={settings.sfxVolume ?? 70}
+            onChange={(v) => updateSettings({ sfxVolume: v })}
+            displayValue={`${settings.sfxVolume ?? 70}%`}
+          />
+
+          <div className="mt-4 p-4 bg-surface-container-high/40 rounded-sm border-b border-outline-variant/15">
+            <p className="font-headline text-tertiary text-sm mb-1">
+              {t('settings.combatAudioMix', 'Tryb dźwięku walki')}
+            </p>
+            <p className="text-[10px] text-on-surface-variant font-label uppercase tracking-widest mb-3">
+              {t('settings.combatAudioMixDesc', 'Klasyczne sample, syntezator, lub mix obu')}
+            </p>
+            <div className="flex gap-2">
+              {[
+                { value: 'classic', label: t('settings.audioMixClassic', 'Klasyczny') },
+                { value: 'hybrid', label: t('settings.audioMixHybrid', 'Hybrydowy') },
+                { value: 'generated', label: t('settings.audioMixGenerated', 'Syntezator') },
+              ].map(({ value, label }) => (
+                <button
+                  key={value}
+                  onClick={() => updateSettings({ combatAudioMix: value })}
+                  className={`
+                    px-3 py-1.5 rounded text-xs font-medium border transition-colors
+                    ${(settings.combatAudioMix || 'hybrid') === value
+                      ? 'bg-tertiary/20 border-tertiary/40 text-tertiary'
+                      : 'bg-surface-container/40 border-outline-variant/15 text-on-surface-variant hover:bg-surface-container/60'}
+                  `}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {(settings.combatAudioMix || 'hybrid') !== 'classic' && (
+            <div className="mt-4">
+              <Slider
+                label={t('settings.generatedSfxVolume', 'Głośność syntezatora')}
+                description={t('settings.generatedSfxVolumeDesc', 'Głośność warstwy generowanej runtime')}
+                value={settings.generatedSfxVolume ?? 60}
+                onChange={(v) => updateSettings({ generatedSfxVolume: v })}
+                displayValue={`${settings.generatedSfxVolume ?? 60}%`}
+              />
+            </div>
+          )}
+        </>
       )}
 
       <div className="mt-6">

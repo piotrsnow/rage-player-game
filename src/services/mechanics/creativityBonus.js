@@ -17,11 +17,11 @@ export function calculateCreativityBonus(text, keywords, max = CREATIVITY_BONUS_
   const uniqueWords = new Set(words);
   const keywordHits = keywords.filter((kw) => normalized.includes(kw)).length;
 
-  let bonus = 2;
-  if (words.length >= 6) bonus += 2;
-  if (words.length >= 10) bonus += 2;
-  if (keywordHits >= 2) bonus += 2;
-  if (words.length >= 14 && uniqueWords.size >= 10) bonus += 2;
+  let bonus = 3;
+  if (words.length >= 6) bonus += 3;
+  if (words.length >= 10) bonus += 4;
+  if (keywordHits >= 2) bonus += 4;
+  if (words.length >= 14 && uniqueWords.size >= 10) bonus += 4;
 
   return Math.min(bonus, max);
 }

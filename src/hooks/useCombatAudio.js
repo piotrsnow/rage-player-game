@@ -18,6 +18,7 @@ import {
   getCombatResultCategory,
   getCombatSfxVariants,
 } from '../services/combatAudio';
+import { playSynthSfx, mapResultToSynthCategory, setGeneratedSfxVolume } from '../services/combatAudioSynth';
 
 function getVolume(level) {
   return Math.max(0, Math.min(1, (level ?? 70) / 100));
@@ -142,17 +143,29 @@ export function useCombatAudio(combat) {
     playUrl(url);
   }, [ensureCategory, playUrl]);
 
+  const audioMixMode = settings.combatAudioMix || 'hybrid';
+  const genVolume = settings.generatedSfxVolume ?? 60;
+
+  useEffect(() => {
+    const db = genVolume <= 0 ? -60 : -30 + (genVolume / 100) * 30;
+    setGeneratedSfxVolume(db);
+  }, [genVolume]);
+
   const playForResult = useCallback((result) => {
     if (!enabled || !result) return;
 
-    const actionCategory = getCombatResultCategory(result);
-    const reactionCategory = getCombatReactionCategory(result);
-
-    void playCategory(actionCategory);
-    if (reactionCategory) {
-      void playCategory(reactionCategory, 120);
+    if (audioMixMode !== 'generated') {
+      const actionCategory = getCombatResultCategory(result);
+      const reactionCategory = getCombatReactionCategory(result);
+      void playCategory(actionCategory);
+      if (reactionCategory) void playCategory(reactionCategory, 120);
     }
-  }, [enabled, playCategory]);
+
+    if (audioMixMode !== 'classic') {
+      const synthCategory = mapResultToSynthCategory(result);
+      if (synthCategory) void playSynthSfx(synthCategory);
+    }
+  }, [enabled, playCategory, audioMixMode]);
 
   const getCombatantGender = useCallback((combatant) => {
     if (!combatant?.name) return null;

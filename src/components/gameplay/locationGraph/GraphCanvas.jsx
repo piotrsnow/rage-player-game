@@ -2,6 +2,7 @@ import { useMemo, useRef, useState, useCallback, useEffect } from 'react';
 import {
   forceDirectedLayout,
   geoProjectLayout,
+  directedGraphLayout,
   GRAPH_LAYOUT_W,
   GRAPH_LAYOUT_H,
   GRAPH_LAYOUT_PAD,
@@ -53,10 +54,13 @@ export default function GraphCanvas({
     const force = () => forceDirectedLayout(nodeNames, edgeLinks, {
       width: LAYOUT_W, height: LAYOUT_H, iterations: 150,
     });
+    const directed = () => directedGraphLayout(nodes, edges, {
+      width: LAYOUT_W, height: LAYOUT_H, pad: GRAPH_LAYOUT_PAD,
+    });
     if (layoutBasis === 'force') return force();
     const geo = geoProjectLayout(nodes, { width: LAYOUT_W, height: LAYOUT_H, pad: GRAPH_LAYOUT_PAD });
-    if (layoutBasis === 'geo') return geo ?? force();
-    return geo ?? force();
+    if (layoutBasis === 'geo') return geo ?? directed() ?? force();
+    return geo ?? directed() ?? force();
   }, [nodes, edges, layoutBasis]);
 
   const positions = useMemo(() => {

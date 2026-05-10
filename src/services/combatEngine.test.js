@@ -47,6 +47,9 @@ import {
   advanceTurn,
   advanceRound,
   getCurrentTurnCombatant,
+  moveCombatant,
+  isCellOccupied,
+  computeAttackPreview,
 } from './combatEngine.js';
 
 function makeCombatState({ actor = {}, target = {} } = {}) {
@@ -404,5 +407,271 @@ describe('resolveManoeuvre — charge validation', () => {
     const actor = updated.combatants.find(c => c.id === 'player');
     expect(actor.position.x).toBe(7);
     expect(actor.position.y).toBe(3);
+  });
+});
+
+describe('moveCombatant — occupancy block', () => {
+  it('blocks movement onto a cell occupied by a live combatant', () => {
+    const combat = makeCombatState({
+      actor: { position: { x: 2, y: 3 } },
+      target: { position: { x: 3, y: 3 } },
+    });
+    const { moved } = moveCombatant(combat, 'player', { x: 3, y: 3 });
+    expect(moved).toBe(false);
+  });
+
+  it('allows movement onto a cell occupied by a defeated combatant', () => {
+    const combat = makeCombatState({
+      actor: { position: { x: 2, y: 3 } },
+      target: { position: { x: 3, y: 3 }, isDefeated: true },
+    });
+    const { moved } = moveCombatant(combat, 'player', { x: 3, y: 3 });
+    expect(moved).toBe(true);
+  });
+
+  it('allows movement to an empty cell', () => {
+    const combat = makeCombatState({
+      actor: { position: { x: 2, y: 3 } },
+      target: { position: { x: 8, y: 3 } },
+    });
+    const { moved, distance } = moveCombatant(combat, 'player', { x: 4, y: 4 });
+    expect(moved).toBe(true);
+    expect(distance).toBe(2);
+  });
+});
+
+describe('isCellOccupied', () => {
+  it('returns true for a live combatant cell', () => {
+    const combatants = [
+      { id: 'a', position: { x: 3, y: 3 }, isDefeated: false },
+    ];
+    expect(isCellOccupied(combatants, 3, 3)).toBe(true);
+  });
+
+  it('returns false when excludeId matches', () => {
+    const combatants = [
+      { id: 'a', position: { x: 3, y: 3 }, isDefeated: false },
+    ];
+    expect(isCellOccupied(combatants, 3, 3, 'a')).toBe(false);
+  });
+});
+
+describe('resolveManoeuvre — extraOpts passthrough', () => {
+  it('passes spellName from extraOpts to magic resolution', () => {
+    vi.mocked(rollD50).mockReturnValue(10);
+    const combat = makeCombatState({
+      actor: {
+        position: { x: 2, y: 3 },
+        mana: { current: 10, max: 10 },
+        spells: { known: ['Ognista kula'], usageCounts: {}, scrolls: [] },
+      },
+      target: { position: { x: 3, y: 3 } },
+    });
+    const { result } = resolveManoeuvre(combat, 'player', 'magic', 'enemy_guard', {
+      spellName: 'Ognista kula',
+    });
+    expect(result.castBreakdown?.spellName).toBe('Ognista kula');
+  });
+
+  it('passes pushTarget from extraOpts to shove resolution', async () => {
+    vi.mocked(rollD50).mockReturnValue(5);
+    const combat = makeCombatState({
+      actor: { position: { x: 2, y: 3 }, attributes: { sila: 20, zrecznosc: 10, wytrzymalosc: 10, szczescie: 0 } },
+      target: { position: { x: 3, y: 3 } },
+    });
+    combat.combatants[0].skills = { 'Walka bronia jednoręczna': 10 };
+    const { gameData: gd } = await import('./gameDataService.js');
+    gd.manoeuvres.shove = { name: 'Shove', type: 'offensive', range: 'melee', modifiers: { shove: true }, closesDistance: false };
+    try {
+      const { result } = resolveManoeuvre(combat, 'player', 'shove', 'enemy_guard', {
+        pushTarget: { x: 4, y: 3 },
+      });
+      expect(['shoved', 'shove_failed', 'shove_blocked']).toContain(result.outcome);
+    } finally {
+      delete gd.manoeuvres.shove;
+    }
+  });
+});
+
+describe('computeAttackPreview', () => {
+  it('returns null for defensive manoeuvres', () => {
+    const combat = makeCombatState();
+    expect(computeAttackPreview(combat, 'player', 'defend', null)).toBeNull();
+    expect(computeAttackPreview(combat, 'player', 'dodge', null)).toBeNull();
+  });
+
+  it('computes offensive preview with correct minRoll', () => {
+    const combat = makeCombatState({
+      actor: {
+        attributes: { sila: 12, zrecznosc: 10, wytrzymalosc: 10, szczescie: 0 },
+        skills: { 'Walka bronia jednoręczna': 5 },
+        activeEffects: [],
+        position: { x: 2, y: 3 },
+      },
+      target: {
+        attributes: { sila: 10, zrecznosc: 8, wytrzymalosc: 10, szczescie: 0 },
+        conditions: [],
+        activeEffects: [],
+        position: { x: 3, y: 3 },
+      },
+    });
+
+    const preview = computeAttackPreview(combat, 'player', 'attack', 'enemy_guard');
+    expect(preview).not.toBeNull();
+    expect(preview.type).toBe('offensive');
+    expect(preview.actor.attributeValue).toBe(12);
+    expect(preview.actor.skillLevel).toBe(5);
+    expect(preview.actor.luckChance).toBe(0);
+
+    // threshold = medium(35) + defenseAttr(8) + defenseSkill(0) + defendBonus(0) = 43
+    expect(preview.threshold.base).toBe(35);
+    expect(preview.threshold.final).toBe(43);
+
+    // totalBonus = sila(12) + skill(5) + effects(0) + creativity(0) + luck(0) = 17
+    expect(preview.bonuses.total).toBe(17);
+
+    // minRoll = max(1, 43 - 17) = 26
+    expect(preview.minRoll).toBe(26);
+    expect(preview.sureHit).toBe(false);
+  });
+
+  it('computes offensive preview with defending target', () => {
+    const combat = makeCombatState({
+      actor: {
+        attributes: { sila: 12, zrecznosc: 10, wytrzymalosc: 10, szczescie: 0 },
+        skills: { 'Walka bronia jednoręczna': 5 },
+        activeEffects: [],
+        position: { x: 2, y: 3 },
+      },
+      target: {
+        attributes: { sila: 10, zrecznosc: 8, wytrzymalosc: 10, szczescie: 0 },
+        conditions: ['defending'],
+        activeEffects: [],
+        position: { x: 3, y: 3 },
+      },
+    });
+
+    const preview = computeAttackPreview(combat, 'player', 'attack', 'enemy_guard');
+    // threshold = 35 + 8 + 0 + 10(defend) = 53
+    expect(preview.threshold.final).toBe(53);
+    expect(preview.target.defendBonus).toBe(10);
+  });
+
+  it('computes flee preview', () => {
+    const combat = makeCombatState({
+      actor: {
+        attributes: { sila: 12, zrecznosc: 14, wytrzymalosc: 10, szczescie: 3 },
+        skills: { Atletyka: 4 },
+        activeEffects: [],
+      },
+    });
+
+    const preview = computeAttackPreview(combat, 'player', 'flee', null);
+    expect(preview).not.toBeNull();
+    expect(preview.type).toBe('flee');
+    // totalBonus = zrecznosc(14) + skill(4) + luck(3) = 21
+    expect(preview.bonuses.total).toBe(21);
+    // minRoll = max(1, 35 - 21) = 14
+    expect(preview.minRoll).toBe(14);
+    expect(preview.actor.luckChance).toBe(3);
+  });
+
+  it('computes magic preview', () => {
+    const combat = makeCombatState({
+      actor: {
+        attributes: { sila: 10, inteligencja: 16, zrecznosc: 10, wytrzymalosc: 10, szczescie: 0 },
+        activeEffects: [],
+      },
+    });
+
+    const preview = computeAttackPreview(combat, 'player', 'magic', 'enemy_guard');
+    expect(preview).not.toBeNull();
+    expect(preview.type).toBe('magic');
+    expect(preview.actor.attributeValue).toBe(16);
+    // totalBonus = inteligencja(16) + luck(0) = 16
+    expect(preview.bonuses.total).toBe(16);
+    // minRoll = max(1, 35 - 16) = 19
+    expect(preview.minRoll).toBe(19);
+  });
+
+  it('marks sureHit when on sureHit terrain tile', () => {
+    const combat = makeCombatState({
+      actor: {
+        attributes: { sila: 12, zrecznosc: 10, wytrzymalosc: 10, szczescie: 0 },
+        skills: { 'Walka bronia jednoręczna': 5 },
+        activeEffects: [],
+        position: { x: 2, y: 3 },
+      },
+      target: {
+        attributes: { sila: 10, zrecznosc: 8, wytrzymalosc: 10, szczescie: 0 },
+        conditions: [],
+        activeEffects: [],
+        position: { x: 3, y: 3 },
+      },
+    });
+    combat.terrainTiles = [{ x: 2, y: 3, type: 'sureHit', consumed: false }];
+
+    const preview = computeAttackPreview(combat, 'player', 'attack', 'enemy_guard');
+    expect(preview.sureHit).toBe(true);
+    expect(preview.minRoll).toBe(0);
+    expect(preview.terrainTile).toBe('sureHit');
+  });
+
+  it('includes luck in bonuses when szczescie > 0', () => {
+    const combat = makeCombatState({
+      actor: {
+        attributes: { sila: 12, zrecznosc: 10, wytrzymalosc: 10, szczescie: 7 },
+        skills: { 'Walka bronia jednoręczna': 5 },
+        activeEffects: [],
+        position: { x: 2, y: 3 },
+      },
+      target: {
+        attributes: { sila: 10, zrecznosc: 8, wytrzymalosc: 10, szczescie: 0 },
+        conditions: [],
+        activeEffects: [],
+        position: { x: 3, y: 3 },
+      },
+    });
+
+    const preview = computeAttackPreview(combat, 'player', 'attack', 'enemy_guard');
+    // totalBonus = sila(12) + skill(5) + luck(7) = 24
+    expect(preview.bonuses.total).toBe(24);
+    expect(preview.actor.luckChance).toBe(7);
+    // minRoll = max(1, 43 - 24) = 19
+    expect(preview.minRoll).toBe(19);
+  });
+
+  it('computes shove preview', async () => {
+    const { gameData: gd } = await import('./gameDataService.js');
+    gd.manoeuvres.shove = { name: 'Shove', type: 'offensive', range: 'melee', modifiers: { shove: true }, closesDistance: false };
+    try {
+      const combat = makeCombatState({
+        actor: {
+          attributes: { sila: 15, zrecznosc: 10, wytrzymalosc: 10, szczescie: 0 },
+          skills: { 'Walka bronia jednoręczna': 5 },
+          activeEffects: [],
+          position: { x: 2, y: 3 },
+        },
+        target: {
+          attributes: { sila: 10, zrecznosc: 8, wytrzymalosc: 12, szczescie: 0 },
+          conditions: [],
+          activeEffects: [],
+          position: { x: 3, y: 3 },
+        },
+      });
+
+      const preview = computeAttackPreview(combat, 'player', 'shove', 'enemy_guard');
+      expect(preview).not.toBeNull();
+      expect(preview.type).toBe('shove');
+      // threshold = easy(20) + target wytrzymalosc(12) = 32
+      expect(preview.threshold.base).toBe(20);
+      expect(preview.threshold.final).toBe(32);
+      // totalBonus = sila(15) + skill(5) = 20
+      expect(preview.bonuses.total).toBe(20);
+      // minRoll = max(1, 32 - 20) = 12
+      expect(preview.minRoll).toBe(12);
+    } finally {
+      delete gd.manoeuvres.shove;
+    }
   });
 });

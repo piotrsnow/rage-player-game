@@ -16,10 +16,21 @@ export default function AddNodeForm({ position, allNodes, onSubmit, onCancel }) 
     e.preventDefault();
     if (!name.trim()) return;
     const parent = allNodes.find((n) => n.id === parentId);
+    // Scale 1=kraj … 7=skrytka (see shared/domain/locationGraphLayout.js SCALE_STEP_KM)
     onSubmit({
       name: name.trim(),
       type,
-      scale: TYPE_OPTIONS.indexOf(type) >= 0 ? { settlement: 3, district: 4, site: 5, room: 6, point: 7, area: 2, region: 1, abstract: 5, dungeon: 5 }[type] : 5,
+      scale: TYPE_OPTIONS.indexOf(type) >= 0 ? {
+        region: 1,
+        area: 2,
+        settlement: 2,
+        district: 3,
+        site: 5,
+        room: 6,
+        point: 7,
+        abstract: 5,
+        dungeon: 5,
+      }[type] : 5,
       parentKind: parent?.kind || undefined,
       parentId: parent?.id || undefined,
     });

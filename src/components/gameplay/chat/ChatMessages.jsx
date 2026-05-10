@@ -220,6 +220,7 @@ export const PlayerMessage = memo(function PlayerMessage({ message, isMe }) {
 });
 
 const SUBTYPE_STYLES = {
+  creativity_score: { icon: 'emoji_objects',  color: 'text-amber-300',  line: 'to-amber-300/35' },
   item_gained:      { icon: 'inventory_2',   color: 'text-green-400',  line: 'to-green-400/30' },
   item_lost:        { icon: 'remove_circle', color: 'text-orange-400', line: 'to-orange-400/30' },
   damage:           { icon: 'heart_broken',  color: 'text-red-400',    line: 'to-red-400/30' },

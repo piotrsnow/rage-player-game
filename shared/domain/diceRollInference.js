@@ -52,15 +52,19 @@ const ATTRIBUTE_ALIASES = new Map([
   ['i', 'inteligencja'],
 ]);
 
-// RPGon skill → parent attribute mapping (31 canonical skills + backward-compat aliases)
+// RPGon skill → parent attribute mapping (40 canonical skills + backward-compat aliases)
 const SKILL_ATTRIBUTE_BASE = new Map([
-  // === Sila (5 skills) ===
+  // === Sila (7 skills) ===
   ['walkawrecz', 'sila'],
   ['walkabroniajdednorecna', 'sila'],
   ['walkabronijednorecna', 'sila'],
   ['walkabroniadwurecna', 'sila'],
   ['zastraszanie', 'sila'],
   ['atletyka', 'sila'],
+  ['prezeniesie', 'sila'],
+  ['prężeniesię', 'sila'],
+  ['wywazaniedrzwi', 'sila'],
+  ['wyważaniedrzwi', 'sila'],
   // Diacritical variants
   ['walkabroniąjednoręczną', 'sila'],
   ['walkabroniądwuręczną', 'sila'],
@@ -73,17 +77,20 @@ const SKILL_ATTRIBUTE_BASE = new Map([
   ['intimidate', 'sila'],
   ['athletics', 'sila'],
   ['climb', 'sila'],
+  ['flexing', 'sila'],
+  ['breakdoor', 'sila'],
   // Backward-compat: old skills → new canonical skills
   ['bijatyka', 'sila'],           // → Walka wrecz
   ['mocowanie', 'sila'],          // → Walka wrecz
   ['wspinaczka', 'sila'],         // → Atletyka
   ['dzwiganie', 'sila'],          // → Atletyka
-  ['plywanie', 'sila'],           // → Atletyka (was wytrzymalosc, now merged into Atletyka/sila)
-  ['pływanie', 'sila'],           // diacritical variant of plywanie
 
-  // === Zrecznosc (8 skills) ===
+  // === Zrecznosc (9 skills) ===
   ['strzelectwo', 'zrecznosc'],
   ['uniki', 'zrecznosc'],
+  ['walkadwiemabrońmi', 'zrecznosc'],
+  ['walkadwiemabronmi', 'zrecznosc'],
+  ['dualwield', 'zrecznosc'],
   ['akrobatyka', 'zrecznosc'],
   ['jezdziectwo', 'zrecznosc'],
   ['jeździectwo', 'zrecznosc'],
@@ -116,7 +123,7 @@ const SKILL_ATTRIBUTE_BASE = new Map([
   ['zonglerkaisztuczki', 'zrecznosc'], // → Akrobatyka (removed skill, closest match)
   ['żonglerkaisztuczki', 'zrecznosc'],
 
-  // === Charyzma (5 skills) ===
+  // === Charyzma (6 skills) ===
   ['perswazja', 'charyzma'],
   ['blef', 'charyzma'],
   ['handel', 'charyzma'],
@@ -124,6 +131,7 @@ const SKILL_ATTRIBUTE_BASE = new Map([
   ['przywództwo', 'charyzma'],
   ['wystepy', 'charyzma'],
   ['występy', 'charyzma'],
+  ['flirt', 'charyzma'],
   // English aliases
   ['persuade', 'charyzma'],
   ['persuasion', 'charyzma'],
@@ -135,6 +143,7 @@ const SKILL_ATTRIBUTE_BASE = new Map([
   ['entertain', 'charyzma'],
   ['perform', 'charyzma'],
   ['bribery', 'charyzma'],
+  ['flirting', 'charyzma'],
   // Backward-compat: old skills → new canonical skills
   ['targowanie', 'charyzma'],     // → Handel
   ['ocenianiewartosci', 'charyzma'], // → Handel
@@ -142,13 +151,13 @@ const SKILL_ATTRIBUTE_BASE = new Map([
   ['plotkowanie', 'charyzma'],    // → Wystepy
   ['etykieta', 'charyzma'],      // → Wystepy
   ['dowodzenie', 'charyzma'],    // → Przywodztwo
-  ['uwodzenie', 'charyzma'],     // → Blef
+  ['uwodzenie', 'charyzma'],     // → Flirt
   ['negocjacje', 'charyzma'],    // → Perswazja
   ['przekonywanietlumu', 'charyzma'], // → Perswazja
   ['przekonywanietłumu', 'charyzma'],
   ['gossip', 'charyzma'],
 
-  // === Inteligencja (8 skills) ===
+  // === Inteligencja (10 skills) ===
   ['wiedzaogolna', 'inteligencja'],
   ['wiedzaogólna', 'inteligencja'],
   ['wiedzaopotworach', 'inteligencja'],
@@ -160,6 +169,8 @@ const SKILL_ATTRIBUTE_BASE = new Map([
   ['spostrzegawczosc', 'inteligencja'],
   ['spostrzegawczość', 'inteligencja'],
   ['tropienie', 'inteligencja'],
+  ['nawigacja', 'inteligencja'],
+  ['taktyka', 'inteligencja'],
   // English aliases
   ['lore', 'inteligencja'],
   ['generalknowledge', 'inteligencja'],
@@ -173,25 +184,34 @@ const SKILL_ATTRIBUTE_BASE = new Map([
   ['track', 'inteligencja'],
   ['research', 'inteligencja'],
   ['evaluate', 'inteligencja'],
+  ['navigation', 'inteligencja'],
+  ['tactics', 'inteligencja'],
   // Backward-compat: old skills → new canonical skills
   ['sledztwo', 'inteligencja'],           // → Spostrzegawczosc
   ['śledztwo', 'inteligencja'],
   ['wydobywanieinformacji', 'inteligencja'], // → Spostrzegawczosc
-  ['strategia', 'inteligencja'],          // → Wiedza ogolna
-  ['taktyka', 'inteligencja'],            // → Wiedza ogolna
+  ['strategia', 'inteligencja'],          // → Taktyka
   ['czytanieipisanie', 'inteligencja'],   // → Wiedza ogolna
   ['wiedzaoreligiachiwierzeniach', 'inteligencja'], // → Wiedza ogolna
 
-  // === Wytrzymalosc (2 skills) ===
+  // === Wytrzymalosc (5 skills) ===
   ['przetrwanie', 'wytrzymalosc'],
   ['odpornosc', 'wytrzymalosc'],
   ['odporność', 'wytrzymalosc'],
+  ['piciealkoholu', 'wytrzymalosc'],
+  ['upartosc', 'wytrzymalosc'],
+  ['upartość', 'wytrzymalosc'],
+  ['plywanie', 'wytrzymalosc'],
+  ['pływanie', 'wytrzymalosc'],
   // English aliases
   ['survival', 'wytrzymalosc'],
   ['endurance', 'wytrzymalosc'],
   ['resilience', 'wytrzymalosc'],
   ['cool', 'wytrzymalosc'],
   ['swim', 'wytrzymalosc'],
+  ['swimming', 'wytrzymalosc'],
+  ['drinking', 'wytrzymalosc'],
+  ['stubbornness', 'wytrzymalosc'],
   // Backward-compat: old skills → new canonical skills
   ['odpornoscnabol', 'wytrzymalosc'],             // → Odpornosc
   ['odpornośćnaból', 'wytrzymalosc'],
@@ -203,16 +223,18 @@ const SKILL_ATTRIBUTE_BASE = new Map([
   ['marszdługodystansowy', 'wytrzymalosc'],
   ['odpornoscnaglodipragnienie', 'wytrzymalosc'], // → Przetrwanie
   ['odpornośćnagłódipragnienie', 'wytrzymalosc'],
-  ['hartducha', 'wytrzymalosc'],                  // → Odpornosc (removed skill, closest match)
+  ['hartducha', 'wytrzymalosc'],                  // → Upartosc
 
-  // === Szczescie (3 skills) ===
+  // === Szczescie (4 skills) ===
   ['fart', 'szczescie'],
   ['hazard', 'szczescie'],
   ['przeczucie', 'szczescie'],
+  ['modlitwa', 'szczescie'],
   // English aliases
   ['gamble', 'szczescie'],
   ['intuition', 'szczescie'],
   ['hunch', 'szczescie'],
+  ['prayer', 'szczescie'],
   // Backward-compat: old skills → new canonical skills
   ['uniklosu', 'szczescie'],         // → Przeczucie
   ['szukanieokazji', 'szczescie'],   // → Przeczucie

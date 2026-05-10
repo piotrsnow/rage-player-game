@@ -555,7 +555,7 @@ export default function CharacterPicker({
                   onPortraitReady={async (url) => {
                     try {
                       await persistSelectedCharacter({ portraitUrl: url || '' });
-                      onEditingSelectedPortraitChange(false);
+                      if (url) onEditingSelectedPortraitChange(false);
                     } catch {
                       // Keep the editor open so the user can retry.
                     }

@@ -1,6 +1,7 @@
-import { useState } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { EDGE_TYPES } from '../../../../shared/domain/locationGraph.js';
+import { defaultLengthKmBetweenScales } from '../../../../shared/domain/locationGraphLayout.js';
 
 const EDGE_TYPE_NAMES = Object.keys(EDGE_TYPES);
 
@@ -10,8 +11,19 @@ export default function AddEdgeFlow({ sourceNode, allNodes, onSubmit, onCancel }
   const { t } = useTranslation();
   const [targetId, setTargetId] = useState('');
   const [edgeType, setEdgeType] = useState('path_to');
+  const [directionDeg, setDirectionDeg] = useState('0');
+  const [lengthKm, setLengthKm] = useState('1');
 
   const targetNode = allNodes.find((n) => n.id === targetId);
+
+  const defaultLengthKm = useMemo(() => {
+    if (!sourceNode || !targetNode) return 1;
+    return defaultLengthKmBetweenScales(sourceNode.scale ?? 5, targetNode.scale ?? 5);
+  }, [sourceNode, targetNode]);
+
+  useEffect(() => {
+    setLengthKm(String(defaultLengthKm));
+  }, [defaultLengthKm, targetId]);
 
   const edgesByCategory = {};
   for (const name of EDGE_TYPE_NAMES) {
@@ -24,6 +36,8 @@ export default function AddEdgeFlow({ sourceNode, allNodes, onSubmit, onCancel }
     e.preventDefault();
     if (!targetId) return;
     const typeInfo = EDGE_TYPES[edgeType];
+    const deg = parseFloat(directionDeg, 10);
+    const km = parseFloat(lengthKm, 10);
     onSubmit({
       fromKind: sourceNode.kind,
       fromId: sourceNode.id,
@@ -32,6 +46,8 @@ export default function AddEdgeFlow({ sourceNode, allNodes, onSubmit, onCancel }
       edgeType,
       category: typeInfo?.category || 'movement',
       bidirectional: typeInfo?.bidirectional ?? true,
+      directionDeg: Number.isFinite(deg) ? ((deg % 360) + 360) % 360 : 0,
+      lengthKm: Number.isFinite(km) && km >= 0 ? km : defaultLengthKm,
     });
   };
 
@@ -75,6 +91,37 @@ export default function AddEdgeFlow({ sourceNode, allNodes, onSubmit, onCancel }
             );
           })}
         </select>
+
+        <div className="grid grid-cols-2 gap-2 pt-1">
+          <label className="flex flex-col gap-0.5 text-[10px] text-on-surface-variant">
+            <span>{t('locationGraph.addEdge.directionDeg', { defaultValue: 'Kierunek (°)' })}</span>
+            <input
+              type="number"
+              min={0}
+              max={359}
+              step={1}
+              className="bg-white/5 rounded-sm px-2 py-1.5 text-on-surface border border-outline-variant/10"
+              value={directionDeg}
+              onChange={(e) => setDirectionDeg(e.target.value)}
+            />
+          </label>
+          <label className="flex flex-col gap-0.5 text-[10px] text-on-surface-variant">
+            <span>{t('locationGraph.addEdge.lengthKm', { defaultValue: 'Długość (km)' })}</span>
+            <input
+              type="number"
+              min={0}
+              step={0.01}
+              className="bg-white/5 rounded-sm px-2 py-1.5 text-on-surface border border-outline-variant/10"
+              value={lengthKm}
+              onChange={(e) => setLengthKm(e.target.value)}
+            />
+          </label>
+        </div>
+        <p className="text-[9px] text-outline leading-tight px-0.5">
+          {t('locationGraph.addEdge.layoutHint', {
+            defaultValue: '0° = w prawo, 90° = w dół (ekran). Domyślna długość zależy od skali węzłów.',
+          })}
+        </p>
 
         <div className="flex gap-2 pt-1">
           <button type="submit" disabled={!targetId} className="flex-1 px-2 py-1.5 bg-primary/20 text-primary rounded-sm hover:bg-primary/30 transition-colors uppercase tracking-widest text-[10px] font-bold disabled:opacity-30">

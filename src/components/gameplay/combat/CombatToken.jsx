@@ -142,6 +142,7 @@ export default function CombatToken({
   }, [spriteUrl]);
 
   const showSpriteImage = Boolean(spriteUrl && !spriteFailed);
+  const showSpritePlaceholder = showSpriteImage && !spriteLoaded;
 
   const isShoving = !!shoveOffset;
   const classNames = [
@@ -186,8 +187,17 @@ export default function CombatToken({
         )}
 
         <div className="combat-token__sprite-wrap" style={{ width: tokenSize, height: tokenSize }}>
+          {showSpritePlaceholder && (
+            <div
+              className="combat-token__initials combat-token__sprite-placeholder"
+              aria-hidden="true"
+            >
+              {c.isDefeated ? '\u2620' : getInitials(c.name)}
+            </div>
+          )}
           {showSpriteImage ? (
             <img
+              className={`combat-token__sprite-img${spriteLoaded ? ' combat-token__sprite-img--visible' : ''}`}
               src={spriteUrl}
               alt={c.name}
               draggable={false}

@@ -141,7 +141,18 @@ export function useLocationGraph(campaignId, options = {}) {
     setError(null);
     try {
       await apiClient.request(`${BASE}/${campaignId}/location-graph/edges/${edgeId}`, { method: 'PUT', body });
-      setEdges((prev) => prev.map((e) => e.id === edgeId ? { ...e, ...body } : e));
+      setEdges((prev) => prev.map((e) => {
+        if (e.id !== edgeId) return e;
+        const nextMeta = { ...(e.metadata || {}) };
+        if (body.metadata && typeof body.metadata === 'object') Object.assign(nextMeta, body.metadata);
+        if (body.directionDeg !== undefined) nextMeta.directionDeg = body.directionDeg;
+        if (body.lengthKm !== undefined) nextMeta.lengthKm = body.lengthKm;
+        const rest = { ...body };
+        delete rest.metadata;
+        delete rest.directionDeg;
+        delete rest.lengthKm;
+        return { ...e, ...rest, metadata: nextMeta };
+      }));
       notifyLocationGraphMutated(campaignId);
     } catch (err) {
       setError(err.message);

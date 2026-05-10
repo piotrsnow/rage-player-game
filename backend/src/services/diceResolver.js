@@ -16,7 +16,7 @@ export const DIFFICULTY_THRESHOLDS = {
   extreme: 80,
 };
 
-export const CREATIVITY_BONUS_MAX = 10;
+export const CREATIVITY_BONUS_MAX = 20;
 
 const SKILLS = [
   { name: 'Walka wrecz', attribute: 'sila' },
@@ -24,21 +24,27 @@ const SKILLS = [
   { name: 'Walka bronia dwureczna', attribute: 'sila' },
   { name: 'Strzelectwo', attribute: 'zrecznosc' },
   { name: 'Uniki', attribute: 'zrecznosc' },
+  { name: 'Walka dwiema brońmi', attribute: 'zrecznosc' },
   { name: 'Zastraszanie', attribute: 'sila' },
+  { name: 'Taktyka', attribute: 'inteligencja' },
   { name: 'Atletyka', attribute: 'sila' },
   { name: 'Akrobatyka', attribute: 'zrecznosc' },
   { name: 'Jezdziectwo', attribute: 'zrecznosc' },
+  { name: 'Prezenie sie', attribute: 'sila' },
+  { name: 'Wywazanie drzwi', attribute: 'sila' },
   { name: 'Perswazja', attribute: 'charyzma' },
   { name: 'Blef', attribute: 'charyzma' },
   { name: 'Handel', attribute: 'charyzma' },
   { name: 'Przywodztwo', attribute: 'charyzma' },
   { name: 'Wystepy', attribute: 'charyzma' },
+  { name: 'Flirt', attribute: 'charyzma' },
   { name: 'Wiedza ogolna', attribute: 'inteligencja' },
   { name: 'Wiedza o potworach', attribute: 'inteligencja' },
   { name: 'Wiedza o naturze', attribute: 'inteligencja' },
   { name: 'Medycyna', attribute: 'inteligencja' },
   { name: 'Alchemia', attribute: 'inteligencja' },
   { name: 'Rzemioslo', attribute: 'inteligencja' },
+  { name: 'Nawigacja', attribute: 'inteligencja' },
   { name: 'Skradanie', attribute: 'zrecznosc' },
   { name: 'Otwieranie zamkow', attribute: 'zrecznosc' },
   { name: 'Kradziez kieszonkowa', attribute: 'zrecznosc' },
@@ -47,9 +53,13 @@ const SKILLS = [
   { name: 'Przetrwanie', attribute: 'wytrzymalosc' },
   { name: 'Tropienie', attribute: 'inteligencja' },
   { name: 'Odpornosc', attribute: 'wytrzymalosc' },
+  { name: 'Picie alkoholu', attribute: 'wytrzymalosc' },
+  { name: 'Upartosc', attribute: 'wytrzymalosc' },
+  { name: 'Plywanie', attribute: 'wytrzymalosc' },
   { name: 'Fart', attribute: 'szczescie' },
   { name: 'Hazard', attribute: 'szczescie' },
   { name: 'Przeczucie', attribute: 'szczescie' },
+  { name: 'Modlitwa', attribute: 'szczescie' },
 ];
 
 export const SKILL_BY_NAME = Object.fromEntries(SKILLS.map(s => [s.name, s]));
@@ -197,7 +207,8 @@ export function resolveBackendDiceRollWithPreRoll(character, skillName, difficul
     ? { base: baseThreshold, modifiers, final: finalThreshold }
     : undefined;
 
-  const total = preD50 + attributeValue + skillLevel + momentum + clampedCreativity;
+  const luckBonus = character.attributes.szczescie || 0;
+  const total = preD50 + attributeValue + skillLevel + momentum + clampedCreativity + luckBonus;
   const margin = total - finalThreshold;
   const success = luckySuccess || margin >= 0;
 
@@ -213,6 +224,7 @@ export function resolveBackendDiceRollWithPreRoll(character, skillName, difficul
     momentumBonus: momentum,
     dispositionBonus: 0,
     dispositionNpc: null,
+    luckBonus,
     total,
     margin,
     success,
@@ -244,7 +256,7 @@ export function generatePreRolls(character) {
     return {
       d50,
       momentum,
-      base: d50 + momentum,
+      base: d50 + momentum + szczescie,
       luckySuccess: isLuckySuccess(szczescie, luckyRoll),
     };
   });
@@ -269,7 +281,7 @@ export function formatResolvedCheck(diceRoll) {
 
   const parts = [
     `Skill: ${diceRoll.skill || 'untrained'} (${diceRoll.attribute?.toUpperCase() || '?'})`,
-    `Roll: d50=${diceRoll.roll} + attr=${diceRoll.attributeValue} + skill=${diceRoll.skillLevel} + momentum=${diceRoll.momentumBonus} = ${diceRoll.total}`,
+    `Roll: d50=${diceRoll.roll} + attr=${diceRoll.attributeValue} + skill=${diceRoll.skillLevel} + momentum=${diceRoll.momentumBonus} + luck=${diceRoll.luckBonus || 0} = ${diceRoll.total}`,
     thresholdLine,
     `Result: ${outcome} (margin ${diceRoll.margin >= 0 ? '+' : ''}${diceRoll.margin})`,
   ];

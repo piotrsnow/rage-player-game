@@ -82,7 +82,7 @@ function pickBestSkillForAttribute(suggestedSkills, characterSkills, attribute) 
  * Mechanic:
  * 1. Luck check: roll 1-100, if <= szczescie → auto-success
  * 2. Roll d50
- * 3. Total = d50 + attribute + skillLevel + momentum (±10) + creativity (0-10)
+ * 3. Total = d50 + attribute + skillLevel + momentum (±10) + creativity (0-20) + szczescie
  * 4. Compare to difficulty threshold
  * 5. Margin = total - threshold
  *
@@ -93,7 +93,7 @@ function pickBestSkillForAttribute(suggestedSkills, characterSkills, attribute) 
  * @param {number} [params.currentMomentum] - current momentum value (±10)
  * @param {Array} [params.worldNpcs] - NPC list for disposition lookup
  * @param {Function} [params.resolveDisposition] - (actionText, npcs) => { npcName, bonus }
- * @param {number} [params.creativityBonus] - bonus for creative actions (0-10)
+ * @param {number} [params.creativityBonus] - bonus for creative actions (0-20)
  * @param {Object} [params.actionContext] - pre-inferred action context
  * @param {string} [params.difficultyOverride] - override difficulty level
  * @returns {Object|null} resolved skill check result
@@ -150,8 +150,11 @@ export function resolveSkillCheck({
   const clampedMomentum = clamp(currentMomentum, MOMENTUM_MIN, MOMENTUM_MAX);
   const clampedCreativity = clamp(creativityBonus, 0, CREATIVITY_BONUS_MAX);
 
+  // --- Luck additive bonus ---
+  const luckBonus = attributes.szczescie || 0;
+
   // --- Calculate total ---
-  const total = d50Roll + attributeValue + skillLevel + clampedMomentum + clampedCreativity + dispositionBonus;
+  const total = d50Roll + attributeValue + skillLevel + clampedMomentum + clampedCreativity + dispositionBonus + luckBonus;
 
   // --- Determine threshold ---
   const difficultyKey = difficultyOverride || context.difficulty || 'medium';
@@ -174,6 +177,7 @@ export function resolveSkillCheck({
     momentumBonus: clampedMomentum,
     dispositionBonus,
     dispositionNpc,
+    luckBonus,
     total,
     margin,
     success,

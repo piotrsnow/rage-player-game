@@ -1,6 +1,7 @@
 import { useState, useCallback, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { EDGE_TYPES } from '../../../../shared/domain/locationGraph.js';
+import { defaultLengthKmBetweenScales } from '../../../../shared/domain/locationGraphLayout.js';
 import { getNodeVisual, getEdgeVisual } from './graphVisuals.js';
 import { SHAPE_PATHS, AVAILABLE_SHAPES, AVAILABLE_ICONS } from './nodeShapes.js';
 import { useSettings } from '../../../contexts/SettingsContext.jsx';
@@ -267,6 +268,7 @@ function EdgeInspector({ edge, allNodes, onUpdate, onDelete, mode, t }) {
   const vis = getEdgeVisual(edge.category);
   const fromNode = allNodes.find((n) => n.id === edge.fromId);
   const toNode = allNodes.find((n) => n.id === edge.toId);
+  const defaultLen = defaultLengthKmBetweenScales(fromNode?.scale ?? 5, toNode?.scale ?? 5);
 
   const edgeTypesByCategory = {};
   for (const [name, info] of Object.entries(EDGE_TYPES)) {
@@ -346,6 +348,42 @@ function EdgeInspector({ edge, allNodes, onUpdate, onDelete, mode, t }) {
             </div>
           </Field>
         )}
+
+        <Field label={t('locationGraph.inspector.directionDeg', { defaultValue: 'Kierunek layoutu (°)' })}>
+          <input
+            key={`${edge.id}-dir`}
+            type="number"
+            min={0}
+            max={359}
+            className={INPUT_CLS}
+            defaultValue={typeof edge.metadata?.directionDeg === 'number' ? edge.metadata.directionDeg : 0}
+            onBlur={(e) => {
+              const v = parseFloat(e.target.value, 10);
+              if (!Number.isFinite(v)) return;
+              onUpdate(edge.id, { directionDeg: ((v % 360) + 360) % 360 });
+            }}
+          />
+        </Field>
+        <Field label={t('locationGraph.inspector.lengthKm', { defaultValue: 'Długość (km)' })}>
+          <input
+            key={`${edge.id}-km`}
+            type="number"
+            min={0}
+            step={0.01}
+            className={INPUT_CLS}
+            defaultValue={typeof edge.metadata?.lengthKm === 'number' ? edge.metadata.lengthKm : defaultLen}
+            onBlur={(e) => {
+              const v = parseFloat(e.target.value, 10);
+              if (!Number.isFinite(v) || v < 0) return;
+              onUpdate(edge.id, { lengthKm: v });
+            }}
+          />
+        </Field>
+        <p className="text-[10px] text-outline leading-snug">
+          {t('locationGraph.inspector.layoutHint', {
+            defaultValue: 'Od węzła „od” do „do”: 0° w prawo, 90° w dół. Dotyczy tylko widoku grafu.',
+          })}
+        </p>
       </CollapsibleSection>
 
       {mode === 'gm' && (

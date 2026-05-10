@@ -116,8 +116,13 @@ export function useMpActions({ dispatch, pendingQuestVerifyRef }) {
     wsService.send(WS_CLIENT_TYPES.COMBAT_SYNC, { combat, ...options });
   }, []);
 
-  const sendCombatManoeuvre = useCallback((manoeuvre, targetId, customDescription = '') => {
-    wsService.send(WS_CLIENT_TYPES.COMBAT_MANOEUVRE, { manoeuvre, targetId, customDescription });
+  const sendCombatManoeuvre = useCallback((manoeuvre, targetId, customDescription = '', extraOpts = {}) => {
+    const safeExtra = {};
+    if (extraOpts.spellName) safeExtra.spellName = String(extraOpts.spellName);
+    if (extraOpts.pushTarget && typeof extraOpts.pushTarget === 'object') {
+      safeExtra.pushTarget = { x: Number(extraOpts.pushTarget.x), y: Number(extraOpts.pushTarget.y) };
+    }
+    wsService.send(WS_CLIENT_TYPES.COMBAT_MANOEUVRE, { manoeuvre, targetId, customDescription, extraOpts: safeExtra });
   }, []);
 
   const endMultiplayerCombat = useCallback((results) => {

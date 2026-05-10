@@ -34,7 +34,7 @@ Include stateChanges: timeAdvance, currentLocation, npcs (introduce at least 1),
   // not-eligible akcji niezależnie od tego co model zwróci, ale informujemy
   // też model żeby nie marnował tokenów na bonus który zostanie wyzerowany.
   parts.push(creativityEligible
-    ? 'player_input_kind=custom — gracz wpisał WŁASNĄ akcję. Oceń kreatywność i zwróć creativityBonus 0-10 zgodnie z regułami w CORE RULES.'
+    ? 'player_input_kind=custom — gracz wpisał WŁASNĄ akcję. Oceń kreatywność i zwróć creativityBonus 0-20 zgodnie z regułami w CORE RULES.'
     : 'player_input_kind=suggested_or_auto — gracz NIE wpisał własnej akcji (clicked suggested / autoplayer / akcja systemowa). creativityBonus MUSI być 0.');
 
   // Incident system — humorous penalty for unfounded complaint
@@ -161,7 +161,7 @@ Do NOT re-emit the same questUpdates / npcs / location changes — they're alrea
     const creativityNote = r.luckySuccess
       ? ''
       : creativityEligible
-        ? ` creativityBonus (0-10, this scene) will be ADDED post-hoc: final_total = ${baseTotal} + creativityBonus, final_margin = ${baseMargin} + creativityBonus. If that flips the result (e.g. margin crosses 0), narrate the FINAL result — not the pre-creativity one shown here.`
+        ? ` creativityBonus (0-20, this scene) will be ADDED post-hoc: final_total = ${baseTotal} + creativityBonus, final_margin = ${baseMargin} + creativityBonus. If that flips the result (e.g. margin crosses 0), narrate the FINAL result — not the pre-creativity one shown here.`
         : '';
     const forceNote = forceRoll?.enabled && forceRoll.modifier
       ? ` FORCE ROLL modifier ${forceRoll.modifier > 0 ? '+' : ''}${forceRoll.modifier} will be ADDED post-hoc to total and margin — the player deliberately invoked ${forceRoll.modifier > 0 ? 'favorable' : 'unfavorable'} circumstances. Narrate the FINAL outcome (after modifier), and weave the circumstance into the scene (e.g. a lucky break, a sudden distraction, terrain helping/hindering).`

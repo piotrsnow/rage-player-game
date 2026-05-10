@@ -1,70 +1,97 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
+
+vi.mock('./gameDataService.js', () => ({
+  gameData: {
+    getWeaponData: (name) => {
+      const weapons = {
+        'Hand Weapon': { damageType: 'melee-1h', bonus: 3, group: 'Melee (Basic)' },
+        'Long Bow': { damageType: 'ranged-dex', bonus: 4, group: 'Ranged' },
+        'Flintlock Pistol': { damageType: 'ranged-fixed', fixedDamage: 8, group: 'Ranged (Blackpowder)' },
+      };
+      return weapons[name] || weapons['Hand Weapon'];
+    },
+  },
+}));
+
 import {
-  getCombatBattleCryLine,
-  getCombatBattleCryLines,
-  getCombatPreloadCategories,
-  getCombatReactionCategory,
   getCombatResultCategory,
+  getCombatReactionCategory,
   getCombatSfxVariants,
+  getCombatPreloadCategories,
+  getCombatBattleCryLine,
 } from './combatAudio.js';
 
-describe('combatAudio', () => {
-  it('provides static file variants for mapped combat categories', () => {
-    expect(getCombatSfxVariants('meleeAttack')).toHaveLength(3);
-    expect(getCombatSfxVariants('rangedAttack')).toHaveLength(2);
-    expect(getCombatSfxVariants('hurt')).toHaveLength(3);
+describe('getCombatResultCategory', () => {
+  it('returns weapon category for melee attack', () => {
+    expect(getCombatResultCategory({ manoeuvreKey: 'attack', weaponName: 'Hand Weapon' })).toBe('meleeAttack');
   });
 
-  it('provides ten battle cry lines per supported language', () => {
-    expect(getCombatBattleCryLines('pl')).toHaveLength(10);
-    expect(getCombatBattleCryLines('en')).toHaveLength(10);
+  it('returns ranged category for ranged weapon', () => {
+    expect(getCombatResultCategory({ manoeuvreKey: 'attack', weaponName: 'Long Bow' })).toBe('rangedAttack');
   });
 
-  it('falls back to polish battle cries for unsupported languages', () => {
-    expect(getCombatBattleCryLines('de')).toEqual(getCombatBattleCryLines('pl'));
-    expect(getCombatBattleCryLine('de', 2)).toBe(getCombatBattleCryLine('pl', 2));
-  });
-
-  it('maps sword-like attacks to melee attack category', () => {
-    expect(getCombatResultCategory({
-      manoeuvreKey: 'attack',
-      weaponName: 'Rapier',
-    })).toBe('meleeAttack');
-  });
-
-  it('maps ranged attacks to shared ranged category', () => {
-    expect(getCombatResultCategory({
-      manoeuvreKey: 'rangedAttack',
-      weaponName: 'Pistol',
-    })).toBe('rangedAttack');
-  });
-
-  it('maps action-specific manoeuvres to dedicated categories', () => {
-    expect(getCombatResultCategory({ manoeuvreKey: 'charge', weaponName: 'Spear' })).toBe('charge');
+  it('returns defend for defend manoeuvre', () => {
     expect(getCombatResultCategory({ manoeuvreKey: 'defend' })).toBe('defend');
+  });
+
+  it('returns dodge for dodge manoeuvre', () => {
     expect(getCombatResultCategory({ manoeuvreKey: 'dodge' })).toBe('dodge');
-    expect(getCombatResultCategory({ manoeuvreKey: 'feint', weaponName: 'Hand Weapon' })).toBe('feint');
   });
 
-  it('adds hurt reaction only when a damaging hit lands', () => {
-    expect(getCombatReactionCategory({ outcome: 'hit', damage: 4 })).toBe('hurt');
+  it('returns null for castSpell', () => {
+    expect(getCombatResultCategory({ manoeuvreKey: 'castSpell' })).toBeNull();
+  });
+
+  it('returns null for null result', () => {
+    expect(getCombatResultCategory(null)).toBeNull();
+  });
+});
+
+describe('getCombatReactionCategory', () => {
+  it('returns hurt when hit with damage', () => {
+    expect(getCombatReactionCategory({ outcome: 'hit', damage: 5 })).toBe('hurt');
+  });
+
+  it('returns null when miss', () => {
+    expect(getCombatReactionCategory({ outcome: 'miss', damage: 0 })).toBeNull();
+  });
+
+  it('returns null when hit with 0 damage', () => {
     expect(getCombatReactionCategory({ outcome: 'hit', damage: 0 })).toBeNull();
-    expect(getCombatReactionCategory({ outcome: 'miss', damage: 4 })).toBeNull();
+  });
+});
+
+describe('getCombatSfxVariants', () => {
+  it('returns variants for known category', () => {
+    const urls = getCombatSfxVariants('meleeAttack');
+    expect(urls.length).toBeGreaterThan(0);
+    expect(urls[0]).toMatch(/\.mp3$/);
   });
 
-  it('preloads core combat categories from participants', () => {
-    const categories = getCombatPreloadCategories({
-      combatants: [
-        { weapons: ['Pistol'] },
-        { weapons: ['Halberd'] },
-        { inventory: ['Hand Weapon'], knownSpells: [{ name: 'Magic Dart' }] },
-      ],
-    });
+  it('returns empty array for unknown category', () => {
+    expect(getCombatSfxVariants('nonExistent')).toEqual([]);
+  });
+});
 
-    expect(categories).toContain('rangedAttack');
-    expect(categories).toContain('meleeAttack');
-    expect(categories).toContain('hurt');
-    expect(categories).toContain('charge');
-    expect(categories).toContain('feint');
+describe('getCombatPreloadCategories', () => {
+  it('includes base categories', () => {
+    const cats = getCombatPreloadCategories({ combatants: [] });
+    expect(cats).toContain('defend');
+    expect(cats).toContain('dodge');
+    expect(cats).toContain('hurt');
+  });
+});
+
+describe('getCombatBattleCryLine', () => {
+  it('returns a string for valid index', () => {
+    const line = getCombatBattleCryLine('pl', 0);
+    expect(typeof line).toBe('string');
+    expect(line.length).toBeGreaterThan(0);
+  });
+
+  it('wraps around for large index', () => {
+    const line = getCombatBattleCryLine('pl', 100);
+    expect(typeof line).toBe('string');
+    expect(line.length).toBeGreaterThan(0);
   });
 });

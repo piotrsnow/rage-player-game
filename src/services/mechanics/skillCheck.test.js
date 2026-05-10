@@ -73,7 +73,7 @@ describe('resolveSkillCheck', () => {
     expect(result.attribute).toBe('sila');
     expect(result.roll).toBe(20);
     expect(result.attributeValue).toBe(12);
-    expect(result.total).toBe(20 + 12 + 8); // roll + sila + skill
+    expect(result.total).toBe(20 + 12 + 8 + 5); // roll + sila + skill + szczescie
     expect(result.margin).toBe(result.total - result.threshold);
   });
 
@@ -114,7 +114,7 @@ describe('resolveSkillCheck', () => {
       currentMomentum: 5,
     });
     expect(result.momentumBonus).toBe(5);
-    expect(result.total).toBe(20 + 12 + 8 + 5);
+    expect(result.total).toBe(20 + 12 + 8 + 5 + 5); // roll + sila + skill + momentum + szczescie
   });
 
   it('clamps momentum to ±10', () => {

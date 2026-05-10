@@ -6,7 +6,7 @@
  * names and bestiary races so the nano model doesn't invent Polish spellings.
  */
 
-const SKILL_NAMES_FOR_NANO = 'Walka wrecz, Walka bronia jednoręczna, Walka bronia dwureczna, Strzelectwo, Uniki, Zastraszanie, Atletyka, Akrobatyka, Jezdziectwo, Perswazja, Blef, Handel, Przywodztwo, Wystepy, Wiedza ogolna, Wiedza o potworach, Wiedza o naturze, Medycyna, Alchemia, Rzemioslo, Skradanie, Otwieranie zamkow, Kradziez kieszonkowa, Pulapki i mechanizmy, Spostrzegawczosc, Przetrwanie, Tropienie, Odpornosc, Fart, Hazard, Przeczucie';
+const SKILL_NAMES_FOR_NANO = 'Walka wrecz, Walka bronia jednoręczna, Walka bronia dwureczna, Strzelectwo, Uniki, Walka dwiema brońmi, Zastraszanie, Taktyka, Atletyka, Akrobatyka, Jezdziectwo, Prezenie sie, Wywazanie drzwi, Perswazja, Blef, Handel, Przywodztwo, Wystepy, Flirt, Wiedza ogolna, Wiedza o potworach, Wiedza o naturze, Medycyna, Alchemia, Rzemioslo, Nawigacja, Skradanie, Otwieranie zamkow, Kradziez kieszonkowa, Pulapki i mechanizmy, Spostrzegawczosc, Przetrwanie, Tropienie, Odpornosc, Picie alkoholu, Upartosc, Plywanie, Fart, Hazard, Przeczucie, Modlitwa';
 
 const BESTIARY_RACES_FOR_NANO = 'ludzie, orkowie, gobliny, nieumarli, zwierzeta, demony, trolle, pajaki, krasnoludy, elfy, niziolki';
 const BESTIARY_LOCATIONS_FOR_NANO = 'las, miasto, wioska, gory, bagno, wybrzeze, jaskinia, ruiny, droga, pole';
@@ -36,7 +36,7 @@ Available skills: ${SKILL_NAMES_FOR_NANO}
 roll_skill rules — MOST actions do NOT need a dice roll. Set roll_skill to null unless the action has REAL risk or uncertainty:
 - null: walking, traveling, resting, eating, entering a building, reading, giving orders to allies, routine camp activities, greeting someone, buying at listed price
 - null: any action where failure would be boring or not advance the story
-- ROLL: persuading/intimidating/lying to someone (Perswazja/Blef/Zastraszanie), haggling for a better price (Handel), sneaking past guards (Skradanie), searching for hidden things (Spostrzegawczosc), picking a lock (Otwieranie zamkow), climbing a dangerous cliff (Atletyka), resisting poison (Odpornosc), tracking footprints (Tropienie)
+- ROLL: persuading/intimidating/lying to someone (Perswazja/Blef/Zastraszanie), haggling for a better price (Handel), sneaking past guards (Skradanie), searching for hidden things (Spostrzegawczosc), picking a lock (Otwieranie zamkow), climbing a dangerous cliff (Atletyka), resisting poison (Odpornosc), tracking footprints (Tropienie), flirting with someone (Flirt), forcing open a door/gate (Wywazanie drzwi), drinking contest or resisting drunkenness (Picie alkoholu), resisting persuasion/intimidation/pain through sheer willpower (Upartosc), swimming across a river or in rough waters (Plywanie), reading a battlefield or setting an ambush (Taktyka), finding your way or reading a map (Nawigacja), praying for divine favor (Modlitwa), feats of strength display (Prezenie sie)
 - The key question: is the outcome genuinely uncertain AND would failure create an interesting situation? If yes → roll. If no → null.
 When in doubt, use null.
 

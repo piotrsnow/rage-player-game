@@ -18,6 +18,9 @@ import {
   setExclusiveReadAloudAudio,
   silencePeerDialogAudio,
   subscribeExclusiveReadAloud,
+  beginDialogSession,
+  setDialogSessionState,
+  endDialogSession,
 } from '../../../utils/readAloudExclusive';
 
 export function ReadAloudButton({ text, seg = null, scenePacing = null }) {
@@ -28,6 +31,14 @@ export function ReadAloudButton({ text, seg = null, scenePacing = null }) {
   const audioRef = useRef(null);
   const mountedRef = useRef(true);
   const lastAttemptRef = useRef(null);
+  const coordSessionRef = useRef(null);
+
+  const endCoordSession = useCallback(() => {
+    if (coordSessionRef.current != null) {
+      endDialogSession(coordSessionRef.current);
+      coordSessionRef.current = null;
+    }
+  }, []);
 
   useEffect(() => {
     mountedRef.current = true;
@@ -36,8 +47,9 @@ export function ReadAloudButton({ text, seg = null, scenePacing = null }) {
       lastAttemptRef.current = null;
       audioRef.current?.pause();
       audioRef.current = null;
+      endCoordSession();
     };
-  }, []);
+  }, [endCoordSession]);
 
   useEffect(() => {
     return subscribeExclusiveReadAloud(() => {
@@ -47,17 +59,19 @@ export function ReadAloudButton({ text, seg = null, scenePacing = null }) {
       try { audioRef.current?.pause(); } catch { /* ignore */ }
       lastAttemptRef.current = null;
       audioRef.current = null;
+      endCoordSession();
       if (mountedRef.current) setState('idle');
     });
-  }, []);
+  }, [endCoordSession]);
 
   const stop = useCallback(() => {
     try { audioRef.current?.pause(); } catch { /* ignore */ }
     lastAttemptRef.current = null;
     audioRef.current = null;
+    endCoordSession();
     silencePeerDialogAudio();
     if (mountedRef.current) setState('idle');
-  }, []);
+  }, [endCoordSession]);
 
   const toggle = async (e) => {
     e.stopPropagation();
@@ -84,24 +98,31 @@ export function ReadAloudButton({ text, seg = null, scenePacing = null }) {
     if (!hasTts) {
       const synth = window.speechSynthesis;
       if (!synth) return;
+      const csid = beginDialogSession({ source: 'readaloud-synth' });
+      coordSessionRef.current = csid;
       const u = new SpeechSynthesisUtterance(text);
       u.lang = settings.language || 'pl';
       u.rate = 1;
       u.onend = () => {
         if (!isExclusiveReadAloudOwner(attemptId) || !mountedRef.current) return;
         lastAttemptRef.current = null;
+        endCoordSession();
         setState('idle');
       };
       u.onerror = () => {
         if (!isExclusiveReadAloudOwner(attemptId) || !mountedRef.current) return;
         lastAttemptRef.current = null;
+        endCoordSession();
         setState('idle');
       };
+      setDialogSessionState(csid, 'playing');
       setState('playing');
       synth.speak(u);
       return;
     }
 
+    const csid = beginDialogSession({ source: 'readaloud' });
+    coordSessionRef.current = csid;
     setState('loading');
     try {
       let audioUrl;
@@ -112,9 +133,10 @@ export function ReadAloudButton({ text, seg = null, scenePacing = null }) {
         const res = await elevenlabsService.textToSpeechWithTimestamps(undefined, voiceId, text, undefined, campaignId, scenePacing);
         audioUrl = res.audioUrl;
       }
-      if (!mountedRef.current) return;
+      if (!mountedRef.current) { endCoordSession(); return; }
       if (!isExclusiveReadAloudOwner(attemptId)) {
         lastAttemptRef.current = null;
+        endCoordSession();
         if (mountedRef.current) setState('idle');
         return;
       }
@@ -126,6 +148,7 @@ export function ReadAloudButton({ text, seg = null, scenePacing = null }) {
         clearExclusiveReadAloudAudio(audio);
         if (!isExclusiveReadAloudOwner(attemptId) || !mountedRef.current) return;
         lastAttemptRef.current = null;
+        endCoordSession();
         setState('idle');
         audioRef.current = null;
       };
@@ -133,13 +156,16 @@ export function ReadAloudButton({ text, seg = null, scenePacing = null }) {
         clearExclusiveReadAloudAudio(audio);
         if (!isExclusiveReadAloudOwner(attemptId) || !mountedRef.current) return;
         lastAttemptRef.current = null;
+        endCoordSession();
         setState('idle');
         audioRef.current = null;
       };
+      setDialogSessionState(csid, 'playing');
       setState('playing');
       audio.play();
     } catch {
       lastAttemptRef.current = null;
+      endCoordSession();
       if (mountedRef.current) setState('idle');
     }
   };

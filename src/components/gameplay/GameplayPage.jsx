@@ -25,7 +25,7 @@ import { useQuickBeat } from '../../hooks/sceneGeneration/useQuickBeat';
 import { useDictation } from '../../hooks/useDictation';
 import { useDictationContext } from '../../contexts/DictationContext';
 import { useNarrator } from '../../hooks/useNarrator';
-import { useGlobalMusic } from '../../contexts/MusicContext';
+
 import { apiClient } from '../../services/apiClient';
 import { storage } from '../../services/storage';
 import ScenePanel from './ScenePanel';
@@ -145,8 +145,6 @@ export default function GameplayPage({ readOnly = false, shareToken = null, onRe
     streamComplete,
   } = useAI();
 
-  const { setNarratorState } = useGlobalMusic();
-
   // Resolve "which source of truth" for every slice — single branch point
   // for solo vs MP that the rest of the page can lean on.
   const derived = useGameplayDerivedState({
@@ -171,10 +169,6 @@ export default function GameplayPage({ readOnly = false, shareToken = null, onRe
     document.documentElement.scrollTop = 0;
     document.body.scrollTop = 0;
   }, [urlCampaignId, readOnly, location.pathname, location.key]);
-
-  useEffect(() => {
-    setNarratorState(narrator.playbackState);
-  }, [narrator.playbackState, setNarratorState]);
 
   // Feed the dictation classifier with live game state so the auto-mode can
   // bias toward action during combat and dialogue when an NPC is mid-scene.

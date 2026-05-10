@@ -26,7 +26,13 @@ import {
   createEdge,
   updateEdge,
   deactivateEdge,
+  getNodeByRef,
 } from '../services/locationGraph/graphService.js';
+import {
+  defaultLengthKmBetweenScales,
+  directionDegForChildIndex,
+  normalizeDirectionDeg,
+} from '../../../shared/domain/locationGraphLayout.js';
 import { EDGE_TYPES, safeValidateTacticalGrid } from '../../../shared/domain/locationGraph.js';
 import { slugifyLocationName } from '../services/locationRefs.js';
 import { findSimilarNodeImage } from '../services/locationGraph/imageMatcher.js';
@@ -731,6 +737,19 @@ export async function livingWorldRoutes(fastify) {
     // Works for both canonical (world) and sandbox (campaign) parents.
     if (b.parentKind && b.parentId) {
       try {
+        const parentRow = await getNodeByRef(b.parentKind, b.parentId);
+        const parentScale = parentRow?.scale ?? 5;
+        const siblingIndex = await prisma.locationEdge.count({
+          where: {
+            isActive: true,
+            edgeType: 'contains',
+            fromKind: b.parentKind,
+            fromId: b.parentId,
+            OR: [{ campaignId: null }, { campaignId: request.params.id }],
+          },
+        });
+        const directionDeg = directionDegForChildIndex(siblingIndex);
+        const lengthKm = defaultLengthKmBetweenScales(parentScale, node.scale ?? 5);
         await createEdge({
           fromKind: b.parentKind,
           fromId: b.parentId,
@@ -740,7 +759,7 @@ export async function livingWorldRoutes(fastify) {
           category: 'structural',
           bidirectional: false,
           weight: 1.0,
-          metadata: {},
+          metadata: { directionDeg, lengthKm },
           discoveryState: 'known',
           campaignId: request.params.id,
           createdBy: 'admin',
@@ -1063,6 +1082,8 @@ export async function livingWorldRoutes(fastify) {
           weight: { type: 'number', minimum: 0 },
           metadata: { type: 'object' },
           discoveryState: { type: 'string', maxLength: 20 },
+          directionDeg: { type: 'number' },
+          lengthKm: { type: 'number', minimum: 0 },
         },
       },
     },
@@ -1073,6 +1094,14 @@ export async function livingWorldRoutes(fastify) {
     const typeInfo = EDGE_TYPES[b.edgeType];
     if (!typeInfo) return reply.code(400).send({ error: `Unknown edge type: ${b.edgeType}` });
 
+    const meta = { ...(b.metadata && typeof b.metadata === 'object' ? b.metadata : {}) };
+    if (b.directionDeg !== undefined && Number.isFinite(b.directionDeg)) {
+      meta.directionDeg = normalizeDirectionDeg(b.directionDeg);
+    }
+    if (b.lengthKm !== undefined && Number.isFinite(b.lengthKm) && b.lengthKm >= 0) {
+      meta.lengthKm = b.lengthKm;
+    }
+
     const edge = await createEdge({
       fromKind: b.fromKind,
       fromId: b.fromId,
@@ -1082,7 +1111,7 @@ export async function livingWorldRoutes(fastify) {
       category: b.category || typeInfo.category,
       bidirectional: b.bidirectional ?? typeInfo.bidirectional ?? true,
       weight: b.weight ?? 1.0,
-      metadata: b.metadata || {},
+      metadata: meta,
       discoveryState: b.discoveryState || 'known',
       campaignId: request.params.id,
       createdBy: 'admin',
@@ -1111,6 +1140,8 @@ export async function livingWorldRoutes(fastify) {
           weight: { type: 'number', minimum: 0 },
           metadata: { type: 'object' },
           discoveryState: { type: 'string', maxLength: 20 },
+          directionDeg: { type: 'number' },
+          lengthKm: { type: 'number', minimum: 0 },
         },
       },
     },
@@ -1127,8 +1158,25 @@ export async function livingWorldRoutes(fastify) {
     }
     if (b.bidirectional !== undefined) data.bidirectional = b.bidirectional;
     if (b.weight !== undefined) data.weight = b.weight;
-    if (b.metadata !== undefined) data.metadata = b.metadata;
     if (b.discoveryState !== undefined) data.discoveryState = b.discoveryState;
+
+    const needsMetaMerge = b.metadata !== undefined
+      || b.directionDeg !== undefined
+      || b.lengthKm !== undefined;
+    if (needsMetaMerge) {
+      const existing = await prisma.locationEdge.findUnique({ where: { id: edgeId } });
+      if (!existing) return reply.code(404).send({ error: 'Edge not found' });
+      const prev = existing.metadata && typeof existing.metadata === 'object' ? { ...existing.metadata } : {};
+      const merged = { ...prev, ...(b.metadata && typeof b.metadata === 'object' ? b.metadata : {}) };
+      if (b.directionDeg !== undefined && Number.isFinite(b.directionDeg)) {
+        merged.directionDeg = normalizeDirectionDeg(b.directionDeg);
+      }
+      if (b.lengthKm !== undefined && Number.isFinite(b.lengthKm) && b.lengthKm >= 0) {
+        merged.lengthKm = b.lengthKm;
+      }
+      data.metadata = merged;
+    }
+
     if (Object.keys(data).length === 0) return reply.send({ ok: true });
     await updateEdge(edgeId, data);
     return reply.send({ ok: true });

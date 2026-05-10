@@ -11,7 +11,13 @@ import {
   resolveSegmentVoice as resolveSegmentVoiceShared,
 } from '../services/characterVoiceResolver';
 import { hasNamedSpeaker } from '../services/dialogueSegments';
-import { registerMainNarratorStop, silencePeerDialogAudio } from '../utils/readAloudExclusive';
+import {
+  registerMainNarratorStop,
+  silencePeerDialogAudio,
+  beginDialogSession,
+  setDialogSessionState,
+  endDialogSession,
+} from '../utils/readAloudExclusive';
 
 const STATES = {
   IDLE: 'idle',
@@ -173,12 +179,36 @@ export function useNarrator({ viewerMode = false, shareToken = null, backendUrl 
   const activeTtsProvider = KNOWN_TTS_PROVIDERS.includes(settings.sceneTtsTier)
     ? settings.sceneTtsTier
     : (settings.ttsProvider || 'elevenlabs');
-  const [playbackState, setPlaybackState] = useState(STATES.IDLE);
-  const [currentMessageId, setCurrentMessageId] = useState(null);
-  const [currentSegmentIndex, setCurrentSegmentIndex] = useState(-1);
+  const [playbackState, setPlaybackStateRaw] = useState(STATES.IDLE);
+  const [currentMessageId, setCurrentMessageIdRaw] = useState(null);
+  const [currentSegmentIndex, setCurrentSegmentIndexRaw] = useState(-1);
   const [currentCharacter, setCurrentCharacter] = useState(null);
   const [highlightInfo, setHighlightInfo] = useState(null);
   const [currentChunk, setCurrentChunk] = useState(null);
+
+  const coordinatorSessionRef = useRef(null);
+
+  const setPlaybackState = useCallback((nextState) => {
+    setPlaybackStateRaw(nextState);
+    const sid = coordinatorSessionRef.current;
+    if (nextState === STATES.IDLE) {
+      if (sid != null) { endDialogSession(sid); coordinatorSessionRef.current = null; }
+    } else if (sid != null) {
+      setDialogSessionState(sid, nextState);
+    }
+  }, []);
+
+  const setCurrentMessageId = useCallback((msgId) => {
+    setCurrentMessageIdRaw(msgId);
+    const sid = coordinatorSessionRef.current;
+    if (sid != null) setDialogSessionState(sid, undefined, { messageId: msgId });
+  }, []);
+
+  const setCurrentSegmentIndex = useCallback((idx) => {
+    setCurrentSegmentIndexRaw(idx);
+    const sid = coordinatorSessionRef.current;
+    if (sid != null) setDialogSessionState(sid, undefined, { segmentIndex: idx });
+  }, []);
 
   const audioRef = useRef(null);
   const queueRef = useRef([]);
@@ -387,6 +417,10 @@ export function useNarrator({ viewerMode = false, shareToken = null, backendUrl 
     return () => {
       cleanup();
       abortRef.current = true;
+      if (coordinatorSessionRef.current != null) {
+        endDialogSession(coordinatorSessionRef.current);
+        coordinatorSessionRef.current = null;
+      }
     };
   }, [cleanup]);
 
@@ -540,6 +574,10 @@ export function useNarrator({ viewerMode = false, shareToken = null, backendUrl 
 
     const item = queueRef.current[0];
     const { dialogueSegments, narrative, messageId, scenePacing, segmentPrefetchWindow } = item;
+
+    const csid = beginDialogSession({ source: 'narrator', messageId });
+    coordinatorSessionRef.current = csid;
+
     setCurrentMessageId(messageId);
     setPlaybackState(STATES.LOADING);
 
@@ -1005,6 +1043,9 @@ export function useNarrator({ viewerMode = false, shareToken = null, backendUrl 
       }
       return voiceId;
     };
+
+    const csid = beginDialogSession({ source: 'narrator', messageId: s.messageId });
+    coordinatorSessionRef.current = csid;
 
     setCurrentMessageId(s.messageId);
     let globalWordOffset = 0;

@@ -341,7 +341,7 @@ Jest to dokument roboczy i będzie rozszerzany o kolejne ustalenia.
 | Modyfikator | Zakres | Opis |
 | --- | --- | --- |
 | Momentum | `−10` do `+10` | Narastająca seria sukcesów lub porażek. Rośnie o `+1` po sukcesie, maleje o `−1` po porażce |
-| Kreatywność | `0` do `+10` | Bonus za kreatywne, taktyczne lub fabularne opisanie akcji |
+| Kreatywność | `0` do `+20` | Bonus za kreatywne, taktyczne lub fabularne opisanie akcji |
 | Przychylność BN | zmienny | Bonus za pozytywne nastawienie BN-a (dotyczy testów `Charyzmy`) |
 
 ### 9.4 Mechanika Szczęścia

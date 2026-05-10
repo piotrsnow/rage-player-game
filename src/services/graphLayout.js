@@ -1,5 +1,30 @@
+import {
+  defaultLengthKmBetweenScales,
+  directionDegForChildIndex,
+  normalizeDirectionDeg,
+} from '../../shared/domain/locationGraphLayout.js';
+
 /** All nodes share the same world point — caller should use force layout instead. */
 const GEO_DEGENERATE_EPS = 1e-5;
+
+/** Raw km → px before bbox fit (scaled uniformly to fit canvas). */
+const KM_TO_BASE_PX = 2.8;
+
+function radiusForGraphScale(scale) {
+  const s = Number(scale);
+  const v = Number.isFinite(s) ? s : 5;
+  if (v <= 1) return 28;
+  if (v <= 3) return 22;
+  if (v <= 5) return 18;
+  return 14;
+}
+
+function stableEdgeFallbackIndex(a, b) {
+  const s = `${a}:${b}`;
+  let h = 0;
+  for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0;
+  return h % 997;
+}
 
 /** Must match GraphCanvas LAYOUT_W / LAYOUT_H / padding used with geoProjectLayout. */
 export const GRAPH_LAYOUT_W = 1200;
@@ -77,6 +102,182 @@ export function geoProjectLayout(nodes, opts = {}) {
       y: offsetY + (maxY - y) * scale,
     });
   }
+  return result;
+}
+
+/**
+ * Deterministic layout from edge metadata (directionDeg, lengthKm) + scale-based defaults.
+ * directionDeg: canvas space — 0° east, 90° south (y down).
+ *
+ * @param {Array<{ id: string, scale?: number }>} nodes
+ * @param {Array<{ id: string, fromId: string, toId: string, bidirectional?: boolean, metadata?: object }>} edges
+ * @param {{ width?: number, height?: number, pad?: number, collisionIters?: number, separationPad?: number }} [opts]
+ * @returns {Map<string, { x: number, y: number }>}
+ */
+export function directedGraphLayout(nodes, edges, {
+  width = GRAPH_LAYOUT_W,
+  height = GRAPH_LAYOUT_H,
+  pad = GRAPH_LAYOUT_PAD,
+  collisionIters = 40,
+  separationPad = 8,
+} = {}) {
+  if (!nodes?.length) return new Map();
+
+  const nodeById = new Map(nodes.map((n) => [n.id, n]));
+  const ids = nodes.map((n) => n.id).filter(Boolean);
+
+  /** @type {Map<string, Set<string>>} */
+  const und = new Map();
+  for (const id of ids) und.set(id, new Set());
+
+  const edgeList = [];
+  for (const e of edges || []) {
+    if (!e?.fromId || !e?.toId) continue;
+    if (!nodeById.has(e.fromId) || !nodeById.has(e.toId)) continue;
+    edgeList.push(e);
+    und.get(e.fromId).add(e.toId);
+    und.get(e.toId).add(e.fromId);
+  }
+
+  function pickEdgeBetween(u, v) {
+    const forwardEdge = edgeList.find((e) => e.fromId === u && e.toId === v);
+    if (forwardEdge) return forwardEdge;
+    const backBi = edgeList.find((e) => e.fromId === v && e.toId === u && e.bidirectional);
+    if (backBi) return backBi;
+    return edgeList.find((e) => e.fromId === v && e.toId === u && !e.bidirectional) || null;
+  }
+
+  const innerW = width - 2 * pad;
+  const innerH = height - 2 * pad;
+  const cx = pad + innerW / 2;
+  const cy = pad + innerH / 2;
+
+  /** @type {Map<string, { x: number, y: number }>} */
+  const pos = new Map();
+
+  function getStep(u, v, forward, edge) {
+    const su = nodeById.get(u)?.scale;
+    const sv = nodeById.get(v)?.scale;
+    const md = edge?.metadata && typeof edge.metadata === 'object' ? edge.metadata : {};
+    const lenKm = typeof md.lengthKm === 'number' && Number.isFinite(md.lengthKm) && md.lengthKm >= 0
+      ? md.lengthKm
+      : defaultLengthKmBetweenScales(su ?? 5, sv ?? 5);
+    let deg = typeof md.directionDeg === 'number' && Number.isFinite(md.directionDeg)
+      ? normalizeDirectionDeg(md.directionDeg)
+      : directionDegForChildIndex(stableEdgeFallbackIndex(u, v));
+    if (!forward) deg = normalizeDirectionDeg(deg + 180);
+    const lenPx = lenKm * KM_TO_BASE_PX;
+    const rad = (deg * Math.PI) / 180;
+    return { dx: Math.cos(rad) * lenPx, dy: Math.sin(rad) * lenPx };
+  }
+
+  const visited = new Set();
+  const components = [];
+  for (const start of [...ids].sort()) {
+    if (visited.has(start)) continue;
+    const comp = [];
+    const stack = [start];
+    visited.add(start);
+    while (stack.length) {
+      const u = stack.pop();
+      comp.push(u);
+      for (const w of und.get(u) || []) {
+        if (!visited.has(w)) {
+          visited.add(w);
+          stack.push(w);
+        }
+      }
+    }
+    components.push(comp);
+  }
+
+  let slotY = 0;
+  for (const comp of components) {
+    const root = [...comp].sort()[0];
+    pos.set(root, { x: cx, y: cy + slotY });
+    const q = [root];
+    while (q.length) {
+      const u = q.shift();
+      const pu = pos.get(u);
+      const neighbors = [...(und.get(u) || [])].sort();
+      for (const v of neighbors) {
+        if (pos.has(v)) continue;
+        const edge = pickEdgeBetween(u, v);
+        if (!edge) continue;
+        const forward = edge.fromId === u && edge.toId === v;
+        const { dx, dy } = getStep(u, v, forward, edge);
+        pos.set(v, { x: pu.x + dx, y: pu.y + dy });
+        q.push(v);
+      }
+    }
+    for (const nid of [...comp].sort()) {
+      if (!pos.has(nid)) {
+        pos.set(nid, { x: cx + 140, y: cy + slotY + 90 });
+      }
+    }
+    slotY += 220;
+  }
+
+  // Orphan nodes (no edges in filtered graph)
+  for (const id of ids) {
+    if (!pos.has(id)) {
+      const i = pos.size;
+      const angle = (2 * Math.PI * i) / Math.max(ids.length, 1);
+      const r = Math.min(innerW, innerH) * 0.15;
+      pos.set(id, { x: cx + r * Math.cos(angle), y: cy + r * Math.sin(angle) });
+    }
+  }
+
+  const radii = new Map(ids.map((id) => [id, radiusForGraphScale(nodeById.get(id)?.scale)]));
+
+  for (let iter = 0; iter < collisionIters; iter++) {
+    for (let i = 0; i < ids.length; i++) {
+      for (let j = i + 1; j < ids.length; j++) {
+        const a = ids[i];
+        const b = ids[j];
+        const pa = pos.get(a);
+        const pb = pos.get(b);
+        if (!pa || !pb) continue;
+        let dx = pb.x - pa.x;
+        let dy = pb.y - pa.y;
+        let d = Math.sqrt(dx * dx + dy * dy) || 1e-6;
+        const minSep = radii.get(a) + radii.get(b) + separationPad;
+        if (d >= minSep) continue;
+        const push = (minSep - d) / 2;
+        dx /= d;
+        dy /= d;
+        pa.x -= dx * push;
+        pa.y -= dy * push;
+        pb.x += dx * push;
+        pb.y += dy * push;
+      }
+    }
+  }
+
+  let minX = Infinity;
+  let minY = Infinity;
+  let maxX = -Infinity;
+  let maxY = -Infinity;
+  pos.forEach(({ x, y }) => {
+    if (x < minX) minX = x;
+    if (y < minY) minY = y;
+    if (x > maxX) maxX = x;
+    if (y > maxY) maxY = y;
+  });
+  const rangeX = maxX - minX || 1;
+  const rangeY = maxY - minY || 1;
+  const scale = Math.min(innerW / rangeX, innerH / rangeY, 1);
+  const midX = (minX + maxX) / 2;
+  const midY = (minY + maxY) / 2;
+
+  const result = new Map();
+  pos.forEach(({ x, y }, id) => {
+    result.set(id, {
+      x: cx + (x - midX) * scale,
+      y: cy + (y - midY) * scale,
+    });
+  });
+
   return result;
 }
 

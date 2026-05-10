@@ -24,7 +24,7 @@ export const ATTRIBUTE_DESCRIPTIONS = {
   charyzma: 'Wplyw spoleczny, perswazja, blef, przywodztwo i ogolne wrazenie wywierane na innych',
   zrecznosc: 'Refleks, precyzja ruchow, skradanie, uniki oraz obsluga narzedzi i broni wymagajacych dokladnosci',
   wytrzymalosc: 'Odpornosc organizmu, kondycja, zdrowie, wytrwalosc i zdolnosc przetrwania trudnych warunkow',
-  szczescie: 'Cecha specjalna dajaca kazdemu rzutowi X% szans na gwarantowany sukces, gdzie X = poziom Szczescia',
+  szczescie: 'Cecha specjalna: wartosc dodawana do kazdego rzutu + kazdemu rzutowi X% szans na gwarantowany sukces, gdzie X = poziom Szczescia',
 };
 
 export const ATTRIBUTE_SHORT = {
@@ -67,7 +67,7 @@ export const SKILL_LEVEL_INTERPRETATIONS = [
   { min: 21, max: 25, label: 'Legendarny' },
 ];
 
-// Skills organized by parent attribute (31 consolidated skills)
+// Skills organized by parent attribute (40 consolidated skills)
 export const SKILLS = [
   // Walka
   { name: 'Walka wrecz', attribute: 'sila' },
@@ -77,11 +77,14 @@ export const SKILLS = [
   { name: 'Uniki', attribute: 'zrecznosc' },
   { name: 'Walka dwiema brońmi', attribute: 'zrecznosc' },
   { name: 'Zastraszanie', attribute: 'sila' },
+  { name: 'Taktyka', attribute: 'inteligencja' },
 
   // Fizyczne
   { name: 'Atletyka', attribute: 'sila' },
   { name: 'Akrobatyka', attribute: 'zrecznosc' },
   { name: 'Jezdziectwo', attribute: 'zrecznosc' },
+  { name: 'Prezenie sie', attribute: 'sila' },
+  { name: 'Wywazanie drzwi', attribute: 'sila' },
 
   // Spoleczne
   { name: 'Perswazja', attribute: 'charyzma' },
@@ -89,6 +92,7 @@ export const SKILLS = [
   { name: 'Handel', attribute: 'charyzma' },
   { name: 'Przywodztwo', attribute: 'charyzma' },
   { name: 'Wystepy', attribute: 'charyzma' },
+  { name: 'Flirt', attribute: 'charyzma' },
 
   // Wiedza
   { name: 'Wiedza ogolna', attribute: 'inteligencja' },
@@ -97,6 +101,7 @@ export const SKILLS = [
   { name: 'Medycyna', attribute: 'inteligencja' },
   { name: 'Alchemia', attribute: 'inteligencja' },
   { name: 'Rzemioslo', attribute: 'inteligencja' },
+  { name: 'Nawigacja', attribute: 'inteligencja' },
 
   // Skradanie i Precyzja
   { name: 'Skradanie', attribute: 'zrecznosc' },
@@ -109,11 +114,15 @@ export const SKILLS = [
   { name: 'Przetrwanie', attribute: 'wytrzymalosc' },
   { name: 'Tropienie', attribute: 'inteligencja' },
   { name: 'Odpornosc', attribute: 'wytrzymalosc' },
+  { name: 'Picie alkoholu', attribute: 'wytrzymalosc' },
+  { name: 'Upartosc', attribute: 'wytrzymalosc' },
+  { name: 'Plywanie', attribute: 'wytrzymalosc' },
 
   // Szczescie
   { name: 'Fart', attribute: 'szczescie' },
   { name: 'Hazard', attribute: 'szczescie' },
   { name: 'Przeczucie', attribute: 'szczescie' },
+  { name: 'Modlitwa', attribute: 'szczescie' },
 ];
 
 export const SKILL_NAMES = SKILLS.map((s) => s.name);
@@ -243,7 +252,7 @@ export function cumulativeCharXpThreshold(targetLevel) {
 // ── TEST RESOLUTION CONSTANTS ──
 
 export const MOMENTUM_RANGE = { min: -10, max: 10 };
-export const CREATIVITY_BONUS_MAX = 10;
+export const CREATIVITY_BONUS_MAX = 20;
 export const D50_MIN = 1;
 export const D50_MAX = 50;
 
@@ -307,13 +316,13 @@ export const PLAYABLE_SPECIES_LIST = SPECIES_LIST.filter((key) => SPECIES[key].p
 // ── SKILL CATEGORIES (UI grouping) ──
 
 export const SKILL_CATEGORIES = [
-  { key: 'walka', label: 'Walka', icon: 'swords', skills: ['Walka wrecz', 'Walka bronia jednoręczna', 'Walka bronia dwureczna', 'Walka dwiema brońmi', 'Strzelectwo', 'Uniki', 'Zastraszanie'] },
-  { key: 'fizyczne', label: 'Fizyczne', icon: 'fitness_center', skills: ['Atletyka', 'Akrobatyka', 'Jezdziectwo'] },
-  { key: 'spoleczne', label: 'Spoleczne', icon: 'groups', skills: ['Perswazja', 'Blef', 'Handel', 'Przywodztwo', 'Wystepy'] },
-  { key: 'wiedza', label: 'Wiedza', icon: 'school', skills: ['Wiedza ogolna', 'Wiedza o potworach', 'Wiedza o naturze', 'Medycyna', 'Alchemia', 'Rzemioslo'] },
+  { key: 'walka', label: 'Walka', icon: 'swords', skills: ['Walka wrecz', 'Walka bronia jednoręczna', 'Walka bronia dwureczna', 'Walka dwiema brońmi', 'Strzelectwo', 'Uniki', 'Zastraszanie', 'Taktyka'] },
+  { key: 'fizyczne', label: 'Fizyczne', icon: 'fitness_center', skills: ['Atletyka', 'Akrobatyka', 'Jezdziectwo', 'Prezenie sie', 'Wywazanie drzwi'] },
+  { key: 'spoleczne', label: 'Spoleczne', icon: 'groups', skills: ['Perswazja', 'Blef', 'Handel', 'Przywodztwo', 'Wystepy', 'Flirt'] },
+  { key: 'wiedza', label: 'Wiedza', icon: 'school', skills: ['Wiedza ogolna', 'Wiedza o potworach', 'Wiedza o naturze', 'Medycyna', 'Alchemia', 'Rzemioslo', 'Nawigacja'] },
   { key: 'skradanie', label: 'Skradanie i Precyzja', icon: 'visibility_off', skills: ['Skradanie', 'Otwieranie zamkow', 'Kradziez kieszonkowa', 'Pulapki i mechanizmy', 'Spostrzegawczosc'] },
-  { key: 'przetrwanie', label: 'Przetrwanie', icon: 'forest', skills: ['Przetrwanie', 'Tropienie', 'Odpornosc'] },
-  { key: 'szczescie', label: 'Szczescie', icon: 'casino', skills: ['Fart', 'Hazard', 'Przeczucie'] },
+  { key: 'przetrwanie', label: 'Przetrwanie', icon: 'forest', skills: ['Przetrwanie', 'Tropienie', 'Odpornosc', 'Picie alkoholu', 'Upartosc', 'Plywanie'] },
+  { key: 'szczescie', label: 'Szczescie', icon: 'casino', skills: ['Fart', 'Hazard', 'Przeczucie', 'Modlitwa'] },
 ];
 
 // ── CREATION LIMITS ──
@@ -419,11 +428,11 @@ export function formatSystemRulesForPrompt() {
 - Levele postaci rosna w stylu Oblivion: level-up skilla daje XP postaci, level-up postaci daje +1 atrybut
 
 TEST MECHANIKA:
-- Rzut d50 + cecha + umiejetnosc + momentum (max ±10) + bonus za kreatywnosc (max +10)
+- Rzut d50 + cecha + umiejetnosc + momentum (max ±10) + bonus za kreatywnosc (max +20) + Szczescie
 - Progi trudnosci: Latwy=20, Sredni=35, Trudny=50, Bardzo trudny=65, Ekstremalny=80
 - AI moze lekko modyfikowac prog w zaleznosci od sytuacji
 - Margines = wynik - prog (dodatni = sukces, ujemny = porazka)
-- Szczescie: przed kazdy rzutem X% szans na gwarantowany sukces (X = poziom Szczescia)
+- Szczescie: (1) wartosc dodawana do kazdego rzutu, (2) przed kazdym rzutem X% szans na gwarantowany sukces (X = poziom Szczescia)
 
 MAGIA:
 - 9 drzewek zakleć, kazde z progresja przez uzycie

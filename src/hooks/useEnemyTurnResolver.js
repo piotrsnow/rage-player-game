@@ -111,7 +111,7 @@ export function useEnemyTurnResolver({
       await onBeforeResolve(combat);
     }
 
-    const { maxSlideDuration } = resolveEnemyTurnStep({
+    const { afterEnemies, maxSlideDuration } = resolveEnemyTurnStep({
       combat,
       isMultiplayer,
       dispatch,
@@ -125,7 +125,7 @@ export function useEnemyTurnResolver({
 
     if (willCharge && maxSlideDuration > 0 && onAfterSlide) {
       await new Promise((r) => setTimeout(r, maxSlideDuration + 50));
-      await onAfterSlide(combat);
+      await onAfterSlide(afterEnemies);
     }
   });
 

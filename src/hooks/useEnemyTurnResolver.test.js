@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 vi.mock('../services/combatEngine', () => ({
   getCurrentTurnCombatant: vi.fn(),
   resolveEnemyTurns: vi.fn(),
+  getEnemyAction: vi.fn(),
 }));
 
 import { getCurrentTurnCombatant, resolveEnemyTurns } from '../services/combatEngine';
@@ -159,5 +160,24 @@ describe('resolveEnemyTurnStep — multiplayer host mode', () => {
     expect(deps.dispatch).not.toHaveBeenCalled();
     expect(deps.dispatchCombatChatMessage).not.toHaveBeenCalled();
     expect(deps.addResultToLog).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('resolveEnemyTurnStep — returns afterEnemies for onAfterSlide', () => {
+  it('returns afterEnemies (not the original combat) so callers can use post-resolve state', () => {
+    const originalCombat = buildCombatState();
+    const afterEnemies = { ...buildCombatState(), turnIndex: 0, round: 2 };
+    afterEnemies.combatants = afterEnemies.combatants.map(c => ({
+      ...c,
+      position: { x: c.position.x + 1, y: c.position.y },
+    }));
+    vi.mocked(resolveEnemyTurns).mockReturnValue({ combat: afterEnemies, results: [] });
+
+    const deps = makeStepDeps();
+    const ret = resolveEnemyTurnStep({ combat: originalCombat, isMultiplayer: false, ...deps });
+
+    expect(ret.afterEnemies).toBe(afterEnemies);
+    expect(ret.afterEnemies).not.toBe(originalCombat);
+    expect(ret.afterEnemies.combatants[0].position.x).not.toBe(originalCombat.combatants[0].position.x);
   });
 });

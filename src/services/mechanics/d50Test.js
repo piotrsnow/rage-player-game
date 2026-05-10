@@ -11,8 +11,8 @@ import { rollLuckCheck } from '../../../shared/domain/luck.js';
  * @param {number} [params.skillLevel=0] - skill level
  * @param {number} [params.creativityBonus=0] - creativity bonus
  * @param {number} [params.threshold] - difficulty threshold (default: medium)
- * @param {number} [params.luck=0] - szczescie value for auto-success check
- * @returns {{ roll, total, threshold, margin, success, luckySuccess, attribute, skillLevel, creativityBonus }}
+ * @param {number} [params.luck=0] - szczescie value (added to total + X% auto-success)
+ * @returns {{ roll, total, threshold, margin, success, luckySuccess, luckBonus, attribute, skillLevel, creativityBonus }}
  */
 export function resolveD50Test({
   attribute,
@@ -24,9 +24,9 @@ export function resolveD50Test({
   const { luckRoll, luckySuccess } = rollLuckCheck(luck, rollPercentage);
 
   const roll = rollD50();
-  const total = roll + attribute + skillLevel + creativityBonus;
+  const total = roll + attribute + skillLevel + creativityBonus + luck;
   const margin = total - threshold;
   const success = luckySuccess || margin >= 0;
 
-  return { roll, total, threshold, margin, success, luckySuccess, attribute, skillLevel, creativityBonus };
+  return { roll, total, threshold, margin, success, luckySuccess, luckBonus: luck, attribute, skillLevel, creativityBonus };
 }
