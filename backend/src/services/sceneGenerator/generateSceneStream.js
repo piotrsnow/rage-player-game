@@ -96,6 +96,8 @@ export async function generateSceneStream(campaignId, playerAction, options = {}
       livingWorldEnabled,
       questGraphEnabled,
       currentRef,
+      pendingSlip,
+      pendingProvidence,
     } = await loadCampaignState(campaignId);
     let activeCurrentRef = currentRef;
 
@@ -295,8 +297,24 @@ export async function generateSceneStream(campaignId, playerAction, options = {}
       preRolls,
       creativityEligible,
       forceRoll,
+      pendingSlip,
+      pendingProvidence,
       entityTags,
     });
+
+    // One-shot incident-system payloads — clear them as soon as the prompt
+    // is built so a retry/idle event doesn't re-inject them. Best-effort:
+    // a failure here just leaves a stale flag for one extra scene.
+    if (pendingSlip || pendingProvidence) {
+      const clearData = {};
+      if (pendingSlip) clearData.pendingSlip = null;
+      if (pendingProvidence) clearData.pendingProvidence = null;
+      try {
+        await prisma.campaign.update({ where: { id: campaignId }, data: clearData });
+      } catch {
+        // non-fatal — flag will simply re-fire next scene
+      }
+    }
 
     // 5. Streaming AI call
     const providerApiKey = requireServerApiKey(

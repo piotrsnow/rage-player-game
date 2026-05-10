@@ -548,6 +548,19 @@ export default function GameplayPage({ readOnly = false, shareToken = null, onRe
     // sCampaign?.backendId is the resolved id; urlCampaignId is the URL fallback
   }, [sCampaign?.backendId, urlCampaignId, isMultiplayer, dispatch]);
 
+  // After modal close on a positive verdict with concrete corrections, fire
+  // a one-shot "providence" scene. Backend already queued a pendingProvidence
+  // payload — generateScene with the [PROVIDENCE_AFTER_INCIDENT] token reads
+  // it and weaves a short atmospheric scene where fate/luck/fortune
+  // manifests the correction in-world.
+  const handleProvidenceScene = useCallback(() => {
+    if (isMultiplayer) return; // guests/host disambiguation: skip in MP for now
+    generateScene('[PROVIDENCE_AFTER_INCIDENT]', false, false).catch((err) => {
+      // eslint-disable-next-line no-console
+      console.warn('Providence scene generation failed:', err?.message);
+    });
+  }, [generateScene, isMultiplayer]);
+
   const actions = useGameplayActions({
     dispatch,
     autoSave,
@@ -847,6 +860,7 @@ export default function GameplayPage({ readOnly = false, shareToken = null, onRe
               dictation={dictation}
               campaignId={sCampaign?.backendId || urlCampaignId || null}
               onIncidentCorrectionsApplied={handleIncidentCorrectionsApplied}
+              onProvidenceScene={handleProvidenceScene}
               onOpenTravelMap={() => {
                 setWorldModalInitialTab('map');
                 setWorldModalOpen(true);

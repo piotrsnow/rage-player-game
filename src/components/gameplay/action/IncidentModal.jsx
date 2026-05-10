@@ -29,9 +29,43 @@ const TechnicalDetailsBlock = memo(function TechnicalDetailsBlock({ details, t }
   );
 });
 
-export default function IncidentModal({ campaignId, onClose, onCorrectionsApplied }) {
+// Buckets that backend (incidents.js) does NOT persist itself — they live
+// FE-only (combat HUD, mapMode, narrativeState, transient effects, etc.).
+// We dispatch APPLY_STATE_CHANGES for these after a positive verdict so the
+// store mirrors them; backend-persisted buckets (character, quests, npcs,
+// location, codex, knowledge) are picked up by the parent's refetch.
+const FE_ONLY_CORRECTION_BUCKETS = [
+  'combatUpdate',
+  'factionChanges',
+  'activeEffects',
+  'mapMode',
+  'narrativeState',
+  'startTrade',
+  'needsChanges',
+  'timeAdvance',
+];
+
+function pickFeOnlyChanges(stateChanges) {
+  if (!stateChanges || typeof stateChanges !== 'object') return null;
+  const out = {};
+  let hit = false;
+  for (const key of FE_ONLY_CORRECTION_BUCKETS) {
+    const v = stateChanges[key];
+    if (v == null) continue;
+    if (Array.isArray(v) && v.length === 0) continue;
+    if (typeof v === 'object' && !Array.isArray(v) && Object.keys(v).length === 0) continue;
+    out[key] = v;
+    hit = true;
+  }
+  return hit ? out : null;
+}
+
+export default function IncidentModal({ campaignId, dispatch = null, onClose, onCorrectionsApplied, onProvidenceScene = null }) {
   const { t } = useTranslation();
-  const modalRef = useModalA11y(onClose);
+  // Forward-ref to handleClose so useModalA11y (called before handleClose is
+  // defined) can reach the up-to-date callback through a stable wrapper.
+  const handleCloseRef = useRef(null);
+  const modalRef = useModalA11y(() => handleCloseRef.current?.());
   const [view, setView] = useState('form'); // 'form' | 'verdict' | 'history'
   const [complaint, setComplaint] = useState('');
   const [submitting, setSubmitting] = useState(false);
@@ -48,13 +82,39 @@ export default function IncidentModal({ campaignId, onClose, onCorrectionsApplie
 
   // Server applied corrections atomically — we just refetch campaign state
   // so the FE store mirrors the new world. Single fire per result.
+  // Also dispatch FE-only buckets that backend cannot persist (combat HUD,
+  // mapMode, narrativeState, etc.) so the store reflects them after the
+  // refetch overwrites the rest.
   useEffect(() => {
     if (!result || !result.appliedStateChanges || refetchTriggered) return;
     if (typeof onCorrectionsApplied === 'function') {
       onCorrectionsApplied();
     }
+    if (typeof dispatch === 'function') {
+      const feOnly = pickFeOnlyChanges(result.corrections?.stateChanges);
+      if (feOnly) {
+        dispatch({ type: 'APPLY_STATE_CHANGES', payload: feOnly });
+      }
+    }
     setRefetchTriggered(true);
-  }, [result, refetchTriggered, onCorrectionsApplied]);
+  }, [result, refetchTriggered, onCorrectionsApplied, dispatch]);
+
+  // Closing the modal after a positive verdict that produced concrete
+  // corrections triggers a one-shot "providence" scene — backend signals
+  // readiness via `result.providenceQueued` (set when correctionSummary was
+  // non-empty AND pendingProvidence was persisted). Resetting to a new
+  // report does NOT trigger; only actual close does.
+  const handleClose = useCallback(() => {
+    if (result?.providenceQueued && typeof onProvidenceScene === 'function') {
+      try {
+        onProvidenceScene();
+      } catch {
+        // non-fatal — modal still closes
+      }
+    }
+    onClose();
+  }, [result, onProvidenceScene, onClose]);
+  handleCloseRef.current = handleClose;
 
   const handleSubmit = useCallback(async () => {
     if (!complaint.trim() || complaint.trim().length < 10 || submitting) return;
@@ -105,7 +165,7 @@ export default function IncidentModal({ campaignId, onClose, onCorrectionsApplie
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4" role="dialog" aria-modal="true">
-      <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} />
+      <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={handleClose} />
       <div
         ref={modalRef}
         className="relative w-full max-w-lg max-h-[80vh] bg-surface-container-highest/80 backdrop-blur-2xl border border-outline-variant/15 rounded-sm flex flex-col shadow-2xl animate-fade-in"
@@ -137,7 +197,7 @@ export default function IncidentModal({ campaignId, onClose, onCorrectionsApplie
                 {t('gameplay.incidentNewReport')}
               </button>
             )}
-            <button onClick={onClose} aria-label={t('gameplay.incidentClose')} className="text-on-surface-variant hover:text-primary transition-colors p-1">
+            <button onClick={handleClose} aria-label={t('gameplay.incidentClose')} className="text-on-surface-variant hover:text-primary transition-colors p-1">
               <span className="material-symbols-outlined text-lg">close</span>
             </button>
           </div>
@@ -256,7 +316,7 @@ export default function IncidentModal({ campaignId, onClose, onCorrectionsApplie
                   {t('gameplay.incidentNewReport')}
                 </button>
                 <button
-                  onClick={onClose}
+                  onClick={handleClose}
                   className="flex-1 px-3 py-2 text-xs font-label text-primary bg-primary/10 hover:bg-primary/20 border border-primary/20 rounded-sm transition-all"
                 >
                   {t('gameplay.incidentClose')}

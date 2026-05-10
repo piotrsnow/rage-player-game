@@ -137,6 +137,7 @@ export async function incidentRoutes(fastify) {
       let analyzed;
       try {
         analyzed = await analyzeIncident({
+          campaignId,
           recentScenes,
           playerComplaint: complaint,
           campaignState: campaign.coreState,
@@ -212,6 +213,7 @@ export async function incidentRoutes(fastify) {
           }
 
           let worldCorrectionApplied = false;
+          let providenceQueued = false;
           try {
             const currentRef = (campaign.currentLocationKind && campaign.currentLocationId)
               ? { kind: campaign.currentLocationKind, id: campaign.currentLocationId, name: campaign.currentLocationName }
@@ -226,6 +228,27 @@ export async function incidentRoutes(fastify) {
               where: { id: incidentRow.id },
               data: { worldCorrectionApplied: true },
             });
+
+            // Queue a one-shot "providence" payload for the NEXT scene
+            // generation — only when the verdict produced concrete
+            // corrections. Formal-only verdicts (empty summary) do not
+            // trigger a fabular scene. Same pattern as pendingSlip.
+            if (Array.isArray(correctionSummary) && correctionSummary.length > 0) {
+              try {
+                await prisma.campaign.update({
+                  where: { id: campaignId },
+                  data: {
+                    pendingProvidence: {
+                      summary: correctionSummary,
+                      narrativeComment: narrativeComment || null,
+                    },
+                  },
+                });
+                providenceQueued = true;
+              } catch (provErr) {
+                log.warn({ err: provErr?.message, campaignId, incidentId: incidentRow.id }, 'pendingProvidence write failed (non-fatal)');
+              }
+            }
           } catch (err) {
             log.warn(
               { err: err?.message, campaignId, incidentId: incidentRow.id },
@@ -254,6 +277,7 @@ export async function incidentRoutes(fastify) {
             appliedStateChanges,
             renamedNpcs: appliedRenames,
             worldCorrectionApplied,
+            providenceQueued,
             createdAt: incidentRow.createdAt,
           };
         } catch (err) {

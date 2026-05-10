@@ -67,6 +67,7 @@ export default function ActionPanel({
   dictation = null,
   campaignId = null,
   onIncidentCorrectionsApplied = null,
+  onProvidenceScene = null,
   onOpenTravelMap = null,
 }) {
   const [customAction, setCustomAction] = useState('');
@@ -510,8 +511,10 @@ export default function ActionPanel({
       {incidentOpen && campaignId && createPortal(
         <IncidentModal
           campaignId={campaignId}
+          dispatch={dispatch}
           onClose={() => setIncidentOpen(false)}
           onCorrectionsApplied={onIncidentCorrectionsApplied}
+          onProvidenceScene={onProvidenceScene}
         />,
         document.body
       )}

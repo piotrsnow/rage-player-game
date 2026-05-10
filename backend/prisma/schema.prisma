@@ -325,6 +325,13 @@ model Campaign {
   // injects into user prompt, then clears it after generation.
   pendingSlip String?
 
+  // One-shot "providence" payload set by the incident route after a positive
+  // verdict that produced concrete corrections (correctionSummary non-empty).
+  // The next scene generation reads this, weaves a short atmospheric scene
+  // where the world reveals/manifests the correction, then clears it.
+  // Shape: { summary: string[], narrativeComment: string|null }
+  pendingProvidence Json?
+
   createdAt DateTime @default(now()) @db.Timestamptz
   updatedAt DateTime @updatedAt @db.Timestamptz
 
