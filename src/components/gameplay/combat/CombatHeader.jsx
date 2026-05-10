@@ -14,6 +14,7 @@ export default function CombatHeader({
   onToggleLayout,
   movementInfo,
   isMyTurn,
+  allowNegotiationControls = true,
 }) {
   const { t } = useTranslation();
   return (
@@ -49,7 +50,7 @@ export default function CombatHeader({
             <span className="material-symbols-outlined text-base">redo</span>
           </button>
         )}
-        {!combatOver && canControl && playerWinning && (
+        {allowNegotiationControls && !combatOver && canControl && playerWinning && (
           <button
             onClick={onRequestTruce}
             data-testid="combat-truce-button"
@@ -59,7 +60,7 @@ export default function CombatHeader({
             <span className="material-symbols-outlined text-base">handshake</span>
           </button>
         )}
-        {!combatOver && canControl && (
+        {allowNegotiationControls && !combatOver && canControl && (
           <button
             onClick={onRequestSurrender}
             data-testid="combat-surrender-button"

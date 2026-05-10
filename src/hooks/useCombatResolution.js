@@ -8,6 +8,7 @@ function formatWoundsText(wc) {
 
 function buildCombatResult(summary) {
   return {
+    mode: summary.mode || 'combat',
     outcome: summary.outcome || (summary.playerSurvived ? 'victory' : 'defeat'),
     woundsChange: summary.woundsChange || 0,
     manaChange: summary.manaChange || 0,
@@ -18,6 +19,7 @@ function buildCombatResult(summary) {
     rounds: summary.rounds || 0,
     playerSurvived: !!summary.playerSurvived,
     flawless: summary.flawless === true,
+    skirmishSummary: summary.skirmishSummary || null,
   };
 }
 
@@ -59,12 +61,17 @@ export function buildCombatResolutionHandlers({
   // summary; backend applies wounds, skillProgress, and tier-based char XP.
   const handleEndCombat = (summary) => {
     dispatch({ type: 'END_COMBAT' });
+    const isBeerDuel = summary.mode === 'beer_duel';
+    const duelWinners = summary.skirmishSummary?.winnerIds || [];
+    const duelWinnerLabel = duelWinners.length > 0 ? duelWinners.join(', ') : 'nobody';
 
-    const combatJournal = summary.playerSurvived
-      ? `Combat: Victory — ${summary.enemiesDefeated}/${summary.totalEnemies} enemies defeated in ${summary.rounds} rounds.${formatWoundsText(summary.woundsChange)}`
-      : `Combat: Defeat — fell after ${summary.rounds} rounds against ${summary.totalEnemies} enemies.`;
+    const combatJournal = isBeerDuel
+      ? `Beer duel: finished after ${summary.rounds} rounds. Collected ${summary.skirmishSummary?.beersCollectedByPlayer || 0} beers. Winner: ${duelWinnerLabel}.`
+      : summary.playerSurvived
+        ? `Combat: Victory — ${summary.enemiesDefeated}/${summary.totalEnemies} enemies defeated in ${summary.rounds} rounds.${formatWoundsText(summary.woundsChange)}`
+        : `Combat: Defeat — fell after ${summary.rounds} rounds against ${summary.totalEnemies} enemies.`;
 
-    const isDead = !summary.playerSurvived;
+    const isDead = !isBeerDuel && !summary.playerSurvived;
     if (isDead) {
       dispatch({ type: 'APPLY_STATE_CHANGES', payload: { journalEntries: [combatJournal], forceStatus: 'dead' } });
     } else {
@@ -77,7 +84,9 @@ export function buildCombatResolutionHandlers({
         id: `msg_${Date.now()}_combat_end`,
         role: 'system',
         subtype: isDead ? 'combat_death' : 'combat_end',
-        content: isDead
+        content: isBeerDuel
+          ? t('combat.beerDuelEnded', 'Beer duel ended. Winner: {{winner}}.', { winner: duelWinnerLabel })
+          : isDead
           ? t('combat.playerDied', 'Your character has fallen in combat. Death is final.')
           : `${t('combat.endedAfterRounds', 'Combat ended after {{rounds}} rounds.', { rounds: summary.rounds })} ${summary.enemiesDefeated}/${summary.totalEnemies} ${t('combat.enemiesDefeated', 'enemies defeated')}. ${t('combat.youSurvived', 'You survived!')}`,
         timestamp: Date.now(),
@@ -91,7 +100,9 @@ export function buildCombatResolutionHandlers({
     }
 
     const combatResult = buildCombatResult(summary);
-    const combatActionText = `[Combat resolved: defeated ${summary.enemiesDefeated}/${summary.totalEnemies} enemies in ${summary.rounds} rounds.${formatWoundsText(summary.woundsChange) || ' Unscathed.'}]`;
+    const combatActionText = isBeerDuel
+      ? `[BEER_DUEL_RESOLVED: winner=${duelWinnerLabel}; playerBeers=${summary.skirmishSummary?.beersCollectedByPlayer || 0}; rounds=${summary.rounds}]`
+      : `[Combat resolved: defeated ${summary.enemiesDefeated}/${summary.totalEnemies} enemies in ${summary.rounds} rounds.${formatWoundsText(summary.woundsChange) || ' Unscathed.'}]`;
 
     generateScene(combatActionText, false, false, false, { combatResult }).catch(() => {});
   };

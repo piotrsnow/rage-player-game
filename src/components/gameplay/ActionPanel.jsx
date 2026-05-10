@@ -286,6 +286,11 @@ export default function ActionPanel({
     }
   };
 
+  const handleInitiateBeerDuel = () => {
+    if (isMultiplayer) return;
+    onAction('[INITIATE BEER DUEL]', true);
+  };
+
   const handleAttackNpc = (npcName) => {
     setCombatPickerOpen(false);
     if (isMultiplayer) {
@@ -574,6 +579,8 @@ export default function ActionPanel({
             needsSystemEnabled={settings.needsSystemEnabled}
             onSuggestedAction={handleSuggestedAction}
             onToggleCombatPicker={() => setCombatPickerOpen((v) => !v)}
+            onInitiateBeerDuel={handleInitiateBeerDuel}
+            isMultiplayer={isMultiplayer}
             onToggleTradePicker={() => setTradePickerOpen((v) => !v)}
             onToggleTrainerPicker={() => setTrainerPickerOpen((v) => !v)}
             onToggleRecruitPicker={() => setRecruitPickerOpen((v) => !v)}

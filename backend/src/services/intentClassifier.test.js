@@ -133,6 +133,7 @@ describe('classifyIntentHeuristic — combat true-positives (regression)', () =>
   const cases = [
     'atakuję strażnika',
     '[INITIATE COMBAT]',
+    '[INITIATE BEER DUEL]',
     '[ATTACK:Kowal]',
     'dobywam miecza i ruszam na bandytę',
     'I attack the guard',
@@ -143,6 +144,14 @@ describe('classifyIntentHeuristic — combat true-positives (regression)', () =>
       expect(result?._intent).toBe('combat');
     });
   }
+});
+
+describe('classifyIntentHeuristic — beer duel marker', () => {
+  it('maps beer duel marker to combat intent with mode hint', () => {
+    const result = classifyIntentHeuristic('[INITIATE BEER DUEL]');
+    expect(result?._intent).toBe('combat');
+    expect(result?._combatMode).toBe('beer_duel');
+  });
 });
 
 describe('classifyIntentHeuristic — trade false-positives', () => {

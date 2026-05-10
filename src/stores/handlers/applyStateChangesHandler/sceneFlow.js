@@ -19,7 +19,15 @@ export function applyCampaignEnd(draft, changes) {
 export function applyCombatUpdate(draft, changes) {
   if (changes.combatUpdate?.active) {
     const allies = (draft.party || []).filter((c) => c.id !== draft.activeCharacterId);
-    draft.combat = createCombatState(draft.character, changes.combatUpdate.enemies || [], allies);
+    draft.combat = createCombatState(
+      draft.character,
+      changes.combatUpdate.enemies || [],
+      allies,
+      {
+        mode: changes.combatUpdate.mode,
+        modeConfig: changes.combatUpdate.modeConfig,
+      },
+    );
     draft.combat.reason = changes.combatUpdate.reason;
   } else if (changes.combatUpdate && !changes.combatUpdate.active) {
     draft.combat = null;

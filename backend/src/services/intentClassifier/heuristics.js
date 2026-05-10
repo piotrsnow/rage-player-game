@@ -136,6 +136,11 @@ export function classifyIntentHeuristic(playerAction, { isFirstScene = false, en
     return { ...emptySelection(), _intent: 'combat' };
   }
 
+  // [INITIATE BEER DUEL]
+  if (playerAction.startsWith('[INITIATE BEER DUEL]')) {
+    return { ...emptySelection(), _intent: 'combat', _combatMode: 'beer_duel' };
+  }
+
   // [TALK: NpcName]
   const talkMatch = playerAction.match(/^\[TALK:\s*(.+?)\]$/);
   if (talkMatch) {

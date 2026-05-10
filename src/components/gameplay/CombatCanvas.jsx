@@ -25,6 +25,7 @@ import ActionModal from './combat/ActionModal';
 import ActiveEffectsRow from '../ui/ActiveEffectsRow';
 
 const FLOAT_TEXT_DURATION = 1200;
+const SKIRMISH_MODE_BEER_DUEL = 'beer_duel';
 
 export default function CombatCanvas({
   combat,
@@ -227,7 +228,20 @@ export default function CombatCanvas({
     const cell = pixelToCell(x, y, containerSize.w, containerSize.h);
     hoverCellRef.current = cell;
 
-    if (cell && combat.terrainTiles?.length) {
+    if (cell && combat.mode === SKIRMISH_MODE_BEER_DUEL) {
+      const beerToken = combat.skirmish?.beerTokens?.find((token) => !token.collectedBy && token.x === cell.x && token.y === cell.y);
+      if (beerToken) {
+        const px = cellToPixel(cell.x, cell.y, containerSize.w, containerSize.h);
+        setTileTooltip({
+          name: t('combat.beerToken', 'Beer'),
+          desc: t('combat.beerTokenDesc', 'Collect to score a point'),
+          x: px.x,
+          y: px.y,
+        });
+      } else {
+        setTileTooltip(null);
+      }
+    } else if (cell && combat.terrainTiles?.length) {
       const tile = combat.terrainTiles.find(tt => tt.x === cell.x && tt.y === cell.y && !tt.consumed);
       if (tile) {
         const def = gameData.terrainTiles[tile.type];
@@ -255,7 +269,7 @@ export default function CombatCanvas({
     const hovId = hasCombatant?.id || null;
     setHoveredCombatantId(hovId);
     onHoverCombatant?.(hovId);
-  }, [containerSize.w, containerSize.h, isMyTurn, myCombatant, combatOver, combat.terrainTiles, t, combatantAtCell, onHoverCombatant]);
+  }, [containerSize.w, containerSize.h, isMyTurn, myCombatant, combatOver, combat.mode, combat.skirmish, combat.terrainTiles, t, combatantAtCell, onHoverCombatant]);
 
   const handleCanvasClick = useCallback((e) => {
     if (!isMyTurn || combatOver) return;
@@ -468,6 +482,25 @@ export default function CombatCanvas({
                 transitionDuration={tokenAnimations[c.id]?.durationMs || 0}
                 t={t}
               />
+            );
+          })}
+
+          {combat.mode === SKIRMISH_MODE_BEER_DUEL && (combat.skirmish?.beerTokens || []).filter((token) => !token.collectedBy).map((token) => {
+            const px = cellToPixel(token.x, token.y, containerSize.w, containerSize.h);
+            return (
+              <div
+                key={token.id}
+                className="absolute pointer-events-none select-none"
+                style={{ left: px.x, top: px.y, transform: 'translate(-50%, -50%)' }}
+              >
+                <span
+                  className="text-[18px] drop-shadow-[0_0_4px_rgba(0,0,0,0.8)]"
+                  role="img"
+                  aria-label={t('combat.beerToken', 'Beer')}
+                >
+                  🍺
+                </span>
+              </div>
             );
           })}
 
