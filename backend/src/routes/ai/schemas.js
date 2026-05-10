@@ -94,6 +94,23 @@ export const TRANSLATE_IMAGE_PROMPT_SCHEMA = {
   required: ['text'],
 };
 
+export const NPC_MISSING_FIELDS_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    worldNpcId: { type: ['string', 'null'], maxLength: 64 },
+    campaignNpcId: { type: ['string', 'null'], maxLength: 64 },
+    fields: {
+      type: 'array',
+      minItems: 1,
+      maxItems: 2,
+      items: { type: 'string', enum: ['appearance', 'dialect'] },
+    },
+    provider: PROVIDER_SCHEMA,
+  },
+  required: ['fields'],
+};
+
 export const GENERATE_CAMPAIGN_SCHEMA = {
   type: 'object',
   additionalProperties: false,

@@ -8,6 +8,7 @@ import { translateImagePromptToEnglish } from '../../services/translateImageProm
 import { generateCombatCommentary } from '../../services/combatCommentary.js';
 import { verifyObjective } from '../../services/objectiveVerifier.js';
 import { generateRecap } from '../../services/recapGenerator.js';
+import { ensureAppearanceAndDialect } from '../../services/livingWorld/npcAppearanceDialect.js';
 import {
   STORY_PROMPT_SCHEMA,
   CHARACTER_LEGEND_SCHEMA,
@@ -17,6 +18,7 @@ import {
   COMBAT_COMMENTARY_SCHEMA,
   VERIFY_OBJECTIVE_SCHEMA,
   RECAP_SCHEMA,
+  NPC_MISSING_FIELDS_SCHEMA,
 } from './schemas.js';
 
 /**
@@ -187,6 +189,54 @@ export async function singleShotRoutes(fastify) {
         storyContext, questName, questDescription, objectiveDescription,
         language, provider, model, modelTier, userApiKeys,
       });
+    } catch (err) {
+      const status = err.statusCode || 502;
+      return reply.code(status).send({ error: err.message, code: err.code || 'AI_REQUEST_FAILED' });
+    }
+  });
+
+  /**
+   * POST /ai/npc-missing-fields — lazy backfill for legacy NPCs that pre-date
+   * the appearance/dialect schema. Caller passes worldNpcId or campaignNpcId
+   * (or both) and the fields they want filled. We load the row, generate any
+   * missing values via a small LLM call, persist them, and return the merged
+   * result. Idempotent — already-filled fields are not regenerated.
+   */
+  fastify.post('/npc-missing-fields', { schema: { body: NPC_MISSING_FIELDS_SCHEMA } }, async (request, reply) => {
+    const { worldNpcId = null, campaignNpcId = null, fields, provider = 'openai' } = request.body || {};
+    if (!worldNpcId && !campaignNpcId) {
+      return reply.code(400).send({ error: 'either worldNpcId or campaignNpcId required' });
+    }
+    const userApiKeys = await loadUserApiKeys(prisma, request.user?.id);
+    try {
+      let npcRecord = null;
+      let resolvedWorldNpcId = worldNpcId;
+      let resolvedCampaignNpcId = campaignNpcId;
+      if (worldNpcId) {
+        npcRecord = await prisma.worldNPC.findUnique({ where: { id: worldNpcId } });
+        if (npcRecord && !campaignNpcId) {
+          // best-effort companion: no campaign context here, only update WorldNPC
+        }
+      } else {
+        npcRecord = await prisma.campaignNPC.findUnique({ where: { id: campaignNpcId } });
+        if (npcRecord?.worldNpcId) resolvedWorldNpcId = npcRecord.worldNpcId;
+      }
+      if (!npcRecord) return reply.code(404).send({ error: 'npc not found' });
+
+      const merged = await ensureAppearanceAndDialect(
+        npcRecord,
+        fields,
+        {
+          campaignNpcId: resolvedCampaignNpcId,
+          worldNpcId: resolvedWorldNpcId,
+          provider,
+          userApiKeys,
+        },
+      );
+      return {
+        appearance: merged?.appearance || null,
+        dialect: merged?.dialect || null,
+      };
     } catch (err) {
       const status = err.statusCode || 502;
       return reply.code(status).send({ error: err.message, code: err.code || 'AI_REQUEST_FAILED' });

@@ -13,6 +13,7 @@ import { childLogger } from '../../lib/logger.js';
 import { callAIJson, parseJsonOrNull } from '../aiJsonCall.js';
 import { forNpc, parseEventPayload, appendEvent } from './worldEventLog.js';
 import { listDeferred, appendDeferred } from './deferredOutbox.js';
+import { ensureAppearanceAndDialect } from './npcAppearanceDialect.js';
 
 const log = childLogger({ module: 'npcDialog' });
 
@@ -46,7 +47,7 @@ export async function generate({
     return fallbackReply('[NPC milczy w zamyśleniu]');
   }
 
-  const npc = await prisma.worldNPC.findUnique({ where: { id: worldNpcId } });
+  let npc = await prisma.worldNPC.findUnique({ where: { id: worldNpcId } });
   if (!npc) return fallbackReply('[Nie ma tu nikogo o takim imieniu]');
   if (npc.alive === false) return fallbackReply('[Cisza. Nie ma już z kim rozmawiać.]');
 
@@ -54,6 +55,21 @@ export async function generate({
   const isLockedByOther = npc.lockedByCampaignId && String(npc.lockedByCampaignId) !== String(campaignId);
   if (isLockedByOther) {
     return fallbackReply('[NPC jest gdzieś indziej, w trasie z kimś innym]');
+  }
+
+  // Lazy backfill: jeśli WorldNPC nie ma jeszcze gwary (ani wyglądu) —
+  // generujemy i zapisujemy zanim zbudujemy system prompt. Zsynchronizuj też
+  // z odpowiednim CampaignNPC shadow, jeśli istnieje.
+  if (!npc.dialect || !npc.appearance) {
+    const shadow = await prisma.campaignNPC.findFirst({
+      where: { campaignId, worldNpcId },
+      select: { id: true },
+    }).catch(() => null);
+    npc = await ensureAppearanceAndDialect(
+      npc,
+      ['appearance', 'dialect'],
+      { campaignNpcId: shadow?.id || null, worldNpcId: npc.id, provider, userApiKeys },
+    );
   }
 
   const [dialogHistory, knowledgeEntries, recentEvents] = await Promise.all([
@@ -145,6 +161,7 @@ function buildSystemPrompt({ npc, isCompanion, dialogHistory, knowledgeEntries, 
   const lines = [];
   lines.push(`You are ${npc.name}${npc.role ? `, ${npc.role}` : ''}.`);
   if (npc.personality) lines.push(`Personality: ${npc.personality}`);
+  if (npc.appearance) lines.push(`Appearance: ${npc.appearance}`);
   if (npc.alignment && npc.alignment !== 'neutral') lines.push(`Alignment: ${npc.alignment}`);
   if (isCompanion) {
     lines.push(`You are currently traveling with the player as a companion (loyalty ${npc.companionLoyalty ?? 50}/100). Speak intimately when context warrants; you trust them more than strangers.`);
@@ -153,6 +170,9 @@ function buildSystemPrompt({ npc, isCompanion, dialogHistory, knowledgeEntries, 
   // Speech style — terse hint based on role keywords. Premium dialog model
   // already understands "noble" vs "peasant" — we just nudge.
   lines.push('Stay in character. Speech matches your role and personality (vocabulary, register, rhythm).');
+  if (npc.dialect) {
+    lines.push(`Dialect / way of speaking: ${npc.dialect}. Apply it consistently in EVERY reply — vocabulary, sentence rhythm, characteristic phrases.`);
+  }
 
   if (knowledgeEntries.length > 0) {
     const safeKnowledge = knowledgeEntries

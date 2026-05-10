@@ -24,6 +24,8 @@ export function applyNpcs(draft, changes) {
         gender: incoming.gender || 'unknown',
         role: incoming.role || '',
         personality: incoming.personality || '',
+        appearance: typeof incoming.appearance === 'string' ? incoming.appearance : '',
+        dialect: typeof incoming.dialect === 'string' ? incoming.dialect : '',
         attitude: incoming.attitude || 'neutral',
         lastLocation: incoming.location || '',
         alive: true,
@@ -51,6 +53,8 @@ export function applyNpcs(draft, changes) {
     if (incoming.gender) npc.gender = incoming.gender;
     if (incoming.role) npc.role = incoming.role;
     if (incoming.personality) npc.personality = incoming.personality;
+    if (typeof incoming.appearance === 'string' && incoming.appearance.trim()) npc.appearance = incoming.appearance;
+    if (typeof incoming.dialect === 'string' && incoming.dialect.trim()) npc.dialect = incoming.dialect;
     if (incoming.attitude) npc.attitude = incoming.attitude;
     if (incoming.location) npc.lastLocation = incoming.location;
     if (incoming.notes) npc.notes = incoming.notes;

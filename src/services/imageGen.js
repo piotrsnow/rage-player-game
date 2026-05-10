@@ -203,11 +203,16 @@ export const imageService = {
     return { url, prompt };
   },
 
-  async generatePortrait(imageBlob, { species, age, gender, careerName, genre } = {}, _apiKeyIgnored, strength = 0.45, provider = 'stability', imageStyle = 'painting', darkPalette = false, seriousness = null, sdModel = null, extras = {}, sdSeed = null) {
+  async generatePortrait(imageBlob, { species, age, gender, careerName, genre, appearanceText } = {}, _apiKeyIgnored, strength = 0.45, provider = 'stability', imageStyle = 'painting', darkPalette = false, seriousness = null, sdModel = null, extras = {}, sdSeed = null) {
     // `careerName` is the only free-form user-content field here — species/gender
     // are enums and genre comes from a fixed picker list. Translate if PL.
+    // `appearanceText` is the canonical NPC appearance (PL) — also free-form,
+    // also translated. When present it acts as the authoritative description
+    // so retries/regenerations stay visually consistent.
     const enCareerName = await ensureEnglish(careerName);
-    const prompt = buildPortraitPrompt(species, gender, age, enCareerName, genre, provider, imageStyle, Boolean(imageBlob), darkPalette, seriousness, extras, sdModel);
+    const enAppearance = appearanceText ? await ensureEnglish(appearanceText) : null;
+    const enrichedExtras = enAppearance ? { ...extras, appearance: enAppearance } : extras;
+    const prompt = buildPortraitPrompt(species, gender, age, enCareerName, genre, provider, imageStyle, Boolean(imageBlob), darkPalette, seriousness, enrichedExtras, sdModel);
 
     let url;
     if (provider === 'dalle') {

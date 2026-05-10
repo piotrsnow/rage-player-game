@@ -1,4 +1,5 @@
 import { imageService } from './imageGen';
+import { apiClient } from './apiClient';
 
 function ageGuess(npc) {
   if (typeof npc?.age === 'number' && Number.isFinite(npc.age)) return npc.age;
@@ -33,7 +34,40 @@ export function buildNpcPortraitSpec(npc, genre) {
     gender: genderGuess(npc),
     careerName: careerGuess(npc),
     genre: genre || 'Fantasy',
+    // Kanoniczny opis fizyczny (PL) — używany przez generator promptu obrazu
+    // jako twarde źródło, tłumaczony na angielski przez imageGen przed
+    // wstawieniem do template'u.
+    appearanceText: typeof npc?.appearance === 'string' && npc.appearance.trim() ? npc.appearance.trim() : null,
   };
+}
+
+// Lazy backfill: jeśli rekord NPC nie ma jeszcze appearance, prosimy backend
+// żeby go wygenerował i zapisał. Mutuje obiekt npc (przypisuje appearance) i
+// zwraca zaktualizowaną referencję, żeby kolejne odczyty (modale, retry
+// portretu) widziały ten sam tekst. Bezpieczne w razie 4xx/5xx — wracamy z
+// oryginalnym obiektem.
+async function ensureNpcAppearance(npc) {
+  if (!npc) return npc;
+  if (typeof npc.appearance === 'string' && npc.appearance.trim()) return npc;
+  // Backend backfill wymaga albo worldNpcId, albo campaignNpcId. Frontowy
+  // model NPC w `world.npcs` nosi `id` (lokalny optimistic id) — szukamy
+  // też pól wskazujących na rekord backendowy.
+  const worldNpcId = npc.worldNpcId || null;
+  const campaignNpcId = npc.campaignNpcId || null;
+  if (!worldNpcId && !campaignNpcId) return npc;
+  try {
+    const data = await apiClient.post('/ai/npc-missing-fields', {
+      worldNpcId,
+      campaignNpcId,
+      fields: ['appearance'],
+    });
+    if (data?.appearance) {
+      npc.appearance = data.appearance;
+    }
+  } catch {
+    // best-effort — dziurawe pole najwyżej da mniej spójny portret
+  }
+  return npc;
 }
 
 export async function generateNpcPortrait(npc, options = {}) {
@@ -47,7 +81,8 @@ export async function generateNpcPortrait(npc, options = {}) {
     sdModel = null,
     sdSeed = null,
   } = options;
-  const spec = buildNpcPortraitSpec(npc, genre);
+  const enriched = await ensureNpcAppearance(npc);
+  const spec = buildNpcPortraitSpec(enriched, genre);
   return imageService.generatePortrait(
     null,
     spec,

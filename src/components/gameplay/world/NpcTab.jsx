@@ -57,6 +57,7 @@ function NpcRow({ npc, quests, characterVoiceMap, taggedVoices, hasVoicePool, ha
       <div className="text-[11px] text-on-surface-variant space-y-0.5">
         {npc.role && <div><span className="text-outline">{t('worldState.role')}:</span> {npc.role}</div>}
         {npc.personality && <div><span className="text-outline">{t('worldState.personality')}:</span> {npc.personality}</div>}
+        {npc.appearance && <div><span className="text-outline">{t('worldState.appearance')}:</span> {npc.appearance}</div>}
         {npc.lastLocation && (
           <div className="flex items-center gap-1">
             <span className="text-outline">{t('worldState.location')}:</span>

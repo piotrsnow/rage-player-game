@@ -82,6 +82,11 @@ function NpcCard({ npc, partySize, onAttempt, lastResult, isGenerating }) {
         <div className="text-xs text-on-surface-variant truncate mt-0.5">
           {speciesLabel}{npc.role ? ` · ${npc.role}` : ''}
         </div>
+        {npc.appearance && (
+          <div className="text-[11px] text-on-surface-variant/80 italic mt-0.5 line-clamp-2">
+            {npc.appearance}
+          </div>
+        )}
 
         <div className="flex items-center gap-2 mt-2">
           <span className={`text-xs font-semibold ${tier.colorClass}`}>{tier.label}</span>

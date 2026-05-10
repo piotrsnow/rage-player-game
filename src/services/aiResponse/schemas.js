@@ -44,6 +44,14 @@ const NpcChangeSchema = z.object({
   action: z.string().optional().default('introduce'),
   name: z.string(),
   gender: z.string().optional(),
+  role: z.string().optional(),
+  personality: z.string().optional(),
+  // 1-zdaniowy opis fizyczny po polsku — używany jako kanoniczne źródło
+  // dla generatora portretów oraz wyświetlany w modalach NPC.
+  appearance: z.string().optional(),
+  // 1-zdaniowy opis sposobu mówienia po polsku (gwara, akcent,
+  // charakterystyczne zwroty) — używany TYLKO przy generowaniu dialogów.
+  dialect: z.string().optional(),
   factionId: z.string().nullable().optional(),
   relatedQuestIds: z.array(z.string()).optional().default([]),
   relationships: z.array(NpcRelationshipSchema).optional().default([]),

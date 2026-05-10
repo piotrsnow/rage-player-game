@@ -399,6 +399,9 @@ export async function reconstructFromNormalized(campaignId, coreState, { current
       gender: n.gender,
       role: n.role,
       personality: n.personality,
+      appearance: n.appearance,
+      // dialect celowo nie hydratujemy do FE state — używany tylko w
+      // backendowym prompcie dialogu, nie wystawiany graczowi
       attitude: n.attitude,
       disposition: n.disposition,
       alive: n.alive,
@@ -409,6 +412,10 @@ export async function reconstructFromNormalized(campaignId, coreState, { current
       creatureKind: n.creatureKind,
       level: n.level,
       stats: n.stats && typeof n.stats === 'object' ? n.stats : {},
+      // ID-y backendowe — pozwalają FE wywołać /ai/npc-missing-fields dla
+      // legacy NPC bez kanonicznego appearance
+      campaignNpcId: n.id,
+      worldNpcId: n.worldNpcId || null,
       relationships: (n.relationships || []).map((r) => ({
         npcName: r.targetRef,
         type: r.relation,
