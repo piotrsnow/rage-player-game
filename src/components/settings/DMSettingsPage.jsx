@@ -113,6 +113,37 @@ export default function DMSettingsPage({ onClose }) {
                   onClick={() => updateSettings({ needsSystemEnabled: !settings.needsSystemEnabled })}
                 />
               </div>
+
+              <div className="bg-surface-container-high/40 p-6 rounded-sm border-b border-outline-variant/15 flex items-center justify-between group hover:bg-surface-container-high transition-colors">
+                <div>
+                  <p className="font-headline text-tertiary">{t('settings.typewriterMode')}</p>
+                  <p className="text-[10px] text-on-surface-variant font-label uppercase tracking-widest mt-1">
+                    {t('settings.typewriterModeDesc')}
+                  </p>
+                </div>
+                <div className="flex gap-1.5">
+                  <button
+                    className={`px-3 py-1.5 text-xs font-label uppercase tracking-wider rounded-sm border transition-colors ${
+                      (settings.typewriterMode || 'fullscreen') === 'fullscreen'
+                        ? 'bg-primary/20 border-primary/40 text-primary'
+                        : 'border-outline-variant/20 text-on-surface-variant hover:border-primary/30'
+                    }`}
+                    onClick={() => updateSettings({ typewriterMode: 'fullscreen' })}
+                  >
+                    {t('settings.typewriterFullscreen')}
+                  </button>
+                  <button
+                    className={`px-3 py-1.5 text-xs font-label uppercase tracking-wider rounded-sm border transition-colors ${
+                      settings.typewriterMode === 'image'
+                        ? 'bg-primary/20 border-primary/40 text-primary'
+                        : 'border-outline-variant/20 text-on-surface-variant hover:border-primary/30'
+                    }`}
+                    onClick={() => updateSettings({ typewriterMode: 'image' })}
+                  >
+                    {t('settings.typewriterImageOnly')}
+                  </button>
+                </div>
+              </div>
             </div>
           </div>
         </div>

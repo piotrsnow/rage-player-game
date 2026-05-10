@@ -125,12 +125,16 @@ async function markDirection({ fromLocationId, toLocationId, campaignId }) {
 /**
  * Load all edges visible to a campaign, in both directions. Returns map
  * fromId → [{ toId, distance, difficulty, terrainType, direction }].
+ *
+ * Also merges LocationEdge rows with category='movement' so Dijkstra sees
+ * both canonical Roads AND semantic movement edges from the location graph.
  */
 export async function loadCampaignGraph(campaignId) {
   // Graph system: Dijkstra only walks movement edges. Non-movement relation
   // types (perception, social, narrative, temporal) are excluded.
+  let roadEdges;
   if (!campaignId) {
-    const edges = await prisma.road.findMany({
+    roadEdges = await prisma.road.findMany({
       where: { relationType: { in: MOVEMENT_TYPES } },
       select: {
         fromLocationId: true, toLocationId: true,
@@ -138,26 +142,63 @@ export async function loadCampaignGraph(campaignId) {
         relationType: true, bidirectional: true, weight: true,
       },
     });
-    return buildAdjacency(edges);
-  }
-  // Visible edges = those with a CampaignEdgeDiscovery row for this campaign,
-  // filtered to movement relation types only.
-  const discoveries = await prisma.campaignEdgeDiscovery.findMany({
-    where: { campaignId },
-    select: {
-      edge: {
-        select: {
-          fromLocationId: true, toLocationId: true,
-          distance: true, difficulty: true, terrainType: true, direction: true,
-          relationType: true, bidirectional: true, weight: true,
+  } else {
+    // Visible edges = those with a CampaignEdgeDiscovery row for this campaign,
+    // filtered to movement relation types only.
+    const discoveries = await prisma.campaignEdgeDiscovery.findMany({
+      where: { campaignId },
+      select: {
+        edge: {
+          select: {
+            fromLocationId: true, toLocationId: true,
+            distance: true, difficulty: true, terrainType: true, direction: true,
+            relationType: true, bidirectional: true, weight: true,
+          },
         },
       },
+    });
+    roadEdges = discoveries.map((d) => d.edge).filter((e) => e && MOVEMENT_TYPES.includes(e.relationType));
+  }
+
+  // Merge LocationEdge movement edges into the adjacency map.
+  const locationEdges = await prisma.locationEdge.findMany({
+    where: {
+      isActive: true,
+      category: 'movement',
+      ...(campaignId ? { OR: [{ campaignId: null }, { campaignId }] } : {}),
+    },
+    select: {
+      fromKind: true, fromId: true, toKind: true, toId: true,
+      weight: true, bidirectional: true, edgeType: true,
     },
   });
-  const movementEdges = discoveries
-    .map((d) => d.edge)
-    .filter((e) => e && MOVEMENT_TYPES.includes(e.relationType));
-  return buildAdjacency(movementEdges);
+
+  const adj = buildAdjacency(roadEdges);
+  mergeLocationEdgesIntoAdjacency(adj, locationEdges);
+  return adj;
+}
+
+function mergeLocationEdgesIntoAdjacency(adj, locationEdges) {
+  for (const e of locationEdges) {
+    if (e.fromKind !== 'world' || e.toKind !== 'world') continue;
+    const entry = {
+      toId: e.toId,
+      distance: e.weight || 1.0,
+      difficulty: 'safe',
+      terrainType: e.edgeType === 'road_to' ? 'road' : 'path',
+      direction: null,
+    };
+    const list = adj.get(e.fromId) || [];
+    list.push(entry);
+    adj.set(e.fromId, list);
+
+    if (e.bidirectional) {
+      const revEntry = { ...entry, toId: e.fromId };
+      const revList = adj.get(e.toId) || [];
+      revList.push(revEntry);
+      adj.set(e.toId, revList);
+    }
+  }
 }
 
 function buildAdjacency(edges) {

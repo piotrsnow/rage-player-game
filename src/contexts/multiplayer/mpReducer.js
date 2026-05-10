@@ -230,6 +230,22 @@ export function mpReducer(state, action) {
           newGameState = { ...newGameState, world };
         }
 
+        // Faza 3a — composite ref MP sync (preferowane). Legacy string path
+        // zachowany dla kompatybilności do Fazy 8.
+        if (stateChanges.currentLocationRef) {
+          const ref = stateChanges.currentLocationRef;
+          const parsed = (typeof ref === 'string')
+            ? (() => {
+                const m = ref.match(/^(world|campaign):([0-9a-f-]{36})$/i);
+                return m ? { kind: m[1].toLowerCase(), id: m[2] } : null;
+              })()
+            : (ref && ref.kind && ref.id ? { kind: ref.kind, id: ref.id } : null);
+          if (parsed) {
+            const world = { ...(newGameState.world || {}), currentLocationRef: parsed };
+            newGameState = { ...newGameState, world };
+          }
+        }
+
         if (stateChanges.currentLocation) {
           const world = { ...(newGameState.world || {}) };
           const prevLoc = world.currentLocation;

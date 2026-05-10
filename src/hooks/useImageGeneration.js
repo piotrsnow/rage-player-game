@@ -1,10 +1,12 @@
-import { useCallback, useRef } from 'react';
+import { useCallback, useEffect, useRef } from 'react';
 import { useGame } from '../contexts/GameContext';
 import { useSettings } from '../contexts/SettingsContext';
 import { imageService } from '../services/imageGen';
 import { generateNpcPortrait } from '../services/npcPortraitGen';
 import { calculateCost } from '../services/costTracker';
+import { storage } from '../services/storage';
 import { shortId } from '../utils/ids';
+import { devLog } from '../stores/devEventLogStore';
 
 const ITEM_IMAGE_RETRY_COOLDOWN_MS = 60000;
 
@@ -32,6 +34,15 @@ export function useImageGeneration() {
     : (settings.imageProvider || 'dalle');
 
   const { itemImagesEnabled, sdWebuiModel = '', sdWebuiSeed = null } = settings;
+  const sdWebuiQualityPreset = settings.sdWebuiQualityPreset || 'balanced';
+  const sdWebuiIpaEnabled = settings.sdWebuiIpaEnabled ?? (settings.sdWebuiIpaMode !== 'off');
+  const sdWebuiIpaMode = sdWebuiIpaEnabled ? sdWebuiQualityPreset : 'off';
+  const RESOLUTION_MAP = { low: 0.5, base: 1.0, high: 1.5 };
+  const imageResolutionMultiplier = RESOLUTION_MAP[settings.imageResolutionPreset] ?? settings.imageResolutionMultiplier ?? 1;
+  const QUALITY_STEPS = { speed: 6, balanced: 20, quality: 35 };
+  const QUALITY_CFG = { speed: 2, balanced: 5, quality: 7 };
+  const qualitySteps = QUALITY_STEPS[sdWebuiQualityPreset];
+  const qualityCfg = QUALITY_CFG[sdWebuiQualityPreset];
   const imageStyle = settings.dmSettings?.imageStyle || 'painting';
   const darkPalette = settings.dmSettings?.darkPalette || false;
   const imageSeriousness = settings.dmSettings?.narratorSeriousness ?? null;
@@ -63,6 +74,7 @@ export function useImageGeneration() {
       activeLocks.add(itemId);
 
       try {
+        devLog.emit({ category: 'image', type: 'item_image_start', label: `Item image: ${item.name || itemId}`, data: { itemId, name: item.name, provider: imageProvider } });
         const result = await imageService.generateItemImage(item, {
           genre: options.genre ?? state.campaign?.genre,
           tone: options.tone ?? state.campaign?.tone,
@@ -74,6 +86,7 @@ export function useImageGeneration() {
           sdModel: sdWebuiModel,
           sdSeed: Number.isInteger(sdWebuiSeed) ? sdWebuiSeed : null,
           forceNew,
+          resolutionMultiplier: imageResolutionMultiplier,
         });
         if (!result?.url) return null;
 
@@ -108,10 +121,47 @@ export function useImageGeneration() {
         activeLocks.delete(itemId);
       }
     },
-    [state.campaign?.genre, state.campaign?.tone, state.campaign?.backendId, imageProvider, imageStyle, darkPalette, imageSeriousness, itemImageGenEnabled, sdWebuiModel, sdWebuiSeed, dispatch, autoSave]
+    [state.campaign?.genre, state.campaign?.tone, state.campaign?.backendId, imageProvider, imageStyle, darkPalette, imageSeriousness, itemImageGenEnabled, sdWebuiModel, sdWebuiSeed, imageResolutionMultiplier, dispatch, autoSave]
   );
 
   const npcPortraitGenerationLocksRef = useRef(new Set());
+
+  const generateOneNpcPortrait = useCallback(
+    async (npc, { forcePromptRefresh = false } = {}) => {
+      if (!npc || typeof npc !== 'object' || typeof npc.id !== 'string') {
+        return { ok: false, reason: 'invalid_npc' };
+      }
+      const hasImgKey = imageApiKey || hasApiKey(imgKeyProvider);
+      if (!hasImgKey) return { ok: false, reason: 'no_key' };
+
+      const locks = npcPortraitGenerationLocksRef.current;
+      if (locks.has(npc.id)) return { ok: false, reason: 'in_flight' };
+      locks.add(npc.id);
+      try {
+        const result = await generateNpcPortrait(npc, {
+          genre: state.campaign?.genre,
+          provider: imageProvider,
+          imageStyle,
+          darkPalette,
+          seriousness: imageSeriousness,
+          sdModel: sdWebuiModel,
+          sdSeed: Number.isInteger(sdWebuiSeed) ? sdWebuiSeed : null,
+          forcePromptRefresh,
+        });
+        const portraitUrl = typeof result === 'string' ? result : result?.url;
+        if (!portraitUrl) return { ok: false, reason: 'empty_result' };
+        dispatch({ type: 'UPDATE_NPC_PORTRAIT', payload: { npcId: npc.id, portraitUrl } });
+        dispatch({ type: 'ADD_AI_COST', payload: calculateCost('image', { provider: imageProvider }) });
+        return { ok: true, portraitUrl };
+      } catch (err) {
+        console.warn('NPC portrait generation failed:', err?.message || err);
+        return { ok: false, reason: 'error', error: err };
+      } finally {
+        locks.delete(npc.id);
+      }
+    },
+    [state.campaign?.genre, imageProvider, imageStyle, darkPalette, imageSeriousness, sdWebuiModel, sdWebuiSeed, hasApiKey, imgKeyProvider, imageApiKey, dispatch],
+  );
 
   const ensureMissingNpcPortraits = useCallback(
     async (npcs = []) => {
@@ -122,42 +172,31 @@ export function useImageGeneration() {
       );
       if (candidates.length === 0) return { generated: 0, failed: 0 };
 
-      const locks = npcPortraitGenerationLocksRef.current;
       let generated = 0;
       let failed = 0;
       for (const npc of candidates) {
-        if (locks.has(npc.id)) continue;
-        locks.add(npc.id);
-        try {
-          const result = await generateNpcPortrait(npc, {
-            genre: state.campaign?.genre,
-            provider: imageProvider,
-            imageStyle,
-            darkPalette,
-            seriousness: imageSeriousness,
-            sdModel: sdWebuiModel,
-            sdSeed: Number.isInteger(sdWebuiSeed) ? sdWebuiSeed : null,
-          });
-          const portraitUrl = typeof result === 'string' ? result : result?.url;
-          if (portraitUrl) {
-            dispatch({ type: 'UPDATE_NPC_PORTRAIT', payload: { npcId: npc.id, portraitUrl } });
-            dispatch({ type: 'ADD_AI_COST', payload: calculateCost('image', { provider: imageProvider }) });
-            generated += 1;
-          } else {
-            failed += 1;
-          }
-        } catch (err) {
-          console.warn('NPC portrait generation failed:', err?.message || err);
-          failed += 1;
-        } finally {
-          locks.delete(npc.id);
-        }
+        const res = await generateOneNpcPortrait(npc);
+        if (res.ok) generated += 1;
+        else failed += 1;
       }
 
       if (generated > 0) autoSave();
       return { generated, failed };
     },
-    [state.campaign?.genre, imageProvider, imageStyle, darkPalette, imageSeriousness, sdWebuiModel, sdWebuiSeed, hasApiKey, imgKeyProvider, imageApiKey, dispatch, autoSave],
+    [generateOneNpcPortrait, hasApiKey, imgKeyProvider, imageApiKey, autoSave],
+  );
+
+  // Force-regenerate a single NPC's portrait, even when one already exists.
+  // Used by NpcSheetModal's click-to-regenerate; bypasses the missing-only
+  // filter that ensureMissingNpcPortraits applies. Always rebuilds the LLM
+  // prompt so each click produces a fresh concept (not just a new SD seed).
+  const regenerateNpcPortrait = useCallback(
+    async (npc) => {
+      const res = await generateOneNpcPortrait(npc, { forcePromptRefresh: true });
+      if (res.ok) autoSave();
+      return res;
+    },
+    [generateOneNpcPortrait, autoSave],
   );
 
   const ensureMissingInventoryImages = useCallback(
@@ -196,6 +235,7 @@ export function useImageGeneration() {
       const hasImgKey = imageApiKey || hasApiKey(imgKeyProvider);
       if (!imageGenEnabled || !hasImgKey || !narrative) return null;
       dispatch({ type: 'SET_GENERATING_IMAGE', payload: true });
+      devLog.emit({ category: 'image', type: 'scene_image_start', label: `Scene image: ${imageProvider}`, data: { sceneId, provider: imageProvider, hasImagePrompt: !!imagePrompt } });
       try {
         const sceneImagePrompt = imagePrompt || state.scenes?.find((s) => s.id === sceneId)?.imagePrompt;
         const genre = campaignOverride?.genre ?? state.campaign?.genre;
@@ -212,7 +252,7 @@ export function useImageGeneration() {
           darkPalette,
           state.character?.age,
           state.character?.gender,
-          { forceNew: Boolean(options.forceNew), sdModel: sdWebuiModel, sdSeed: Number.isInteger(sdWebuiSeed) ? sdWebuiSeed : null },
+          { forceNew: Boolean(options.forceNew), sdModel: sdWebuiModel, sdSeed: Number.isInteger(sdWebuiSeed) ? sdWebuiSeed : null, resolutionMultiplier: imageResolutionMultiplier, ipaMode: sdWebuiIpaMode, qualitySteps, qualityCfg },
           imageSeriousness,
           state.character?.portraitUrl || null
         );
@@ -224,15 +264,18 @@ export function useImageGeneration() {
         if (!options.skipAutoSave) {
           autoSave();
         }
+        const idx = state.scenes.findIndex((s) => s.id === sceneId);
+        if (idx >= 0) storage.saveSceneImageUpdate(state.campaign?.backendId, idx, { imageUrl, fullImagePrompt });
         return { url: imageUrl, fullImagePrompt };
       } catch (imgErr) {
+        devLog.emit({ category: 'image', type: 'scene_image_error', label: `Image error: ${imgErr.message?.slice(0, 60)}`, severity: 'error', data: { error: imgErr.message } });
         console.warn('Image generation failed:', imgErr.message);
         return null;
       } finally {
         dispatch({ type: 'SET_GENERATING_IMAGE', payload: false });
       }
     },
-    [state.scenes, state.campaign?.genre, state.campaign?.tone, state.campaign?.backendId, state.character?.age, state.character?.gender, state.character?.portraitUrl, imageGenEnabled, imageApiKey, imageProvider, imageStyle, darkPalette, imageSeriousness, sdWebuiModel, sdWebuiSeed, hasApiKey, imgKeyProvider, dispatch, autoSave]
+    [state.scenes, state.campaign?.genre, state.campaign?.tone, state.campaign?.backendId, state.character?.age, state.character?.gender, state.character?.portraitUrl, imageGenEnabled, imageApiKey, imageProvider, imageStyle, darkPalette, imageSeriousness, sdWebuiModel, sdWebuiSeed, sdWebuiIpaMode, imageResolutionMultiplier, sdWebuiIpaEnabled, sdWebuiQualityPreset, hasApiKey, imgKeyProvider, dispatch, autoSave]
   );
 
   return {
@@ -240,6 +283,7 @@ export function useImageGeneration() {
     generateItemImageForInventoryItem,
     ensureMissingInventoryImages,
     ensureMissingNpcPortraits,
+    regenerateNpcPortrait,
     imageGenEnabled,
     imageApiKey,
     imageProvider,

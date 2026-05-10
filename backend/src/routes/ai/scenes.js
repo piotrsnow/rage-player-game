@@ -4,7 +4,7 @@ import { embedText, buildSceneEmbeddingText } from '../../services/embeddingServ
 import { writeEmbedding } from '../../services/embeddingWrite.js';
 import { enqueuePostSceneWork } from '../../services/cloudTasks.js';
 import { toCanonicalStoragePath } from '../../services/urlCanonical.js';
-import { SCENE_BODY_SCHEMA, SCENE_BULK_SCHEMA } from './schemas.js';
+import { SCENE_BODY_SCHEMA, SCENE_BULK_SCHEMA, SCENE_IMAGE_PATCH_SCHEMA } from './schemas.js';
 
 const log = childLogger({ module: 'ai' });
 
@@ -209,6 +209,46 @@ export async function sceneRoutes(fastify) {
     }
 
     return { saved: results.filter((r) => !r.error).length, total: scenes.length, results };
+  });
+
+  /**
+   * PATCH /ai/campaigns/:id/scenes/:sceneIndex/image — update only imageUrl +
+   * fullImagePrompt for an existing scene. Fire-and-forget from FE after the
+   * image generation completes (the bulk save may already have persisted the
+   * scene with imageUrl=null).
+   */
+  fastify.patch('/campaigns/:id/scenes/:sceneIndex/image', {
+    schema: { body: SCENE_IMAGE_PATCH_SCHEMA },
+  }, async (request, reply) => {
+    const campaignId = request.params.id;
+    const sceneIndex = parseInt(request.params.sceneIndex, 10);
+    if (Number.isNaN(sceneIndex) || sceneIndex < 0) {
+      return reply.code(400).send({ error: 'Invalid sceneIndex' });
+    }
+
+    const campaign = await prisma.campaign.findUnique({
+      where: { id: campaignId },
+      select: { userId: true },
+    });
+    if (!campaign || campaign.userId !== request.user.id) {
+      return reply.code(403).send({ error: 'Not authorized' });
+    }
+
+    const existing = await prisma.campaignScene.findFirst({
+      where: { campaignId, sceneIndex },
+      select: { id: true },
+    });
+    if (!existing) return reply.code(404).send({ error: 'Scene not found' });
+
+    const { imageUrl, fullImagePrompt = null } = request.body;
+    await prisma.campaignScene.update({
+      where: { id: existing.id },
+      data: {
+        imageUrl: imageUrl ? toCanonicalStoragePath(imageUrl) : null,
+        fullImagePrompt: fullImagePrompt || null,
+      },
+    });
+    return reply.code(204).send();
   });
 
   /**

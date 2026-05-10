@@ -20,11 +20,11 @@ import { childLogger } from '../../lib/logger.js';
 
 const log = childLogger({ module: 'startSpawnPicker' });
 
-// Hard rule: campaigns START in either the canonical capital (Yeralden) or
-// one of the seeded villages. No towns/cities/hamlets/wilderness — those exist
-// in the world but are not start-eligible (towns/cities aren't seeded
-// canonically anyway; hamlets are too small to host a quest-giver setup).
-const TOP_LEVEL_TYPES = ['capital', 'village'];
+// Start-eligible settlement types. Towns and cities become eligible once
+// promoted to canonical (from admin approval). Hamlets are too small to host
+// a quest-giver setup. Weights bias toward content-rich settlements.
+const TOP_LEVEL_TYPES = ['capital', 'village', 'town', 'city'];
+const TYPE_WEIGHTS = { capital: 40, city: 35, village: 30, town: 25 };
 
 function weightedPick(items, weightFn) {
   if (!items.length) return null;
@@ -66,11 +66,7 @@ export async function pickStartSpawn() {
       return null;
     }
 
-    const settlement = weightedPick(settlements, (s) => {
-      if (s.locationType === 'capital') return 40;
-      if (s.locationType === 'village') return 30;
-      return 0;
-    });
+    const settlement = weightedPick(settlements, (s) => TYPE_WEIGHTS[s.locationType] || 0);
     if (!settlement) return null;
 
     // 2. Candidate sublocations — must have ≥1 canonical NPC. Query both
@@ -146,5 +142,43 @@ export async function pickStartSpawn() {
   } catch (err) {
     log.warn({ err: err?.message }, 'pickStartSpawn failed — returning null');
     return null;
+  }
+}
+
+/**
+ * Load 1-hop Road neighbors of a top-level settlement. Used by the
+ * campaign-generation prompt to give the LLM awareness of the broader
+ * canonical world so it can weave existing places into quests.
+ * Returns `[{ name, type, distance, direction }]`.
+ */
+export async function loadRoadNeighborsForSettlement(settlementId) {
+  if (!settlementId) return [];
+  try {
+    const roads = await prisma.road.findMany({
+      where: {
+        OR: [{ fromLocationId: settlementId }, { toLocationId: settlementId }],
+        terrainType: { not: 'dungeon_corridor' },
+      },
+      select: {
+        fromLocationId: true, toLocationId: true,
+        distance: true, direction: true,
+        from: { select: { canonicalName: true, locationType: true } },
+        to: { select: { canonicalName: true, locationType: true } },
+      },
+      take: 8,
+    });
+    return roads.map((r) => {
+      const isFrom = r.fromLocationId === settlementId;
+      const neighbor = isFrom ? r.to : r.from;
+      return {
+        name: neighbor.canonicalName,
+        type: neighbor.locationType,
+        distance: r.distance,
+        direction: r.direction || null,
+      };
+    });
+  } catch (err) {
+    log.warn({ err: err?.message, settlementId }, 'loadRoadNeighborsForSettlement failed');
+    return [];
   }
 }

@@ -4,6 +4,7 @@ import { parseProviderError } from '../aiErrors.js';
 import { buildContextSection } from './contextSection.js';
 import { buildAnthropicSystemBlocks } from './systemPrompt.js';
 import { parseAIResponseLean as parseAIResponse } from '../../../../shared/domain/aiResponseParser.js';
+import { logLlmCallStart, logLlmCallFinish, logLlmCallFail } from '../llmCallLogger.js';
 
 const log = childLogger({ module: 'sceneGenerator' });
 
@@ -206,24 +207,34 @@ export async function runTwoStagePipelineStreaming(systemPromptParts, userPrompt
   const contextSection = buildContextSection(contextBlocks);
   const dynamicFull = (systemPromptParts.dynamicSuffix || '') + (contextSection || '');
 
+  const usedModel = model || (provider === 'openai' ? config.aiModels.premium.openai : config.aiModels.premium.anthropic);
+  const logId = await logLlmCallStart({ type: 'scene', label: 'Scene generation (streaming)', provider, model: usedModel, request: { userPrompt } });
+  const t0 = Date.now();
+
   let fullText;
-  if (provider === 'openai') {
-    const combinedPrompt = systemPromptParts.staticPrefix + '\n\n' + dynamicFull;
-    fullText = await callOpenAIStreaming(
-      [
-        { role: 'system', content: combinedPrompt },
-        { role: 'user', content: userPrompt },
-      ],
-      { model, apiKey, signal },
-      onChunk,
-    );
-  } else {
-    const systemBlocks = buildAnthropicSystemBlocks(systemPromptParts.staticPrefix, dynamicFull);
-    fullText = await callAnthropicStreaming(
-      [{ role: 'user', content: userPrompt }],
-      { system: systemBlocks, model, apiKey, signal },
-      onChunk,
-    );
+  try {
+    if (provider === 'openai') {
+      const combinedPrompt = systemPromptParts.staticPrefix + '\n\n' + dynamicFull;
+      fullText = await callOpenAIStreaming(
+        [
+          { role: 'system', content: combinedPrompt },
+          { role: 'user', content: userPrompt },
+        ],
+        { model, apiKey, signal },
+        onChunk,
+      );
+    } else {
+      const systemBlocks = buildAnthropicSystemBlocks(systemPromptParts.staticPrefix, dynamicFull);
+      fullText = await callAnthropicStreaming(
+        [{ role: 'user', content: userPrompt }],
+        { system: systemBlocks, model, apiKey, signal },
+        onChunk,
+      );
+    }
+    await logLlmCallFinish(logId, { durationMs: Date.now() - t0, response: { text: fullText } });
+  } catch (err) {
+    await logLlmCallFail(logId, err);
+    throw err;
   }
 
   return parseAIResponse(fullText);

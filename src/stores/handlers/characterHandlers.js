@@ -1,3 +1,4 @@
+import { sanitizeMana } from '../../../shared/domain/mana.js';
 import { normalizeCharacter, normalizeCustomAttackPresets } from './_shared';
 import { calculateMaxWounds } from '../../services/gameState';
 import { SKILL_CAPS, CREATION_LIMITS } from '../../data/rpgSystem';
@@ -9,6 +10,7 @@ export const characterHandlers = {
     draft.character.customAttackPresets = normalizeCustomAttackPresets(
       action.payload.customAttackPresets ?? draft.character.customAttackPresets
     );
+    if (draft.character.mana) draft.character.mana = sanitizeMana(draft.character.mana);
   },
 
   /**
@@ -101,9 +103,36 @@ export const characterHandlers = {
     if (currentVal >= 25) return;
     char.attributes[attribute] = currentVal + 1;
     char.attributePoints = (char.attributePoints || 0) - cost;
-    const newMaxWounds = calculateMaxWounds(char.attributes.wytrzymalosc);
+    const newMaxWounds = calculateMaxWounds(char.attributes.wytrzymalosc) + (char.bonusMaxWounds || 0);
     char.maxWounds = newMaxWounds;
     char.wounds = Math.min(char.wounds, newMaxWounds);
+  },
+
+  REDEEM_SKILL_BADGE: (draft, action) => {
+    const { index, reward: providedReward } = action.payload;
+    const char = draft.character;
+    if (!char || !Array.isArray(char.skillBadges)) return;
+    const badge = char.skillBadges[index];
+    if (!badge || badge.redeemed) return;
+
+    const rewards = ['attribute', 'mana', 'wounds'];
+    const reward = rewards.includes(providedReward)
+      ? providedReward
+      : rewards[Math.floor(Math.random() * rewards.length)];
+
+    if (reward === 'attribute') {
+      char.attributePoints = (char.attributePoints || 0) + 1;
+    } else if (reward === 'mana') {
+      const mana = char.mana || { current: 0, max: 0 };
+      char.mana = { ...mana, max: (mana.max || 0) + 1, current: (mana.current || 0) + 1 };
+    } else if (reward === 'wounds') {
+      char.bonusMaxWounds = (char.bonusMaxWounds || 0) + 1;
+      char.maxWounds = (char.maxWounds || 0) + 1;
+    }
+
+    badge.redeemed = true;
+    badge.reward = reward;
+    badge.redeemedAt = new Date().toISOString();
   },
 
   SET_CHARACTER_LOCAL_ID: (draft, action) => {

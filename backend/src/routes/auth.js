@@ -269,6 +269,11 @@ export async function authRoutes(fastify) {
         : { configured: false };
     }
 
+    const plKey = config.pixellabApiKey || '';
+    resolved['pixellab'] = plKey
+      ? { configured: true, masked: '••••' + plKey.slice(-4) }
+      : { configured: false };
+
     // Stable Diffusion WebUI has no API key — availability is driven by the
     // SD_WEBUI_URL env var. `masked` shows the host so the user can verify
     // they're talking to the right A1111 instance.

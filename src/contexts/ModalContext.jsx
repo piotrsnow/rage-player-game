@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useCallback } from 'react';
+import { createContext, useContext, useState, useCallback, useRef } from 'react';
 
 const ModalContext = (import.meta.hot?.data?.ModalContext) || createContext(null);
 if (import.meta.hot) import.meta.hot.data.ModalContext = ModalContext;
@@ -17,10 +17,21 @@ export function ModalProvider({ children }) {
   // NPC sheet modal triggered from chat speaker labels. Stores the NPC name
   // rather than a reference so the latest world.npcs entry is always read
   // fresh (disposition / stats can change between open and close).
+  const [locationGraphOpen, setLocationGraphOpen] = useState(false);
+  /** Incremented on each openLocationGraph — forces fresh GET in LocationGraphModal. */
+  const [locationGraphRefreshKey, setLocationGraphRefreshKey] = useState(0);
+  const [gmModalOpen, setGmModalOpen] = useState(false);
   const [npcSheetName, setNpcSheetName] = useState(null);
 
   const openCharacterSheet = useCallback(() => setCharacterSheetOpen(true), []);
   const closeCharacterSheet = useCallback(() => setCharacterSheetOpen(false), []);
+  const openLocationGraph = useCallback(() => {
+    setLocationGraphRefreshKey((k) => k + 1);
+    setLocationGraphOpen(true);
+  }, []);
+  const closeLocationGraph = useCallback(() => setLocationGraphOpen(false), []);
+  const openGmModal = useCallback(() => setGmModalOpen(true), []);
+  const closeGmModal = useCallback(() => setGmModalOpen(false), []);
   const openWorldState = useCallback(() => setWorldStateOpen(true), []);
   const closeWorldState = useCallback(() => setWorldStateOpen(false), []);
   const openTasksInfo = useCallback(() => setTasksInfoOpen(true), []);
@@ -42,10 +53,18 @@ export function ModalProvider({ children }) {
   const openNpcSheet = useCallback((name) => setNpcSheetName(name || null), []);
   const closeNpcSheet = useCallback(() => setNpcSheetName(null), []);
 
+  const playerActionHandlerRef = useRef(null);
+  const setPlayerActionHandler = useCallback((fn) => {
+    playerActionHandlerRef.current = fn || null;
+  }, []);
+
   return (
     <ModalContext.Provider
       value={{
         characterSheetOpen,
+        locationGraphOpen,
+        locationGraphRefreshKey,
+        gmModalOpen,
         worldStateOpen,
         tasksInfoOpen,
         settingsOpen,
@@ -58,6 +77,10 @@ export function ModalProvider({ children }) {
         npcSheetName,
         openCharacterSheet,
         closeCharacterSheet,
+        openLocationGraph,
+        closeLocationGraph,
+        openGmModal,
+        closeGmModal,
         openWorldState,
         closeWorldState,
         openTasksInfo,
@@ -78,6 +101,8 @@ export function ModalProvider({ children }) {
         closePrivacy,
         openNpcSheet,
         closeNpcSheet,
+        playerActionHandlerRef,
+        setPlayerActionHandler,
       }}
     >
       {children}

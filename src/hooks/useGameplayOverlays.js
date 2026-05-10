@@ -18,7 +18,6 @@ export function useGameplayOverlays({
   autoPlayScenes,
   displayedSceneIndex,
   earlyDiceRoll,
-  clearEarlyDiceRoll,
   getSceneActionText,
   onSceneNavigate,
   setViewingSceneIndex,
@@ -83,15 +82,18 @@ export function useGameplayOverlays({
   }, [scenes.length, onSceneNavigate, setViewingSceneIndex]);
 
   const handlePlayerActionOverlayComplete = useCallback(() => {
-    clearEarlyDiceRoll();
     setPlayerActionOverlayText(null);
     setPlayerOverlayTypingDone(false);
+    // Do not clear `earlyDiceRoll` here — `DiceRollAnimationOverlay` dismisses
+    // it after the animation, and `resetStreamState` wipes it on the next
+    // scene gen. Clearing on overlay close used to drop the roll before the
+    // deferred dice UI could mount (typewriter / holdOpen timing).
     // Auto-narration is fully owned by useChatAutoNarration. As soon as
     // playerActionOverlayText flips to null, the autoPlay flag passed to
     // ChatPanel becomes true and the hook narrates the latest unhandled DM
     // message — coordinating with streaming via narrator.isStreaming so we
     // don't double-read scenes that were already streamed live.
-  }, [clearEarlyDiceRoll]);
+  }, []);
 
   const markPlayerOverlayTypingDone = useCallback(() => {
     setPlayerOverlayTypingDone(true);

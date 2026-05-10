@@ -67,6 +67,58 @@ export function generateStateChangeMessages(stateChanges, state, t) {
     }
   }
 
+  if (stateChanges.removeItemsByName?.length > 0) {
+    for (const entry of stateChanges.removeItemsByName) {
+      if (!entry?.name) continue;
+      const qty = entry.quantity || 1;
+      const label = qty > 1 ? `${entry.name} ×${qty}` : entry.name;
+      msgs.push({ id: mkId(), role: 'system', subtype: 'item_lost', content: t('system.itemLost', { name: charName, item: label }), timestamp: ts });
+    }
+  }
+
+  if (stateChanges.manaChange != null && stateChanges.manaChange !== 0) {
+    const amount = Math.abs(stateChanges.manaChange);
+    const key = stateChanges.manaChange > 0 ? 'system.manaGained' : 'system.manaSpent';
+    msgs.push({ id: mkId(), role: 'system', subtype: 'mana', content: t(key, { amount }), timestamp: ts });
+  }
+
+  if (stateChanges.manaMaxChange != null && stateChanges.manaMaxChange !== 0) {
+    const delta = stateChanges.manaMaxChange > 0 ? `+${stateChanges.manaMaxChange}` : String(stateChanges.manaMaxChange);
+    msgs.push({ id: mkId(), role: 'system', subtype: 'mana_max', content: t('system.manaMaxChange', { delta }), timestamp: ts });
+  }
+
+  if (typeof stateChanges.learnSpell === 'string' && stateChanges.learnSpell.trim()) {
+    msgs.push({ id: mkId(), role: 'system', subtype: 'spell_learned', content: t('system.spellLearned', { spell: stateChanges.learnSpell }), timestamp: ts });
+  }
+
+  if (typeof stateChanges.addScroll === 'string' && stateChanges.addScroll.trim()) {
+    msgs.push({ id: mkId(), role: 'system', subtype: 'scroll_gained', content: t('system.scrollGained', { name: stateChanges.addScroll }), timestamp: ts });
+  }
+
+  if (typeof stateChanges.consumeScroll === 'string' && stateChanges.consumeScroll.trim()) {
+    msgs.push({ id: mkId(), role: 'system', subtype: 'scroll_consumed', content: t('system.scrollConsumed', { name: stateChanges.consumeScroll }), timestamp: ts });
+  }
+
+  if (typeof stateChanges.forceStatus === 'string' && stateChanges.forceStatus !== state.character?.status) {
+    msgs.push({ id: mkId(), role: 'system', subtype: 'status_change', content: t('system.statusChange', { status: stateChanges.forceStatus }), timestamp: ts });
+  }
+
+  if (stateChanges.attributeChanges && typeof stateChanges.attributeChanges === 'object') {
+    for (const [attr, delta] of Object.entries(stateChanges.attributeChanges)) {
+      if (!delta) continue;
+      const sign = delta > 0 ? `+${delta}` : String(delta);
+      msgs.push({ id: mkId(), role: 'system', subtype: 'attribute_change', content: t('system.attributeChange', { attr, delta: sign }), timestamp: ts });
+    }
+  }
+
+  if (Array.isArray(stateChanges.skillBadges) && stateChanges.skillBadges.length > 0) {
+    for (const badge of stateChanges.skillBadges) {
+      const name = typeof badge === 'string' ? badge : (badge?.name || badge?.id);
+      if (!name) continue;
+      msgs.push({ id: mkId(), role: 'system', subtype: 'skill_badge', content: t('system.skillBadgeAwarded', { name }), timestamp: ts });
+    }
+  }
+
   if (stateChanges.woundsChange != null && stateChanges.woundsChange !== 0) {
     if (stateChanges.woundsChange < 0) {
       msgs.push({ id: mkId(), role: 'system', subtype: 'damage', content: t('system.damageTaken', { name: charName, amount: Math.abs(stateChanges.woundsChange) }), timestamp: ts });
@@ -177,6 +229,81 @@ export function generateStateChangeMessages(stateChanges, state, t) {
         msgs.push({ id: mkId(), role: 'system', subtype: 'quest_objective_progress', content: t('system.questObjectiveProgress', { quest: questName, progress: update.addProgress }), timestamp: ts });
       }
     }
+  }
+
+  if (stateChanges.newLocations?.length > 0) {
+    for (const loc of stateChanges.newLocations) {
+      if (!loc?.name || !loc.parentLocationName) continue;
+      msgs.push({ id: mkId(), role: 'system', subtype: 'location_discovered', content: t('system.locationDiscovered', { name: loc.name }), timestamp: ts });
+    }
+  }
+
+  if (typeof stateChanges.currentLocation === 'string' && stateChanges.currentLocation.trim()) {
+    const prev = state.world?.currentLocation || '';
+    const next = stateChanges.currentLocation;
+    if (prev && prev !== next) {
+      msgs.push({ id: mkId(), role: 'system', subtype: 'location_changed', content: t('system.locationChanged', { from: prev, to: next }), timestamp: ts });
+    } else if (!prev) {
+      msgs.push({ id: mkId(), role: 'system', subtype: 'location_changed', content: t('system.locationEntered', { to: next }), timestamp: ts });
+    }
+  }
+
+  if (stateChanges.combatUpdate && typeof stateChanges.combatUpdate === 'object') {
+    const cu = stateChanges.combatUpdate;
+    const wasInCombat = !!state.combat;
+    if (cu.active === true && !wasInCombat) {
+      const enemyNames = Array.isArray(cu.enemies)
+        ? cu.enemies.map((e) => e?.name).filter(Boolean).join(', ')
+        : '';
+      const content = enemyNames
+        ? t('system.combatStartWith', { enemies: enemyNames })
+        : t('system.combatStart');
+      msgs.push({ id: mkId(), role: 'system', subtype: 'combat_start', content, timestamp: ts });
+    } else if (cu.active === false && wasInCombat) {
+      msgs.push({ id: mkId(), role: 'system', subtype: 'combat_end', content: t('system.combatEnd'), timestamp: ts });
+    }
+  }
+
+  if (Array.isArray(stateChanges.npcs) && stateChanges.npcs.length > 0) {
+    const worldNpcs = state.world?.npcs || [];
+    const findNpc = (name) => worldNpcs.find((n) => typeof n?.name === 'string' && n.name.toLowerCase() === String(name || '').toLowerCase());
+    for (const incoming of stateChanges.npcs) {
+      if (!incoming?.name) continue;
+      const existing = findNpc(incoming.name);
+      if (incoming.action === 'introduce' && !existing) {
+        msgs.push({ id: mkId(), role: 'system', subtype: 'npc_met', content: t('system.npcMet', { name: incoming.name }), timestamp: ts });
+      }
+      if (incoming.alive === false && existing && existing.alive !== false) {
+        msgs.push({ id: mkId(), role: 'system', subtype: 'npc_died', content: t('system.npcDied', { name: incoming.name }), timestamp: ts });
+      }
+      if (typeof incoming.dispositionChange === 'number' && Math.abs(incoming.dispositionChange) >= 5) {
+        const sign = incoming.dispositionChange > 0 ? `+${incoming.dispositionChange}` : String(incoming.dispositionChange);
+        msgs.push({ id: mkId(), role: 'system', subtype: 'npc_disposition', content: t('system.npcDisposition', { name: incoming.name, delta: sign }), timestamp: ts });
+      }
+    }
+  }
+
+  if (stateChanges.factionChanges && typeof stateChanges.factionChanges === 'object') {
+    const factionLookup = state.world?.factions || {};
+    for (const [factionId, delta] of Object.entries(stateChanges.factionChanges)) {
+      if (!delta) continue;
+      const factionName = (factionLookup[factionId] && factionLookup[factionId].name) || factionId;
+      const sign = delta > 0 ? `+${delta}` : String(delta);
+      msgs.push({ id: mkId(), role: 'system', subtype: 'faction_change', content: t('system.factionChange', { faction: factionName, delta: sign }), timestamp: ts });
+    }
+  }
+
+  if (Array.isArray(stateChanges.activeEffects) && stateChanges.activeEffects.length > 0) {
+    for (const fx of stateChanges.activeEffects) {
+      if (fx?.action === 'add' && fx?.description) {
+        msgs.push({ id: mkId(), role: 'system', subtype: 'effect_added', content: t('system.effectAdded', { description: fx.description }), timestamp: ts });
+      }
+    }
+  }
+
+  if (stateChanges.campaignEnd && typeof stateChanges.campaignEnd === 'object') {
+    const status = stateChanges.campaignEnd.status || 'completed';
+    msgs.push({ id: mkId(), role: 'system', subtype: 'campaign_end', content: t('system.campaignEnd', { status }), timestamp: ts });
   }
 
   return msgs;

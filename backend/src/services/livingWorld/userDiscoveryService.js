@@ -108,6 +108,9 @@ async function applyCampaignLocationState(campaignId, locationKind, locationId, 
  *  - `world` (default for back-compat): account-level UserDiscoveredLocation.
  *  - `campaign`: per-campaign CampaignDiscoveredLocation.
  *
+ * Also promotes discoveryState of outgoing edges FROM this location to 'known'
+ * (if they were 'unknown'), so the player learns about potential exits.
+ *
  * Idempotent — silent on failure (discovery must never block scene flow).
  */
 export async function markLocationDiscovered({
@@ -120,10 +123,21 @@ export async function markLocationDiscovered({
   try {
     if (locationKind === LOCATION_KIND_WORLD) {
       await applyUserLocationState(userId, locationId, 'visited');
-      return;
+    } else {
+      if (!campaignId) return;
+      await applyCampaignLocationState(campaignId, locationKind, locationId, 'visited');
     }
-    if (!campaignId) return;
-    await applyCampaignLocationState(campaignId, locationKind, locationId, 'visited');
+
+    // Promote outgoing edges from this location: unknown → known
+    await prisma.locationEdge.updateMany({
+      where: {
+        fromKind: locationKind,
+        fromId: locationId,
+        discoveryState: 'unknown',
+        isActive: true,
+      },
+      data: { discoveryState: 'known' },
+    }).catch(() => {});
   } catch (err) {
     log.warn({ err: err?.message, userId, locationKind, locationId, campaignId }, 'markLocationDiscovered failed');
   }
@@ -150,6 +164,53 @@ export async function markLocationHeardAbout({
     await applyCampaignLocationState(campaignId, locationKind, locationId, 'heard_about');
   } catch (err) {
     log.warn({ err: err?.message, userId, locationKind, locationId, campaignId }, 'markLocationHeardAbout failed');
+  }
+}
+
+/**
+ * Mark LocationEdge rows between two locations as 'visited' when the player
+ * traverses them. Bidirectional edges get both directions marked.
+ * Also increments `metadata.traversalCount` and sets `metadata.lastTraversedSceneIndex`
+ * for edge familiarity tracking (travel narration compression).
+ */
+export async function markLocationEdgeTraversed({ fromKind, fromId, toKind, toId, sceneIndex = null, campaignId = null }) {
+  if (!fromKind || !fromId || !toKind || !toId) return;
+  try {
+    const where = {
+      isActive: true,
+      category: 'movement',
+      OR: [
+        { fromKind, fromId, toKind, toId },
+        { fromKind: toKind, fromId: toId, toKind: fromKind, toId: fromId, bidirectional: true },
+      ],
+    };
+    if (campaignId) {
+      where.AND = [{ OR: [{ campaignId: null }, { campaignId }] }];
+    }
+
+    const edges = await prisma.locationEdge.findMany({
+      where,
+      select: { id: true, metadata: true },
+    });
+    if (edges.length === 0) return;
+
+    await Promise.all(edges.map((edge) => {
+      const prev = (edge.metadata && typeof edge.metadata === 'object') ? edge.metadata : {};
+      const count = (typeof prev.traversalCount === 'number' ? prev.traversalCount : 0) + 1;
+      return prisma.locationEdge.update({
+        where: { id: edge.id },
+        data: {
+          discoveryState: 'visited',
+          metadata: {
+            ...prev,
+            traversalCount: count,
+            ...(typeof sceneIndex === 'number' ? { lastTraversedSceneIndex: sceneIndex } : {}),
+          },
+        },
+      });
+    }));
+  } catch (err) {
+    log.warn({ err: err?.message, fromKind, fromId, toKind, toId, campaignId }, 'markLocationEdgeTraversed failed');
   }
 }
 

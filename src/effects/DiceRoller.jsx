@@ -1,7 +1,7 @@
 import { useRef, useEffect, useState } from 'react';
 import { ensureDiceLibrary } from './diceLibraryLoader';
 
-const PRE_ROLL_REVEAL_MS = 520;
+const PRE_ROLL_REVEAL_MS = 280;
 const OVERLAY_THEME = {
   materialColor: 0xd0b0ff,
   materialSpecular: 0x6a3d8a,
@@ -30,6 +30,12 @@ export default function DiceRoller({
   durationMultiplier = 1,
   variant = 'default',
   isVisible = true,
+  /** Delay before `start_throw` (overlay should align with CSS fly-in end). */
+  preRollRevealMs = PRE_ROLL_REVEAL_MS,
+  /** Overlay perf: cap canvas DPR (1 = big win on HiDPI) */
+  maxPixelRatio,
+  antialias,
+  physicsSolverIterations,
 }) {
   const containerRef = useRef(null);
   const boxRef = useRef(null);
@@ -58,6 +64,9 @@ export default function DiceRoller({
                 scaleMultiplier: sizeMultiplier,
                 hideDeskVisual: true,
                 durationMultiplier,
+                maxPixelRatio: maxPixelRatio ?? 1,
+                antialias: antialias ?? false,
+                physicsSolverIterations: physicsSolverIterations ?? 5,
                 ...OVERLAY_THEME,
               }
             : undefined;
@@ -81,7 +90,7 @@ export default function DiceRoller({
         containerRef.current.innerHTML = '';
       }
     };
-  }, [variant, sizeMultiplier, durationMultiplier]);
+  }, [variant, sizeMultiplier, durationMultiplier, maxPixelRatio, antialias, physicsSolverIterations]);
 
   useEffect(() => {
     if (!ready || !boxRef.current) return;
@@ -95,7 +104,8 @@ export default function DiceRoller({
     }
 
     const box = boxRef.current;
-    const requestedResults = getPercentileResults(diceRoll.roll);
+    const rawRoll = diceRoll.roll ?? diceRoll.rolledValue;
+    const requestedResults = getPercentileResults(rawRoll);
     setShowResult(false);
     setShowDice(true);
     rollTimeoutRef.current = window.setTimeout(() => {
@@ -107,19 +117,18 @@ export default function DiceRoller({
           onComplete?.();
         }
       );
-    }, PRE_ROLL_REVEAL_MS);
+    }, preRollRevealMs);
 
     return () => {
       clearTimers();
     };
-  }, [ready, diceRoll, onComplete, isVisible]);
+  }, [ready, diceRoll, onComplete, isVisible, preRollRevealMs]);
 
   return (
     <div className={`relative h-full w-full overflow-visible bg-transparent transition-opacity duration-300 ${showDice && isVisible ? 'opacity-100' : 'opacity-0'}`}>
       <div
         ref={containerRef}
         className="absolute inset-0 h-full w-full overflow-visible bg-transparent [&_canvas]:!bg-transparent"
-        style={variant === 'overlay' ? { filter: 'drop-shadow(0 0 10px rgba(140, 60, 200, 0.18)) brightness(0.9)' } : undefined}
       />
       {!ready && showDice && isVisible ? (
         <div className="absolute inset-0 flex items-center justify-center text-[10px] uppercase tracking-[0.18em] text-on-surface-variant">

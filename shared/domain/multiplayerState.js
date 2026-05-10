@@ -112,6 +112,16 @@ export function applyMultiplayerSceneStateChanges(gameState, sceneResult, option
   if (Array.isArray(stateChanges.worldFacts) && stateChanges.worldFacts.length > 0) updatedWorld.facts = [...(updatedWorld.facts || []), ...stateChanges.worldFacts];
   if (Array.isArray(stateChanges.journalEntries) && stateChanges.journalEntries.length > 0) updatedWorld.eventHistory = [...(updatedWorld.eventHistory || []), ...stateChanges.journalEntries];
   if (stateChanges.weatherUpdate) updatedWorld.weather = stateChanges.weatherUpdate;
+  // Faza 3.5 — preferuj composite ref. Legacy string path zachowany.
+  if (stateChanges.currentLocationRef) {
+    const ref = stateChanges.currentLocationRef;
+    if (typeof ref === 'object' && ref.kind && ref.id) {
+      updatedWorld.currentLocationRef = { kind: ref.kind, id: ref.id };
+    } else if (typeof ref === 'string') {
+      const m = ref.match(/^(world|campaign):([0-9a-f-]{36})$/i);
+      if (m) updatedWorld.currentLocationRef = { kind: m[1].toLowerCase(), id: m[2] };
+    }
+  }
   if (stateChanges.currentLocation) {
     const prevLoc = updatedWorld.currentLocation;
     const newLoc = stateChanges.currentLocation;

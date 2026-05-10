@@ -1,4 +1,4 @@
-import { buildImagePrompt, buildItemImagePrompt, buildPortraitPrompt, getModelPreset, REFERENCE_PHOTO_NEGATIVE } from './imagePrompts';
+import { buildImagePrompt, buildItemImagePrompt, buildPortraitPrompt, getModelPreset, getImageStyleSdNegative, REFERENCE_PHOTO_NEGATIVE } from './imagePrompts';
 import { apiClient, toCanonicalStoragePath } from './apiClient';
 import { ensureEnglish } from './translateImagePrompt';
 
@@ -33,12 +33,16 @@ function canonicalUrl(url) {
 // can override individual fields later without backend changes. `kind` picks
 // portrait vs scene bucket dimensions; omit width/height if the caller
 // already set them explicitly.
-function applyPresetToPayload(payload, sdModel, kind = 'scene') {
+function roundTo8(v) {
+  return Math.max(256, Math.round(v / 8) * 8);
+}
+
+function applyPresetToPayload(payload, sdModel, kind = 'scene', resolutionMultiplier = 1, { qualitySteps, qualityCfg } = {}) {
   const preset = getModelPreset(sdModel);
   if (!preset) return;
   if (payload.sampler == null) payload.sampler = preset.sampler;
-  if (payload.steps == null) payload.steps = preset.steps;
-  if (payload.cfg == null) payload.cfg = preset.cfg;
+  if (payload.steps == null) payload.steps = qualitySteps ?? preset.steps;
+  if (payload.cfg == null) payload.cfg = qualityCfg ?? preset.cfg;
   if (payload.width == null) {
     payload.width = kind === 'portrait' ? preset.portraitWidth : preset.width;
   }
@@ -48,17 +52,38 @@ function applyPresetToPayload(payload, sdModel, kind = 'scene') {
   if (payload.negativePrompt == null && preset.negative) {
     payload.negativePrompt = preset.negative;
   }
+  if (kind !== 'portrait' && resolutionMultiplier !== 1 && resolutionMultiplier > 0) {
+    payload.width = roundTo8(payload.width * resolutionMultiplier);
+    payload.height = roundTo8(payload.height * resolutionMultiplier);
+  }
 }
 
-async function generateSceneViaProxy(prompt, provider, campaignId, { forceNew = false, portraitUrl = null, sdModel = null, sdSeed = null, shape = 'scene', negativePrompt = null } = {}) {
+async function fetchPortraitAsBase64(portraitUrl) {
+  try {
+    const res = await fetch(apiClient.resolveMediaUrl(portraitUrl));
+    if (!res.ok) return null;
+    const blob = await res.blob();
+    return new Promise((resolve) => {
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        const dataUrl = reader.result;
+        resolve(dataUrl.split(',')[1] || null);
+      };
+      reader.onerror = () => resolve(null);
+      reader.readAsDataURL(blob);
+    });
+  } catch {
+    return null;
+  }
+}
+
+const IPA_WEIGHT_BY_MODE = { speed: 0.15, balanced: 0.35, quality: 0.65 };
+
+async function generateSceneViaProxy(prompt, provider, campaignId, { forceNew = false, portraitUrl = null, sdModel = null, sdSeed = null, shape = 'scene', negativePrompt = null, resolutionMultiplier = 1, ipaMode = 'balanced', qualitySteps, qualityCfg } = {}) {
   const body = { prompt };
   if (campaignId) body.campaignId = campaignId;
   if (forceNew) body.forceNew = true;
 
-  // `shape: 'square'` is used for inventory item artwork — we want a clean
-  // centered icon-style render, not a 16:9 scene. Each provider exposes the
-  // aspect differently (size string vs aspectRatio vs explicit w/h), so the
-  // mapping happens per branch below.
   const isSquare = shape === 'square';
 
   if (provider === 'stability') {
@@ -79,11 +104,19 @@ async function generateSceneViaProxy(prompt, provider, campaignId, { forceNew = 
       payload.width = 1024;
       payload.height = 1024;
     }
-    applyPresetToPayload(payload, sdModel, 'scene');
+    applyPresetToPayload(payload, sdModel, 'scene', resolutionMultiplier, { qualitySteps, qualityCfg });
     if (negativePrompt) {
       payload.negativePrompt = payload.negativePrompt
         ? `${negativePrompt}, ${payload.negativePrompt}`
         : negativePrompt;
+    }
+    if (portraitUrl && ipaMode !== 'off') {
+      const b64 = await fetchPortraitAsBase64(portraitUrl);
+      if (b64) {
+        payload.portraitBase64 = b64;
+        const weight = IPA_WEIGHT_BY_MODE[ipaMode];
+        if (weight != null) payload.ipaWeight = weight;
+      }
     }
     const data = await apiClient.post('/proxy/sd-webui/generate', payload);
     return canonicalUrl(data.url);
@@ -157,15 +190,14 @@ async function generatePortraitViaGeminiImg2ImgProxy(imageBlob, prompt) {
   return canonicalUrl(data.url);
 }
 
-async function generatePortraitViaSdWebuiProxy(imageBlob, prompt, strength, sdModel, sdSeed) {
+async function generatePortraitViaSdWebuiProxy(imageBlob, prompt, strength, sdModel, sdSeed, ipaWeight = null) {
   const formData = new FormData();
   if (imageBlob) formData.append('image', imageBlob, 'photo.jpg');
   formData.append('prompt', prompt);
   formData.append('strength', String(strength ?? 0.55));
   if (sdModel) formData.append('model', sdModel);
   if (Number.isInteger(sdSeed)) formData.append('seed', String(sdSeed));
-  // Extra negative only makes sense when a real photo is the init image —
-  // suppresses modern-photo bleed-through (clothes, indoor bg, phone grain).
+  if (imageBlob && ipaWeight != null) formData.append('ipaWeight', String(ipaWeight));
   if (imageBlob) formData.append('negativePrompt', REFERENCE_PHOTO_NEGATIVE);
 
   const data = await apiClient.request('/proxy/sd-webui/portrait', {
@@ -175,39 +207,92 @@ async function generatePortraitViaSdWebuiProxy(imageBlob, prompt, strength, sdMo
   return canonicalUrl(data.url);
 }
 
-export const imageService = {
+// --- Image request queue: max 1 concurrent, 1s cooldown ---
+const _imgQueue = [];
+let _imgQueueBusy = false;
+
+function enqueueImageRequest(fn) {
+  return new Promise((resolve, reject) => {
+    _imgQueue.push({ fn, resolve, reject });
+    if (!_imgQueueBusy) _drainImageQueue();
+  });
+}
+
+async function _drainImageQueue() {
+  _imgQueueBusy = true;
+  while (_imgQueue.length > 0) {
+    const { fn, resolve, reject } = _imgQueue.shift();
+    try {
+      resolve(await fn());
+    } catch (err) {
+      reject(err);
+    }
+    if (_imgQueue.length > 0) {
+      await new Promise(r => setTimeout(r, 1000));
+    }
+  }
+  _imgQueueBusy = false;
+}
+
+const _imageServiceImpl = {
   async generateSceneImage(narrative, genre, tone, _apiKeyIgnored, provider = 'dalle', imagePrompt = null, campaignId = null, imageStyle = 'painting', darkPalette = false, characterAge = null, characterGender = null, options = {}, seriousness = null, portraitUrl = null) {
-    const hasPortrait = provider === 'gpt-image' && !!portraitUrl;
+    const hasGptPortrait = provider === 'gpt-image' && !!portraitUrl;
+    const hasSdPortrait = provider === 'sd-webui' && !!portraitUrl;
     const sdModel = provider === 'sd-webui' ? (options?.sdModel || null) : null;
 
     let prompt;
     if (options?.preBuiltPrompt) {
       prompt = options.preBuiltPrompt;
     } else {
-      // Translate the user-content fragments to English before they get
-      // embedded into the English template. Image models perform best on
-      // English prompts; PL characters bleed in from LLM slip-ups and from
-      // the narrative fallback when the model omitted `imagePrompt`.
       const [enImagePrompt, enNarrative] = await Promise.all([
         ensureEnglish(imagePrompt),
         imagePrompt ? Promise.resolve(narrative || '') : ensureEnglish((narrative || '').substring(0, 300)),
       ]);
-      prompt = buildImagePrompt(enNarrative, genre, tone, enImagePrompt, provider, imageStyle, darkPalette, characterAge, characterGender, seriousness, hasPortrait, sdModel);
+      prompt = buildImagePrompt(enNarrative, genre, tone, enImagePrompt, provider, imageStyle, darkPalette, characterAge, characterGender, seriousness, hasGptPortrait, sdModel);
     }
 
+    let negativePrompt = options?.preBuiltNegativePrompt || options?.negativePrompt || null;
+    if (!negativePrompt && provider === 'sd-webui') {
+      negativePrompt = getImageStyleSdNegative(imageStyle);
+    }
     const url = await generateSceneViaProxy(prompt, provider, campaignId, {
       ...options,
-      portraitUrl: hasPortrait ? portraitUrl : null,
-      negativePrompt: options?.preBuiltNegativePrompt || options?.negativePrompt || null,
+      portraitUrl: (hasGptPortrait || hasSdPortrait) ? portraitUrl : null,
+      negativePrompt,
     });
     return { url, prompt };
   },
 
-  async generatePortrait(imageBlob, { species, age, gender, careerName, genre } = {}, _apiKeyIgnored, strength = 0.45, provider = 'stability', imageStyle = 'painting', darkPalette = false, seriousness = null, sdModel = null, extras = {}, sdSeed = null) {
-    // `careerName` is the only free-form user-content field here — species/gender
-    // are enums and genre comes from a fixed picker list. Translate if PL.
-    const enCareerName = await ensureEnglish(careerName);
-    const prompt = buildPortraitPrompt(species, gender, age, enCareerName, genre, provider, imageStyle, Boolean(imageBlob), darkPalette, seriousness, extras, sdModel);
+  async generatePortrait(imageBlob, { species, age, gender, careerName, genre, subjectOverride = null, appearanceText = null } = {}, _apiKeyIgnored, strength = 0.45, provider = 'stability', imageStyle = 'painting', darkPalette = false, seriousness = null, sdModel = null, extras = {}, sdSeed = null) {
+    // NPC pipeline supplies a fully-formed English subject from the LLM
+    // prompt builder (see services/npcPortraitPromptLlm.js). When present we
+    // skip the per-field translation + species/career templating entirely —
+    // the override IS the subject. Player creator does not pass an override
+    // so it still routes through ensureEnglish + buildPortraitPrompt's
+    // humanoid/creature switch below.
+    //
+    // `appearanceText` (PL) is the canonical NPC physical description from
+    // CampaignNPC.appearance. When provided we translate it and feed it as
+    // an extra appearance directive so retries/regenerations stay visually
+    // consistent — works alongside subjectOverride or the heuristic path.
+    const trimmedOverride = typeof subjectOverride === 'string' ? subjectOverride.trim() : '';
+    const enAppearance = appearanceText ? await ensureEnglish(appearanceText) : null;
+    const enrichedExtras = enAppearance ? { ...extras, appearance: enAppearance } : extras;
+    let prompt;
+    if (trimmedOverride) {
+      prompt = buildPortraitPrompt(null, gender, age, null, genre, provider, imageStyle, Boolean(imageBlob), darkPalette, seriousness, enrichedExtras, sdModel, trimmedOverride);
+    } else {
+      // `careerName` is the only free-form user-content field here for the
+      // player creator (species comes from an English enum). NPC portraits
+      // without an LLM override fall back to the heuristic path and need both
+      // species and careerName translated; ensureEnglish is a no-op for
+      // English text.
+      const [enCareerName, enSpecies] = await Promise.all([
+        ensureEnglish(careerName),
+        ensureEnglish(species),
+      ]);
+      prompt = buildPortraitPrompt(enSpecies, gender, age, enCareerName, genre, provider, imageStyle, Boolean(imageBlob), darkPalette, seriousness, enrichedExtras, sdModel);
+    }
 
     let url;
     if (provider === 'dalle') {
@@ -224,14 +309,20 @@ export const imageService = {
         ? await generatePortraitViaGeminiImg2ImgProxy(imageBlob, prompt)
         : await generatePortraitViaGeminiProxy(prompt);
     } else if (provider === 'sd-webui') {
-      url = await generatePortraitViaSdWebuiProxy(imageBlob, prompt, strength, sdModel, sdSeed);
+      const ipaWeight = extras?.ipaWeight ?? null;
+      url = await generatePortraitViaSdWebuiProxy(imageBlob, prompt, strength, sdModel, sdSeed, ipaWeight);
     } else {
-      url = await generatePortraitViaStabilityProxy(imageBlob, prompt, strength);
+      if (imageBlob) {
+        url = await generatePortraitViaStabilityProxy(imageBlob, prompt, strength);
+      } else {
+        const data = await apiClient.post('/proxy/stability/generate', { prompt, aspectRatio: '1:1' });
+        url = canonicalUrl(data.url);
+      }
     }
     return { url, prompt };
   },
 
-  async generatePlaygroundImage({ prompt, provider = 'dalle', sdModel = null, sdSeed = null, referenceBlob = null, strength = 0.55 } = {}) {
+  async generatePlaygroundImage({ prompt, provider = 'dalle', sdModel = null, sdSeed = null, referenceBlob = null, strength = 0.55, resolutionMultiplier = 1 } = {}) {
     const rawPrompt = typeof prompt === 'string' ? prompt.trim() : '';
     if (!rawPrompt) throw new Error('Prompt is required');
 
@@ -255,7 +346,7 @@ export const imageService = {
       const payload = { prompt: rawPrompt };
       if (sdModel) payload.model = sdModel;
       if (Number.isInteger(sdSeed)) payload.seed = sdSeed;
-      applyPresetToPayload(payload, sdModel, 'scene');
+      applyPresetToPayload(payload, sdModel, 'scene', resolutionMultiplier);
       const data = await apiClient.post('/proxy/sd-webui/generate', payload);
       return canonicalUrl(data.url);
     }
@@ -267,7 +358,7 @@ export const imageService = {
     return canonicalUrl(data.url);
   },
 
-  async generateItemImage(item, { genre, tone, provider = 'dalle', imageStyle = 'painting', darkPalette = false, seriousness = null, campaignId = null, sdModel = null, sdSeed = null, forceNew = false } = {}) {
+  async generateItemImage(item, { genre, tone, provider = 'dalle', imageStyle = 'painting', darkPalette = false, seriousness = null, campaignId = null, sdModel = null, sdSeed = null, forceNew = false, resolutionMultiplier = 1 } = {}) {
     // Item name/description are generated by the LLM in the campaign language
     // (PL for Polish campaigns). Translate both before embedding. type/rarity
     // come from an English enum in the system prompt.
@@ -285,10 +376,28 @@ export const imageService = {
       seriousness,
       sdModel,
     });
-    const itemNegative = provider === 'sd-webui'
-      ? 'person, human, character, hand, hands, fingers, holding, wielding, figure, body, face, portrait, full body, half body'
-      : null;
-    const url = await generateSceneViaProxy(prompt, provider, campaignId, { sdModel, sdSeed, forceNew, shape: 'square', negativePrompt: itemNegative });
+    let itemNegative = null;
+    if (provider === 'sd-webui') {
+      const styleNeg = getImageStyleSdNegative(imageStyle);
+      const baseItemNeg = 'person, human, character, hand, hands, fingers, holding, wielding, figure, body, face, portrait, full body, half body';
+      itemNegative = styleNeg ? `${baseItemNeg}, ${styleNeg}` : baseItemNeg;
+    }
+    const url = await generateSceneViaProxy(prompt, provider, campaignId, { sdModel, sdSeed, forceNew, shape: 'square', negativePrompt: itemNegative, resolutionMultiplier });
     return { url, prompt };
+  },
+};
+
+export const imageService = {
+  generateSceneImage(...args) {
+    return enqueueImageRequest(() => _imageServiceImpl.generateSceneImage(...args));
+  },
+  generatePortrait(...args) {
+    return enqueueImageRequest(() => _imageServiceImpl.generatePortrait(...args));
+  },
+  generatePlaygroundImage(...args) {
+    return enqueueImageRequest(() => _imageServiceImpl.generatePlaygroundImage(...args));
+  },
+  generateItemImage(...args) {
+    return enqueueImageRequest(() => _imageServiceImpl.generateItemImage(...args));
   },
 };

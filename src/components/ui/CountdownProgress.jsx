@@ -11,13 +11,14 @@ export default function CountdownProgress({ durationSeconds = 120, label, size =
 
   useEffect(() => {
     const id = setInterval(() => {
-      setElapsed((prev) => (prev < durationSeconds ? prev + 1 : prev));
+      setElapsed((prev) => prev + 1);
     }, 1000);
     return () => clearInterval(id);
   }, [durationSeconds]);
 
   const percent = Math.min(Math.floor((elapsed / durationSeconds) * 100), 99);
   const progress = Math.min(elapsed / durationSeconds, 0.99);
+  const elapsedLabel = `${Math.floor(elapsed / 60)}:${String(elapsed % 60).padStart(2, '0')}`;
 
   const { svgSize, strokeWidth, fontSize } = sizes[size] || sizes.lg;
   const radius = (svgSize - strokeWidth) / 2;
@@ -61,12 +62,17 @@ export default function CountdownProgress({ durationSeconds = 120, label, size =
             }}
           />
         </svg>
-        <span
-          className={`absolute inset-0 flex items-center justify-center ${fontSize} font-bold text-on-surface tabular-nums`}
-          style={{ textShadow: '0 0 8px rgba(197, 154, 255, 0.3)' }}
-        >
-          {percent}%
-        </span>
+        <div className="absolute inset-0 flex flex-col items-center justify-center tabular-nums">
+          <span
+            className={`${fontSize} font-bold text-on-surface leading-none`}
+            style={{ textShadow: '0 0 8px rgba(197, 154, 255, 0.3)' }}
+          >
+            {percent}%
+          </span>
+          <span className="text-on-surface-variant/70 text-[10px] mt-1 font-label tracking-wider">
+            {elapsedLabel}
+          </span>
+        </div>
       </div>
       {label && (
         <p className="text-on-surface-variant text-xs uppercase tracking-widest font-label animate-shimmer">

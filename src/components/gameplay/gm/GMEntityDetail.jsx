@@ -1,6 +1,8 @@
 import { useTranslation } from 'react-i18next';
 import { NODE_COLORS } from '../../../services/gmDataTransformer';
 import { FACTION_DEFINITIONS, getReputationTierData } from '../../../data/rpgFactions';
+import { useLocationDigests } from '../../../hooks/useLocationDigests';
+import { useGameCampaign } from '../../../stores/gameSelectors';
 
 export default function GMEntityDetail({ node, edges, allNodes, onClose, onSelectNode }) {
   const { t } = useTranslation();
@@ -23,11 +25,11 @@ export default function GMEntityDetail({ node, edges, allNodes, onClose, onSelec
             className="w-3 h-3 rounded-full shrink-0"
             style={{ backgroundColor: colors.fill }}
           />
-          <span className="text-xs font-bold text-on-surface truncate">{node.name}</span>
+          <span className="text-sm font-bold text-on-surface truncate">{node.name}</span>
         </div>
         <button
           onClick={onClose}
-          className="material-symbols-outlined text-sm text-outline hover:text-on-surface transition-colors shrink-0"
+          className="material-symbols-outlined text-base text-outline hover:text-on-surface transition-colors shrink-0"
         >
           close
         </button>
@@ -35,7 +37,7 @@ export default function GMEntityDetail({ node, edges, allNodes, onClose, onSelec
 
       {/* Body */}
       <div className="flex-1 overflow-y-auto custom-scrollbar p-4 space-y-4">
-        <div className="text-[10px] font-label uppercase tracking-widest text-outline">
+        <div className="text-xs font-label uppercase tracking-widest text-outline">
           {t(`gmModal.nodeTypes.${node.type}`)}
         </div>
 
@@ -52,7 +54,7 @@ export default function GMEntityDetail({ node, edges, allNodes, onClose, onSelec
         {/* Connections */}
         {connections.length > 0 && (
           <div>
-            <div className="text-[10px] font-label uppercase tracking-widest text-outline mb-2">
+            <div className="text-xs font-label uppercase tracking-widest text-outline mb-2">
               {t('gmModal.connections')} ({connections.length})
             </div>
             <div className="space-y-1">
@@ -68,10 +70,10 @@ export default function GMEntityDetail({ node, edges, allNodes, onClose, onSelec
                       className="w-2 h-2 rounded-full shrink-0"
                       style={{ backgroundColor: otherColors.fill }}
                     />
-                    <span className="text-[11px] text-on-surface truncate flex-1">
+                    <span className="text-sm text-on-surface truncate flex-1">
                       {conn.otherNode.name}
                     </span>
-                    <span className="text-[9px] text-outline shrink-0">{conn.label?.startsWith('edgeLabels.') ? t(`gmModal.${conn.label}`) : conn.label}</span>
+                    <span className="text-[10px] text-outline shrink-0">{conn.label?.startsWith('edgeLabels.') ? t(`gmModal.${conn.label}`) : conn.label}</span>
                   </button>
                 );
               })}
@@ -83,10 +85,23 @@ export default function GMEntityDetail({ node, edges, allNodes, onClose, onSelec
   );
 }
 
+function findDigestsForLocation(allDigests, locationName) {
+  if (!allDigests || !locationName) return null;
+  const lower = locationName.toLowerCase();
+  for (const [name, data] of Object.entries(allDigests)) {
+    if (name.toLowerCase() === lower) return data;
+  }
+  for (const [name, data] of Object.entries(allDigests)) {
+    const nameLower = name.toLowerCase();
+    if (nameLower.includes(lower) || lower.includes(nameLower)) return data;
+  }
+  return null;
+}
+
 function NpcDetail({ data, isPC, t }) {
   if (!data) return null;
   return (
-    <div className="space-y-2 text-[11px] text-on-surface-variant">
+    <div className="space-y-2 text-sm text-on-surface-variant">
       {isPC && data.species && <Field label={t('gmModal.detail.species')} value={data.species} />}
       {isPC && data.mana && (
         <Field label="Mana" value={`${data.mana.current}/${data.mana.max}`} />
@@ -96,7 +111,7 @@ function NpcDetail({ data, isPC, t }) {
       {data.attitude && (
         <div className="flex items-center gap-2">
           <span className="text-outline">{t('gmModal.detail.attitude')}:</span>
-          <span className={`text-[10px] font-bold uppercase px-1.5 py-0.5 rounded-sm ${
+          <span className={`text-xs font-bold uppercase px-1.5 py-0.5 rounded-sm ${
             data.attitude === 'friendly' ? 'bg-primary/15 text-primary' :
             data.attitude === 'hostile' ? 'bg-error/15 text-error' :
             'bg-outline/10 text-outline'
@@ -114,11 +129,11 @@ function NpcDetail({ data, isPC, t }) {
       {data.gender && <Field label={t('gmModal.detail.gender')} value={t(`gmModal.genders.${data.gender}`, data.gender)} />}
       {data.lastLocation && <Field label={t('gmModal.detail.location')} value={data.lastLocation} />}
       {data.alive === false && (
-        <div className="text-error font-bold uppercase text-[10px]">{t('gmModal.detail.dead')}</div>
+        <div className="text-error font-bold uppercase text-xs">{t('gmModal.detail.dead')}</div>
       )}
       {data.notes && <div className="text-outline italic pt-1 border-t border-outline-variant/10">{data.notes}</div>}
       {data.isCompanion && (
-        <div className="text-primary font-bold uppercase text-[10px]">{t('gmModal.detail.companion')}</div>
+        <div className="text-primary font-bold uppercase text-xs">{t('gmModal.detail.companion')}</div>
       )}
       {isPC && data.wounds != null && (
         <Field label={t('gmModal.detail.wounds')} value={`${data.wounds} / ${data.maxWounds}`} />
@@ -128,24 +143,45 @@ function NpcDetail({ data, isPC, t }) {
 }
 
 function LocationDetail({ data, t }) {
+  const campaign = useGameCampaign();
+  const { data: allDigests } = useLocationDigests(campaign?.backendId);
+
   if (!data) return null;
+
+  const locName = data.name || data.displayName || '';
+  const locData = allDigests ? findDigestsForLocation(allDigests, locName) : null;
+  const digests = locData?.sceneDigests || [];
+
   return (
-    <div className="space-y-2 text-[11px] text-on-surface-variant">
+    <div className="space-y-2 text-sm text-on-surface-variant">
       {data.description && <p>{data.description}</p>}
       {data.isCurrent && (
-        <div className="text-primary font-bold uppercase text-[10px]">{t('gmModal.detail.currentLocation')}</div>
+        <div className="text-primary font-bold uppercase text-xs">{t('gmModal.detail.currentLocation')}</div>
       )}
       {data.modifications?.length > 0 && (
         <div>
-          <div className="text-[10px] text-outline mb-1">{t('gmModal.detail.modifications')}:</div>
+          <div className="text-xs text-outline mb-1">{t('gmModal.detail.modifications')}:</div>
           {data.modifications.map((mod, i) => (
-            <div key={i} className="flex items-start gap-1.5 text-[10px] text-outline">
-              <span className="material-symbols-outlined text-[10px] mt-0.5">
+            <div key={i} className="flex items-start gap-1.5 text-xs text-outline">
+              <span className="material-symbols-outlined text-xs mt-0.5">
                 {mod.type === 'trap' ? 'warning' : mod.type === 'destruction' ? 'dangerous' : mod.type === 'discovery' ? 'search' : 'change_circle'}
               </span>
               <span>[{mod.type}] {mod.description}</span>
             </div>
           ))}
+        </div>
+      )}
+      {digests.length > 0 && (
+        <div>
+          <div className="text-xs text-outline mb-1">{t('gmModal.detail.locationHistory')}:</div>
+          <div className="space-y-1">
+            {digests.map((d, i) => (
+              <div key={i} className="text-xs text-outline leading-snug">
+                <span className="text-on-surface-variant font-bold">#{d.sceneIndex}</span>{' '}
+                {d.text}
+              </div>
+            ))}
+          </div>
         </div>
       )}
     </div>
@@ -159,7 +195,7 @@ function FactionDetail({ data, t }) {
   const pct = ((data.reputation + 100) / 200) * 100;
 
   return (
-    <div className="space-y-2 text-[11px] text-on-surface-variant">
+    <div className="space-y-2 text-sm text-on-surface-variant">
       {def?.description && <p>{def.description}</p>}
       <div className="flex items-center justify-between">
         <span className="text-outline">{t('gmModal.detail.reputation')}:</span>
@@ -173,9 +209,9 @@ function FactionDetail({ data, t }) {
           style={{ width: `${pct}%` }}
         />
       </div>
-      <div className="text-[10px] font-bold uppercase">{t(`gmModal.reputationTiers.${tierData.tier}`, tierData.label)}</div>
+      <div className="text-xs font-bold uppercase">{t(`gmModal.reputationTiers.${tierData.tier}`, tierData.label)}</div>
       {def?.effects[tierData.tier] && (
-        <p className="text-[10px] text-outline italic">{def.effects[tierData.tier]}</p>
+        <p className="text-xs text-outline italic">{def.effects[tierData.tier]}</p>
       )}
     </div>
   );
@@ -184,20 +220,20 @@ function FactionDetail({ data, t }) {
 function QuestDetail({ data, t }) {
   if (!data) return null;
   return (
-    <div className="space-y-2 text-[11px] text-on-surface-variant">
+    <div className="space-y-2 text-sm text-on-surface-variant">
       {data.description && <p>{data.description}</p>}
       {data.status && (
-        <div className={`text-[10px] font-bold uppercase ${data.status === 'active' ? 'text-primary' : 'text-outline'}`}>
+        <div className={`text-xs font-bold uppercase ${data.status === 'active' ? 'text-primary' : 'text-outline'}`}>
           {t(`gmModal.questStatuses.${data.status}`, data.status)}
         </div>
       )}
       {data.type && <Field label={t('gmModal.detail.questType')} value={data.type} />}
       {data.objectives?.length > 0 && (
         <div>
-          <div className="text-[10px] text-outline mb-1">{t('gmModal.detail.objectives')}:</div>
+          <div className="text-xs text-outline mb-1">{t('gmModal.detail.objectives')}:</div>
           {data.objectives.map((obj) => (
-            <div key={obj.id} className="flex items-start gap-2 text-[10px]">
-              <span className={`material-symbols-outlined text-xs mt-0.5 ${obj.completed ? 'text-primary' : 'text-outline'}`}>
+            <div key={obj.id} className="flex items-start gap-2 text-xs">
+              <span className={`material-symbols-outlined text-sm mt-0.5 ${obj.completed ? 'text-primary' : 'text-outline'}`}>
                 {obj.completed ? 'check_circle' : 'radio_button_unchecked'}
               </span>
               <span className={obj.completed ? 'line-through text-outline' : ''}>{obj.description}</span>

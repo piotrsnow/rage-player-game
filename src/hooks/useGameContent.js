@@ -9,9 +9,9 @@ import { contextManager } from '../services/contextManager';
 export function useGameContent() {
   const { t } = useTranslation();
   const { state, dispatch, autoSave } = useGame();
-  const { settings } = useSettings();
+  const { settings, resolveTaskModel } = useSettings();
 
-  const { aiProvider, language, aiModelTier = 'premium', aiModel = '', sceneVisualization = 'image' } = settings;
+  const { aiProvider, language, aiModelTier = 'premium', sceneVisualization = 'image' } = settings;
   // API keys resolve server-side from env; these positional args exist only
   // for backward-compat with aiService and are ignored (see `_apiKeyIgnored`
   // params in src/services/ai/service.js).
@@ -29,7 +29,7 @@ export function useGameContent() {
           apiKey,
           language,
           aiModelTier,
-          { alternateApiKey, explicitModel: aiModel || null }
+          { alternateApiKey, explicitModel: resolveTaskModel('campaignGeneration') }
         );
         if (usage) dispatch({ type: 'ADD_AI_COST', payload: calculateCost('ai', usage) });
         return result;
@@ -40,7 +40,7 @@ export function useGameContent() {
         dispatch({ type: 'SET_LOADING', payload: false });
       }
     },
-    [aiProvider, apiKey, alternateApiKey, language, aiModelTier, aiModel, sceneVisualization, dispatch]
+    [aiProvider, apiKey, alternateApiKey, language, aiModelTier, resolveTaskModel, sceneVisualization, dispatch]
   );
 
   const generateStoryPrompt = useCallback(
@@ -164,7 +164,7 @@ export function useGameContent() {
         apiKey,
         language,
         aiModelTier,
-        { alternateApiKey, explicitModel: aiModel || null }
+        { alternateApiKey, explicitModel: resolveTaskModel('sceneGeneration') }
       );
 
       if (usage) {
@@ -193,7 +193,7 @@ export function useGameContent() {
         content,
       };
     },
-    [state, aiProvider, apiKey, alternateApiKey, language, aiModelTier, aiModel, dispatch]
+    [state, aiProvider, apiKey, alternateApiKey, language, aiModelTier, resolveTaskModel, dispatch]
   );
 
   const verifyQuestObjective = useCallback(

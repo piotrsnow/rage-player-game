@@ -9,6 +9,7 @@ import { getReputationProfile, maybeClearVendetta } from '../../livingWorld/repu
 import { suggestEncounterMode } from '../../livingWorld/encounterEscalator.js';
 import { readDmAgentState } from '../../livingWorld/dmMemoryService.js';
 import { normalizeLanguage } from '../../livingWorld/contentLocalizer.js';
+import { LOCATION_KIND_WORLD } from '../../locationRefs.js';
 
 import { buildSettlementBlock } from './settlement.js';
 import { buildSeededSettlementsBlock } from './seededSettlements.js';
@@ -152,7 +153,7 @@ export async function buildLivingWorldContext(campaignId, currentLocation, { tra
       campaignId,
       userId: campaign.userId,
       campaign,
-      startLocation: location,
+      startLocation: { ...location, kind: LOCATION_KIND_WORLD },
       targetName: travelTarget,
       directionalMove,
     }).catch((err) => {

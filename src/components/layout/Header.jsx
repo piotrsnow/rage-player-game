@@ -1,14 +1,77 @@
-import { useState, useRef, useEffect, useCallback } from 'react';
-import { Link, useLocation } from 'react-router-dom';
+import { useState, useRef, useEffect, useLayoutEffect, useCallback, useMemo } from 'react';
+import { createPortal } from 'react-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { useSettings } from '../../contexts/SettingsContext';
 import { useGlobalMusic } from '../../contexts/MusicContext';
 import { useModals } from '../../contexts/ModalContext';
+import { useDictationContext } from '../../contexts/DictationContext';
 import { useGameCampaign } from '../../stores/gameSelectors';
 import { getGameState } from '../../stores/gameStore';
+import { useAiCallLogStore } from '../../stores/aiCallLogStore';
+import { useDevEventLogStore } from '../../stores/devEventLogStore';
 import { useMultiplayer } from '../../contexts/MultiplayerContext';
 import { storage } from '../../services/storage';
+import { peekEntryIntent, consumeEntryIntent } from '../../services/entryIntent';
 import Tooltip from '../ui/Tooltip';
+import FullCallLogModal from './FullCallLogModal';
+import AiCallLogModal from './AiCallLogModal';
+import { APP_VERSION } from '../../version';
+
+function HeaderVersionPopover({ wrapperClassName = '', wrapperStyle }) {
+  const { t } = useTranslation();
+  const [open, setOpen] = useState(false);
+  const ref = useRef(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const handler = (e) => {
+      if (ref.current && !ref.current.contains(e.target)) setOpen(false);
+    };
+    document.addEventListener('pointerdown', handler);
+    return () => document.removeEventListener('pointerdown', handler);
+  }, [open]);
+
+  return (
+    <div
+      ref={ref}
+      className={`relative flex items-center shrink-0 justify-center ${wrapperClassName}`.trim()}
+      style={wrapperStyle}
+    >
+      <button
+        type="button"
+        onClick={() => setOpen((p) => !p)}
+        className="text-on-surface-variant font-body text-[15px] hover:text-tertiary transition-colors px-1 tabular-nums"
+        aria-expanded={open}
+        aria-haspopup="dialog"
+      >
+        v{APP_VERSION}
+      </button>
+      {open && (
+        <div className="absolute left-0 top-full mt-1 min-w-[200px] z-[60] bg-surface-container border border-outline-variant/20 rounded-sm shadow-xl p-4 animate-fade-in">
+          <div className="flex items-center gap-2 mb-3">
+            <span className="material-symbols-outlined text-primary text-base">info</span>
+            <span className="text-xs font-bold text-on-surface tracking-wide">{t('common.appName')}</span>
+          </div>
+          <div className="space-y-1.5 text-[11px] text-on-surface-variant">
+            <div className="flex justify-between">
+              <span className="opacity-60">Wersja</span>
+              <span className="font-mono font-bold text-primary">{APP_VERSION}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="opacity-60">Stack</span>
+              <span>React + Fastify</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="opacity-60">System</span>
+              <span>WFRP 4e</span>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
 
 /** Flat “control rail” look — no hatch; aside keeps diagonal stripes. */
 const HEADER_CHROME_STYLE = {
@@ -16,13 +79,55 @@ const HEADER_CHROME_STYLE = {
   boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.04), 0 8px 32px rgba(0,0,0,0.5)',
 };
 
+function DevEventLogButton() {
+  const isOpen = useDevEventLogStore((s) => s.isOpen);
+  const evCount = useDevEventLogStore((s) => s.events.length);
+  const toggleOpen = useDevEventLogStore((s) => s.toggleOpen);
+  return (
+    <Tooltip content="Dev Event Log" placement="bottom" variant="compact" asChild>
+      <button
+        type="button"
+        onClick={toggleOpen}
+        aria-label="Dev Event Log"
+        className={`relative material-symbols-outlined transition-all active:scale-95 duration-200 cursor-pointer w-9 h-9 flex items-center justify-center rounded-full hover:bg-surface-container-high/40 ${
+          isOpen ? 'text-primary' : 'text-on-surface-variant hover:text-tertiary'
+        }`}
+      >
+        monitoring
+        {evCount > 0 && (
+          <span className="absolute top-1 right-1 min-w-[10px] h-[10px] rounded-full bg-tertiary/80 text-[7px] text-white flex items-center justify-center px-0.5 leading-none">
+            {evCount > 99 ? '99+' : evCount}
+          </span>
+        )}
+      </button>
+    </Tooltip>
+  );
+}
+
 export default function Header() {
   const location = useLocation();
+  const navigate = useNavigate();
   const { t } = useTranslation();
-  const { settings, backendUser } = useSettings();
+  const [entryRoute, setEntryRoute] = useState(() => peekEntryIntent());
+
+  useEffect(() => {
+    if (entryRoute && (location.pathname.startsWith('/play') || location.pathname.startsWith('/create'))) {
+      consumeEntryIntent();
+      setEntryRoute(null);
+    }
+  }, [location.pathname, entryRoute]);
+  const { settings, updateSettings, backendUser } = useSettings();
   const music = useGlobalMusic();
-  const { openCharacterSheet, openTasksInfo, openSettings, openKeys, openImageConfig, openAudioConfig, openProfile, openAdminUsers } = useModals();
+  const { openCharacterSheet, openTasksInfo, openSettings, openKeys, openImageConfig, openAudioConfig, openProfile, openAdminUsers, openLocationGraph, openGmModal, openPrivacy } = useModals();
+  const { dictation } = useDictationContext() ?? {};
   const campaign = useGameCampaign();
+  const aiLogSidebarVisible = useAiCallLogStore((s) => s.sidebarVisible);
+  const aiFullLogOpen = useAiCallLogStore((s) => s.fullLogOpen);
+  const aiLogs = useAiCallLogStore((s) => s.logs);
+  const aiBackendLogs = useAiCallLogStore((s) => s.backendLogs);
+  const toggleAiSidebar = useAiCallLogStore((s) => s.toggleSidebarVisible);
+  const openAiFullLog = useAiCallLogStore((s) => s.openFullLog);
+  const closeAiFullLog = useAiCallLogStore((s) => s.closeFullLog);
   const mp = useMultiplayer();
   const hasActiveGame = !!campaign || (mp.state.isMultiplayer && mp.state.phase === 'playing');
   const showMpStatus = mp.state.isMultiplayer;
@@ -35,10 +140,49 @@ export default function Header() {
     : 'text-primary border-primary/30';
 
   const isMultiplayer = mp.state.isMultiplayer && mp.state.phase === 'playing';
+  const campaignLogoSrc = t('common.logoPathCampaign', '/nikczemny_logo_chain_2.png');
+  const campaignLogoMaskStyle = {
+    WebkitMaskImage: `url(${campaignLogoSrc})`,
+    maskImage: `url(${campaignLogoSrc})`,
+    WebkitMaskSize: 'contain',
+    maskSize: 'contain',
+    WebkitMaskRepeat: 'no-repeat',
+    maskRepeat: 'no-repeat',
+    WebkitMaskPosition: 'bottom',
+    maskPosition: 'bottom',
+  };
+  const headerRef = useRef(null);
+  const playLogoLinkRef = useRef(null);
+  const [campaignLogoCenterX, setCampaignLogoCenterX] = useState(null);
+  const [logoHoverVignette, setLogoHoverVignette] = useState(null);
+  const updatePlayLogoVignette = useCallback(() => {
+    if (typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      return;
+    }
+    const el = playLogoLinkRef.current;
+    if (!el) return;
+    const r = el.getBoundingClientRect();
+    setLogoHoverVignette({ cx: r.left + r.width / 2, cy: r.top + r.height / 2 });
+  }, []);
+  const clearPlayLogoVignette = useCallback(() => setLogoHoverVignette(null), []);
   const [volumeOpen, setVolumeOpen] = useState(false);
   const volumeRef = useRef(null);
+  const preMuteVolumesRef = useRef(null);
   const [saveStatus, setSaveStatus] = useState('idle');
   const saveTimeoutRef = useRef(null);
+
+  const aiMergedLogs = useMemo(() => {
+    const clientIds = new Set(aiLogs.map((l) => l.id));
+    const combined = [...aiLogs];
+    for (const bl of aiBackendLogs) {
+      if (!clientIds.has(bl.id)) combined.push(bl);
+    }
+    combined.sort((a, b) => b.startedAt - a.startedAt);
+    return combined.slice(0, 100);
+  }, [aiLogs, aiBackendLogs]);
+  const aiPendingCount = useMemo(() => aiLogs.filter((l) => l.status === 'pending').length, [aiLogs]);
+  const [aiDetailId, setAiDetailId] = useState(null);
+  const aiDetailEntry = useMemo(() => aiMergedLogs.find((l) => l.id === aiDetailId) || null, [aiMergedLogs, aiDetailId]);
 
   const handleSaveCampaign = useCallback(async () => {
     const snapshot = getGameState();
@@ -73,27 +217,164 @@ export default function Header() {
   ].filter(Boolean);
 
   const vol = settings.musicVolume ?? 40;
+  const dlgVol = settings.dialogueVolume ?? 80;
+  const sfxVol = settings.sfxVolume ?? 70;
+  const currentlyMuted = vol === 0 && dlgVol === 0 && sfxVol === 0;
+  const maxVol = Math.max(vol, dlgVol);
+  const volumeIcon = currentlyMuted ? 'volume_off' : maxVol < 40 ? 'volume_down' : 'volume_up';
+  const isPlayRoute = location.pathname.startsWith('/play');
+
+  useEffect(() => {
+    if (!isPlayRoute) setLogoHoverVignette(null);
+  }, [isPlayRoute]);
+
+  const updateCampaignLogoCenter = useCallback(() => {
+    if (!isPlayRoute) {
+      setCampaignLogoCenterX(null);
+      return;
+    }
+    const linkEl = playLogoLinkRef.current;
+    const headerEl = headerRef.current;
+    if (!linkEl || !headerEl) return;
+    const lr = linkEl.getBoundingClientRect();
+    const hr = headerEl.getBoundingClientRect();
+    const cx = lr.left - hr.left + lr.width / 2;
+    setCampaignLogoCenterX(cx);
+  }, [isPlayRoute]);
+
+  useLayoutEffect(() => {
+    updateCampaignLogoCenter();
+  }, [updateCampaignLogoCenter, campaignLogoSrc]);
+
+  useEffect(() => {
+    if (!isPlayRoute) return;
+    const ro = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(() => updateCampaignLogoCenter()) : null;
+    const linkEl = playLogoLinkRef.current;
+    if (ro && linkEl) ro.observe(linkEl);
+    window.addEventListener('resize', updateCampaignLogoCenter);
+    return () => {
+      window.removeEventListener('resize', updateCampaignLogoCenter);
+      if (ro && linkEl) ro.unobserve(linkEl);
+    };
+  }, [isPlayRoute, updateCampaignLogoCenter]);
+
+  const appZoom = settings.appZoom ?? 100;
+  const canZoomIn = appZoom < 140;
+  const canZoomOut = appZoom > 80;
+
+  const handleAppZoomClick = useCallback(() => {
+    if (!canZoomIn) return;
+    updateSettings({ appZoom: Math.min(140, appZoom + 10) });
+  }, [appZoom, canZoomIn, updateSettings]);
+
+  const handleAppZoomContextMenu = useCallback(
+    (e) => {
+      e.preventDefault();
+      if (!canZoomOut) return;
+      updateSettings({ appZoom: Math.max(80, appZoom - 10) });
+    },
+    [appZoom, canZoomOut, updateSettings]
+  );
 
   return (
+    <>
     <header
-      className="fixed top-0 w-full z-50 flex justify-between items-center px-6 h-16 backdrop-blur-md border-b border-primary/[0.12]"
+      ref={headerRef}
+      className="fixed top-0 w-full z-50 flex justify-between items-center px-6 h-16 backdrop-blur-md border-b border-primary/[0.12] overflow-visible"
       style={HEADER_CHROME_STYLE}
     >
-      <div className="flex items-center gap-4">
-        {location.pathname.startsWith('/play') && (
+      {isPlayRoute && (
+        <Tooltip content={t('nav.lobby')} placement="bottom" variant="compact" asChild>
+          <Link
+            ref={playLogoLinkRef}
+            to="/"
+            onMouseEnter={updatePlayLogoVignette}
+            onMouseLeave={clearPlayLogoVignette}
+            onFocus={updatePlayLogoVignette}
+            onBlur={clearPlayLogoVignette}
+            className="absolute left-6 bottom-0 z-[51] block leading-none translate-x-[10px] translate-y-[138px] transition-opacity duration-300"
+          >
+            <span className="relative inline-block origin-top leading-none motion-reduce:animate-none animate-campaign-logo-float will-change-transform">
+              <img
+                src={campaignLogoSrc}
+                alt={t('common.appName')}
+                onLoad={updateCampaignLogoCenter}
+                className="relative z-0 block h-[16.2rem] w-auto max-w-[min(83.7vw,59.4rem)] object-contain object-bottom select-none pointer-events-auto brightness-[0.9] contrast-[1.22]"
+              />
+              <span
+                aria-hidden
+                className="pointer-events-none absolute inset-0 z-[1] motion-reduce:animate-none animate-campaign-logo-holo bg-[length:400%_400%] opacity-[0.92] mix-blend-color"
+                style={{
+                  ...campaignLogoMaskStyle,
+                  willChange: 'filter, background-position',
+                  backgroundImage:
+                    'linear-gradient(128deg, #12081f 0%, #2a0a28 10%, #1a0f3d 22%, #351848 34%, #0f2438 46%, #2a1548 58%, #3a1030 70%, #1a1530 82%, #22102a 100%)',
+                }}
+              />
+            </span>
+          </Link>
+        </Tooltip>
+      )}
+      {logoHoverVignette &&
+        typeof document !== 'undefined' &&
+        createPortal(
+          <div
+            aria-hidden
+            className="fixed inset-0 z-[49] pointer-events-none motion-reduce:hidden bg-transparent transition-opacity duration-300 ease-out"
+            style={{
+              background: `radial-gradient(ellipse min(52vmin, 64vw) min(44vmin, 56vh) at ${logoHoverVignette.cx}px ${logoHoverVignette.cy}px,
+                rgba(0,0,0,0.88) 0%,
+                rgba(0,0,0,0.72) 18%,
+                rgba(0,0,0,0.42) 38%,
+                rgba(0,0,0,0.16) 58%,
+                rgba(0,0,0,0) 78%,
+                rgba(0,0,0,0) 100%)`,
+            }}
+          />,
+          document.body,
+        )}
+      {isPlayRoute && campaignLogoCenterX != null && (
+        <HeaderVersionPopover
+          wrapperClassName="absolute top-0 z-[52] h-16 pointer-events-auto -translate-x-1/2"
+          wrapperStyle={{ left: `${campaignLogoCenterX - 26}px` }}
+        />
+      )}
+      <div
+        className={`flex gap-2 min-w-0 items-center min-h-16 ${
+          isPlayRoute ? 'pl-[max(17.55rem,min(45.9rem,calc(62.1vw_+_9.45rem)))] ml-3 md:ml-5' : ''
+        }`}
+      >
+        {!isPlayRoute && (
           <Tooltip content={t('nav.lobby')} placement="bottom" variant="compact" asChild>
             <Link
               to="/"
               className="flex items-center gap-2 transition-all duration-300 hover:drop-shadow-[0_0_12px_rgba(197,154,255,0.5)]"
             >
-              <img src={t('common.logoPath', '/nikczemnu_logo.png')} alt={t('common.appName')} className="h-[6.5rem] w-auto relative top-2 left-2" />
+              <img
+                src={t('common.logoPath', '/nikczemnu_logo.png')}
+                alt={t('common.appName')}
+                className="h-10 w-auto"
+              />
             </Link>
+          </Tooltip>
+        )}
+        {!isPlayRoute && <HeaderVersionPopover />}
+        {!backendUser && (
+          <Tooltip content={t('privacy.linkLabel')} placement="bottom" variant="compact" asChild>
+            <button
+              type="button"
+              onClick={openPrivacy}
+              aria-label={t('privacy.linkLabel')}
+              className="material-symbols-outlined text-on-surface-variant hover:text-tertiary transition-all active:scale-95 duration-200 w-9 h-9 flex items-center justify-center rounded-full hover:bg-surface-container-high/40"
+            >
+              privacy_tip
+            </button>
           </Tooltip>
         )}
       </div>
       <div className="flex items-center gap-6">
         {backendUser && (
-          <nav className="hidden md:flex gap-1 items-center text-on-surface-variant font-medieval text-[15px] lowercase">
+          <nav className="hidden md:flex gap-1 items-center text-on-surface-variant font-body text-[15px] lowercase">
             {navLinks.map((link) =>
               link.action ? (
                 <button
@@ -122,6 +403,21 @@ export default function Header() {
           </nav>
         )}
 
+        {entryRoute && (
+          <button
+            type="button"
+            onClick={() => {
+              const route = consumeEntryIntent();
+              setEntryRoute(null);
+              if (route) navigate(route);
+            }}
+            className="flex items-center gap-1.5 px-4 py-2 text-sm font-label lowercase rounded-sm border border-primary/40 text-primary animate-pulse hover:bg-primary/10 transition-colors duration-200"
+          >
+            <span className="material-symbols-outlined text-base">play_arrow</span>
+            Przejdź do kampanii
+          </button>
+        )}
+
         {settings.localMusicEnabled && music.hasMusic && (
           <div className="flex items-center gap-2">
             <Tooltip content={music.isPlaying ? t('common.pause', 'Pause') : t('common.play', 'Play')} placement="bottom" variant="compact" asChild>
@@ -144,22 +440,63 @@ export default function Header() {
               <Tooltip content={t('settings.musicVolume', 'Volume')} placement="bottom" variant="compact" asChild>
                 <button
                   onClick={() => setVolumeOpen((v) => !v)}
+                  onContextMenu={(e) => {
+                    e.preventDefault();
+                    if (!currentlyMuted) {
+                      preMuteVolumesRef.current = { musicVolume: vol, dialogueVolume: dlgVol, sfxVolume: sfxVol };
+                      updateSettings({ musicVolume: 0, dialogueVolume: 0, sfxVolume: 0 });
+                      music.setVolume(0);
+                    } else {
+                      const saved = preMuteVolumesRef.current || {};
+                      const restored = {
+                        musicVolume: saved.musicVolume || 25,
+                        dialogueVolume: saved.dialogueVolume || 25,
+                        sfxVolume: saved.sfxVolume || 25,
+                      };
+                      updateSettings(restored);
+                      music.setVolume(restored.musicVolume);
+                      preMuteVolumesRef.current = null;
+                    }
+                  }}
                   className="material-symbols-outlined text-base text-on-surface-variant hover:text-primary transition-colors active:scale-95 duration-200 w-8 h-8 flex items-center justify-center rounded-full hover:bg-surface-container-high/40"
                 >
-                  {vol === 0 ? 'volume_off' : vol < 40 ? 'volume_down' : 'volume_up'}
+                  {volumeIcon}
                 </button>
               </Tooltip>
               {volumeOpen && (
-                <div className="absolute right-0 top-full mt-2 px-3 py-2 rounded-sm bg-surface-container-high/95 backdrop-blur-xl border border-outline-variant/15 shadow-xl flex items-center gap-2 animate-scale-in">
-                  <input
-                    type="range"
-                    min="0"
-                    max="100"
-                    value={vol}
-                    onChange={(e) => music.setVolume(Number(e.target.value))}
-                    className="w-24 h-1 accent-primary cursor-pointer"
-                  />
-                  <span className="text-[10px] text-on-surface-variant font-mono w-7 text-right">{vol}%</span>
+                <div className="absolute right-0 top-full mt-2 px-3 py-2.5 rounded-sm bg-surface-container-high/95 backdrop-blur-xl border border-outline-variant/15 shadow-xl space-y-2 animate-scale-in w-52">
+                  <div className="flex items-center gap-2">
+                    <span className="material-symbols-outlined text-xs text-on-surface-variant/70 shrink-0">music_note</span>
+                    <input
+                      type="range"
+                      min="0"
+                      max="100"
+                      value={vol}
+                      onChange={(e) => {
+                        const v = Number(e.target.value);
+                        music.setVolume(v);
+                        if (v > 0) preMuteVolumesRef.current = null;
+                      }}
+                      className="flex-1 h-1 accent-primary cursor-pointer"
+                    />
+                    <span className="text-[10px] text-on-surface-variant font-mono w-7 text-right">{vol}%</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="material-symbols-outlined text-xs text-on-surface-variant/70 shrink-0">record_voice_over</span>
+                    <input
+                      type="range"
+                      min="0"
+                      max="100"
+                      value={dlgVol}
+                      onChange={(e) => {
+                        const v = Number(e.target.value);
+                        updateSettings({ dialogueVolume: v });
+                        if (v > 0) preMuteVolumesRef.current = null;
+                      }}
+                      className="flex-1 h-1 accent-primary cursor-pointer"
+                    />
+                    <span className="text-[10px] text-on-surface-variant font-mono w-7 text-right">{dlgVol}%</span>
+                  </div>
                 </div>
               )}
             </div>
@@ -179,6 +516,20 @@ export default function Header() {
                 {mpStatusLabel}
               </span>
             )}
+            {dictation?.supported && (
+              <Tooltip content={t(dictation.enabled ? 'gameplay.dictationDisable' : 'gameplay.dictationEnable')} placement="bottom" variant="compact" asChild>
+                <button
+                  type="button"
+                  onClick={dictation.toggleEnabled}
+                  aria-label={t(dictation.enabled ? 'gameplay.dictationDisable' : 'gameplay.dictationEnable')}
+                  className={`material-symbols-outlined transition-all active:scale-95 duration-200 cursor-pointer w-9 h-9 flex items-center justify-center rounded-full hover:bg-surface-container-high/40 ${
+                    dictation.enabled ? 'text-primary hover:text-tertiary' : 'text-on-surface-variant hover:text-tertiary'
+                  }`}
+                >
+                  {dictation.enabled ? 'mic' : 'mic_off'}
+                </button>
+              </Tooltip>
+            )}
             {hasActiveGame && !isMultiplayer && (
               <Tooltip content={saveStatus === 'saved' ? t('nav.campaignSaved') : t('nav.saveCampaign')} placement="bottom" variant="compact" asChild>
                 <button
@@ -195,6 +546,18 @@ export default function Header() {
                   <span className={`material-symbols-outlined text-lg ${saveStatus === 'saving' ? 'animate-spin' : ''}`}>
                     {saveStatus === 'saving' ? 'progress_activity' : saveStatus === 'saved' ? 'check_circle' : 'save'}
                   </span>
+                </button>
+              </Tooltip>
+            )}
+            {hasActiveGame && (
+              <Tooltip content={t('nav.locationGraph')} placement="bottom" variant="compact" asChild>
+                <button
+                  type="button"
+                  onClick={openLocationGraph}
+                  aria-label={t('nav.locationGraph')}
+                  className="material-symbols-outlined text-on-surface-variant hover:text-tertiary transition-all active:scale-95 duration-200 cursor-pointer w-9 h-9 flex items-center justify-center rounded-full hover:bg-surface-container-high/40"
+                >
+                  hub
                 </button>
               </Tooltip>
             )}
@@ -251,13 +614,14 @@ export default function Header() {
             {backendUser?.isAdmin && (
               <>
                 <Tooltip content={t('admin.livingWorld')} placement="bottom" variant="compact" asChild>
-                  <Link
-                    to="/admin/living-world"
+                  <button
+                    type="button"
+                    onClick={openGmModal}
                     aria-label={t('admin.livingWorld')}
                     className="material-symbols-outlined text-on-surface-variant hover:text-tertiary transition-all active:scale-95 duration-200 cursor-pointer w-9 h-9 flex items-center justify-center rounded-full hover:bg-surface-container-high/40"
                   >
-                    public
-                  </Link>
+                    auto_stories
+                  </button>
                 </Tooltip>
                 <Tooltip content={t('admin.userManagement')} placement="bottom" variant="compact" asChild>
                   <button
@@ -269,8 +633,46 @@ export default function Header() {
                     admin_panel_settings
                   </button>
                 </Tooltip>
+                <Tooltip content="Edytor kampanii" placement="bottom" variant="compact" asChild>
+                  <button
+                    type="button"
+                    onClick={() => navigate('/admin')}
+                    aria-label="Edytor kampanii"
+                    className="material-symbols-outlined text-on-surface-variant hover:text-tertiary transition-all active:scale-95 duration-200 cursor-pointer w-9 h-9 flex items-center justify-center rounded-full hover:bg-surface-container-high/40"
+                  >
+                    edit_note
+                  </button>
+                </Tooltip>
+                <DevEventLogButton />
               </>
             )}
+            <Tooltip content="LLM Calls" placement="bottom" variant="compact" asChild>
+              <button
+                type="button"
+                onClick={openAiFullLog}
+                onContextMenu={(e) => { e.preventDefault(); toggleAiSidebar(); }}
+                aria-label="LLM Calls"
+                className={`relative material-symbols-outlined transition-all active:scale-95 duration-200 cursor-pointer w-9 h-9 flex items-center justify-center rounded-full hover:bg-surface-container-high/40 ${
+                  aiLogSidebarVisible ? 'text-primary' : 'text-on-surface-variant hover:text-tertiary'
+                }`}
+              >
+                terminal
+                {aiPendingCount > 0 && (
+                  <span className="absolute top-1 right-1 w-2 h-2 rounded-full bg-tertiary animate-pulse" />
+                )}
+              </button>
+            </Tooltip>
+            <Tooltip content={t('nav.appZoomTooltip', { percent: appZoom })} placement="bottom" variant="compact" asChild>
+              <button
+                type="button"
+                onClick={handleAppZoomClick}
+                onContextMenu={handleAppZoomContextMenu}
+                aria-label={t('nav.appZoomAria', { percent: appZoom })}
+                className="material-symbols-outlined text-on-surface-variant hover:text-tertiary transition-all active:scale-95 duration-200 cursor-pointer w-9 h-9 flex items-center justify-center rounded-full hover:bg-surface-container-high/40"
+              >
+                search
+              </button>
+            </Tooltip>
             <Tooltip content={t('nav.settings')} placement="bottom" variant="compact" asChild>
               <button
                 type="button"
@@ -281,12 +683,26 @@ export default function Header() {
                 settings
               </button>
             </Tooltip>
-            <Tooltip content={t('credits.title', 'Credits')} placement="bottom" variant="compact" asChild>
+            <Tooltip content={t('privacy.linkLabel')} placement="bottom" variant="compact" asChild>
+              <button
+                type="button"
+                onClick={openPrivacy}
+                aria-label={t('privacy.linkLabel')}
+                className="material-symbols-outlined text-on-surface-variant hover:text-tertiary transition-all active:scale-95 duration-200 cursor-pointer w-9 h-9 flex items-center justify-center rounded-full hover:bg-surface-container-high/40"
+              >
+                privacy_tip
+              </button>
+            </Tooltip>
+            <Tooltip content={(backendUser.credits ?? 0) < 0 ? t('credits.negativeBalance') : t('credits.title', 'Credits')} placement="bottom" variant="compact" asChild>
               <button
                 type="button"
                 onClick={openProfile}
                 aria-label={t('nav.credits', 'Credits')}
-                className="flex items-center gap-1 px-2.5 h-9 rounded-full border border-primary/20 bg-surface-container-high text-xs font-label text-primary hover:border-primary/40 hover:shadow-[0_0_12px_rgba(197,154,255,0.2)] transition-all duration-300"
+                className={`flex items-center gap-1 px-2.5 h-9 rounded-full border text-xs font-label transition-all duration-300 ${
+                  (backendUser.credits ?? 0) < 0
+                    ? 'border-error/40 bg-error/10 text-error hover:border-error/60 animate-pulse'
+                    : 'border-primary/20 bg-surface-container-high text-primary hover:border-primary/40 hover:shadow-[0_0_12px_rgba(197,154,255,0.2)]'
+                }`}
               >
                 <span className="material-symbols-outlined text-sm">payments</span>
                 <span>${((backendUser.credits ?? 0) / 100).toFixed(2)}</span>
@@ -306,5 +722,12 @@ export default function Header() {
         )}
       </div>
     </header>
+    {aiFullLogOpen && (
+      <FullCallLogModal logs={aiMergedLogs} onClose={closeAiFullLog} onOpenEntry={setAiDetailId} />
+    )}
+    {aiDetailEntry && (
+      <AiCallLogModal entry={aiDetailEntry} onClose={() => setAiDetailId(null)} />
+    )}
+    </>
   );
 }

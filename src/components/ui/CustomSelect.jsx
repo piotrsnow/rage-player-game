@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 
 export default function CustomSelect({
   value,
@@ -12,6 +13,8 @@ export default function CustomSelect({
 }) {
   const [open, setOpen] = useState(false);
   const rootRef = useRef(null);
+  const menuRef = useRef(null);
+  const [menuStyle, setMenuStyle] = useState(null);
 
   const normalized = useMemo(
     () => (Array.isArray(options) ? options.filter((opt) => opt && Object.prototype.hasOwnProperty.call(opt, 'value')) : []),
@@ -19,13 +22,23 @@ export default function CustomSelect({
   );
   const selected = normalized.find((opt) => opt.value === value) || null;
 
+  useLayoutEffect(() => {
+    if (!open || !rootRef.current) return;
+    const rect = rootRef.current.getBoundingClientRect();
+    setMenuStyle({
+      position: 'fixed',
+      top: rect.bottom + 4,
+      left: rect.left,
+      width: rect.width,
+    });
+  }, [open]);
+
   useEffect(() => {
     if (!open) return undefined;
     const onPointerDown = (event) => {
-      if (!rootRef.current) return;
-      if (!rootRef.current.contains(event.target)) {
-        setOpen(false);
-      }
+      if (rootRef.current?.contains(event.target)) return;
+      if (menuRef.current?.contains(event.target)) return;
+      setOpen(false);
     };
     document.addEventListener('pointerdown', onPointerDown);
     return () => document.removeEventListener('pointerdown', onPointerDown);
@@ -34,7 +47,7 @@ export default function CustomSelect({
   return (
     <div
       ref={rootRef}
-      className={`relative ${open ? 'z-[80]' : 'z-0'} ${className}`}
+      className={`relative ${className}`}
       onClick={(e) => e.stopPropagation()}
       onMouseDown={(e) => e.stopPropagation()}
     >
@@ -50,9 +63,11 @@ export default function CustomSelect({
         <span className="material-symbols-outlined text-sm text-outline">{open ? 'expand_less' : 'expand_more'}</span>
       </button>
 
-      {open && (
+      {open && menuStyle && createPortal(
         <div
-          className={`absolute z-50 mt-1 w-full max-h-64 overflow-y-auto custom-scrollbar rounded-sm border border-outline-variant/25 bg-surface-container-highest/95 backdrop-blur-md shadow-2xl ${menuClassName}`}
+          ref={menuRef}
+          style={menuStyle}
+          className={`z-[9999] max-h-64 overflow-y-auto custom-scrollbar rounded-sm border border-outline-variant/25 bg-surface-container-highest/95 backdrop-blur-md shadow-2xl ${menuClassName}`}
           role="listbox"
         >
           {normalized.map((opt) => {
@@ -77,7 +92,8 @@ export default function CustomSelect({
               </button>
             );
           })}
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   );

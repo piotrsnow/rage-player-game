@@ -4,6 +4,7 @@ import { config } from '../../config.js';
 import { requireServerApiKey } from '../apiKeyService.js';
 import { resolveModelForTask } from '../serverConfig.js';
 import { selectBestiaryEncounter } from '../../data/equipment/index.js';
+import { logLlmCallStart, logLlmCallFinish, logLlmCallFail } from '../llmCallLogger.js';
 
 const log = childLogger({ module: 'sceneGenerator' });
 
@@ -35,27 +36,32 @@ async function generateShortNarrative(instruction, playerAction, provider = 'ope
   const resolvedProvider = provider === 'anthropic' ? 'anthropic' : 'openai';
   const overrideModel = await resolveModelForTask('sceneGeneration', resolvedProvider);
 
+  const usedModel = overrideModel || (resolvedProvider === 'anthropic' ? config.aiModels.standard.anthropic : config.aiModels.standard.openai);
+  const logId = await logLlmCallStart({ type: 'shortcut-narrative', label: 'Shortcut narrative', provider: resolvedProvider, model: usedModel, request: { userPrompt: playerAction } });
+  const t0 = Date.now();
   try {
     if (resolvedProvider === 'anthropic') {
       const resp = await fetch('https://api.anthropic.com/v1/messages', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' },
         body: JSON.stringify({
-          model: overrideModel || config.aiModels.standard.anthropic,
+          model: usedModel,
           max_tokens: 200,
           messages: [{ role: 'user', content: `${instruction}\n\nAkcja gracza: "${playerAction}"\n\nOdpowiedz TYLKO narracją, bez JSON.` }],
         }),
       });
       if (resp.ok) {
         const data = await resp.json();
-        return data.content?.[0]?.text || instruction;
+        const text = data.content?.[0]?.text || instruction;
+        await logLlmCallFinish(logId, { durationMs: Date.now() - t0, response: { text } });
+        return text;
       }
     } else {
       const resp = await fetch('https://api.openai.com/v1/chat/completions', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
         body: JSON.stringify({
-          model: overrideModel || config.aiModels.standard.openai,
+          model: usedModel,
           messages: [{ role: 'user', content: `${instruction}\n\nAkcja gracza: "${playerAction}"\n\nOdpowiedz TYLKO narracją, bez JSON.` }],
           max_tokens: 200,
           temperature: 0.8,
@@ -63,11 +69,15 @@ async function generateShortNarrative(instruction, playerAction, provider = 'ope
       });
       if (resp.ok) {
         const data = await resp.json();
-        return data.choices?.[0]?.message?.content || instruction;
+        const text = data.choices?.[0]?.message?.content || instruction;
+        await logLlmCallFinish(logId, { durationMs: Date.now() - t0, response: { text } });
+        return text;
       }
     }
+    await logLlmCallFail(logId, 'Non-OK response');
   } catch (err) {
     log.warn({ err }, 'generateShortNarrative failed');
+    await logLlmCallFail(logId, err);
   }
   return instruction;
 }

@@ -155,6 +155,24 @@ async function saveNewScenes(backendId, scenes, forceAll = false) {
   }
 }
 
+/**
+ * Patch only imageUrl + fullImagePrompt for a single scene. Fire-and-forget;
+ * independent of sceneIndexCache so it works even after bulk save already
+ * persisted the scene with imageUrl=null.
+ */
+export async function saveSceneImageUpdate(backendId, sceneIndex, { imageUrl, fullImagePrompt = null }) {
+  if (!backendId || !Number.isInteger(sceneIndex) || sceneIndex < 0 || !imageUrl) return;
+  if (!apiClient.isConnected()) return;
+  try {
+    await apiClient.patch(
+      `/ai/campaigns/${backendId}/scenes/${sceneIndex}/image`,
+      { imageUrl, fullImagePrompt },
+    );
+  } catch (err) {
+    console.warn('[storage] Scene image patch failed:', err.message);
+  }
+}
+
 // Legacy one-scene-per-POST path — triggered only when the bulk endpoint
 // returns 404 (older backend revision during a rolling deploy). Still
 // available so a stale FE doesn't drop unsynced scenes on the floor.

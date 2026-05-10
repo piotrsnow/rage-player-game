@@ -3,6 +3,11 @@ import { campaignStreamRoutes } from './campaignStream.js';
 import { sceneStreamRoutes } from './sceneStream.js';
 import { sceneRoutes } from './scenes.js';
 import { keyTestRoutes } from './keyTest.js';
+import { llmCallLogRoutes } from './llmCallLog.js';
+import { incidentRoutes } from './incidents.js';
+import { selfQuestRoutes } from './selfQuest.js';
+import { inventSpellRoutes } from './inventSpell.js';
+import { setLlmCallUserId } from '../../services/llmCallLogger.js';
 
 /**
  * Registered in server.js via `app.register(aiRoutes, { prefix: '/ai' })`.
@@ -14,10 +19,17 @@ import { keyTestRoutes } from './keyTest.js';
  */
 export async function aiRoutes(fastify) {
   fastify.addHook('onRequest', fastify.authenticate);
+  fastify.addHook('onRequest', async (request) => {
+    if (request.user?.id) setLlmCallUserId(request.user.id);
+  });
 
   await fastify.register(singleShotRoutes);
   await fastify.register(campaignStreamRoutes);
   await fastify.register(sceneStreamRoutes);
   await fastify.register(sceneRoutes);
   await fastify.register(keyTestRoutes);
+  await fastify.register(llmCallLogRoutes);
+  await fastify.register(incidentRoutes);
+  await fastify.register(selfQuestRoutes);
+  await fastify.register(inventSpellRoutes);
 }

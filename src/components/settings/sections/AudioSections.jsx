@@ -34,6 +34,16 @@ export function SfxSection({ settings, updateSettings }) {
           displayValue={`${settings.sfxVolume ?? 70}%`}
         />
       )}
+
+      <div className="mt-6">
+        <Slider
+          label={t('settings.dialogueVolume', 'Głośność dialogów')}
+          description={t('settings.dialogueVolumeDesc', 'Głośność narracji i dialogów TTS')}
+          value={settings.dialogueVolume ?? 80}
+          onChange={(v) => updateSettings({ dialogueVolume: v })}
+          displayValue={`${settings.dialogueVolume ?? 80}%`}
+        />
+      </div>
     </div>
   );
 }

@@ -14,7 +14,7 @@ export default function GMAssetsTab({ gameState }) {
     return (
       <div className="flex flex-col items-center justify-center h-full gap-3 text-outline">
         <span className="material-symbols-outlined text-3xl">inventory_2</span>
-        <p className="text-[11px] font-label uppercase tracking-widest">{t('gmModal.emptyAssets')}</p>
+        <p className="text-sm font-label uppercase tracking-widest">{t('gmModal.emptyAssets')}</p>
       </div>
     );
   }
@@ -37,7 +37,7 @@ export default function GMAssetsTab({ gameState }) {
       {/* Character inventory */}
       <Section title={`${character.name} — ${t('gmModal.inventory')}`} icon="backpack" count={inventory.length}>
         {inventory.length === 0 ? (
-          <p className="text-[10px] text-outline italic">{t('gmModal.emptyInventory')}</p>
+          <p className="text-xs text-outline italic">{t('gmModal.emptyInventory')}</p>
         ) : (
           <div className="grid gap-2 sm:grid-cols-2">
             {inventory.map((item, i) => (
@@ -80,13 +80,13 @@ export default function GMAssetsTab({ gameState }) {
             {activeEffects.map((fx) => (
               <div key={fx.id} className="p-2 rounded-sm bg-surface-container/40 border border-outline-variant/10 text-[11px]">
                 <div className="flex items-center gap-2 mb-0.5">
-                  <span className="material-symbols-outlined text-xs text-tertiary">
+                  <span className="material-symbols-outlined text-sm text-tertiary">
                     {fx.type === 'trap' ? 'warning' : fx.type === 'spell' ? 'auto_awesome' : 'eco'}
                   </span>
-                  <span className="text-[10px] font-label uppercase tracking-wider text-tertiary">{fx.type}</span>
+                  <span className="text-xs font-label uppercase tracking-wider text-tertiary">{fx.type}</span>
                 </div>
                 <p className="text-on-surface-variant">{fx.description}</p>
-                {fx.location && <span className="text-[10px] text-outline">{fx.location}</span>}
+                {fx.location && <span className="text-xs text-outline">{fx.location}</span>}
               </div>
             ))}
           </div>
@@ -98,17 +98,17 @@ export default function GMAssetsTab({ gameState }) {
         <Section title={t('gmModal.magic')} icon="auto_awesome">
           <div className="space-y-2">
             {magic.storedWindPoints > 0 && (
-              <div className="flex items-center gap-2 text-[11px]">
+              <div className="flex items-center gap-2 text-sm">
                 <span className="text-outline">{t('gmModal.windPoints')}:</span>
                 <span className="font-bold text-primary">{magic.storedWindPoints}</span>
               </div>
             )}
             {magic.knownSpells?.length > 0 && (
               <div>
-                <div className="text-[10px] text-outline mb-1">{t('gmModal.knownSpells')}:</div>
+                <div className="text-xs text-outline mb-1">{t('gmModal.knownSpells')}:</div>
                 <div className="flex flex-wrap gap-1">
                   {magic.knownSpells.map((spell, i) => (
-                    <span key={i} className="text-[9px] px-1.5 py-0.5 rounded-sm bg-primary/10 text-primary/80">
+                    <span key={i} className="text-[10px] px-1.5 py-0.5 rounded-sm bg-primary/10 text-primary/80">
                       {typeof spell === 'string' ? spell : spell.name || 'Spell'}
                     </span>
                   ))}
@@ -117,10 +117,10 @@ export default function GMAssetsTab({ gameState }) {
             )}
             {magic.activeSpells?.length > 0 && (
               <div>
-                <div className="text-[10px] text-outline mb-1">{t('gmModal.activeSpells')}:</div>
+                <div className="text-xs text-outline mb-1">{t('gmModal.activeSpells')}:</div>
                 <div className="flex flex-wrap gap-1">
                   {magic.activeSpells.map((spell, i) => (
-                    <span key={i} className="text-[9px] px-1.5 py-0.5 rounded-sm bg-tertiary/10 text-tertiary/80">
+                    <span key={i} className="text-[10px] px-1.5 py-0.5 rounded-sm bg-tertiary/10 text-tertiary/80">
                       {typeof spell === 'string' ? spell : spell.name || 'Spell'}
                     </span>
                   ))}
@@ -138,9 +138,9 @@ function Section({ title, icon, count, children }) {
   return (
     <div>
       <div className="flex items-center gap-2 mb-3">
-        <span className="material-symbols-outlined text-sm text-primary">{icon}</span>
-        <span className="text-[10px] font-label uppercase tracking-widest text-on-surface-variant">{title}</span>
-        {count != null && <span className="text-[10px] text-outline">({count})</span>}
+        <span className="material-symbols-outlined text-base text-primary">{icon}</span>
+        <span className="text-xs font-label uppercase tracking-widest text-on-surface-variant">{title}</span>
+        {count != null && <span className="text-xs text-outline">({count})</span>}
       </div>
       {children}
     </div>
@@ -155,13 +155,13 @@ function ItemCard({ item }) {
   return (
     <div className="p-2 rounded-sm bg-surface-container/40 border border-outline-variant/10">
       <div className="flex items-center gap-2">
-        <span className="material-symbols-outlined text-xs text-on-surface-variant">inventory_2</span>
-        <span className="text-[11px] font-medium text-on-surface truncate">{name}</span>
+        <span className="material-symbols-outlined text-sm text-on-surface-variant">inventory_2</span>
+        <span className="text-sm font-medium text-on-surface truncate">{name}</span>
         {quantity != null && quantity > 1 && (
-          <span className="text-[9px] text-outline shrink-0">x{quantity}</span>
+          <span className="text-[10px] text-outline shrink-0">x{quantity}</span>
         )}
       </div>
-      {desc && <p className="text-[10px] text-outline mt-0.5 line-clamp-2">{desc}</p>}
+      {desc && <p className="text-xs text-outline mt-0.5 line-clamp-2">{desc}</p>}
     </div>
   );
 }
@@ -170,7 +170,7 @@ function MoneyBadge({ label, value, color }) {
   return (
     <div className="flex items-center gap-1.5">
       <span className={`text-lg font-bold tabular-nums ${color}`}>{value}</span>
-      <span className="text-[10px] font-label uppercase tracking-wider text-outline">{label}</span>
+      <span className="text-xs font-label uppercase tracking-wider text-outline">{label}</span>
     </div>
   );
 }
@@ -183,10 +183,10 @@ function NeedBar({ label, value, icon, t }) {
     <div>
       <div className="flex items-center justify-between mb-1">
         <div className="flex items-center gap-1.5">
-          {icon && <span className="material-symbols-outlined text-xs text-outline">{icon}</span>}
-          <span className="text-[10px] font-label uppercase tracking-wider text-on-surface-variant capitalize">{label}</span>
+          {icon && <span className="material-symbols-outlined text-sm text-outline">{icon}</span>}
+          <span className="text-xs font-label uppercase tracking-wider text-on-surface-variant capitalize">{label}</span>
         </div>
-        <span className="text-[10px] font-bold tabular-nums text-on-surface-variant">{pct}</span>
+        <span className="text-xs font-bold tabular-nums text-on-surface-variant">{pct}</span>
       </div>
       <div className="h-1.5 bg-surface-container rounded-full overflow-hidden">
         <div className={`h-full ${color} transition-all duration-300 rounded-full`} style={{ width: `${pct}%` }} />

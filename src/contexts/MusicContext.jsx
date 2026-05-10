@@ -16,37 +16,40 @@ export function MusicProvider({ children }) {
 
   const [narratorState, setNarratorState] = useState(null);
   const [suppressLobbyMusicForIntroVideo, setSuppressLobbyMusicForIntroVideo] = useState(false);
+  const [pendingCampaignGenre, setPendingCampaignGenre] = useState(null);
 
   const isGameplay = location.pathname.startsWith('/play') || location.pathname.startsWith('/view/');
-  const prevIsGameplayRef = useRef(isGameplay);
+  const isCampaignActive = isGameplay || !!pendingCampaignGenre;
+  const prevIsCampaignActiveRef = useRef(isCampaignActive);
 
-  const campaignMusicFolder = GENRE_MUSIC_FOLDER[campaignGenre] || undefined;
+  const effectiveCampaignGenre = campaignGenre ?? pendingCampaignGenre;
+  const campaignMusicFolder = GENRE_MUSIC_FOLDER[effectiveCampaignGenre] || undefined;
 
   const ambient = useLocalMusic(null, {
     folder: 'lobby',
-    active: !isGameplay,
+    active: !isCampaignActive,
     silenced: suppressLobbyMusicForIntroVideo,
   });
-  const campaign = useLocalMusic(isGameplay ? narratorState : null, { folder: campaignMusicFolder, active: isGameplay });
+  const campaign = useLocalMusic(isCampaignActive ? narratorState : null, { folder: campaignMusicFolder, active: isCampaignActive });
 
   useEffect(() => {
-    const wasGameplay = prevIsGameplayRef.current;
-    prevIsGameplayRef.current = isGameplay;
+    const wasCampaignActive = prevIsCampaignActiveRef.current;
+    prevIsCampaignActiveRef.current = isCampaignActive;
 
-    if (isGameplay && !wasGameplay) {
+    if (isCampaignActive && !wasCampaignActive) {
       ambient.pause();
       if (campaign.hasMusic) campaign.resume();
-    } else if (!isGameplay && wasGameplay) {
+    } else if (!isCampaignActive && wasCampaignActive) {
       campaign.pause();
       if (ambient.hasMusic) ambient.resume();
     }
-  }, [isGameplay]);
+  }, [isCampaignActive]);
 
   useEffect(() => {
     if (!isGameplay) setNarratorState(null);
   }, [isGameplay]);
 
-  const active = isGameplay ? campaign : ambient;
+  const active = isCampaignActive ? campaign : ambient;
 
   const setVolume = useCallback((vol) => {
     ambient.setVolume(vol);
@@ -77,6 +80,7 @@ export function MusicProvider({ children }) {
         ambient,
         campaign,
         setSuppressLobbyMusicForIntroVideo,
+        setPendingCampaignGenre,
       }}
     >
       {children}

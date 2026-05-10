@@ -16,6 +16,7 @@ import {
   clearExclusiveReadAloudAudio,
   isExclusiveReadAloudOwner,
   setExclusiveReadAloudAudio,
+  silencePeerDialogAudio,
   subscribeExclusiveReadAloud,
 } from '../../../utils/readAloudExclusive';
 
@@ -43,6 +44,7 @@ export function ReadAloudButton({ text, seg = null, scenePacing = null }) {
       const mine = lastAttemptRef.current;
       if (mine == null) return;
       if (isExclusiveReadAloudOwner(mine)) return;
+      try { audioRef.current?.pause(); } catch { /* ignore */ }
       lastAttemptRef.current = null;
       audioRef.current = null;
       if (mountedRef.current) setState('idle');
@@ -50,9 +52,10 @@ export function ReadAloudButton({ text, seg = null, scenePacing = null }) {
   }, []);
 
   const stop = useCallback(() => {
+    try { audioRef.current?.pause(); } catch { /* ignore */ }
     lastAttemptRef.current = null;
     audioRef.current = null;
-    claimExclusiveReadAloud();
+    silencePeerDialogAudio();
     if (mountedRef.current) setState('idle');
   }, []);
 
@@ -207,7 +210,15 @@ export function HighlightedText({ text, highlightInfo, segmentIndex, messageId, 
     return (
       <span
         className={`${className || ''} inline-flex items-center gap-1`}
-        ref={(el) => { if (el) el.scrollIntoView({ behavior: 'smooth', block: 'nearest' }); }}
+        ref={(el) => {
+          if (!el) return;
+          const root = el.closest('[data-chat-scroll-root]');
+          if (!root) return;
+          const rr = root.getBoundingClientRect();
+          const er = el.getBoundingClientRect();
+          const dy = er.top - rr.top - root.clientHeight / 2 + er.height / 2;
+          root.scrollTop += dy;
+        }}
       >
         <span className="rounded-sm bg-primary/10 border-l-2 border-primary/60 pl-1 animate-pulse">
           {text}

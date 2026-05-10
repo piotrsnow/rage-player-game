@@ -2,8 +2,15 @@ import { apiClient } from '../apiClient';
 import { parsePartialJson } from '../partialJsonParser';
 import { repairDialogueSegments } from '../aiResponse';
 import { postProcessSuggestedActions, buildFallbackActions, buildFallbackNarrative } from '../../../shared/domain/fallbackActions.js';
+import { aiCallLog } from '../../stores/aiCallLogStore';
 
 const RECAP_BATCH_SIZE = 20;
+
+function shortLabel(text, max = 80) {
+  if (!text) return '';
+  const s = String(text).replace(/\s+/g, ' ').trim();
+  return s.length > max ? `${s.slice(0, max - 1)}…` : s;
+}
 
 function mergeRecapUsage(a, b) {
   if (!a) return b ? { ...b } : null;
@@ -132,42 +139,53 @@ async function drainCampaignStream(response, { onPartialJson } = {}) {
 export const aiService = {
   async generateCampaign(settings, provider, _apiKeyIgnored, language = 'en', _modelTier = 'premium', { explicitModel = null, onPartialScene = null } = {}) {
     const baseUrl = apiClient.getBaseUrl();
-    const response = await apiClient.fetchAuthed(`${baseUrl}/v1/ai/generate-campaign`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ settings, language, provider, model: explicitModel || null }),
+    const requestBody = { settings, language, provider, model: explicitModel || null };
+    const logId = aiCallLog.start({
+      type: 'campaign',
+      label: shortLabel(settings?.storyPrompt || `Campaign (${settings?.genre || ''} / ${settings?.tone || ''})`),
+      provider,
+      model: explicitModel || null,
+      request: requestBody,
     });
+    try {
+      const response = await apiClient.fetchAuthed(`${baseUrl}/v1/ai/generate-campaign`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(requestBody),
+      });
 
-    if (!response.ok) {
-      const err = await response.json().catch(() => ({}));
-      throw new Error(err.error || `Campaign generation failed: ${response.status}`);
-    }
+      if (!response.ok) {
+        const err = await response.json().catch(() => ({}));
+        throw new Error(err.error || `Campaign generation failed: ${response.status}`);
+      }
 
-    // Inline SSE — drain chunks and surface `firstScene` progressively via
-    // `onPartialScene` as soon as it's parseable mid-stream (typically
-    // ~20-30s in). Lets the campaign creator reveal early instead of
-    // waiting for the full 8k-token payload.
-    let repairedSegments = null;
-    const knownNpcs = [];
-    const raw = await drainCampaignStream(response, {
-      onPartialJson(partial) {
-        if (partial.initialNPCs) {
-          for (const npc of partial.initialNPCs) {
-            if (npc?.name && !knownNpcs.some((n) => n.name === npc.name)) {
-              knownNpcs.push(npc);
+      let repairedSegments = null;
+      const knownNpcs = [];
+      const raw = await drainCampaignStream(response, {
+        onPartialJson(partial) {
+          if (partial.initialNPCs) {
+            for (const npc of partial.initialNPCs) {
+              if (npc?.name && !knownNpcs.some((n) => n.name === npc.name)) {
+                knownNpcs.push(npc);
+              }
             }
           }
-        }
-        const fs = partial.firstScene;
-        if (fs?.dialogueSegments?.length > 0 && fs.narrative) {
-          const npcNames = knownNpcs.map((n) => n.name);
-          repairedSegments = repairDialogueSegments(fs.narrative, fs.dialogueSegments, npcNames);
-          if (onPartialScene) onPartialScene({ ...fs, dialogueSegments: repairedSegments });
-        }
-      },
-    });
+          const fs = partial.firstScene;
+          if (fs?.dialogueSegments?.length > 0 && fs.narrative) {
+            const npcNames = knownNpcs.map((n) => n.name);
+            repairedSegments = repairDialogueSegments(fs.narrative, fs.dialogueSegments, npcNames);
+            if (onPartialScene) onPartialScene({ ...fs, dialogueSegments: repairedSegments });
+          }
+        },
+      });
 
-    return { result: postProcessCampaignResult(raw, repairedSegments, settings, language), usage: null };
+      const result = postProcessCampaignResult(raw, repairedSegments, settings, language);
+      aiCallLog.finish(logId, { raw, processed: result });
+      return { result, usage: null };
+    } catch (e) {
+      aiCallLog.fail(logId, e);
+      throw e;
+    }
   },
 
   async generateSceneViaBackendStream(campaignId, playerAction, {
@@ -185,97 +203,124 @@ export const aiService = {
     gameState = null,
     combatResult = null,
     forceRoll = null,
+    entityTags = null,
+    travelFailureReason = null,
     achievementState = null,
     onEvent = null,
   } = {}) {
     const baseUrl = apiClient.getBaseUrl();
 
-    const response = await apiClient.fetchAuthed(`${baseUrl}/v1/ai/campaigns/${campaignId}/generate-scene-stream`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        playerAction: playerAction || '',
-        provider,
-        model,
-        language,
-        dmSettings,
-        resolvedMechanics,
-        needsSystemEnabled,
-        characterNeeds,
-        isFirstScene,
-        sceneCount,
-        isCustomAction,
-        fromAutoPlayer,
-        combatResult,
-        forceRoll,
-        achievementState,
-      }),
+    const requestBody = {
+      playerAction: playerAction || '',
+      provider,
+      model,
+      language,
+      dmSettings,
+      resolvedMechanics,
+      needsSystemEnabled,
+      characterNeeds,
+      isFirstScene,
+      sceneCount,
+      isCustomAction,
+      fromAutoPlayer,
+      combatResult,
+      forceRoll,
+      entityTags,
+      travelFailureReason,
+      achievementState,
+    };
+
+    const sceneLabel = isFirstScene
+      ? 'First scene'
+      : (playerAction ? shortLabel(playerAction) : (fromAutoPlayer ? 'Auto-player' : 'Continue'));
+
+    const logId = aiCallLog.start({
+      type: 'scene',
+      label: sceneLabel,
+      provider,
+      model,
+      request: { campaignId, ...requestBody },
+      meta: { sceneCount, isCustomAction, fromAutoPlayer },
     });
 
-    if (!response.ok) {
-      const err = await response.json().catch(() => ({}));
-      throw new Error(err.error || `Stream error: ${response.status}`);
-    }
+    try {
+      const response = await apiClient.fetchAuthed(`${baseUrl}/v1/ai/campaigns/${campaignId}/generate-scene-stream`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(requestBody),
+      });
 
-    const reader = response.body.getReader();
-    const decoder = new TextDecoder();
-    let result = null;
-    let buffer = '';
-
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-
-      buffer += decoder.decode(value, { stream: true });
-      const lines = buffer.split('\n');
-      buffer = lines.pop();
-
-      let gotComplete = false;
-      for (const line of lines) {
-        if (!line.startsWith('data: ')) continue;
-        try {
-          const event = JSON.parse(line.slice(6));
-          if (onEvent) onEvent(event);
-
-          if (event.type === 'complete') {
-            result = event.data;
-            gotComplete = true;
-          } else if (event.type === 'error') {
-            throw new Error(event.error || 'Stream generation failed');
-          }
-        } catch (e) {
-          if (e.message && !e.message.includes('JSON')) throw e;
-        }
+      if (!response.ok) {
+        const err = await response.json().catch(() => ({}));
+        throw new Error(err.error || `Stream error: ${response.status}`);
       }
 
-      if (gotComplete) break;
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let result = null;
+      let buffer = '';
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop();
+
+        let gotComplete = false;
+        for (const line of lines) {
+          if (!line.startsWith('data: ')) continue;
+          try {
+            const event = JSON.parse(line.slice(6));
+            if (onEvent) onEvent(event);
+
+            if (event.type === 'complete') {
+              result = event.data;
+              gotComplete = true;
+            } else if (event.type === 'error') {
+              throw new Error(event.error || 'Stream generation failed');
+            }
+          } catch (e) {
+            if (e.message && !e.message.includes('JSON')) throw e;
+          }
+        }
+
+        if (gotComplete) break;
+      }
+
+      if (!result) throw new Error('Stream ended without complete event');
+
+      const scene = result.scene || {};
+
+      if (scene.suggestedActions && gameState) {
+        scene.suggestedActions = postProcessSuggestedActions({
+          suggestedActions: scene.suggestedActions,
+          language,
+          gameState,
+          narrative: scene.narrative,
+          stateChanges: scene.stateChanges,
+        });
+      }
+
+      scene.meta = { ...(scene.meta || {}), contextQuality: 'full', backendStreaming: true };
+
+      const finalResult = {
+        result: scene,
+        usage: null,
+        sceneIndex: result.sceneIndex,
+        sceneId: result.sceneId,
+        character: result.character || null,
+        newlyUnlockedAchievements: result.newlyUnlockedAchievements || [],
+        updatedAchievementState: result.updatedAchievementState || null,
+      };
+
+      aiCallLog.finish(logId, finalResult);
+      return finalResult;
+    } catch (e) {
+      aiCallLog.fail(logId, e);
+      throw e;
     }
-
-    if (!result) throw new Error('Stream ended without complete event');
-
-    const scene = result.scene || {};
-
-    if (scene.suggestedActions && gameState) {
-      scene.suggestedActions = postProcessSuggestedActions({
-        suggestedActions: scene.suggestedActions,
-        language,
-        gameState,
-        narrative: scene.narrative,
-        stateChanges: scene.stateChanges,
-      });
-    }
-
-    scene.meta = { ...(scene.meta || {}), contextQuality: 'full', backendStreaming: true };
-
-    return {
-      result: scene,
-      usage: null,
-      sceneIndex: result.sceneIndex,
-      sceneId: result.sceneId,
-      character: result.character || null,
-      newlyUnlockedAchievements: result.newlyUnlockedAchievements || [],
-      updatedAchievementState: result.updatedAchievementState || null,
-    };
   },
 
   async generateRecap(
@@ -301,14 +346,31 @@ export const aiService = {
       if (typeof onPartial === 'function') onPartial(payload);
     };
 
-    const callRecapEndpoint = (sceneBatch) => apiClient.post('/ai/generate-recap', {
-      scenes: sceneBatch,
-      language,
-      provider,
-      modelTier,
-      sentencesPerScene,
-      summaryStyle,
-    });
+    const callRecapEndpoint = async (sceneBatch) => {
+      const requestBody = {
+        scenes: sceneBatch,
+        language,
+        provider,
+        modelTier,
+        sentencesPerScene,
+        summaryStyle,
+      };
+      const logId = aiCallLog.start({
+        type: 'recap',
+        label: `Recap (${sceneBatch.length} scenes, ${recapMode})`,
+        provider,
+        model: null,
+        request: requestBody,
+      });
+      try {
+        const data = await apiClient.post('/ai/generate-recap', requestBody);
+        aiCallLog.finish(logId, data);
+        return data;
+      } catch (e) {
+        aiCallLog.fail(logId, e);
+        throw e;
+      }
+    };
 
     if (scenes.length === 0) {
       emitProgress({ phase: 'chunking', currentBatch: 1, totalBatches: 1, recapMode });
@@ -357,19 +419,43 @@ export const aiService = {
   },
 
   async generateStoryPrompt({ genre, tone, seedText = '' }, provider, _apiKeyIgnored, language = 'en', _modelTier = 'premium') {
-    const data = await apiClient.post('/ai/generate-story-prompt', {
-      genre, tone, seedText, language, provider,
+    const requestBody = { genre, tone, seedText, language, provider };
+    const logId = aiCallLog.start({
+      type: 'story-prompt',
+      label: `Story prompt (${genre || '?'} / ${tone || '?'})`,
+      provider,
+      model: null,
+      request: requestBody,
     });
-    return { result: { prompt: data.prompt }, usage: null };
+    try {
+      const data = await apiClient.post('/ai/generate-story-prompt', requestBody);
+      const result = { prompt: data.prompt };
+      aiCallLog.finish(logId, { result, raw: data });
+      return { result, usage: null };
+    } catch (e) {
+      aiCallLog.fail(logId, e);
+      throw e;
+    }
   },
 
   async generateCharacterLegend(character, provider, language = 'en', _modelTier = 'premium') {
-    const data = await apiClient.post('/ai/generate-character-legend', {
-      character,
-      language,
+    const requestBody = { character, language, provider };
+    const logId = aiCallLog.start({
+      type: 'character-legend',
+      label: `Legend: ${shortLabel(character?.name || 'unknown', 40)}`,
       provider,
+      model: null,
+      request: requestBody,
     });
-    return { result: { legend: data?.legend || '' }, usage: data?.usage || null };
+    try {
+      const data = await apiClient.post('/ai/generate-character-legend', requestBody);
+      const result = { legend: data?.legend || '' };
+      aiCallLog.finish(logId, { result, raw: data });
+      return { result, usage: data?.usage || null };
+    } catch (e) {
+      aiCallLog.fail(logId, e);
+      throw e;
+    }
   },
 
   async enhanceImagePrompt({
@@ -383,18 +469,23 @@ export const aiService = {
     provider = 'openai',
     model = null,
   } = {}) {
-    const data = await apiClient.post('/ai/enhance-image-prompt', {
-      keywords,
-      imageStyle,
-      darkPalette,
-      seriousness,
-      genre,
-      tone,
-      language,
+    const requestBody = { keywords, imageStyle, darkPalette, seriousness, genre, tone, language, provider, model };
+    const logId = aiCallLog.start({
+      type: 'enhance-image-prompt',
+      label: `Enhance: ${shortLabel(Array.isArray(keywords) ? keywords.join(', ') : keywords)}`,
       provider,
       model,
+      request: requestBody,
     });
-    return { description: data?.description || '' };
+    try {
+      const data = await apiClient.post('/ai/enhance-image-prompt', requestBody);
+      const out = { description: data?.description || '' };
+      aiCallLog.finish(logId, { result: out, raw: data });
+      return out;
+    } catch (e) {
+      aiCallLog.fail(logId, e);
+      throw e;
+    }
   },
 
   async generateImagePrompt({
@@ -413,47 +504,96 @@ export const aiService = {
     provider = 'openai',
     model = null,
   } = {}) {
-    const data = await apiClient.post('/ai/generate-image-prompt', {
-      imagePromptTags,
-      narrative,
-      imageProvider,
-      imageStyle,
-      darkPalette,
-      seriousness,
-      genre,
-      tone,
-      characterAge,
-      characterGender,
-      customStyleEnabled,
-      customStyle,
+    const requestBody = {
+      imagePromptTags, narrative, imageProvider, imageStyle, darkPalette, seriousness,
+      genre, tone, characterAge, characterGender, customStyleEnabled, customStyle, provider, model,
+    };
+    const logId = aiCallLog.start({
+      type: 'image-prompt',
+      label: `Image prompt: ${shortLabel(Array.isArray(imagePromptTags) ? imagePromptTags.join(', ') : imagePromptTags || narrative)}`,
       provider,
       model,
+      request: requestBody,
     });
-    return { prompt: data?.prompt || '', negativePrompt: data?.negativePrompt || '' };
+    try {
+      const data = await apiClient.post('/ai/generate-image-prompt', requestBody);
+      const out = { prompt: data?.prompt || '', negativePrompt: data?.negativePrompt || '' };
+      aiCallLog.finish(logId, { result: out, raw: data });
+      return out;
+    } catch (e) {
+      aiCallLog.fail(logId, e);
+      throw e;
+    }
   },
 
   async generateCombatCommentary(gameState, combatSnapshot, provider, _apiKeyIgnored, language = 'en', modelTier = 'premium', { explicitModel = null } = {}) {
-    const data = await apiClient.post('/ai/combat-commentary', {
-      gameState,
-      combatSnapshot,
-      language,
+    const requestBody = {
+      gameState, combatSnapshot, language, provider, model: explicitModel || null, modelTier,
+    };
+    const logId = aiCallLog.start({
+      type: 'combat-commentary',
+      label: 'Combat commentary',
       provider,
       model: explicitModel || null,
-      modelTier,
+      request: requestBody,
     });
-    return { result: data?.result || { narration: '', battleCries: [] }, usage: data?.usage || null };
+    try {
+      const data = await apiClient.post('/ai/combat-commentary', requestBody);
+      const result = data?.result || { narration: '', battleCries: [] };
+      aiCallLog.finish(logId, { result, raw: data });
+      return { result, usage: data?.usage || null };
+    } catch (e) {
+      aiCallLog.fail(logId, e);
+      throw e;
+    }
+  },
+
+  async resolveCombatTurn(combatSnapshot, playerAction, provider, language = 'pl', modelTier = 'standard', options = {}) {
+    const requestBody = {
+      combatSnapshot,
+      playerAction,
+      language,
+      provider,
+      modelTier,
+      diceRoll: options?.diceRoll ?? null,
+    };
+    const logId = aiCallLog.start({
+      type: 'combat-turn-resolve',
+      label: `Combat turn: ${shortLabel(playerAction)}`,
+      provider,
+      model: null,
+      request: requestBody,
+    });
+    try {
+      const data = await apiClient.post('/ai/combat-turn-resolve', requestBody);
+      const result = data?.result || { narration: '', enemyDamage: [], playerDamage: 0, playerHealing: 0, statusEffects: [], manaChange: 0, itemConsumed: false };
+      aiCallLog.finish(logId, { result, raw: data });
+      return { result, usage: data?.usage || null };
+    } catch (e) {
+      aiCallLog.fail(logId, e);
+      throw e;
+    }
   },
 
   async verifyObjective(storyContext, questName, questDescription, objectiveDescription, provider, _apiKeyIgnored, language = 'en', modelTier = 'premium') {
-    const data = await apiClient.post('/ai/verify-objective', {
-      storyContext,
-      questName,
-      questDescription,
-      objectiveDescription,
-      language,
+    const requestBody = {
+      storyContext, questName, questDescription, objectiveDescription, language, provider, modelTier,
+    };
+    const logId = aiCallLog.start({
+      type: 'verify-objective',
+      label: `Verify: ${shortLabel(objectiveDescription || questName)}`,
       provider,
-      modelTier,
+      model: null,
+      request: requestBody,
     });
-    return { result: data?.result || { fulfilled: false, reasoning: '' }, usage: data?.usage || null };
+    try {
+      const data = await apiClient.post('/ai/verify-objective', requestBody);
+      const result = data?.result || { fulfilled: false, reasoning: '' };
+      aiCallLog.finish(logId, { result, raw: data });
+      return { result, usage: data?.usage || null };
+    } catch (e) {
+      aiCallLog.fail(logId, e);
+      throw e;
+    }
   },
 };

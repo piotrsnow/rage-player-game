@@ -17,6 +17,7 @@ import { useEvent } from '../useEvent';
 import { useSceneBackendStream } from './useSceneBackendStream';
 import { processSceneDialogue } from './processSceneDialogue';
 import { injectCombatFallback, fillBestiaryStats, applyNeedsAndRest, applySceneStateChanges } from './applySceneStateChanges';
+import { devLog } from '../../stores/devEventLogStore';
 
 // Master kill-switch for the speculative "early image" path below. When false,
 // we skip guessing the image from previous-scene + player-action and instead
@@ -42,6 +43,15 @@ export function useSceneGeneration({ ensureMissingInventoryImages, ensureMissing
   const [sceneGenStartTime, setSceneGenStartTime] = useState(null);
 
   const { aiProvider, language, needsSystemEnabled, aiModelTier = 'premium', sdWebuiModel = '', sdWebuiSeed = null } = settings;
+  const sdWebuiQualityPreset = settings.sdWebuiQualityPreset || 'balanced';
+  const sdWebuiIpaEnabled = settings.sdWebuiIpaEnabled ?? (settings.sdWebuiIpaMode !== 'off');
+  const sdWebuiIpaMode = sdWebuiIpaEnabled ? sdWebuiQualityPreset : 'off';
+  const RESOLUTION_MAP = { low: 0.5, base: 1.0, high: 1.5 };
+  const imageResolutionMultiplier = RESOLUTION_MAP[settings.imageResolutionPreset] ?? settings.imageResolutionMultiplier ?? 1;
+  const QUALITY_STEPS = { speed: 6, balanced: 20, quality: 35 };
+  const QUALITY_CFG = { speed: 2, balanced: 5, quality: 7 };
+  const qualitySteps = QUALITY_STEPS[sdWebuiQualityPreset];
+  const qualityCfg = QUALITY_CFG[sdWebuiQualityPreset];
 
   const stream = useSceneBackendStream();
 
@@ -59,12 +69,14 @@ export function useSceneGeneration({ ensureMissingInventoryImages, ensureMissing
 
   const generateScene = useEvent(
     async (playerAction, isFirstScene = false, isCustomAction = false, fromAutoPlayer = false, sceneOptions = {}) => {
-      const { combatResult = null, forceRoll = null } = sceneOptions || {};
+      const { combatResult = null, forceRoll = null, entityTags = null, travelFailureReason = null } = sceneOptions || {};
       dispatch({ type: 'SET_GENERATING_SCENE', payload: true });
       dispatch({ type: 'SET_ERROR', payload: null });
       stream.resetStreamState();
       sceneGenStartRef.current = Date.now();
       setSceneGenStartTime(Date.now());
+
+      devLog.emit({ category: 'pipeline', type: 'scene_gen_start', label: `Scene generation: ${isFirstScene ? 'FIRST' : playerAction?.slice(0, 60) || 'continue'}`, data: { playerAction, isFirstScene, isCustomAction, fromAutoPlayer, combatResult: !!combatResult, forceRoll } });
 
       let earlyImagePromise = null;
 
@@ -76,6 +88,7 @@ export function useSceneGeneration({ ensureMissingInventoryImages, ensureMissing
           state, playerAction, settings, isFirstScene, t,
           skipDiceRoll: true,
         });
+        devLog.emit({ category: 'mechanics', type: 'resolve_mechanics', label: `Mechanics resolved${resolved.diceRoll ? ' (with dice)' : ''}${resolved.isRest ? ' (rest)' : ''}`, data: { diceRoll: resolved.diceRoll || null, isRest: resolved.isRest, restRecovery: resolved.restRecovery } });
 
         // Early image generation (speculative, before AI call).
         // `previousScene.narrative` and `playerAction` are in the campaign
@@ -96,7 +109,7 @@ export function useSceneGeneration({ ensureMissingInventoryImages, ensureMissing
               return imageService.generateSceneImage(
                 '', state.campaign?.genre, state.campaign?.tone, imageApiKey, imageProvider,
                 speculativeDesc, state.campaign?.backendId, imageStyle, darkPalette,
-                state.character?.age, state.character?.gender, { sdModel: sdWebuiModel, sdSeed: Number.isInteger(sdWebuiSeed) ? sdWebuiSeed : null }, imageSeriousness,
+                state.character?.age, state.character?.gender, { sdModel: sdWebuiModel, sdSeed: Number.isInteger(sdWebuiSeed) ? sdWebuiSeed : null, resolutionMultiplier: imageResolutionMultiplier, ipaMode: sdWebuiIpaMode, qualitySteps, qualityCfg }, imageSeriousness,
                 state.character?.portraitUrl || null
               );
             }).then((result) => result?.url || null)
@@ -151,10 +164,12 @@ export function useSceneGeneration({ ensureMissingInventoryImages, ensureMissing
         }
 
         // Stream scene from backend
+        devLog.emit({ category: 'pipeline', type: 'backend_stream_start', label: 'Backend SSE stream started', data: { campaignId: backendCampaignId, provider: settings.aiProvider } });
         const backendResult = await stream.callStream(backendCampaignId, playerAction, {
-          resolved, isFirstScene, isCustomAction, fromAutoPlayer, combatResult, forceRoll,
+          resolved, isFirstScene, isCustomAction, fromAutoPlayer, combatResult, forceRoll, entityTags, travelFailureReason,
         });
         const result = backendResult.result;
+        devLog.emit({ category: 'pipeline', type: 'backend_stream_complete', label: `Stream complete (${Date.now() - sceneGenStartRef.current}ms)`, data: { durationMs: Date.now() - sceneGenStartRef.current, hasCharacter: !!backendResult.character, sceneIndex: backendResult.sceneIndex } });
         dispatch({ type: 'ADD_AI_COST', payload: calculateSceneCost(settings, sceneModelConfig) });
         const authoritativeCharacterSnapshot = backendResult.character || null;
         const newlyUnlockedAchievements = Array.isArray(backendResult.newlyUnlockedAchievements)
@@ -170,6 +185,7 @@ export function useSceneGeneration({ ensureMissingInventoryImages, ensureMissing
 
         // Trade shortcut
         if (result?._tradeShortcut && result.stateChanges?.startTrade) {
+          devLog.emit({ category: 'pipeline', type: 'trade_shortcut', label: 'Trade shortcut activated', severity: 'info' });
           dispatch({ type: 'APPLY_STATE_CHANGES', payload: { startTrade: result.stateChanges.startTrade } });
           stream.clearStreamingOutput();
           recordCompletedSceneGenTiming();
@@ -179,6 +195,7 @@ export function useSceneGeneration({ ensureMissingInventoryImages, ensureMissing
 
         // Degraded mode warnings
         if (result?.meta?.degraded) {
+          devLog.emit({ category: 'ai', type: 'degraded_mode', label: `Degraded: ${result.meta.degradeType || result.meta.reason || 'unknown'}`, severity: 'warn', data: { degradeType: result.meta.degradeType, reason: result.meta.reason, promptTruncated: result.meta.promptTruncated } });
           degradeStatsRef.current.total += 1;
           if (result?.meta?.degradeType === 'context_truncate' || String(result?.meta?.reason || '').includes('context_truncate')) {
             degradeStatsRef.current.truncated += 1;
@@ -197,7 +214,10 @@ export function useSceneGeneration({ ensureMissingInventoryImages, ensureMissing
         }
 
         // Combat fallback + bestiary stats
+        const hadCombatBefore = !!result.stateChanges?.combatUpdate?.active;
         injectCombatFallback(result, state, playerAction, isFirstScene, isPassiveSceneAction, t);
+        const combatInjected = !hadCombatBefore && !!result.stateChanges?.combatUpdate?.active;
+        if (combatInjected) devLog.emit({ category: 'combat', type: 'combat_fallback_injected', label: 'Combat fallback injected (AI missed combatUpdate)', severity: 'warn' });
         fillBestiaryStats(result, state);
 
         // Dice rolls
@@ -246,6 +266,8 @@ export function useSceneGeneration({ ensureMissingInventoryImages, ensureMissing
             if (imageUrl) {
               dispatch({ type: 'UPDATE_SCENE_IMAGE', payload: { sceneId: capturedSceneId, image: imageUrl } });
               autoSave();
+              const idx = state.scenes.findIndex((s) => s.id === capturedSceneId);
+              if (idx >= 0) storage.saveSceneImageUpdate(state.campaign?.backendId, idx, { imageUrl });
             }
             dispatch({ type: 'SET_GENERATING_IMAGE', payload: false });
           });
@@ -266,13 +288,18 @@ export function useSceneGeneration({ ensureMissingInventoryImages, ensureMissing
 
         // State changes
         applyNeedsAndRest(result, resolved, needsSystemEnabled);
+        const scBuckets = result.stateChanges ? Object.keys(result.stateChanges).filter((k) => result.stateChanges[k] != null) : [];
+        devLog.emit({ category: 'state', type: 'apply_state_changes', label: `State changes: ${scBuckets.join(', ') || 'none'}`, data: { buckets: scBuckets, hasCharacterSnapshot: !!authoritativeCharacterSnapshot } });
         applySceneStateChanges({
           result, state, dispatch,
           authoritativeCharacterSnapshot, ensureMissingInventoryImages, ensureMissingNpcPortraits, t,
           newlyUnlockedAchievements, updatedAchievementState,
+          campaignId: backendCampaignId || null,
+          sceneIndex: serverSceneIndex,
         });
 
         recordCompletedSceneGenTiming();
+        devLog.emit({ category: 'pipeline', type: 'scene_gen_done', label: `Scene generation complete (${Date.now() - sceneGenStartRef.current}ms total)`, data: { totalMs: Date.now() - sceneGenStartRef.current, scenePacing: result.scenePacing, hasDiceRoll: !!result.diceRoll, questOffers: (result.questOffers || []).length } });
         dispatch({ type: 'SET_GENERATING_SCENE', payload: false });
         autoSave();
 
@@ -317,11 +344,13 @@ export function useSceneGeneration({ ensureMissingInventoryImages, ensureMissing
             const { url: imageUrl, prompt: fullImagePrompt } = await imageService.generateSceneImage(
               result.narrative, state.campaign?.genre, state.campaign?.tone, imageApiKey, imageProvider,
               result.imagePrompt, state.campaign?.backendId, imageStyle, darkPalette,
-              state.character?.age, state.character?.gender, { sdModel: sdWebuiModel, sdSeed: Number.isInteger(sdWebuiSeed) ? sdWebuiSeed : null, ...llmPromptOpts }, imageSeriousness,
+              state.character?.age, state.character?.gender, { sdModel: sdWebuiModel, sdSeed: Number.isInteger(sdWebuiSeed) ? sdWebuiSeed : null, resolutionMultiplier: imageResolutionMultiplier, ipaMode: sdWebuiIpaMode, qualitySteps, qualityCfg, ...llmPromptOpts }, imageSeriousness,
               state.character?.portraitUrl || null
             );
             dispatch({ type: 'UPDATE_SCENE_IMAGE', payload: { sceneId, image: imageUrl, fullImagePrompt } });
             autoSave();
+            const idx = state.scenes.findIndex((s) => s.id === sceneId);
+            if (idx >= 0) storage.saveSceneImageUpdate(state.campaign?.backendId, idx, { imageUrl, fullImagePrompt });
           } catch (imgErr) {
             console.warn('Image generation failed:', imgErr.message);
           } finally {
@@ -331,11 +360,15 @@ export function useSceneGeneration({ ensureMissingInventoryImages, ensureMissing
 
         return result;
       } catch (err) {
+        devLog.emit({ category: 'system', type: 'scene_gen_error', label: `Error: ${err.message?.slice(0, 80)}`, severity: 'error', data: { message: err.message, code: err.code } });
         if (earlyImagePromise) {
           earlyImagePromise.finally(() => dispatch({ type: 'SET_GENERATING_IMAGE', payload: false }));
         }
         recordCompletedSceneGenTiming();
-        dispatch({ type: 'SET_ERROR', payload: err.message });
+        const errorMsg = err.message === 'insufficient_credits'
+          ? t('credits.insufficient')
+          : err.message;
+        dispatch({ type: 'SET_ERROR', payload: errorMsg });
         dispatch({ type: 'SET_GENERATING_SCENE', payload: false });
         stream.clearStreamingOutput();
         throw err;
@@ -376,5 +409,6 @@ export function useSceneGeneration({ ensureMissingInventoryImages, ensureMissing
     clearEarlyDiceRoll: stream.clearEarlyDiceRoll,
     streamingNarrative: stream.streamingNarrative,
     streamingSegments: stream.streamingSegments,
+    streamComplete: stream.streamComplete,
   };
 }

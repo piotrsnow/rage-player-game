@@ -8,7 +8,65 @@ import {
 import { toCanonicalStoragePath } from '../services/urlCanonical.js';
 import { callAIJson, parseJsonOrNull } from '../services/aiJsonCall.js';
 import { loadUserApiKeys } from '../services/apiKeyService.js';
-import { SCENE_CLIENT_SELECT } from '../services/campaignSerialize.js';
+import { SCENE_CLIENT_SELECT, normalizeSceneAssetUrls } from '../services/campaignSerialize.js';
+
+async function aggregateDiceStats(prisma, campaignIds) {
+  const empty = { totalRolls: 0, successes: 0, failures: 0, critSuccesses: 0, critFailures: 0, avgRoll: 0, bestSkill: null, worstSkill: null };
+  if (!campaignIds.length) return empty;
+
+  const allScenes = await prisma.campaignScene.findMany({
+    where: { campaignId: { in: campaignIds }, diceRoll: { not: null } },
+    select: { diceRoll: true },
+  });
+
+  const rolls = allScenes.flatMap((s) => {
+    const d = s.diceRoll;
+    return Array.isArray(d) ? d : d ? [d] : [];
+  }).filter((r) => typeof r.roll === 'number');
+
+  if (rolls.length === 0) return empty;
+
+  let successes = 0;
+  let failures = 0;
+  let critSuccesses = 0;
+  let critFailures = 0;
+  let rollSum = 0;
+  const skillSuccessMap = {};
+  const skillTotalMap = {};
+
+  for (const r of rolls) {
+    rollSum += r.roll;
+    if (r.success) successes++;
+    else failures++;
+    if (r.roll === 1) critSuccesses++;
+    if (r.roll === 50) critFailures++;
+    const sk = r.skill || 'unknown';
+    skillTotalMap[sk] = (skillTotalMap[sk] || 0) + 1;
+    if (r.success) skillSuccessMap[sk] = (skillSuccessMap[sk] || 0) + 1;
+  }
+
+  let bestSkill = null;
+  let worstSkill = null;
+  let bestRate = -1;
+  let worstRate = 2;
+  for (const [sk, total] of Object.entries(skillTotalMap)) {
+    if (total < 2 || sk === 'unknown') continue;
+    const rate = (skillSuccessMap[sk] || 0) / total;
+    if (rate > bestRate) { bestRate = rate; bestSkill = sk; }
+    if (rate < worstRate) { worstRate = rate; worstSkill = sk; }
+  }
+
+  return {
+    totalRolls: rolls.length,
+    successes,
+    failures,
+    critSuccesses,
+    critFailures,
+    avgRoll: Math.round((rollSum / rolls.length) * 10) / 10,
+    bestSkill,
+    worstSkill,
+  };
+}
 
 function normalizeCharacterAge(age) {
   const parsed = Number(age);
@@ -49,6 +107,7 @@ function snapshotFromBody(body) {
     backstory: body.backstory || '',
     customAttackPresets: Array.isArray(body.customAttackPresets) ? body.customAttackPresets : [],
     portraitUrl: body.portraitUrl || '',
+    spriteUrl: body.spriteUrl ?? '',
     voiceId: body.voiceId || '',
     voiceName: body.voiceName || '',
     campaignCount: body.campaignCount ?? 0,
@@ -56,6 +115,7 @@ function snapshotFromBody(body) {
     lockedCampaignId: body.lockedCampaignId ?? null,
     lockedCampaignName: body.lockedCampaignName ?? null,
     lockedLocation: body.lockedLocation ?? null,
+    skillBadges: Array.isArray(body.skillBadges) ? body.skillBadges : [],
   };
 }
 
@@ -69,12 +129,13 @@ function mergeUpdateBody(existingSnapshot, body) {
     'name', 'gender', 'species',
     'wounds', 'maxWounds', 'movement',
     'characterLevel', 'characterXp', 'attributePoints',
-    'backstory', 'portraitUrl', 'voiceId', 'voiceName',
+    'backstory', 'portraitUrl', 'spriteUrl', 'voiceId', 'voiceName',
     'campaignCount', 'fame', 'infamy', 'status',
     'lockedCampaignId', 'lockedCampaignName', 'lockedLocation',
     'attributes', 'mana', 'spells', 'money', 'statuses', 'needs',
     'customAttackPresets', 'knownTitles', 'activeDungeonState',
     'skills', 'inventory', 'materialBag', 'equipped',
+    'skillBadges',
   ];
   for (const key of passthrough) {
     if (body[key] !== undefined) merged[key] = body[key];
@@ -110,6 +171,7 @@ const CHARACTER_BODY_SCHEMA = {
     backstory: { type: 'string', maxLength: 10000 },
     customAttackPresets: { type: 'array', maxItems: 50 },
     portraitUrl: { type: 'string', maxLength: 2000 },
+    spriteUrl: { type: 'string', maxLength: 2000 },
     voiceId: { type: 'string', maxLength: 200 },
     voiceName: { type: 'string', maxLength: 200 },
     campaignCount: { type: 'number' },
@@ -119,6 +181,7 @@ const CHARACTER_BODY_SCHEMA = {
     lockedCampaignId: { type: ['string', 'null'], maxLength: 100 },
     lockedCampaignName: { type: ['string', 'null'], maxLength: 200 },
     lockedLocation: { type: ['string', 'null'], maxLength: 200 },
+    skillBadges: { type: 'array', maxItems: 500 },
   },
 };
 
@@ -134,6 +197,7 @@ const STATE_CHANGES_SCHEMA = {
     skillProgress: { type: 'object' },
     spellUsage: { type: 'object' },
     learnSpell: { type: ['string', 'object', 'null'] },
+    learnSpellIcon: { type: ['string', 'null'], maxLength: 80 },
     consumeScroll: { type: ['string', 'object', 'null'] },
     addScroll: { type: ['string', 'object', 'null'] },
     newItems: { type: 'array', maxItems: 100 },
@@ -206,6 +270,7 @@ export async function characterRoutes(fastify) {
       // Legacy records may hold hydrated URLs (host + `?token=`); strip back
       // to canonical so the FE card picker renders with a fresh token.
       portraitUrl: c.portraitUrl ? toCanonicalStoragePath(c.portraitUrl) : c.portraitUrl,
+      spriteUrl: c.spriteUrl ? toCanonicalStoragePath(c.spriteUrl) : c.spriteUrl,
       // Stub the FE-shape collections so list cards that read e.g.
       // `char.equipped.mainHand` don't trip on undefined.
       skills: {},
@@ -260,6 +325,167 @@ export async function characterRoutes(fastify) {
     return { success: true };
   });
 
+  fastify.get('/:id/skill-gains', {
+    schema: {
+      querystring: {
+        type: 'object',
+        properties: {
+          skillName: { type: 'string' },
+          limit: { type: 'integer', minimum: 1, maximum: 100, default: 50 },
+          offset: { type: 'integer', minimum: 0, default: 0 },
+        },
+      },
+    },
+  }, async (request, reply) => {
+    const character = await prisma.character.findFirst({
+      where: { id: request.params.id, userId: request.user.id },
+      select: { id: true },
+    });
+    if (!character) return reply.code(404).send({ error: 'Character not found' });
+
+    const where = { characterId: character.id };
+    if (request.query.skillName) where.skillName = request.query.skillName;
+
+    const [gains, total] = await Promise.all([
+      prisma.characterSkillGain.findMany({
+        where,
+        orderBy: { createdAt: 'desc' },
+        take: request.query.limit,
+        skip: request.query.offset,
+        select: {
+          id: true,
+          skillName: true,
+          xpGained: true,
+          oldLevel: true,
+          newLevel: true,
+          playerAction: true,
+          narrative: true,
+          diceRollInfo: true,
+          sceneIndex: true,
+          campaignId: true,
+          createdAt: true,
+        },
+      }),
+      prisma.characterSkillGain.count({ where }),
+    ]);
+
+    return { gains, total };
+  });
+
+  // ── Favorite scenes ────────────────────────────────────────────────────
+  // Heart toggle in the gameplay UI bookmarks scenes for a character. The
+  // list is surfaced in the character panel alongside skill gain history.
+
+  fastify.get('/:id/favorite-scenes', {
+    schema: {
+      querystring: {
+        type: 'object',
+        properties: {
+          limit: { type: 'integer', minimum: 1, maximum: 200, default: 100 },
+          offset: { type: 'integer', minimum: 0, default: 0 },
+        },
+      },
+    },
+  }, async (request, reply) => {
+    const character = await prisma.character.findFirst({
+      where: { id: request.params.id, userId: request.user.id },
+      select: { id: true },
+    });
+    if (!character) return reply.code(404).send({ error: 'Character not found' });
+
+    const rows = await prisma.favoriteScene.findMany({
+      where: { characterId: character.id },
+      orderBy: { createdAt: 'desc' },
+      take: request.query.limit,
+      skip: request.query.offset,
+      select: {
+        id: true,
+        sceneId: true,
+        campaignId: true,
+        createdAt: true,
+        scene: {
+          select: {
+            sceneIndex: true,
+            narrative: true,
+            chosenAction: true,
+            imageUrl: true,
+            scenePacing: true,
+            createdAt: true,
+          },
+        },
+        campaign: { select: { name: true } },
+      },
+    });
+
+    const favorites = rows.map((row) => {
+      const scene = row.scene ? normalizeSceneAssetUrls(row.scene) : null;
+      return {
+        id: row.id,
+        sceneId: row.sceneId,
+        campaignId: row.campaignId,
+        campaignName: row.campaign?.name || '',
+        createdAt: row.createdAt,
+        sceneIndex: scene?.sceneIndex ?? null,
+        narrative: scene?.narrative || '',
+        chosenAction: scene?.chosenAction || null,
+        imageUrl: scene?.imageUrl || null,
+        scenePacing: scene?.scenePacing || null,
+        sceneCreatedAt: scene?.createdAt || null,
+      };
+    });
+
+    return { favorites };
+  });
+
+  fastify.post('/:id/favorite-scenes', {
+    schema: {
+      body: {
+        type: 'object',
+        required: ['sceneId', 'campaignId'],
+        additionalProperties: false,
+        properties: {
+          sceneId: { type: 'string', format: 'uuid' },
+          campaignId: { type: 'string', format: 'uuid' },
+        },
+      },
+    },
+  }, async (request, reply) => {
+    const character = await prisma.character.findFirst({
+      where: { id: request.params.id, userId: request.user.id },
+      select: { id: true },
+    });
+    if (!character) return reply.code(404).send({ error: 'Character not found' });
+
+    const { sceneId, campaignId } = request.body;
+    const scene = await prisma.campaignScene.findFirst({
+      where: { id: sceneId, campaignId },
+      select: { id: true, campaignId: true },
+    });
+    if (!scene) return reply.code(404).send({ error: 'Scene not found' });
+
+    const favorite = await prisma.favoriteScene.upsert({
+      where: { characterId_sceneId: { characterId: character.id, sceneId } },
+      create: { characterId: character.id, sceneId, campaignId },
+      update: {},
+      select: { id: true, sceneId: true, campaignId: true, createdAt: true },
+    });
+    return reply.code(201).send(favorite);
+  });
+
+  fastify.delete('/:id/favorite-scenes/:sceneId', async (request, reply) => {
+    const character = await prisma.character.findFirst({
+      where: { id: request.params.id, userId: request.user.id },
+      select: { id: true },
+    });
+    if (!character) return reply.code(404).send({ error: 'Character not found' });
+
+    const result = await prisma.favoriteScene.deleteMany({
+      where: { characterId: character.id, sceneId: request.params.sceneId },
+    });
+    if (result.count === 0) return reply.code(404).send({ error: 'Favorite not found' });
+    return reply.code(204).send();
+  });
+
   fastify.post('/:id/badge', async (request, reply) => {
     const force = request.body?.force === true;
     const char = await prisma.character.findFirst({
@@ -267,21 +493,24 @@ export async function characterRoutes(fastify) {
     });
     if (!char) return reply.code(404).send({ error: 'Character not found' });
 
+    const campaigns = await prisma.campaignParticipant.findMany({
+      where: { characterId: char.id },
+      select: { campaignId: true },
+    });
+    const campaignIds = campaigns.map((c) => c.campaignId);
+
+    const diceStats = await aggregateDiceStats(prisma, campaignIds);
+
     if (!force && char.badgeSummary && char.badgeUpdatedAt) {
       return {
         summary: char.badgeSummary,
         legend: char.badgeLegend,
         snark: char.badgeSnark,
         updatedAt: char.badgeUpdatedAt,
+        diceStats,
         cached: true,
       };
     }
-
-    const campaigns = await prisma.campaignParticipant.findMany({
-      where: { characterId: char.id },
-      select: { campaignId: true },
-    });
-    const campaignIds = campaigns.map((c) => c.campaignId);
 
     let scenes = [];
     if (campaignIds.length > 0) {
@@ -332,6 +561,8 @@ Return JSON with exactly three fields, all written in ${isPolish ? 'Polish' : 'E
         maxTokens: 1000,
         temperature: 0.9,
         userApiKeys,
+        taskType: 'character-badge',
+        taskLabel: 'Character badge generation',
       });
 
       const parsed = parseJsonOrNull(text);
@@ -350,7 +581,7 @@ Return JSON with exactly three fields, all written in ${isPolish ? 'Polish' : 'E
         },
       });
 
-      return { summary, legend, snark, updatedAt: now, cached: false };
+      return { summary, legend, snark, updatedAt: now, diceStats, cached: false };
     } catch (err) {
       const status = err.statusCode || 502;
       return reply.code(status).send({ error: err.message, code: err.code || 'AI_REQUEST_FAILED' });

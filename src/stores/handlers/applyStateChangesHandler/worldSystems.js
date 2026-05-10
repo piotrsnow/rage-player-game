@@ -38,21 +38,10 @@ export function applyFactionChanges(draft, changes) {
 }
 
 /**
- * Field-map mode switch (overworld / trakt road variant / etc.). Resetting
- * `chunks` on mode change is intentional — chunks are cached per-mode and
- * keeping stale chunks from the previous mode causes visual tears.
+ * Faza 5 — fieldMap usunięty całkowicie. applyMapMode jest no-op
+ * (zachowane jako export dla kompatybilności call-site w applyStateChangesHandler/index).
+ * AI nadal może emitować `mapMode` w stateChanges (legacy schema), ale nic to nie zmienia.
  */
-export function applyMapMode(draft, changes) {
-  if (!changes.mapMode || !draft.world?.fieldMap) return;
-  const fm = draft.world.fieldMap;
-  const newMode = changes.mapMode;
-  const newVariant = newMode === 'trakt' ? (changes.roadVariant || null) : null;
-  if (fm.mapMode !== newMode || fm.roadVariant !== newVariant) {
-    fm.mapMode = newMode;
-    fm.roadVariant = newVariant;
-    fm.chunks = {};
-    fm.stepCounter = 0;
-    fm.stepBuffer = [];
-    fm.discoveredPoi = [];
-  }
+export function applyMapMode(_draft, _changes) {
+  // intentionally empty — fieldMap removed.
 }

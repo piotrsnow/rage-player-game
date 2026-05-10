@@ -8,8 +8,7 @@ import EffectEngine from '../../effects/EffectEngine';
 import resolveEffects from '../../effects/resolveEffects';
 import LoadingSpinner from '../ui/LoadingSpinner';
 import SceneCanvas from './SceneCanvas';
-import FieldMapCanvas from './FieldMapCanvas';
-import OverlayDiceCard from './scene/OverlayDiceCard';
+import DiceRollCard from './DiceRollCard';
 import HighlightedNarrative, { splitIntoSentences } from './scene/HighlightedNarrative';
 
 const Scene3DPanel = lazy(() => import('./Scene3D/Scene3DPanel'));
@@ -84,11 +83,11 @@ export default function ScenePanel({
   mpErrorCode = null,
   isMultiplayer = false,
   onOpenSettings = null,
+  momentumDice = null,
 }) {
   const { t } = useTranslation();
   const { settings, updateSettings } = useSettings();
   const campaign = useGameCampaign();
-  const fieldMap = useGameSlice((s) => s.world?.fieldMap);
   const dispatch = useGameDispatch();
 
   const lastSentenceRef = useRef(null);
@@ -322,7 +321,7 @@ export default function ScenePanel({
 
   if (!scene) {
     return (
-      <div className="relative w-full h-[clamp(280px,66vh,740px)] rounded-lg overflow-hidden border border-outline-variant/10 shadow-[0_0_40px_rgba(0,0,0,0.8)] bg-gradient-to-br from-surface-container-high via-surface-container to-surface-container-lowest flex items-center justify-center">
+      <div className="relative w-full h-[clamp(340px,calc(56vh+60px),840px)] rounded-lg overflow-hidden border border-outline-variant/10 shadow-[0_0_40px_rgba(0,0,0,0.8)] bg-gradient-to-br from-surface-container-high via-surface-container to-surface-container-lowest flex items-center justify-center">
         <div className="absolute inset-0 bg-primary/[0.02]" style={{ animation: 'glowPulse 4s ease-in-out infinite' }} />
         <div className="text-center relative z-10">
           <span className="material-symbols-outlined text-6xl text-outline/20 mb-3 block animate-float-slow">auto_stories</span>
@@ -340,7 +339,7 @@ export default function ScenePanel({
   }
 
   return (
-    <div data-testid="scene-panel" className="relative w-full h-[clamp(280px,66vh,740px)] rounded-lg overflow-hidden border border-outline-variant/10 shadow-[0_0_40px_rgba(0,0,0,0.8)] animate-fade-in">
+    <div data-testid="scene-panel" className="relative w-full h-[clamp(340px,calc(56vh+60px),840px)] rounded-lg overflow-hidden border border-outline-variant/10 shadow-[0_0_40px_rgba(0,0,0,0.8)] animate-fade-in">
       {/* Dream overlay */}
       {scene.scenePacing === 'dream' && (
         <>
@@ -369,21 +368,6 @@ export default function ScenePanel({
         </Suspense>
       ) : (settings.sceneVisualization || 'image') === 'canvas' ? (
         <SceneCanvas scene={scene} />
-      ) : (settings.sceneVisualization || 'image') === 'map' ? (
-        <div className="w-full h-full bg-gradient-to-br from-surface-container-high via-surface-container to-surface-container-lowest">
-          {fieldMap ? (
-            <FieldMapCanvas
-              onFieldTurnReady={onFieldTurnReady}
-              scene={scene}
-              world={world}
-              characterName={characterName}
-            />
-          ) : (
-            <div className="w-full h-full flex items-center justify-center">
-              <LoadingSpinner size="md" text={t('common.loading')} />
-            </div>
-          )}
-        </div>
       ) : (settings.sceneVisualization || 'image') === 'image' && displayedSrc ? (
         <img
           key={displayedSrc}
@@ -395,7 +379,7 @@ export default function ScenePanel({
       ) : (
         <div className="w-full h-full bg-gradient-to-br from-surface-container-high to-surface-container-lowest flex items-center justify-center">
           {isGeneratingImage && (settings.sceneVisualization || 'image') === 'image' ? (
-            <LoadingSpinner size="md" text={t('gameplay.conjuringVision')} />
+            <LoadingSpinner size="xl" text={t('gameplay.conjuringVision')} />
           ) : (
             <div className="flex flex-col items-center gap-3">
               <span className="material-symbols-outlined text-6xl text-outline/20">landscape</span>
@@ -551,6 +535,73 @@ export default function ScenePanel({
         </>
       )}
 
+      {/* Momentum minigame: countdown overlay */}
+      {momentumDice?.counting && momentumDice.countdownValue > 0 && (
+        <div className="absolute inset-0 flex items-center justify-center" style={{ zIndex: 10 }}>
+          <span
+            key={momentumDice.countdownValue}
+            className="text-[min(20vw,10rem)] font-black tabular-nums text-amber-300 animate-countdown-digit select-none"
+            style={{
+              textShadow: '0 0 40px rgba(251,191,36,0.7), 0 0 80px rgba(251,191,36,0.3), 0 4px 12px rgba(0,0,0,0.6)',
+            }}
+          >
+            {momentumDice.countdownValue}
+          </span>
+        </div>
+      )}
+
+      {/* Momentum minigame dice target */}
+      {momentumDice?.visible && (
+        <button
+          type="button"
+          onClick={momentumDice.onDiceClick}
+          className="absolute w-28 h-28 flex items-center justify-center rounded-xl cursor-pointer animate-scale-in group transition-all duration-150"
+          style={{
+            zIndex: 10,
+            top: `${(momentumDice.position?.top ?? 0.5) * 100}%`,
+            left: `${(momentumDice.position?.left ?? 0.5) * 100}%`,
+            transform: 'translate(-50%, -50%)',
+          }}
+        >
+          <span className="absolute inset-0 rounded-xl bg-amber-400/0 group-hover:bg-amber-400/20 transition-colors duration-150" />
+          <span
+            className="material-symbols-outlined text-[92px] text-amber-300/90 group-hover:text-white group-hover:scale-125 transition-all duration-150 drop-shadow-lg"
+            style={{
+              filter: 'drop-shadow(0 0 18px rgba(251,191,36,0.6)) drop-shadow(0 0 40px rgba(251,191,36,0.25))',
+            }}
+          >
+            casino
+          </span>
+        </button>
+      )}
+
+      {/* Momentum minigame result feedback */}
+      {momentumDice?.result && !momentumDice.visible && !momentumDice.counting && (
+        <div className="absolute inset-0 flex items-center justify-center pointer-events-none" style={{ zIndex: 10 }}>
+          <div
+            key={`result-${momentumDice.result.ts}`}
+            className="animate-momentum-result flex flex-col items-center gap-1"
+          >
+            <span className={`text-[min(14vw,5rem)] font-black tabular-nums select-none ${
+              momentumDice.result.delta > 0 ? 'text-emerald-400' : 'text-red-400'
+            }`}
+              style={{
+                textShadow: momentumDice.result.delta > 0
+                  ? '0 0 30px rgba(52,211,153,0.6), 0 4px 12px rgba(0,0,0,0.6)'
+                  : '0 0 30px rgba(248,113,113,0.6), 0 4px 12px rgba(0,0,0,0.6)',
+              }}
+            >
+              {momentumDice.result.delta > 0 ? '+' : ''}{momentumDice.result.delta}
+            </span>
+            <span className="text-lg font-bold font-label uppercase tracking-widest text-on-surface/70 bg-black/50 backdrop-blur-sm rounded-sm px-3 py-1">
+              {momentumDice.result.reactionMs != null
+                ? `${momentumDice.result.reactionMs} ms`
+                : t('gameplay.momentumTimeout', 'Czas minął!')}
+            </span>
+          </div>
+        </div>
+      )}
+
       {/* Dice Roll Overlay — top-right */}
       <div
         className={`absolute top-3 right-3 flex flex-col items-end gap-2 overflow-visible transition-opacity duration-300 ${
@@ -559,13 +610,17 @@ export default function ScenePanel({
         style={{ zIndex: 4 }}
       >
         {overlaySlots.map((dr, idx) => (
-          <OverlayDiceCard
-            key={idx}
-            dr={dr}
-            t={t}
-            showCharacter={currentOverlayRolls.length > 1}
-            isVisible={Boolean(dr)}
-          />
+          dr ? (
+            <DiceRollCard
+              key={idx}
+              diceData={dr}
+              defaultExpanded
+              showCharacter={currentOverlayRolls.length > 1}
+              className="pointer-events-auto"
+            />
+          ) : (
+            <div key={idx} className="pointer-events-none opacity-0" />
+          )
         ))}
       </div>
 

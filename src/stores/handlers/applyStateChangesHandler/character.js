@@ -2,6 +2,10 @@ import { SKILL_CAPS, xpForSkillLevel } from '../../../data/rpgSystem';
 import { calculateMaxWounds, normalizeMoney } from '../../../services/gameState';
 import { stackMaterials, stackInventory } from '../_shared';
 import { slugifyItemName } from '../../../../shared/domain/itemKeys.js';
+import { normalizeSpellMaterialIcon } from '../../../../shared/domain/spellMaterialIcons.js';
+import { addEffect, removeEffect, removeEffectsByName, migrateStatusStrings, deriveStatusNames } from '../../../../shared/domain/statusEffects.js';
+import { normalizeSkillName } from '../../../services/diceRollInference.js';
+import { sanitizeMana } from '../../../../shared/domain/mana.js';
 
 /**
  * All direct character-sheet mutations — wounds, status, mana, attributes,
@@ -17,7 +21,9 @@ export function applyCharacterMutations(draft, changes) {
   applyInventoryAndMaterials(draft, changes);
   applyRemovals(draft, changes);
   applyMoneyChange(draft, changes);
-  applyStatuses(draft, changes);
+  applyCharacterEffects(draft, changes);
+  applySkillBadges(draft, changes);
+  if (draft.character?.mana) draft.character.mana = sanitizeMana(draft.character.mana);
 }
 
 function applyVitals(draft, changes) {
@@ -54,7 +60,7 @@ function applyAttributes(draft, changes) {
   for (const [key, amount] of Object.entries(changes.attributeChanges)) {
     draft.character.attributes[key] = Math.max(1, (draft.character.attributes[key] || 0) + amount);
   }
-  const newMaxWounds = calculateMaxWounds(draft.character.attributes.wytrzymalosc);
+  const newMaxWounds = calculateMaxWounds(draft.character.attributes.wytrzymalosc) + (draft.character.bonusMaxWounds || 0);
   draft.character.maxWounds = newMaxWounds;
   draft.character.wounds = Math.min(draft.character.wounds, newMaxWounds);
 }
@@ -64,7 +70,8 @@ function applyAttributes(draft, changes) {
 // the whole character. Char XP cascade happens on BE and arrives via RECONCILE.
 function applySkillProgress(draft, changes) {
   if (!changes.skillProgress || !draft.character) return;
-  for (const [skillName, xpGain] of Object.entries(changes.skillProgress)) {
+  for (const [rawName, xpGain] of Object.entries(changes.skillProgress)) {
+    const skillName = normalizeSkillName(rawName) || rawName;
     if (!draft.character.skills[skillName]) {
       draft.character.skills[skillName] = { level: 0, xp: 0, cap: SKILL_CAPS.basic };
     }
@@ -98,6 +105,13 @@ function applySpellBook(draft, changes) {
     ensureSpells();
     if (!draft.character.spells.known.includes(changes.learnSpell)) {
       draft.character.spells.known.push(changes.learnSpell);
+    }
+    if (changes.learnSpellIcon) {
+      const icon = normalizeSpellMaterialIcon(changes.learnSpellIcon);
+      if (icon) {
+        if (!draft.character.spells.icons) draft.character.spells.icons = {};
+        draft.character.spells.icons[changes.learnSpell] = icon;
+      }
     }
   }
 
@@ -193,8 +207,46 @@ function applyMoneyChange(draft, changes) {
   });
 }
 
-function applyStatuses(draft, changes) {
-  if (changes.statuses && draft.character) {
-    draft.character.statuses = changes.statuses;
+function applyCharacterEffects(draft, changes) {
+  if (!draft.character) return;
+
+  // Handle structured characterEffects array (new system)
+  if (Array.isArray(changes.characterEffects)) {
+    if (!draft.character.activeEffects) draft.character.activeEffects = [];
+    for (const cmd of changes.characterEffects) {
+      if (cmd.action === 'add' && cmd.effect) {
+        draft.character.activeEffects = addEffect(draft.character.activeEffects, cmd.effect);
+      } else if (cmd.action === 'remove' && cmd.effectId) {
+        draft.character.activeEffects = removeEffect(draft.character.activeEffects, cmd.effectId);
+      } else if (cmd.action === 'remove' && cmd.name) {
+        draft.character.activeEffects = removeEffectsByName(draft.character.activeEffects, cmd.name);
+      }
+    }
+    // Keep legacy statuses derived view in sync
+    draft.character.statuses = deriveStatusNames(draft.character.activeEffects);
+  }
+
+  // Backward-compat: old-style statuses string array from AI
+  if (changes.statuses && !changes.characterEffects) {
+    if (Array.isArray(changes.statuses) && changes.statuses.every((s) => typeof s === 'string')) {
+      draft.character.activeEffects = migrateStatusStrings(changes.statuses);
+      draft.character.statuses = changes.statuses;
+    } else {
+      draft.character.statuses = changes.statuses;
+    }
+  }
+
+  // Combat end: sync surviving effects back
+  if (Array.isArray(changes.survivingEffects)) {
+    draft.character.activeEffects = changes.survivingEffects;
+    draft.character.statuses = deriveStatusNames(changes.survivingEffects);
+  }
+}
+
+function applySkillBadges(draft, changes) {
+  if (!Array.isArray(changes.skillBadges) || !changes.skillBadges.length || !draft.character) return;
+  if (!Array.isArray(draft.character.skillBadges)) draft.character.skillBadges = [];
+  for (const badge of changes.skillBadges) {
+    draft.character.skillBadges.push(badge);
   }
 }

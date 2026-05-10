@@ -1,46 +1,70 @@
-// Pure helpers for MapTab SVG render. Kept free of JSX so they can be
-// unit-tested without a DOM.
+// Faza 6 — fragmenty dawnego mapHelpers.js (palette + helpers) zachowane
+// dla CanonGraphTab.jsx, który nadal renderuje canonical graph viz.
+// Reszta funkcji (tile-based map) wywalona razem z gameplay/worldMap/.
 
 export const LOCATION_TYPE_COLORS = {
-  capital:    '#ffd166',
-  city:       '#ef476f',
-  town:       '#f78c6b',
-  village:    '#06d6a0',
-  hamlet:     '#118ab2',
-  dungeon:    '#7209b7',
-  forest:     '#2a9d8f',
-  wilderness: '#3a5a40',
-  interior:   '#6c757d',
-  generic:    '#adb5bd',
+  generic: '#6b7280',
+  hamlet: '#a78bfa',
+  village: '#8b5cf6',
+  town: '#7c3aed',
+  city: '#6d28d9',
+  capital: '#5b21b6',
+  dungeon: '#7c2d12',
+  forest: '#15803d',
+  wilderness: '#16a34a',
+  mountain: '#71717a',
+  ruin: '#9a3412',
+  camp: '#ca8a04',
+  cave: '#374151',
+  interior: '#0e7490',
+  dungeon_room: '#991b1b',
+  campaignPlace: '#be185d',
+  region: '#0891b2',
+  area: '#22d3ee',
+  district: '#0284c7',
+  site: '#06b6d4',
+  room: '#0ea5e9',
+  point: '#475569',
+  abstract: '#78716c',
 };
 
-export function edgeColour(difficulty) {
-  switch (difficulty) {
-    case 'deadly':    return '#e63946';
-    case 'dangerous': return '#f48c06';
-    case 'moderate':  return '#ffd166';
-    default:          return '#8ecae6';
-  }
-}
-
-export function nodeRadius(locationType) {
-  switch (locationType) {
-    case 'capital': return 10;
-    case 'city':    return 8;
-    case 'town':    return 6;
-    case 'village': return 5;
-    case 'hamlet':  return 4;
-    case 'dungeon': return 6;
-    default:        return 5;
-  }
-}
-
-// Round E Phase 13b — NPC category colors for the canon knowledge graph.
-// Categories match `WorldNPC.category` enum.
 export const NPC_CATEGORY_COLORS = {
-  guard:      '#ef476f',
-  merchant:   '#ffd166',
-  priest:     '#c3b1e1',
-  adventurer: '#06d6a0',
-  commoner:   '#adb5bd',
+  commoner: '#94a3b8',
+  noble: '#facc15',
+  trader: '#fb923c',
+  guard: '#60a5fa',
+  bandit: '#dc2626',
+  cleric: '#e879f9',
+  scholar: '#4ade80',
+  rogue: '#a78bfa',
+  artisan: '#f87171',
+  outsider: '#7c3aed',
 };
+
+export function edgeColour(category) {
+  switch (category) {
+    case 'movement': return '#60a5fa';
+    case 'spatial': return '#94a3b8';
+    case 'structural': return '#a78bfa';
+    case 'access': return '#facc15';
+    case 'perception': return '#22d3ee';
+    case 'social': return '#fb923c';
+    case 'narrative': return '#e879f9';
+    case 'temporal': return '#4ade80';
+    default: return '#6b7280';
+  }
+}
+
+const LOCATION_SCALE = {
+  point: 0, abstract: 0, room: 1, dungeon_room: 1,
+  cave: 2, camp: 2, site: 2, interior: 2,
+  hamlet: 3, dungeon: 3, ruin: 3, forest: 3, wilderness: 3, mountain: 3,
+  village: 4, area: 4, district: 4,
+  town: 5, campaignPlace: 5, region: 5,
+  city: 6, capital: 7,
+};
+
+export function nodeRadius(locationType = 'generic') {
+  const scale = LOCATION_SCALE[locationType] ?? 4;
+  return 6 + scale * 3.4;
+}

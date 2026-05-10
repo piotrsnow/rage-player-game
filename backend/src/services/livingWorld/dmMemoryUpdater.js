@@ -75,6 +75,8 @@ export async function updateDmMemoryFromScene({
       timeoutMs,
       maxTokens: 400,
       reasoning: true,
+      taskType: 'dm-memory',
+      taskLabel: 'DM memory update',
     });
     if (!parsed) return null;
 

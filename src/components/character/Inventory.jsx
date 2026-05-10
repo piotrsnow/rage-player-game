@@ -3,13 +3,13 @@ import { useTranslation } from 'react-i18next';
 import { apiClient } from '../../services/apiClient';
 import MaterialBagPanel from './MaterialBagPanel';
 import InventoryImage from './inventory/InventoryImage';
-import EquipmentPaperDoll from './inventory/EquipmentPaperDoll';
+import EquipmentSlotsBar from './inventory/EquipmentSlotsBar';
 import ItemTooltip from './inventory/ItemTooltip';
 import Tooltip from '../ui/Tooltip';
 import Button from '../ui/Button';
 import { rarityColors, rarityGlows, typeIcons, SLOT_CONFIG, getEquippedSlot, getEquippableSlots } from './inventory/constants';
 
-const ITEMS_PER_PAGE = 12;
+const ITEMS_PER_PAGE = 20;
 
 function CoinDisplay({ value, label, color }) {
   return (
@@ -96,14 +96,14 @@ export default function Inventory({
         </div>
       </div>
 
-      <EquipmentPaperDoll
+      <EquipmentSlotsBar
         equipped={equipped}
         items={items}
         onEquipItem={onEquipItem}
         onUnequipItem={onUnequipItem}
       />
 
-      <div className="grid grid-cols-4 gap-3">
+      <div className="grid grid-cols-5 gap-3">
         {pageItems.map((item) => {
           const rarityKey = item.rarity || item.availability || 'common';
           const rarity = rarityColors[rarityKey] || rarityColors.common;

@@ -64,19 +64,9 @@ export function useGameplayActions({
     setTimeout(() => autoSave(), 250);
   }, [isMultiplayer, mp, dispatch, autoSave]);
 
-  const handleFieldTurnReady = useCallback(() => {
-    if (!sWorld?.fieldMap) return;
-    const fm = sWorld.fieldMap;
-    const buf = fm.stepBuffer || [];
-    const from = buf.length > 0 ? buf[0] : fm.playerPos;
-    const to = fm.playerPos;
-    const uniqueTiles = new Set(buf.map((s) => s.tile)).size;
-    const idleSteps = buf.filter((s) => s.x === from.x && s.y === from.y).length;
-    const discovered = fm.discoveredPoi.map((p) => `${p.tile}@(${p.x},${p.y})`).join(', ');
-    const actionText = `[FIELD_MOVE] steps=${buf.length} from=(${from.x},${from.y}) to=(${to.x},${to.y}) uniqueTiles=${uniqueTiles} idleSteps=${idleSteps} biome=${fm.activeBiome}${discovered ? ` discovered=${discovered}` : ''}`;
-    dispatch({ type: 'FIELD_MAP_RESET_STEPS' });
-    generateScene(actionText, false, false).catch(() => {});
-  }, [sWorld?.fieldMap, dispatch, generateScene]);
+  // Faza 5 — handleFieldTurnReady removed (fieldMap procedural-terrain
+  // wywalony). No-op dla zachowania API z GameplayPage/ScenePanel.
+  const handleFieldTurnReady = useCallback(() => {}, []);
 
   const handleShare = useCallback(async () => {
     const backendId = campaign?.backendId;

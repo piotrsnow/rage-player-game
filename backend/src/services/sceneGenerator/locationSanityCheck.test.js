@@ -82,7 +82,7 @@ describe('detectSuspiciousLocationChange', () => {
     expect(v.signals).toContain('no_movement_cue');
   });
 
-  it('flip pattern fires even WITH movement word — combined score still triggers retry', () => {
+  it('flip pattern does NOT fire when player has movement vocabulary (intentional return)', () => {
     const v = detectSuspiciousLocationChange({
       playerAction: 'wracam do karczmy',
       sceneResult: baseSceneResult('Karczma'),
@@ -92,9 +92,8 @@ describe('detectSuspiciousLocationChange', () => {
         { idx: 13, loc: 'Las' },
       ],
     });
-    // Movement cue suppresses signal A; flip alone is +3.
-    expect(v.score).toBe(3);
-    expect(v.signals).toEqual(['flip_pattern']);
+    expect(v.score).toBe(0);
+    expect(v.signals).toEqual([]);
   });
 
   it('case-insensitive name comparison', () => {

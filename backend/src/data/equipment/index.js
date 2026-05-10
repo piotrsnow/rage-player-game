@@ -4,7 +4,7 @@
  *   import { WEAPONS, ARMOUR, ... } from '../data/equipment/index.js';
  */
 
-export { MELEE_RANGE, BATTLEFIELD_MAX, DEFAULT_MOVEMENT, MANOEUVRES, HIT_LOCATIONS } from './combatConstants.js';
+export { MELEE_RANGE, BATTLEFIELD_WIDTH, BATTLEFIELD_HEIGHT, DEFAULT_MOVEMENT, MANOEUVRES, HIT_LOCATIONS, TERRAIN_TILES, TERRAIN_SPAWN_CONFIG } from './combatConstants.js';
 export { WEAPONS } from './weapons.js';
 export { ARMOUR, SHIELDS } from './armour.js';
 export {

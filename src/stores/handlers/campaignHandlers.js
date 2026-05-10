@@ -71,21 +71,10 @@ export const campaignHandlers = {
     if (loaded.world && !loaded.world.codex) {
       loaded.world.codex = {};
     }
+    // Faza 5 — fieldMap removed. Stare zapisy mogą mieć `loaded.world.fieldMap` —
+    // ignorujemy je (clean slate decyzja).
     if (loaded.world && loaded.world.fieldMap) {
-      loaded.world.fieldMap = {
-        seed: 0,
-        chunkSize: 64,
-        chunks: {},
-        playerPos: { x: 32, y: 32 },
-        activeBiome: 'plains',
-        mapMode: 'pola',
-        roadVariant: null,
-        stepCounter: 0,
-        stepBuffer: [],
-        discoveredPoi: [],
-        interior: null,
-        ...loaded.world.fieldMap,
-      };
+      delete loaded.world.fieldMap;
     }
     if (loaded.campaign && !loaded.campaign.status) loaded.campaign.status = 'active';
     if (loaded.character?.voiceId && loaded.character.name) {

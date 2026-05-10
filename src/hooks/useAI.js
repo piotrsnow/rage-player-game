@@ -27,6 +27,7 @@ export function useAI() {
     clearEarlyDiceRoll,
     streamingNarrative,
     streamingSegments,
+    streamComplete,
   } = useSceneGeneration({
     ensureMissingInventoryImages,
     ensureMissingNpcPortraits,
@@ -67,5 +68,6 @@ export function useAI() {
     clearEarlyDiceRoll,
     streamingNarrative,
     streamingSegments,
+    streamComplete,
   };
 }

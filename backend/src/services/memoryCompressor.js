@@ -11,8 +11,34 @@ import { prisma } from '../lib/prisma.js';
 import { config } from '../config.js';
 import { childLogger } from '../lib/logger.js';
 import { resolveModelForTask } from './serverConfig.js';
+import { logLlmCallStart, logLlmCallFinish, logLlmCallFail, getLlmCallUserId } from './llmCallLogger.js';
 
 const log = childLogger({ module: 'memoryCompressor' });
+
+// ── PRIORITY-AWARE EVICTION ──
+// When gameStateSummary exceeds `limit`, mark oldest minor facts for eviction
+// first, then oldest major facts. Returns the surviving subset in original order.
+export function evictToLimit(facts, limit) {
+  if (facts.length <= limit) return facts;
+  const excess = facts.length - limit;
+  const evictSet = new Set();
+  let evicted = 0;
+  // First pass: evict oldest minor facts
+  for (let i = 0; i < facts.length && evicted < excess; i++) {
+    if (facts[i]?.importance !== 'major') {
+      evictSet.add(i);
+      evicted++;
+    }
+  }
+  // Second pass: evict oldest major facts if still over
+  for (let i = 0; i < facts.length && evicted < excess; i++) {
+    if (!evictSet.has(i)) {
+      evictSet.add(i);
+      evicted++;
+    }
+  }
+  return facts.filter((_, i) => !evictSet.has(i));
+}
 
 // ── NANO MODEL CALLER (provider-aware) ──
 
@@ -20,41 +46,58 @@ const log = childLogger({ module: 'memoryCompressor' });
 // where importance judgment matters and async latency is free — memory/location
 // compression. `reasoning: false` routes to the fast nano tier (gpt-4.1-nano)
 // for classification-shaped tasks on the critical path — quest objective check.
-export async function callNano(systemPrompt, userPrompt, provider, { timeoutMs, maxTokens = 200, reasoning = false } = {}) {
+export async function callNano(systemPrompt, userPrompt, provider, { timeoutMs, maxTokens = 200, reasoning = false, taskCategory = 'memoryExtraction', userId = null, taskType = null, taskLabel = null } = {}) {
   const controller = timeoutMs ? new AbortController() : null;
   const timeoutHandle = controller ? setTimeout(() => controller.abort(), timeoutMs) : null;
   timeoutHandle?.unref?.();
   const signal = controller?.signal;
 
   const tier = reasoning ? 'nanoReasoning' : 'nano';
-  const overrideOpenai = await resolveModelForTask('memoryExtraction', 'openai');
-  const overrideAnthropic = await resolveModelForTask('memoryExtraction', 'anthropic');
+  const overrideOpenai = await resolveModelForTask(taskCategory, 'openai');
+  const overrideAnthropic = await resolveModelForTask(taskCategory, 'anthropic');
   const openaiModel = overrideOpenai || config.aiModels[tier].openai;
   const anthropicModel = overrideAnthropic || config.aiModels[tier].anthropic;
 
-  try {
-    // Match nano provider to the main scene provider so that choosing Chat (OpenAI)
-    // never triggers Claude Haiku calls and vice versa. If the preferred provider
-    // has no key configured, fall back to whichever key is available.
+  function pickProviderAndModel() {
     if (provider === 'anthropic') {
-      if (config.apiKeys.anthropic) return await callNanoAnthropic(systemPrompt, userPrompt, signal, maxTokens, anthropicModel);
-      if (config.apiKeys.openai) return await callNanoOpenAI(systemPrompt, userPrompt, signal, maxTokens, openaiModel, reasoning);
-      return null;
+      if (config.apiKeys.anthropic) return { p: 'anthropic', m: anthropicModel };
+      if (config.apiKeys.openai) return { p: 'openai', m: openaiModel };
+    } else if (provider === 'openai') {
+      if (config.apiKeys.openai) return { p: 'openai', m: openaiModel };
+      if (config.apiKeys.anthropic) return { p: 'anthropic', m: anthropicModel };
+    } else {
+      if (config.apiKeys.anthropic) return { p: 'anthropic', m: anthropicModel };
+      if (config.apiKeys.openai) return { p: 'openai', m: openaiModel };
     }
-    if (provider === 'openai') {
-      if (config.apiKeys.openai) return await callNanoOpenAI(systemPrompt, userPrompt, signal, maxTokens, openaiModel, reasoning);
-      if (config.apiKeys.anthropic) return await callNanoAnthropic(systemPrompt, userPrompt, signal, maxTokens, anthropicModel);
-      return null;
-    }
-    // No explicit preference — keep legacy behavior (Anthropic first)
-    if (config.apiKeys.anthropic) return await callNanoAnthropic(systemPrompt, userPrompt, signal, maxTokens, anthropicModel);
-    if (config.apiKeys.openai) return await callNanoOpenAI(systemPrompt, userPrompt, signal, maxTokens, openaiModel, reasoning);
     return null;
+  }
+
+  const picked = pickProviderAndModel();
+  if (!picked) return null;
+
+  const logId = await logLlmCallStart({
+    userId: userId || getLlmCallUserId(),
+    type: taskType || taskCategory || 'nano',
+    label: taskLabel || taskType || taskCategory || 'nano',
+    provider: picked.p,
+    model: picked.m,
+    request: { userPrompt },
+  });
+  const t0 = Date.now();
+
+  try {
+    const result = picked.p === 'anthropic'
+      ? await callNanoAnthropic(systemPrompt, userPrompt, signal, maxTokens, picked.m)
+      : await callNanoOpenAI(systemPrompt, userPrompt, signal, maxTokens, picked.m, reasoning);
+    await logLlmCallFinish(logId, { durationMs: Date.now() - t0, response: result });
+    return result;
   } catch (err) {
     if (err?.name === 'AbortError') {
       log.warn({ timeoutMs }, 'Nano memory call timed out');
+      await logLlmCallFail(logId, 'Timeout');
       return null;
     }
+    await logLlmCallFail(logId, err);
     throw err;
   } finally {
     if (timeoutHandle) clearTimeout(timeoutHandle);
@@ -191,6 +234,7 @@ MEMORY rules:
 - FACT: "Marta refused to reveal how she knows about Barbara" (blocked info still counts)
 - NOT A FACT: "People at the fire flinched" (atmosphere)
 - NOT A FACT: "Grimwald asked about Mazak" (player action without answer = nothing happened)
+- Importance: 'major' = plot-altering, character-defining, or quest-critical (survives eviction longest). 'minor' = useful flavor/context (evicted first when cap reached). Tag honestly — overflagging 'major' dilutes the signal.
 - Max 5 entries per scene. If nothing happened, return [].
 
 GM NOTES rules:
@@ -306,7 +350,7 @@ ${currentSummary.map((f, i) => `${i + 1}. ${factText(f)}`).join('\n') || '(empty
     // before JSON output AND we now emit more fields (memory + gmNotes +
     // hooks + world/codex/knowledge/needs). 1800 leaves headroom against
     // mid-JSON truncation.
-    const result = await callNano(RUNNING_SUMMARY_SYSTEM, userPrompt, provider, { timeoutMs, maxTokens: 1800, reasoning: true });
+    const result = await callNano(RUNNING_SUMMARY_SYSTEM, userPrompt, provider, { timeoutMs, maxTokens: 1800, reasoning: true, taskType: 'memory-compression', taskLabel: 'Scene memory compression' });
     if (!result) {
       log.warn({ campaignId, sceneIndex }, 'compressSceneToSummary: nano returned null');
       return null;
@@ -341,7 +385,7 @@ ${currentSummary.map((f, i) => `${i + 1}. ${factText(f)}`).join('\n') || '(empty
     }
 
     if (updated.length > 15) {
-      updated = updated.slice(-15);
+      updated = evictToLimit(updated, 15);
     }
     coreState.gameStateSummary = updated;
 
@@ -444,13 +488,14 @@ ${currentSummary.map((f, i) => `${i + 1}. ${factText(f)}`).join('\n') || '(empty
     }, 'compressSceneToSummary DONE');
 
     // Return extracted state for further processing (knowledge, codex,
-    // hearsay flips) by postSceneWork's phase 2 fan-out.
+    // hearsay flips, location digest) by postSceneWork's phase 2 fan-out.
     return {
       knowledgeUpdates: (knowledgeEventsList.length || knowledgeDecisionsList.length)
         ? { events: knowledgeEventsList, decisions: knowledgeDecisionsList }
         : null,
       codexUpdates: codexFragmentsList,
       mentionedLocations,
+      _majorMemoryText: majorMemory?.text?.trim() || null,
     };
   } catch (err) {
     log.error({ err }, 'Memory compression failed');
@@ -482,7 +527,7 @@ async function findExistingLocationRecord(campaignId, locationName) {
 
   const all = await prisma.campaignLocationSummary.findMany({
     where: { campaignId },
-    select: { id: true, locationName: true, summary: true, keyNpcs: true, unresolvedHooks: true, sceneCount: true, lastVisitScene: true },
+    select: { id: true, locationName: true, summary: true, keyNpcs: true, unresolvedHooks: true, sceneDigests: true, sceneCount: true, lastVisitScene: true },
   });
 
   let partialMatch = null;
@@ -556,7 +601,7 @@ ${scenesAtLocation.join('\n\n')}`;
 
     // Reasoning tier — location summary is synthesis + unresolved-thread
     // detection; async, no latency concern.
-    const result = await callNano(LOCATION_SUMMARY_SYSTEM, userPrompt, provider, { timeoutMs, maxTokens: 500, reasoning: true });
+    const result = await callNano(LOCATION_SUMMARY_SYSTEM, userPrompt, provider, { timeoutMs, maxTokens: 500, reasoning: true, taskType: 'location-summary', taskLabel: 'Location summary' });
     if (!result?.summary) return;
 
     const data = {
@@ -609,6 +654,58 @@ export async function getLocationSummary(campaignId, locationName) {
   if (hooks.length > 0) lines.push(`Unresolved: ${hooks.join('; ')}`);
 
   return lines.join('\n');
+}
+
+// ── LOCATION SCENE DIGESTS (ring buffer) ──
+
+const SCENE_DIGEST_MAX = 10;
+
+/**
+ * Append a one-line digest to the current location's CampaignLocationSummary.
+ * FIFO-capped at SCENE_DIGEST_MAX entries. Creates the summary row if it
+ * doesn't exist yet (location visited for the first time).
+ */
+export async function appendSceneDigest(campaignId, locationName, sceneIndex, digestText) {
+  if (!locationName || !digestText) return;
+  try {
+    const existing = await findExistingLocationRecord(campaignId, locationName);
+    const entry = { sceneNum: sceneIndex, text: digestText };
+
+    if (existing) {
+      const digests = Array.isArray(existing.sceneDigests) ? existing.sceneDigests : [];
+      digests.push(entry);
+      if (digests.length > SCENE_DIGEST_MAX) digests.splice(0, digests.length - SCENE_DIGEST_MAX);
+      await prisma.campaignLocationSummary.update({
+        where: { id: existing.id },
+        data: { sceneDigests: digests, lastVisitScene: sceneIndex },
+      });
+    } else {
+      await prisma.campaignLocationSummary.create({
+        data: {
+          campaignId,
+          locationName,
+          summary: '',
+          sceneDigests: [entry],
+          sceneCount: 1,
+          lastVisitScene: sceneIndex,
+        },
+      });
+    }
+  } catch (err) {
+    log.warn({ err: err?.message, campaignId, locationName }, 'appendSceneDigest failed (non-fatal)');
+  }
+}
+
+/**
+ * Fetch the scene digest ring buffer for a location. Returns an array of
+ * `{ sceneNum, text }` entries (most recent last), or null if none.
+ */
+export async function getLocationDigests(campaignId, locationName) {
+  if (!locationName) return null;
+  const rec = await findExistingLocationRecord(campaignId, locationName);
+  if (!rec) return null;
+  const digests = Array.isArray(rec.sceneDigests) ? rec.sceneDigests : [];
+  return digests.length > 0 ? digests : null;
 }
 
 // ── QUEST OBJECTIVE PROGRESS CHECK ──
@@ -723,7 +820,7 @@ ${objectiveLines}`;
     // Fast nano tier — quest check is semi-blocking (200-500ms budget before
     // final SSE event). Classification-shaped task; non-reasoner is the right
     // trade-off. Pre-filter (narrativeMentionsAnyQuest) guards against false positives.
-    const result = await callNano(QUEST_CHECK_SYSTEM, userPrompt, provider, { timeoutMs, maxTokens: 300, reasoning: false });
+    const result = await callNano(QUEST_CHECK_SYSTEM, userPrompt, provider, { timeoutMs, maxTokens: 300, reasoning: false, taskType: 'quest-check', taskLabel: 'Quest objective check' });
     if (!result?.updates?.length) return [];
 
     // Validate and normalize updates — only return valid ones matching known objectives

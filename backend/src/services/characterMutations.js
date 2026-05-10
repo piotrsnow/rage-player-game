@@ -16,10 +16,17 @@
  */
 
 import { slugifyItemName } from '../../../shared/domain/itemKeys.js';
+import { normalizeSpellMaterialIcon } from '../../../shared/domain/spellMaterialIcons.js';
+import { addEffect, removeEffect, removeEffectsByName, migrateStatusStrings, deriveStatusNames } from '../../../shared/domain/statusEffects.js';
+import { SKILL_BY_NAME, canonicalizeSkillName } from './diceResolver.js';
+import { sanitizeMana } from '../../../shared/domain/mana.js';
+import { childLogger } from '../lib/logger.js';
+
+const log = childLogger({ module: 'characterMutations' });
 
 // ── RPGon constants (mirrored from src/data/rpgSystem.js) ──
 
-const SKILL_CAPS = { basic: 10, max: 25 };
+const SKILL_CAPS = { basic: 15, max: 25 };
 const SKILL_XP_CONFIG = { base: 20, multiplier: 1.25 };
 
 function xpForSkillLevel(level) {
@@ -162,6 +169,19 @@ export function applyCharacterStateChanges(character, changes) {
   }
 
   // ── Mana ──
+  // Safeguard: gdy upstream przepuści NaN/Infinity/0 jako manaChange, traktuj
+  // jako zepsutą próbę regeneracji i normalizuj do +1. Wartości ujemne
+  // (legalne koszty zaklęć) zostają nietknięte. Klon `changes` żeby nie
+  // mutować wejścia — wywołujący traktują payload jako read-only.
+  if (changes.manaChange !== undefined && changes.manaChange !== null) {
+    if (!Number.isFinite(changes.manaChange) || changes.manaChange === 0) {
+      log.warn(
+        { original: changes.manaChange, stateChangeKeys: Object.keys(changes) },
+        '[safeguard] manaChange normalized to +1',
+      );
+      changes = { ...changes, manaChange: 1 };
+    }
+  }
   if (changes.manaChange !== undefined) {
     const mana = { ...(next.mana || { current: 0, max: 0 }) };
     mana.current = Math.max(0, Math.min(mana.max || 0, (mana.current || 0) + changes.manaChange));
@@ -179,7 +199,7 @@ export function applyCharacterStateChanges(character, changes) {
     for (const [key, amount] of Object.entries(changes.attributeChanges)) {
       attrs[key] = Math.max(1, (attrs[key] || 0) + amount);
     }
-    const newMaxWounds = calculateMaxWounds(attrs.wytrzymalosc || 10);
+    const newMaxWounds = calculateMaxWounds(attrs.wytrzymalosc || 10) + (next.bonusMaxWounds || 0);
     next.attributes = attrs;
     next.maxWounds = newMaxWounds;
     next.wounds = Math.min(next.wounds || 0, newMaxWounds);
@@ -189,11 +209,19 @@ export function applyCharacterStateChanges(character, changes) {
   if (changes.skillProgress) {
     const skills = { ...(next.skills || {}) };
     let charXpGained = 0;
+    const skillGains = [];
+    const newBadges = [];
 
-    for (const [skillName, xpGain] of Object.entries(changes.skillProgress)) {
+    for (const [rawSkillName, xpGain] of Object.entries(changes.skillProgress)) {
+      const skillName = canonicalizeSkillName(rawSkillName) || rawSkillName;
+      if (!SKILL_BY_NAME[skillName]) {
+        newBadges.push({ name: rawSkillName, earnedAt: new Date().toISOString(), redeemed: false });
+        continue;
+      }
       const current = skills[skillName] || { level: 0, xp: 0, cap: SKILL_CAPS.basic };
+      const oldLevel = current.level || 0;
       let newXp = (current.xp ?? current.progress ?? 0) + xpGain;
-      let newLevel = current.level || 0;
+      let newLevel = oldLevel;
       const cap = current.cap || SKILL_CAPS.basic;
 
       while (newLevel < cap) {
@@ -205,9 +233,11 @@ export function applyCharacterStateChanges(character, changes) {
       }
 
       skills[skillName] = { ...current, level: newLevel, xp: newXp, cap };
+      skillGains.push({ skillName, xpGained: xpGain, oldLevel, newLevel });
     }
 
     next.skills = skills;
+    next._skillGains = skillGains;
 
     if (charXpGained > 0) {
       let charXp = (next.characterXp || 0) + charXpGained;
@@ -221,6 +251,15 @@ export function applyCharacterStateChanges(character, changes) {
       next.characterLevel = charLevel;
       next.attributePoints = attrPoints;
     }
+
+    if (newBadges.length > 0) {
+      next.skillBadges = [...(next.skillBadges || []), ...newBadges];
+    }
+  }
+
+  // ── Skill Badges (unknown skills converted to collectible medals) ──
+  if (Array.isArray(changes.skillBadges) && changes.skillBadges.length > 0) {
+    next.skillBadges = [...(next.skillBadges || []), ...changes.skillBadges];
   }
 
   // ── Spells ──
@@ -236,6 +275,12 @@ export function applyCharacterStateChanges(character, changes) {
     const spells = { ...(next.spells || { known: [], usageCounts: {}, scrolls: [] }) };
     if (!(spells.known || []).includes(changes.learnSpell)) {
       spells.known = [...(spells.known || []), changes.learnSpell];
+    }
+    if (changes.learnSpellIcon) {
+      const icon = normalizeSpellMaterialIcon(changes.learnSpellIcon);
+      if (icon) {
+        spells.icons = { ...(spells.icons || {}), [changes.learnSpell]: icon };
+      }
     }
     next.spells = spells;
   }
@@ -319,9 +364,30 @@ export function applyCharacterStateChanges(character, changes) {
     });
   }
 
-  // ── Statuses (replace) ──
-  if (changes.statuses) {
-    next.statuses = changes.statuses;
+  // ── Active Effects (structured) ──
+  if (Array.isArray(changes.characterEffects) && changes.characterEffects.length > 0) {
+    let effects = [...(next.activeEffects || [])];
+    for (const cmd of changes.characterEffects) {
+      if (cmd.action === 'add' && cmd.effect) {
+        effects = addEffect(effects, cmd.effect);
+      } else if (cmd.action === 'remove' && cmd.effectId) {
+        effects = removeEffect(effects, cmd.effectId);
+      } else if (cmd.action === 'remove' && cmd.name) {
+        effects = removeEffectsByName(effects, cmd.name);
+      }
+    }
+    next.activeEffects = effects;
+    next.statuses = deriveStatusNames(effects);
+  }
+
+  // ── Statuses (legacy replace — backward compat) ──
+  if (changes.statuses && !changes.characterEffects) {
+    if (Array.isArray(changes.statuses) && changes.statuses.every((s) => typeof s === 'string')) {
+      next.activeEffects = migrateStatusStrings(changes.statuses);
+      next.statuses = changes.statuses;
+    } else {
+      next.statuses = changes.statuses;
+    }
   }
 
   // ── Needs (deltas, clamped 0..100) ──
@@ -343,6 +409,8 @@ export function applyCharacterStateChanges(character, changes) {
     }
     next.equipped = equipped;
   }
+
+  if (next.mana) next.mana = sanitizeMana(next.mana);
 
   return next;
 }

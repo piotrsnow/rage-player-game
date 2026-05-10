@@ -4,10 +4,11 @@ import { useSettings } from '../../contexts/SettingsContext';
 import { aiService } from '../../services/ai';
 import { parsePartialJson } from '../../services/partialJsonParser';
 import { resolveVoiceForCharacter } from '../../services/characterVoiceResolver';
+import { devLog } from '../../stores/devEventLogStore';
 
 export function useSceneBackendStream() {
   const { state, dispatch } = useGame();
-  const { settings, voicePools } = useSettings();
+  const { settings, voicePools, loadBackendUser, resolveTaskModel } = useSettings();
 
   const earlyDiceRollEmittedRef = useRef(false);
   const streamedDiceRollCountRef = useRef(0);
@@ -18,6 +19,7 @@ export function useSceneBackendStream() {
   const [earlyDiceRoll, setEarlyDiceRoll] = useState(null);
   const [streamingNarrative, setStreamingNarrative] = useState(null);
   const [streamingSegments, setStreamingSegments] = useState(null);
+  const [streamComplete, setStreamComplete] = useState(false);
 
   const resetStreamState = useCallback(() => {
     setEarlyDiceRoll(null);
@@ -27,11 +29,13 @@ export function useSceneBackendStream() {
     dispatchedRollSkillsRef.current = new Set();
     rollMessageCounterRef.current = 0;
     setStreamingSegments(null);
+    setStreamComplete(false);
   }, []);
 
   const clearStreamingOutput = useCallback(() => {
     setStreamingNarrative(null);
     setStreamingSegments(null);
+    setStreamComplete(false);
   }, []);
 
   const clearEarlyDiceRoll = useCallback(() => setEarlyDiceRoll(null), []);
@@ -63,12 +67,14 @@ export function useSceneBackendStream() {
     fromAutoPlayer,
     combatResult = null,
     forceRoll = null,
+    entityTags = null,
+    travelFailureReason = null,
   }) => {
     let rawAccumulated = '';
 
     const backendResult = await aiService.generateSceneViaBackendStream(backendCampaignId, playerAction, {
       provider: settings.aiProvider,
-      model: settings.aiModel || null,
+      model: resolveTaskModel('sceneGeneration'),
       language: settings.language,
       dmSettings: settings.dmSettings,
       resolvedMechanics: resolved,
@@ -81,10 +87,13 @@ export function useSceneBackendStream() {
       gameState: state,
       combatResult,
       forceRoll,
+      entityTags,
+      travelFailureReason,
       achievementState: state.achievements || null,
       onEvent: (event) => {
         if (event.type === 'intent') {
           console.log('[useAI] Stream intent:', event.data?.intent);
+          devLog.emit({ category: 'ai', type: 'intent_classified', label: `Intent: ${event.data?.intent || 'freeform'}`, data: { intent: event.data?.intent, travelTarget: event.data?.travelTarget } });
         } else if (event.type === 'retry') {
           // Backend caught a suspicious location change and is regenerating
           // the scene silently (no new chunk events will arrive). Drop the
@@ -92,16 +101,24 @@ export function useSceneBackendStream() {
           // text from the discarded first attempt; the final scene lands via
           // the 'complete' event below.
           console.log('[useAI] Stream retry:', event.reason);
+          devLog.emit({ category: 'ai', type: 'stream_retry', label: `Retry: ${event.reason}`, severity: 'warn', data: { reason: event.reason } });
           rawAccumulated = '';
           streamedDiceRollCountRef.current = 0;
           streamedNpcsIntroducedCountRef.current = 0;
           setStreamingNarrative(null);
           setStreamingSegments(null);
+          setStreamComplete(false);
         } else if (event.type === 'dice_early' && event.data?.diceRoll) {
           const roll = event.data.diceRoll;
+          devLog.emit({ category: 'mechanics', type: 'dice_early', label: `Dice: ${roll.skill || '?'} d50=${roll.roll} → ${roll.success ? 'SUCCESS' : 'FAIL'} (margin ${roll.margin})`, data: roll });
           setEarlyDiceRoll(roll);
           earlyDiceRollEmittedRef.current = true;
           dispatchDiceRollMessage(roll);
+        } else if (event.type === 'context_ready') {
+          devLog.emit({ category: 'ai', type: 'context_ready', label: 'Context assembly complete' });
+        } else if (event.type === 'complete') {
+          devLog.emit({ category: 'pipeline', type: 'sse_complete', label: 'SSE complete event received' });
+          setStreamComplete(true);
         } else if (event.type === 'chunk' && event.text) {
           rawAccumulated += event.text;
           const parsed = parsePartialJson(rawAccumulated);
@@ -162,8 +179,10 @@ export function useSceneBackendStream() {
       },
     });
 
+    loadBackendUser().catch(() => {});
+
     return backendResult;
-  }, [state, settings, dispatch, dispatchDiceRollMessage]);
+  }, [state, settings, dispatch, dispatchDiceRollMessage, loadBackendUser, resolveTaskModel]);
 
   const processServerDiceRolls = useCallback((result, resolved) => {
     const serverDiceRolls = Array.isArray(result.diceRolls) ? result.diceRolls
@@ -194,5 +213,6 @@ export function useSceneBackendStream() {
     clearEarlyDiceRoll,
     streamingNarrative,
     streamingSegments,
+    streamComplete,
   };
 }

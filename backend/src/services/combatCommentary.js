@@ -99,6 +99,8 @@ export async function generateCombatCommentary({
     maxTokens: 700,
     temperature: 0.8,
     userApiKeys,
+    taskType: 'combat-commentary',
+    taskLabel: 'Combat commentary',
   });
 
   const parsed = parseJsonOrNull(text);

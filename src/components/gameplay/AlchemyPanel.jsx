@@ -3,6 +3,9 @@ import { useTranslation } from 'react-i18next';
 import { getAvailableRecipes, resolveAlchemy, ALCHEMY_TIERS } from '../../services/alchemyEngine.js';
 import { getSkillLevel } from '../../data/rpgSystem.js';
 import { gameData } from '../../services/gameDataService.js';
+import { generateStateChangeMessages } from '../../services/stateChangeMessages.js';
+import { getGameState } from '../../stores/gameStore.js';
+import { shortId } from '../../utils/ids.js';
 
 const DIFFICULTY_COLORS = {
   easy: 'text-success',
@@ -28,13 +31,30 @@ export default function AlchemyPanel({ character, dispatch, disabled }) {
   const handleBrew = useCallback((recipe) => {
     if (!recipe.canCraft || disabled) return;
 
+    const preState = getGameState();
     const result = resolveAlchemy(character, recipe, 0);
     setLastResult(result);
 
     if (result.stateChanges) {
       dispatch({ type: 'APPLY_STATE_CHANGES', payload: result.stateChanges });
+      const messages = generateStateChangeMessages(result.stateChanges, preState, t);
+      for (const msg of messages) {
+        dispatch({ type: 'ADD_CHAT_MESSAGE', payload: msg });
+      }
+      if (result.tier === ALCHEMY_TIERS.CRITICAL_FAILURE) {
+        dispatch({
+          type: 'ADD_CHAT_MESSAGE',
+          payload: {
+            id: `msg_${Date.now()}_alch_fail_${shortId(3)}`,
+            role: 'system',
+            subtype: 'alchemy_failed',
+            content: t('system.alchemyFailed'),
+            timestamp: Date.now(),
+          },
+        });
+      }
     }
-  }, [character, disabled, dispatch]);
+  }, [character, disabled, dispatch, t]);
 
   const handleClose = useCallback(() => {
     dispatch({ type: 'END_ALCHEMY' });

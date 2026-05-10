@@ -54,6 +54,75 @@ const SKILLS = [
 
 export const SKILL_BY_NAME = Object.fromEntries(SKILLS.map(s => [s.name, s]));
 
+// Fuzzy lookup: strip diacritics + lowercase + collapse whitespace → canonical name.
+const SKILL_CANONICAL_MAP = new Map();
+function stripToKey(str) {
+  return String(str || '')
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .replace(/\u0142/g, 'l').replace(/\u0141/g, 'L')
+    .trim().toLowerCase().replace(/[\s_-]+/g, ' ');
+}
+for (const s of SKILLS) {
+  SKILL_CANONICAL_MAP.set(stripToKey(s.name), s.name);
+}
+
+/**
+ * Resolve an AI-returned skill name (possibly with diacritics / different casing)
+ * to the canonical ASCII key used in SKILL_BY_NAME and character.skills.
+ * Returns the canonical name or null if no match.
+ */
+export function canonicalizeSkillName(raw) {
+  if (!raw || typeof raw !== 'string') return null;
+  if (SKILL_BY_NAME[raw]) return raw;
+  return SKILL_CANONICAL_MAP.get(stripToKey(raw)) || null;
+}
+
+const SKILLS_BY_ATTRIBUTE = {};
+for (const s of SKILLS) {
+  (SKILLS_BY_ATTRIBUTE[s.attribute] ??= []).push(s.name);
+}
+
+// Action-text → attribute heuristics (mirrors src/services/mechanics/skillCheck.js ACTION_PATTERNS).
+const FORCE_ROLL_PATTERNS = [
+  { re: /\b(?:atak(?:uj[eę]?|ować)?|uderz(?:am|ać|yć)?|tn(?:ij|ę)|walcz(?:[eę]|yć)?|łam(?:ię|ać)?|podnos[zię]|dźwig(?:am|ać)?|pcham|forsuj[eę]?|attack|hit|strike|slash|stab|punch|kick|fight|swing|cleave|parry|block|force|lift|push|pull|break\s*(?:down|open)|smash|carry)\b/iu, attribute: 'sila' },
+  { re: /\b(?:strzel(?:am|ać)?|celuj[eę]?|skrad(?:am|ać)|chow(?:am|ać)|ukryw(?:am|ać)|przemyk(?:am|ać)?|unikai?(?:m|ć)|skacz[eę]?|biegnę|sprint|sneak|hide|stealth|dodge|evade|climb|jump|sprint|run|acrobat|tumble|leap|shoot|fire|aim|lockpick|pick\s*(?:lock|pocket)|sleight)\b/iu, attribute: 'zrecznosc' },
+  { re: /\b(?:mów(?:ię|ić)?|powiedz|rozmawiam|przekonuj[eę]?|negocjuj[eę]?|targuj[eę]?|kłam(?:ię|ać)?|blefuj[eę]?|pytam|prosz[eę]?|flirtuj[eę]?|zastrasz(?:am|ać)?|say|tell|talk|speak|persuade|convince|negotiate|bargain|haggle|bluff|lie|charm|flirt|intimidate|gossip|command|order)\b/iu, attribute: 'charyzma' },
+  { re: /\b(?:szuk(?:am|ać)|badam|przeszuk(?:uj[eę]?|iwać)?|obserwuj[eę]?|analizuj[eę]?|czyt(?:am|ać)|rozpozn(?:aję|ać)?|search|look|examine|investigate|inspect|read|study|analyze|identify|perceive|notice|spot|recall|research|decipher)\b/iu, attribute: 'inteligencja' },
+  { re: /\b(?:wytrzym(?:uj[eę]?|ać)?|znos[zię]|opier(?:am|ać)|przetrwa(?:ć|m)?|endure|resist|withstand|tough(?:en)?|brace|survive|swim|march)\b/iu, attribute: 'wytrzymalosc' },
+  { re: /\b(?:rzuc(?:am)?\s*(?:zaklęcie|czar)|cast\s*spell|channel|meditat|invoke|dispel)\b/iu, attribute: 'inteligencja' },
+];
+
+const FALLBACK_FORCED_SKILL = 'Przeczucie';
+
+/**
+ * Pick the best skill for a forced roll. Priority:
+ *   1. Action-text heuristic → character's highest skill for that attribute
+ *   2. First canonical skill for the matched attribute (character has none trained)
+ *   3. Przeczucie (unclassifiable text — player wants a roll anyway)
+ */
+export function inferForcedRollSkill(playerAction, character) {
+  if (typeof playerAction !== 'string' || !playerAction.trim()) return FALLBACK_FORCED_SKILL;
+
+  const text = playerAction.trim();
+  let attribute = null;
+  for (const p of FORCE_ROLL_PATTERNS) {
+    if (p.re.test(text)) { attribute = p.attribute; break; }
+  }
+
+  if (attribute) {
+    const candidates = SKILLS_BY_ATTRIBUTE[attribute] || [];
+    let bestSkill = null;
+    let bestLevel = -1;
+    for (const name of candidates) {
+      const level = getSkillLevel(character, name);
+      if (level > bestLevel) { bestSkill = name; bestLevel = level; }
+    }
+    return bestSkill || candidates[0] || FALLBACK_FORCED_SKILL;
+  }
+
+  return FALLBACK_FORCED_SKILL;
+}
+
 // ── HELPERS ──
 
 export function rollD50() {
@@ -84,7 +153,24 @@ export function getSkillLevel(character, skillName) {
  * Core dice resolution with explicit d50 and luckySuccess values.
  * Used by both nano-resolved and model-resolved paths.
  */
-export function resolveBackendDiceRollWithPreRoll(character, skillName, difficulty, preD50, luckySuccess, creativityBonus = 0) {
+const MODIFIER_VALUE_MIN = -10;
+const MODIFIER_VALUE_MAX = 15;
+const MODIFIER_SUM_MIN = -15;
+const MODIFIER_SUM_MAX = 20;
+const MODIFIER_MAX_COUNT = 4;
+
+function sanitizeModifiers(rawModifiers) {
+  if (!Array.isArray(rawModifiers) || rawModifiers.length === 0) return [];
+  const capped = rawModifiers.slice(0, MODIFIER_MAX_COUNT);
+  return capped
+    .filter(m => m && typeof m.reason === 'string' && typeof m.value === 'number')
+    .map(m => ({
+      reason: m.reason.slice(0, 40),
+      value: clamp(Math.trunc(m.value), MODIFIER_VALUE_MIN, MODIFIER_VALUE_MAX),
+    }));
+}
+
+export function resolveBackendDiceRollWithPreRoll(character, skillName, difficulty, preD50, luckySuccess, creativityBonus = 0, rawModifiers = []) {
   if (!character?.attributes) return null;
 
   const skillDef = SKILL_BY_NAME[skillName];
@@ -97,10 +183,22 @@ export function resolveBackendDiceRollWithPreRoll(character, skillName, difficul
   const clampedCreativity = clamp(Number(creativityBonus) || 0, 0, CREATIVITY_BONUS_MAX);
 
   const difficultyKey = difficulty || 'medium';
-  const threshold = DIFFICULTY_THRESHOLDS[difficultyKey] || DIFFICULTY_THRESHOLDS.medium;
+  const baseThreshold = DIFFICULTY_THRESHOLDS[difficultyKey] || DIFFICULTY_THRESHOLDS.medium;
+
+  const modifiers = sanitizeModifiers(rawModifiers);
+  const modifierSum = clamp(
+    modifiers.reduce((sum, m) => sum + m.value, 0),
+    MODIFIER_SUM_MIN,
+    MODIFIER_SUM_MAX,
+  );
+  const finalThreshold = baseThreshold + modifierSum;
+
+  const thresholdBreakdown = modifiers.length > 0
+    ? { base: baseThreshold, modifiers, final: finalThreshold }
+    : undefined;
 
   const total = preD50 + attributeValue + skillLevel + momentum + clampedCreativity;
-  const margin = total - threshold;
+  const margin = total - finalThreshold;
   const success = luckySuccess || margin >= 0;
 
   return {
@@ -110,7 +208,7 @@ export function resolveBackendDiceRollWithPreRoll(character, skillName, difficul
     skill: skillName,
     skillLevel,
     difficulty: difficultyKey,
-    threshold,
+    threshold: finalThreshold,
     creativityBonus: clampedCreativity,
     momentumBonus: momentum,
     dispositionBonus: 0,
@@ -119,6 +217,7 @@ export function resolveBackendDiceRollWithPreRoll(character, skillName, difficul
     margin,
     success,
     luckySuccess,
+    ...(thresholdBreakdown && { thresholdBreakdown }),
   };
 }
 
@@ -161,10 +260,17 @@ export function formatResolvedCheck(diceRoll) {
     : diceRoll.success ? (diceRoll.margin >= 15 ? 'GREAT SUCCESS' : 'SUCCESS')
       : (diceRoll.margin <= -15 ? 'HARD FAILURE' : 'FAILURE');
 
+  let thresholdLine = `Threshold: ${diceRoll.threshold} (${diceRoll.difficulty})`;
+  if (diceRoll.thresholdBreakdown) {
+    const tb = diceRoll.thresholdBreakdown;
+    const modParts = tb.modifiers.map(m => `${m.value >= 0 ? '+' : ''}${m.value} ${m.reason}`);
+    thresholdLine = `Threshold: ${tb.base} (${diceRoll.difficulty}) ${modParts.join(' ')} = ${tb.final}`;
+  }
+
   const parts = [
     `Skill: ${diceRoll.skill || 'untrained'} (${diceRoll.attribute?.toUpperCase() || '?'})`,
     `Roll: d50=${diceRoll.roll} + attr=${diceRoll.attributeValue} + skill=${diceRoll.skillLevel} + momentum=${diceRoll.momentumBonus} = ${diceRoll.total}`,
-    `Threshold: ${diceRoll.threshold} (${diceRoll.difficulty})`,
+    thresholdLine,
     `Result: ${outcome} (margin ${diceRoll.margin >= 0 ? '+' : ''}${diceRoll.margin})`,
   ];
 

@@ -46,8 +46,13 @@ export function checkWorldConsistency(gameState, previousFactions = null) {
   }
 
   // --- NPC-Location validation ---
+  // Faza 3c — jeśli NPC ma composite locationRef, traktuj jako valid (graf jest
+  // jedynym źródłem prawdy; mapState validation ma znaczenie tylko dla legacy
+  // string-based NPCs). Po Fazie 4 walidacja przejdzie na graphService.nodeExists.
   for (const npc of npcs) {
-    if (!npc.alive || !npc.lastLocation) continue;
+    if (!npc.alive) continue;
+    if (npc.locationRef && npc.locationRef.kind && npc.locationRef.id) continue;
+    if (!npc.lastLocation) continue;
     if (locationNames.size > 0 && !locationNames.has(npc.lastLocation.toLowerCase())) {
       warnings.push(
         `NPC "${npc.name}" is at "${npc.lastLocation}" which is not in the known map locations`

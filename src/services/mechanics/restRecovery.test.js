@@ -64,4 +64,37 @@ describe('calculateRestRecovery', () => {
     const result = calculateRestRecovery(char, -1);
     expect(result).not.toBeNull();
   });
+
+  it('restores mana delta to max pool when partially depleted', () => {
+    const char = {
+      wounds: 10,
+      maxWounds: 10,
+      needs: {},
+      mana: { current: 3, max: 10 },
+    };
+    const result = calculateRestRecovery(char, 8);
+    expect(result.manaChange).toBe(7);
+  });
+
+  it('omits manaChange when mana already full', () => {
+    const char = {
+      wounds: 10,
+      maxWounds: 10,
+      needs: {},
+      mana: { current: 10, max: 10 },
+    };
+    const result = calculateRestRecovery(char, 8);
+    expect(result.manaChange).toBeUndefined();
+  });
+
+  it('omits manaChange when max mana is 0', () => {
+    const char = {
+      wounds: 10,
+      maxWounds: 10,
+      needs: {},
+      mana: { current: 0, max: 0 },
+    };
+    const result = calculateRestRecovery(char, 8);
+    expect(result.manaChange).toBeUndefined();
+  });
 });

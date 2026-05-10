@@ -35,12 +35,16 @@ import { internalRoutes } from './routes/internal.js';
 import { livingWorldRoutes } from './routes/livingWorld.js';
 import { adminLivingWorldRoutes } from './routes/adminLivingWorld.js';
 import { adminUserRoutes } from './routes/adminUsers.js';
+import { adminBillingRoutes } from './routes/adminBilling.js';
+import { adminCampaignRoutes } from './routes/adminCampaigns.js';
 import { creditsRoutes, creditsWebhookRoute } from './routes/credits.js';
 import { playgroundRoutes } from './routes/playground.js';
 import { topicHistoryRoutes } from './routes/topicHistory.js';
 import { voiceSettingsRoutes } from './routes/voiceSettings.js';
 import { sceneModelConfigRoutes } from './routes/sceneModelConfig.js';
+import { fontConfigRoutes } from './routes/fontConfig.js';
 import { mapStudioRoutes } from './routes/mapStudio/index.js';
+import { combatSpritesRoutes } from './routes/combatSprites.js';
 import { seedWorld } from './scripts/seedWorld.js';
 import {
   startRoomCleanup,
@@ -207,6 +211,14 @@ await fastify.register(async function sceneModelConfigScope(app) {
   app.register(sceneModelConfigRoutes);
 }, { prefix: '/v1/scene-model-config' });
 
+// Font config — global font selection. GET is auth-only, PUT is admin-only.
+await fastify.register(async function fontConfigScope(app) {
+  app.addHook('onRoute', (routeOptions) => {
+    routeOptions.config = { ...routeOptions.config, rateLimit: { max: 30, timeWindow: '1 minute' } };
+  });
+  app.register(fontConfigRoutes);
+}, { prefix: '/v1/font-config' });
+
 // Living World (Phase 2) — companion CAS, C2 dialog. Auth-gated, rate-limited like data routes.
 await fastify.register(async function livingWorldScope(app) {
   app.addHook('onRoute', (routeOptions) => {
@@ -214,6 +226,14 @@ await fastify.register(async function livingWorldScope(app) {
   });
   app.register(livingWorldRoutes);
 }, { prefix: '/v1/livingWorld' });
+
+// Combat sprites — PixelLab pixel-art generation for combat tokens.
+await fastify.register(async function combatSpritesScope(app) {
+  app.addHook('onRoute', (routeOptions) => {
+    routeOptions.config = { ...routeOptions.config, rateLimit: { max: 10, timeWindow: '1 minute' } };
+  });
+  app.register(combatSpritesRoutes);
+}, { prefix: '/v1/combat/sprites' });
 
 // Phase 6 — admin observability + moderation routes. Gated on User.isAdmin
 // via requireAdmin plugin. Default rate is 60/min — read-heavy, but tick
@@ -240,6 +260,30 @@ await fastify.register(async (app) => {
   });
   app.register(adminUserRoutes);
 }, { prefix: '/v1/admin/users' });
+
+// Admin billing — billing toggle + fake top-up for dev/testing.
+await fastify.register(async (app) => {
+  app.addHook('onRoute', (routeOptions) => {
+    routeOptions.config = {
+      ...routeOptions.config,
+      rateLimit: routeOptions.config?.rateLimit || { max: 30, timeWindow: '1 minute' },
+    };
+  });
+  app.register(adminBillingRoutes);
+}, { prefix: '/v1/admin/billing' });
+
+// Admin campaign editor — full CRUD over a campaign's saved world (quests,
+// NPCs, locations, characters, scenes) with auto-snapshot before each
+// mutation and a consistency validator. Same admin gate as the others.
+await fastify.register(async (app) => {
+  app.addHook('onRoute', (routeOptions) => {
+    routeOptions.config = {
+      ...routeOptions.config,
+      rateLimit: routeOptions.config?.rateLimit || { max: 60, timeWindow: '1 minute' },
+    };
+  });
+  app.register(adminCampaignRoutes);
+}, { prefix: '/v1/admin/campaigns' });
 
 // Credits — authed routes for balance + Stripe checkout
 await fastify.register(async (app) => {
@@ -323,9 +367,7 @@ seedWorld().catch((err) => {
 //   2. Persist every active room to DB (so players can reconnect after deploy)
 //   3. Close WebSocket sockets cleanly so clients see a graceful close frame
 //   4. Let Fastify drain in-flight HTTP requests via fastify.close()
-//   5. Disconnect Prisma
-// prisma.js also registers SIGTERM/SIGINT handlers for disconnect, but those
-// run independently — double-disconnect is a no-op.
+//   5. Disconnect Prisma (after drain — see prisma.$disconnect below)
 
 const SHUTDOWN_DRAIN_TIMEOUT_MS = 10_000;
 let shuttingDown = false;
@@ -363,6 +405,13 @@ async function gracefulShutdown(signal) {
     fastify.log.info('[shutdown] fastify closed');
   } catch (err) {
     fastify.log.error({ err }, '[shutdown] fastify close failed');
+  }
+
+  try {
+    await prisma.$disconnect();
+    fastify.log.info('[shutdown] prisma disconnected');
+  } catch (err) {
+    fastify.log.warn({ err }, '[shutdown] prisma disconnect failed');
   }
 
   clearTimeout(forceExit);

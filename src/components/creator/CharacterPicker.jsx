@@ -14,6 +14,7 @@ import {
   clearExclusiveReadAloudAudio,
   isExclusiveReadAloudOwner,
   setExclusiveReadAloudAudio,
+  silencePeerDialogAudio,
   subscribeExclusiveReadAloud,
 } from '../../utils/readAloudExclusive';
 
@@ -39,6 +40,7 @@ function ReadAloudButton({ text, lang = 'pl' }) {
       const mine = lastAttemptRef.current;
       if (mine == null) return;
       if (isExclusiveReadAloudOwner(mine)) return;
+      try { audioRef.current?.pause(); } catch { /* ignore */ }
       lastAttemptRef.current = null;
       audioRef.current = null;
       if (mountedRef.current) setState('idle');
@@ -46,9 +48,10 @@ function ReadAloudButton({ text, lang = 'pl' }) {
   }, []);
 
   const stop = useCallback(() => {
+    try { audioRef.current?.pause(); } catch { /* ignore */ }
     lastAttemptRef.current = null;
     audioRef.current = null;
-    claimExclusiveReadAloud();
+    silencePeerDialogAudio();
     if (mountedRef.current) setState('idle');
   }, []);
 

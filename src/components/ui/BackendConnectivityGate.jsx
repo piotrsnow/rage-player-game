@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSettings } from '../../contexts/SettingsContext';
+import BootLog from './BootLog';
 import SpinningDice from './SpinningDice';
 
 const RETRY_DELAY_MS = 5000;
@@ -69,18 +70,28 @@ export default function BackendConnectivityGate({ children }) {
 
   return (
     <div
-      className="fixed inset-0 z-[9999] flex items-center justify-center bg-surface-dim"
+      className="fixed inset-0 z-[9999] flex flex-col items-center justify-center bg-surface-dim gap-6"
       role="alertdialog"
       aria-modal="true"
       aria-live="polite"
       aria-busy="true"
     >
-      <div className="flex flex-col items-center gap-3">
-        <SpinningDice />
+      <div className="rounded-2xl bg-[rgba(34,34,38,0.7)] backdrop-blur-xl border border-[rgba(197,154,255,0.15)] px-12 py-10 animate-pulse-subtle">
+        <img
+          src="/nikczemnu_logo.png"
+          alt="Nikczemny Krzemuch"
+          className="h-48 w-auto drop-shadow-[0_4px_24px_rgba(197,154,255,0.25)]"
+        />
+      </div>
+
+      <div className="flex items-center gap-4">
+        <SpinningDice size={64} />
         <p className="text-on-surface-variant text-xs uppercase tracking-widest font-label animate-shimmer">
           {spinnerLabel}
         </p>
       </div>
+
+      <BootLog done={status === 'ready'} />
     </div>
   );
 }

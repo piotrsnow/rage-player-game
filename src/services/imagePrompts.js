@@ -1,3 +1,15 @@
+export const QUALITY_SD_PARAMS = {
+  speed: { steps: 6, cfg: 2 },
+  balanced: { steps: 20, cfg: 5 },
+  quality: { steps: 35, cfg: 7 },
+};
+
+export const RESOLUTION_PRESETS = {
+  low: 0.5,
+  base: 1.0,
+  high: 1.5,
+};
+
 // Cloud providers (DALL-E, Gemini, Stability, gpt-image) have content policies
 // that reject or silently desaturate prompts containing gore / drugs / explicit
 // violence, so we strip those defensively — losing a grim-dark adjective is
@@ -67,7 +79,7 @@ export const SD_MODEL_PRESETS = {
     steps: 30,
     cfg: 6,
     width: 1344,
-    height: 768,
+    height: 512,
     portraitWidth: 832,
     portraitHeight: 1216,
     negative: 'low quality, blurry, pixelated, distorted, extra limbs, watermark, text, deformed hands, illustration, cartoon, anime, sketch',
@@ -77,7 +89,7 @@ export const SD_MODEL_PRESETS = {
     steps: 45,
     cfg: 3.6,
     width: 1344,
-    height: 768,
+    height: 512,
     portraitWidth: 832,
     portraitHeight: 1216,
     negative: 'low quality, worst quality, blurry, bad anatomy, extra limbs, deformed hands, watermark, text, photorealistic, 3d render, realistic photo, overexposed, noisy, oversaturated',
@@ -87,7 +99,7 @@ export const SD_MODEL_PRESETS = {
     steps: 35,
     cfg: 5.5,
     width: 1344,
-    height: 768,
+    height: 512,
     portraitWidth: 832,
     portraitHeight: 1216,
     negative: 'low quality, blurry, pixelated, distorted, extra limbs, watermark, text, deformed hands, photograph, photorealistic, 3d render, cartoon, anime, flat colors, digital art, smooth plastic shading',
@@ -97,7 +109,7 @@ export const SD_MODEL_PRESETS = {
     steps: 28,
     cfg: 6,
     width: 1344,
-    height: 768,
+    height: 512,
     portraitWidth: 832,
     portraitHeight: 1216,
     negative: 'low quality, worst quality, jpeg artifacts, blurry, bad anatomy, extra limbs, deformed hands, watermark, text, photorealistic, 3d render, realistic photo, oversaturated, noise',
@@ -107,7 +119,7 @@ export const SD_MODEL_PRESETS = {
     steps: 30,
     cfg: 5,
     width: 1344,
-    height: 768,
+    height: 512,
     portraitWidth: 832,
     portraitHeight: 1216,
     negative: 'low quality, worst quality, blurry, distorted, bad anatomy, extra limbs, deformed hands, watermark, text, oversaturated, jpeg artifacts',
@@ -141,94 +153,110 @@ export function getModelPreset(modelTitle) {
 // providers (DALL-E, Gemini, Stability, gpt-image) whose safety/instruction
 // layers actually read the English description.
 //
-// `sdTag` is the compact (≤6-word) style tail used ONLY by the sd-webui branch.
-// SDXL's CLIP encoder loses focus past ~75 tokens, so stuffing the whole
-// natural-language prompt in front of the scene was making the model hallucinate
-// architecture/props from the style scaffolding instead of drawing the scene.
-// The compact tail sits at the very END of the SD prompt; the scene leads.
+// `sdTag` is the style tail used ONLY by the sd-webui branch. It sits at the
+// END of the SD prompt so the scene subject leads. Kept under ~10 tokens —
+// enough for SDXL CLIP to parse without drowning the scene content.
+//
+// `sdNeg` is extra negative prompt merged only for this style on sd-webui.
+// The model-preset negative (deformed hands, blurry, etc.) is always applied
+// on top, so sdNeg only needs style-specific exclusions.
 const IMAGE_STYLE_PROMPTS = {
   illustration: {
     prompt: 'digital illustration, clean defined linework, vibrant saturated colors, fantasy book illustration, detailed ink-and-color art style',
     portrait: 'detailed character illustration, clean linework, vibrant colors, fantasy book art style',
-    sdTag: 'illustration, bold lines, vibrant',
+    sdTag: 'digital illustration, bold linework, vibrant flat colors, fantasy art',
+    sdNeg: 'photograph, photorealistic, 3d render, oil painting, soft focus',
     negative: 'photograph, photorealistic, 3d render, blurry',
   },
   pencil: {
     prompt: 'pencil sketch on textured paper, graphite drawing, expressive crosshatching, delicate shading, monochrome pencil art, hand-drawn feel',
     portrait: 'graphite pencil portrait, crosshatching, paper texture, monochrome sketch, detailed shading',
-    sdTag: 'pencil sketch, crosshatch, monochrome',
+    sdTag: 'graphite pencil drawing, crosshatching, paper texture, monochrome',
+    sdNeg: 'color, colorful, painting, photograph, digital art, saturated',
     negative: 'color, photograph, photorealistic, digital art, painting',
   },
   noir: {
     prompt: 'film noir style, stark high-contrast black and white, dramatic deep shadows, chiaroscuro lighting, 1940s hard-boiled detective aesthetic, venetian blind light',
     portrait: 'film noir portrait, high contrast black and white, dramatic shadow across face, chiaroscuro, smoky atmosphere',
-    sdTag: 'film noir, high contrast, b&w',
+    sdTag: 'film noir, high contrast black and white, dramatic shadows, chiaroscuro',
+    sdNeg: 'color, colorful, bright, cheerful, cartoon, anime, saturated',
     negative: 'color, bright, cheerful, cartoon, anime',
   },
   anime: {
     prompt: 'anime art style, cel-shaded, vivid colors, expressive eyes, dynamic composition, detailed anime background, Studio Ghibli quality',
     portrait: 'anime character portrait, cel-shaded, large expressive eyes, vivid colors, clean lines, detailed anime style',
-    sdTag: 'anime style, cel-shaded, vivid',
+    sdTag: 'anime artwork, cel shading, clean lines, vivid colors, detailed',
+    sdNeg: 'photorealistic, photograph, 3d render, western cartoon, realistic skin texture',
     negative: 'photorealistic, photograph, 3d render, western cartoon',
   },
   painting: {
     prompt: 'classical oil painting, rich impasto brushstrokes, chiaroscuro, deep warm palette, canvas texture visible',
     portrait: 'oil painting portrait, rich brushwork, warm candlelight, Renaissance master style, deep colors, visible canvas texture',
-    sdTag: 'oil painting, impasto, painterly',
+    sdTag: 'oil painting, visible brushstrokes, impasto, rich warm palette, canvas texture',
+    sdNeg: 'photograph, digital art, cartoon, anime, sketch, flat colors, smooth shading',
     negative: 'photograph, digital art, cartoon, anime, sketch, flat colors',
   },
   watercolor: {
     prompt: 'delicate watercolor painting, soft translucent washes, wet-on-wet bleeding edges, visible paper grain, gentle pastel palette, impressionistic atmosphere',
     portrait: 'watercolor portrait, soft translucent washes, bleeding edges, visible paper texture, pastel tones, impressionistic',
-    sdTag: 'watercolor, soft washes, paper grain',
+    sdTag: 'watercolor painting, soft washes, wet on wet, paper texture, translucent',
+    sdNeg: 'photograph, photorealistic, digital art, sharp hard edges, anime, oil painting',
     negative: 'photograph, photorealistic, digital art, sharp lines, anime',
   },
   comic: {
     prompt: 'comic book art style, bold black outlines, flat cel colors, halftone dot shading, dynamic panel composition, action-packed graphic novel aesthetic',
     portrait: 'comic book character portrait, bold ink outlines, flat cel colors, halftone shading, dynamic superhero comic style',
-    sdTag: 'comic style, bold outlines, halftone',
+    sdTag: 'comic book art, bold ink outlines, flat cel colors, halftone dots',
+    sdNeg: 'photorealistic, photograph, watercolor, oil painting, soft shading, gradient',
     negative: 'photorealistic, photograph, watercolor, oil painting, soft',
   },
   darkFantasy: {
     prompt: 'dark fantasy art, Beksinski-inspired eldritch atmosphere, oppressive gothic architecture, sickly muted palette, visceral organic textures, nightmarish surreal composition',
     portrait: 'dark fantasy portrait, haunted hollow eyes, scarred weathered face, gothic atmosphere, sickly palette, nightmarish eldritch details',
-    sdTag: 'dark fantasy, grim, eldritch',
+    sdTag: 'dark fantasy art, grim atmosphere, muted sickly palette, eldritch, ominous',
+    sdNeg: 'bright, cheerful, cartoon, clean, happy, pastel, vibrant saturated',
     negative: 'bright, cheerful, cartoon, anime, clean, happy',
   },
   vanGogh: {
     prompt: 'post-impressionist painting in the style of Van Gogh, expressive swirling brushstrokes, thick impasto texture, luminous night-sky colors, emotional dramatic movement, vivid painterly energy',
     portrait: 'post-impressionist portrait inspired by Van Gogh, swirling brushwork, thick impasto texture, vivid expressive colors, emotional painterly lighting',
-    sdTag: 'van gogh, swirling impasto',
+    sdTag: 'post-impressionist, swirling brushstrokes, thick impasto, vivid expressive colors',
+    sdNeg: 'photograph, photorealistic, 3d render, flat shading, smooth digital art, clean lines',
     negative: 'photograph, photorealistic, 3d render, flat shading, smooth digital art',
   },
   photoreal: {
     prompt: 'photorealistic cinematic photograph, shallow depth of field, RAW photo quality, 8K UHD, DSLR, natural film grain, realistic lighting and materials',
     portrait: 'photorealistic portrait photograph, DSLR quality, shallow depth of field, natural skin texture, cinematic lighting, 8K detail',
-    sdTag: 'photorealistic, dslr, cinematic',
+    sdTag: 'RAW photo, photorealistic, cinematic lighting, shallow depth of field, 8k uhd',
+    sdNeg: 'painting, drawing, illustration, cartoon, anime, sketch, watercolor, digital art, unrealistic',
     negative: 'painting, drawing, illustration, cartoon, anime, sketch, watercolor, digital art',
   },
   retro: {
     prompt: '16-bit pixel art, retro SNES-era RPG scene, limited color palette, dithering, nostalgic low-resolution aesthetic, crisp individual pixels visible',
     portrait: '16-bit pixel art character portrait, retro RPG style, limited palette, clean pixel work, nostalgic SNES aesthetic',
-    sdTag: '16-bit pixel art, retro rpg',
+    sdTag: 'pixel art, 16-bit retro RPG style, limited palette, crisp pixels, dithering',
+    sdNeg: 'photorealistic, photograph, high resolution, smooth, blurry, 3d render, anti-aliased',
     negative: 'photorealistic, photograph, high resolution, smooth, blurry, 3d render',
   },
   gothic: {
     prompt: 'gothic fantasy artwork, towering cathedral arches, ornate stonework, candlelit gloom, medieval illuminated detail, solemn dramatic composition, sacred and ominous atmosphere',
     portrait: 'gothic portrait, cathedral-lit face, ornate medieval costume details, candlelit shadows, solemn sacred atmosphere, dramatic old-world elegance',
-    sdTag: 'gothic art, candlelit, medieval',
+    sdTag: 'gothic art, candlelit, ornate medieval detail, cathedral atmosphere, solemn',
+    sdNeg: 'modern, sci-fi, cartoon, anime, cheerful, bright daylight, neon, minimalist',
     negative: 'modern, sci-fi, cartoon, anime, cheerful, bright daylight',
   },
   hiphop: {
     prompt: 'urban hip-hop graffiti art style, bold spray-paint strokes, vibrant neon colors on concrete, street art murals, dripping paint, boombox culture aesthetic, thick outlines, stylized lettering accents',
     portrait: 'hip-hop street art portrait, spray-paint on brick wall, bold outlines, vibrant neon colors, graffiti style, urban swagger, dripping paint details',
-    sdTag: 'graffiti, neon, street art',
+    sdTag: 'graffiti street art, spray paint, neon colors on concrete, bold outlines, drips',
+    sdNeg: 'photorealistic, photograph, watercolor, oil painting, soft, pastel, delicate, medieval',
     negative: 'photorealistic, photograph, watercolor, oil painting, soft, pastel, delicate',
   },
   crayon: {
     prompt: 'child-like crayon drawing on white paper, waxy texture, uneven coloring, playful naive art style, visible paper grain, bright primary colors, simple bold shapes, charming imperfect lines',
     portrait: 'crayon portrait drawing, waxy colorful strokes, child-like naive art style, uneven coloring, white paper background, playful and charming',
-    sdTag: 'crayon, naive, waxy',
+    sdTag: 'crayon drawing, waxy texture, naive childlike art, bright primary colors, paper',
+    sdNeg: 'photorealistic, photograph, digital art, clean lines, professional, polished, 3d render, detailed',
     negative: 'photorealistic, photograph, digital art, clean lines, professional, polished, 3d render',
   },
 };
@@ -397,6 +425,11 @@ export function getImageStyleNegative(imageStyle) {
   return entry.negative || '';
 }
 
+export function getImageStyleSdNegative(imageStyle) {
+  const entry = IMAGE_STYLE_PROMPTS[imageStyle] || IMAGE_STYLE_PROMPTS.painting;
+  return entry.sdNeg || entry.negative || '';
+}
+
 // Extra negatives to append when the portrait is generated from a real
 // reference photo via plain img2img. Without ControlNet / IP-Adapter the init
 // image drags in the whole modern-photo aesthetic (casual clothes, indoor
@@ -509,29 +542,134 @@ export function buildItemImagePrompt(item, { genre = 'Fantasy', tone = 'Epic', p
   return `ART STYLE: ${styleDirective}. ${mood}.${darkDirective}${seriousnessDirective} Subject: a fantasy inventory artwork of "${itemName}" (${itemType}, rarity: ${itemRarity}) from a ${worldContext} setting. Visual details: ${itemDescription}. Single item in focus, centered composition, clean readable silhouette, no characters, no text, no UI elements, no watermark, high detail.`;
 }
 
-export function buildPortraitPrompt(species, gender, age, careerName, genre = 'Fantasy', provider = 'stability', imageStyle = 'painting', hasReferenceImage = false, darkPalette = false, seriousness = null, extras = {}, sdModel = null) {
+// Humanoid species recognised by the portrait pipeline. Anything else routes
+// through the creature-mode branch in buildPortraitPrompt — without that
+// branch a non-humanoid race ("legendarny ptak", "smok") would silently fall
+// back to "human" and the image would render a person.
+const HUMANOID_SPECIES_TRAITS = {
+  Human: 'human, weathered skin, visible pores and skin texture',
+  Halfling: 'halfling, short stature, round cheerful face, rosy cheeks, bright eyes',
+  Dwarf: 'dwarf, stocky build, strong jaw, thick brow ridge, deep-set eyes, braided beard',
+  'High Elf': 'high elf, pointed ears, high cheekbones, slender refined features, luminous eyes, ethereal complexion',
+  'Wood Elf': 'wood elf, pointed ears, angular sharp features, intense wild eyes, sun-kissed weathered skin',
+};
+
+export function isHumanoidSpecies(species) {
+  return typeof species === 'string' && Object.prototype.hasOwnProperty.call(HUMANOID_SPECIES_TRAITS, species);
+}
+
+export function buildPortraitPrompt(species, gender, age, careerName, genre = 'Fantasy', provider = 'stability', imageStyle = 'painting', hasReferenceImage = false, darkPalette = false, seriousness = null, extras = {}, sdModel = null, subjectOverride = null) {
   const genderLabel = gender === 'female' ? 'female' : 'male';
   const isSD = provider === 'stability';
   const isSdWebui = provider === 'sd-webui';
   const isGemini = provider === 'gemini';
 
-  const speciesTraits = {
-    Human: 'human, weathered skin, visible pores and skin texture',
-    Halfling: 'halfling, short stature, round cheerful face, rosy cheeks, bright eyes',
-    Dwarf: 'dwarf, stocky build, strong jaw, thick brow ridge, deep-set eyes, braided beard',
-    'High Elf': 'high elf, pointed ears, high cheekbones, slender refined features, luminous eyes, ethereal complexion',
-    'Wood Elf': 'wood elf, pointed ears, angular sharp features, intense wild eyes, sun-kissed weathered skin',
-  };
-
   const styleDirective = getImageStyleDirective(imageStyle, 'portrait');
-  const speciesDesc = speciesTraits[species] || 'human, weathered skin, visible pores and skin texture';
-  const parsedAge = Number(age);
-  const ageDirective = Number.isFinite(parsedAge) ? `, approximately ${Math.max(1, Math.round(parsedAge))} years old` : '';
-  const career = careerName ? `, dressed as a ${careerName} with appropriate gear and attire` : '';
   const likenessDirective = buildLikenessDirective(hasReferenceImage, extras.likeness);
   const emotionDirective = buildEmotionDirective(extras.emotions);
   const darkDirective = darkPalette ? ' Dark moody color palette, deep shadows, low-key lighting, muted desaturated tones.' : '';
   const seriousnessDirective = seriousness != null ? ` ${getSeriousnessDirective(seriousness)}.` : '';
+  // Canonical NPC appearance text (already translated to English upstream).
+  // Used as the authoritative description so retries stay visually consistent
+  // — without it, every regeneration would produce a different face.
+  const appearanceDirective = typeof extras.appearance === 'string' && extras.appearance.trim()
+    ? ` Distinctive appearance: ${extras.appearance.trim()}.`
+    : '';
+
+  // LLM-built subject mode (NPC portraits). The caller prepared an English
+  // subject; species/career templating is skipped, but we prefix explicit
+  // gender and/or age when known — SD models otherwise drift on archetypes
+  // (hermit = old man, ageless witch, etc.).
+  const trimmedOverride = typeof subjectOverride === 'string' ? subjectOverride.trim() : '';
+  if (trimmedOverride) {
+    const parsedAnchorAge = Number(age);
+    const anchorAgeYears = Number.isFinite(parsedAnchorAge)
+      ? Math.max(1, Math.round(parsedAnchorAge))
+      : null;
+    const anchorTokens = [];
+    if (gender === 'female' || gender === 'male') {
+      anchorTokens.push(gender === 'female' ? 'female' : 'male');
+    }
+    if (anchorAgeYears != null) {
+      anchorTokens.push(`approximately ${anchorAgeYears} years old`);
+    }
+    const anchoredSubject =
+      anchorTokens.length > 0
+        ? `${anchorTokens.join(', ')}, ${trimmedOverride}`
+        : trimmedOverride;
+    if (isSdWebui) {
+      const extraTags = [...getSdEmotionTags(extras.emotions)].filter(Boolean);
+      return buildSdPrompt({
+        subject: `close-up portrait of ${anchoredSubject}, head and shoulders`,
+        tone: null,
+        darkPalette,
+        seriousness,
+        age: null,
+        gender: null,
+        hasPortraitRef: false,
+        imageStyle,
+        extraTags,
+      });
+    }
+    const compositionTail = ' Sharp focus on the subject, intricate detail, moody atmospheric background, head and shoulders composition.';
+    if (isSD) {
+      return `ART STYLE: ${styleDirective}. Close-up portrait of ${anchoredSubject}.${appearanceDirective}${compositionTail}${darkDirective}${seriousnessDirective}${emotionDirective} No text, no watermarks.`;
+    }
+    if (isGemini) {
+      return `Generate an image in this EXACT art style: ${styleDirective}. Portrait of ${anchoredSubject}.${appearanceDirective}${compositionTail} Square 1:1 aspect ratio.${darkDirective}${seriousnessDirective}${emotionDirective} No text, no watermarks.`;
+    }
+    if (provider === 'gpt-image') {
+      return `ART STYLE: ${styleDirective}. Portrait of ${anchoredSubject}.${appearanceDirective}${compositionTail}${darkDirective}${seriousnessDirective}${emotionDirective} No text, no watermarks.`;
+    }
+    return `ART STYLE: ${styleDirective}. Portrait of ${anchoredSubject}.${appearanceDirective}${compositionTail}${darkDirective}${seriousnessDirective}${emotionDirective} No text, no watermarks, no borders.`;
+  }
+
+  const isHumanoid = isHumanoidSpecies(species);
+  const speciesDesc = isHumanoid ? HUMANOID_SPECIES_TRAITS[species] : (typeof species === 'string' ? species.trim() : '') || 'mysterious creature';
+  const parsedAge = Number(age);
+  const ageDirective = Number.isFinite(parsedAge) ? `, approximately ${Math.max(1, Math.round(parsedAge))} years old` : '';
+  // Creature mode skips clothing/gear since non-humanoid creatures don't wear
+  // human gear; the role/career still rides in as a flavour phrase ("herald
+  // of change") rather than a wardrobe directive.
+  const career = careerName
+    ? (isHumanoid ? `, dressed as a ${careerName} with appropriate gear and attire` : `, ${careerName}`)
+    : '';
+
+  if (!isHumanoid) {
+    const creatureSubject = `fantasy creature: ${speciesDesc}${ageDirective}${career}, head and shoulders portrait, no humanoid figure unless inherent to the species`;
+
+    if (isSdWebui) {
+      const extraTags = [
+        'fantasy creature',
+        ...getSdEmotionTags(extras.emotions),
+      ].filter(Boolean);
+      return buildSdPrompt({
+        subject: `close-up portrait of a ${speciesDesc}${ageDirective}${career}, head and shoulders`,
+        tone: null,
+        darkPalette,
+        seriousness,
+        age: null,
+        gender: null,
+        hasPortraitRef: false,
+        imageStyle,
+        extraTags,
+      });
+    }
+
+    if (isSD) {
+      return `ART STYLE: ${styleDirective}. Close-up portrait of a ${creatureSubject}. Sharp focus on the subject, intricate natural detail, moody atmospheric background.${darkDirective}${seriousnessDirective}${emotionDirective} No text, no watermarks.`;
+    }
+
+    if (isGemini) {
+      return `Generate an image in this EXACT art style: ${styleDirective}. Portrait of a ${creatureSubject}. Sharp focus, dark atmospheric background. Square 1:1 aspect ratio.${darkDirective}${seriousnessDirective}${emotionDirective} No text, no watermarks.`;
+    }
+
+    if (provider === 'gpt-image') {
+      return `ART STYLE: ${styleDirective}. Portrait of a ${creatureSubject}. Sharp focus on the subject, intricate natural detail, moody atmospheric background.${darkDirective}${seriousnessDirective}${emotionDirective} No text, no watermarks.`;
+    }
+
+    return `ART STYLE: ${styleDirective}. Portrait of a ${creatureSubject}. Sharp focus, dark atmospheric background.${darkDirective}${seriousnessDirective}${emotionDirective} No text, no watermarks, no borders.`;
+  }
 
   // When we have a reference photo going into plain img2img (A1111 / Stability
   // without IP-Adapter), the init image pulls the result toward the uploaded
@@ -543,14 +681,16 @@ export function buildPortraitPrompt(species, gender, age, careerName, genre = 'F
     : '';
 
   if (isSdWebui) {
-    // Subject-first compact form. Fantasy anchors (img2img bleed guard) stay
-    // as a weighted prefix — they're technical not stylistic and SD reads the
-    // :weight syntax. Age/gender are already baked into the subject string,
-    // so we skip the extra tags for those.
-    const sdAnchor = hasReferenceImage ? '(fantasy character:1.3), (fantasy armor:1.2), ' : '';
-    const sdSubject = `${sdAnchor}close-up portrait of a ${genderLabel} ${speciesDesc}${ageDirective}${career}, head and shoulders`;
+    // With IP-Adapter active the reference photo feeds through a separate
+    // conditioning pathway — no init image bleed, so fantasy anchors and
+    // likeness tags in the prompt are unnecessary. When IP-Adapter is NOT
+    // available the backend falls back to img2img and these tags are still
+    // harmless, so we simply skip them unconditionally for cleaner prompts.
+    const sdAppearance = typeof extras.appearance === 'string' && extras.appearance.trim()
+      ? `, ${extras.appearance.trim()}`
+      : '';
+    const sdSubject = `close-up portrait of a ${genderLabel} ${speciesDesc}${ageDirective}${career}${sdAppearance}, head and shoulders`;
     const extraTags = [
-      getSdLikenessTag(hasReferenceImage, extras.likeness),
       ...getSdEmotionTags(extras.emotions),
     ].filter(Boolean);
     return buildSdPrompt({
@@ -567,16 +707,16 @@ export function buildPortraitPrompt(species, gender, age, careerName, genre = 'F
   }
 
   if (isSD) {
-    return `ART STYLE: ${styleDirective}. ${fantasyAnchor}Close-up portrait of a ${genderLabel} ${speciesDesc}${ageDirective}${career}. ${likenessDirective} Highly detailed facial features: expressive eyes with visible iris detail, defined nose and lips, skin imperfections, scars and character lines. Sharp focus on the face, intricate costume, moody atmospheric background, head and shoulders composition.${darkDirective}${seriousnessDirective}${emotionDirective} No text, no watermarks.`;
+    return `ART STYLE: ${styleDirective}. ${fantasyAnchor}Close-up portrait of a ${genderLabel} ${speciesDesc}${ageDirective}${career}.${appearanceDirective} ${likenessDirective} Highly detailed facial features: expressive eyes with visible iris detail, defined nose and lips, skin imperfections, scars and character lines. Sharp focus on the face, intricate costume, moody atmospheric background, head and shoulders composition.${darkDirective}${seriousnessDirective}${emotionDirective} No text, no watermarks.`;
   }
 
   if (isGemini) {
-    return `Generate an image in this EXACT art style: ${styleDirective}. Portrait of a ${genderLabel} ${speciesDesc}${ageDirective}${career}. ${likenessDirective} Detailed face with expressive eyes, sharp focus, head and shoulders composition, dark atmospheric background.${darkDirective}${seriousnessDirective}${emotionDirective} Square 1:1 aspect ratio. No text, no watermarks.`;
+    return `Generate an image in this EXACT art style: ${styleDirective}. Portrait of a ${genderLabel} ${speciesDesc}${ageDirective}${career}.${appearanceDirective} ${likenessDirective} Detailed face with expressive eyes, sharp focus, head and shoulders composition, dark atmospheric background.${darkDirective}${seriousnessDirective}${emotionDirective} Square 1:1 aspect ratio. No text, no watermarks.`;
   }
 
   if (provider === 'gpt-image') {
-    return `ART STYLE: ${styleDirective}. Portrait of a ${genderLabel} ${speciesDesc}${ageDirective}${career}. ${likenessDirective} Highly detailed facial features: expressive eyes with visible iris detail, defined nose and lips, skin texture and character. Sharp focus on the face, intricate costume details, moody atmospheric background, head and shoulders composition.${darkDirective}${seriousnessDirective}${emotionDirective} No text, no watermarks.`;
+    return `ART STYLE: ${styleDirective}. Portrait of a ${genderLabel} ${speciesDesc}${ageDirective}${career}.${appearanceDirective} ${likenessDirective} Highly detailed facial features: expressive eyes with visible iris detail, defined nose and lips, skin texture and character. Sharp focus on the face, intricate costume details, moody atmospheric background, head and shoulders composition.${darkDirective}${seriousnessDirective}${emotionDirective} No text, no watermarks.`;
   }
 
-  return `ART STYLE: ${styleDirective}. Portrait of a ${genderLabel} ${speciesDesc}${ageDirective}${career}. Detailed face, expressive eyes, sharp focus, head and shoulders composition, dark atmospheric background.${darkDirective}${seriousnessDirective}${emotionDirective} No text, no watermarks, no borders.`;
+  return `ART STYLE: ${styleDirective}. Portrait of a ${genderLabel} ${speciesDesc}${ageDirective}${career}.${appearanceDirective} Detailed face, expressive eyes, sharp focus, head and shoulders composition, dark atmospheric background.${darkDirective}${seriousnessDirective}${emotionDirective} No text, no watermarks, no borders.`;
 }

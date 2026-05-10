@@ -94,6 +94,48 @@ export const TRANSLATE_IMAGE_PROMPT_SCHEMA = {
   required: ['text'],
 };
 
+export const NPC_PORTRAIT_PROMPT_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    npc: {
+      type: 'object',
+      additionalProperties: true,
+      properties: {
+        id: { type: 'string', maxLength: 200 },
+        name: { type: 'string', maxLength: 200 },
+        gender: { type: ['string', 'null'], maxLength: 40 },
+        race: { type: ['string', 'null'], maxLength: 100 },
+        creatureKind: { type: ['string', 'null'], maxLength: 200 },
+        role: { type: ['string', 'null'], maxLength: 500 },
+        personality: { type: ['string', 'null'], maxLength: 1000 },
+        age: { type: ['number', 'string', 'null'] },
+        level: { type: ['number', 'null'] },
+      },
+      required: ['name'],
+    },
+    force: { type: 'boolean' },
+  },
+  required: ['npc'],
+};
+
+export const NPC_MISSING_FIELDS_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    worldNpcId: { type: ['string', 'null'], maxLength: 64 },
+    campaignNpcId: { type: ['string', 'null'], maxLength: 64 },
+    fields: {
+      type: 'array',
+      minItems: 1,
+      maxItems: 2,
+      items: { type: 'string', enum: ['appearance', 'dialect'] },
+    },
+    provider: PROVIDER_SCHEMA,
+  },
+  required: ['fields'],
+};
+
 export const GENERATE_CAMPAIGN_SCHEMA = {
   type: 'object',
   additionalProperties: false,
@@ -117,6 +159,21 @@ export const COMBAT_COMMENTARY_SCHEMA = {
     modelTier: { type: 'string', maxLength: 20 },
   },
   required: ['combatSnapshot'],
+};
+
+export const COMBAT_TURN_RESOLVE_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    combatSnapshot: { type: 'object' },
+    playerAction: { type: 'string', maxLength: 2000 },
+    diceRoll: { type: ['integer', 'null'], minimum: 1, maximum: 50 },
+    language: LANGUAGE_SCHEMA,
+    provider: PROVIDER_SCHEMA,
+    model: MODEL_SCHEMA,
+    modelTier: { type: 'string', maxLength: 20 },
+  },
+  required: ['combatSnapshot', 'playerAction'],
 };
 
 export const VERIFY_OBJECTIVE_SCHEMA = {
@@ -187,6 +244,21 @@ export const GENERATE_SCENE_SCHEMA = {
       },
     },
     achievementState: { type: ['object', 'null'] },
+    entityTags: {
+      type: ['array', 'null'],
+      maxItems: 5,
+      items: {
+        type: 'object',
+        required: ['kind', 'id', 'name'],
+        properties: {
+          kind: { type: 'string', enum: ['spell', 'item', 'npc', 'location'] },
+          id:   { type: 'string', maxLength: 200 },
+          name: { type: 'string', maxLength: 200 },
+          meta: { type: 'object', additionalProperties: true },
+        },
+      },
+    },
+    travelFailureReason: { type: ['string', 'null'], maxLength: 500 },
   },
 };
 
@@ -223,5 +295,14 @@ export const SCENE_BULK_SCHEMA = {
     },
   },
   required: ['scenes'],
+};
+
+export const SCENE_IMAGE_PATCH_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    imageUrl: { type: ['string', 'null'], maxLength: 4000 },
+    fullImagePrompt: { type: ['string', 'null'], maxLength: 8000 },
+  },
 };
 

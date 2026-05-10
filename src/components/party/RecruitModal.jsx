@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { useTranslation } from 'react-i18next';
 import ModalShell from '../admin/adminLivingWorld/shared/ModalShell';
 import { apiClient } from '../../services/apiClient';
@@ -8,11 +9,13 @@ import {
   getDispositionTier,
   calculateRecruitChance,
   rollD100,
+  MIN_DISPOSITION_TO_RECRUIT,
 } from '../../services/partyRecruitment';
 import { MAX_COMPANIONS } from '../../stores/handlers/partyHandlers';
 import { generateNpcPortrait } from '../../services/npcPortraitGen';
 import { useGame } from '../../contexts/GameContext';
 import { useSettings } from '../../contexts/SettingsContext';
+import { useModals } from '../../contexts/ModalContext';
 import { calculateCost } from '../../services/costTracker';
 
 const BLOCK_REASON_KEYS = {
@@ -31,25 +34,138 @@ const BLOCK_REASON_DEFAULTS = {
   not_recent: 'Dawno niewidziany',
 };
 
-function NpcCard({ npc, partySize, onAttempt, lastResult, isGenerating }) {
+const RECENT_SCENE_WINDOW = 3;
+
+function pluralScenes(n) {
+  if (n === 1) return 'scenę';
+  const last = n % 10;
+  const lastTwo = n % 100;
+  if (last >= 2 && last <= 4 && (lastTwo < 12 || lastTwo > 14)) return 'sceny';
+  return 'scen';
+}
+
+function buildBlockHint(npc, blockReason, currentSceneIndex, t) {
+  if (blockReason === 'low_disposition') {
+    const missing = Math.max(1, MIN_DISPOSITION_TO_RECRUIT - (npc.disposition || 0));
+    return t('party.blockReason.lowDispositionDelta', 'Brakuje +{{missing}} sympatii (min. {{min}})', {
+      missing,
+      min: MIN_DISPOSITION_TO_RECRUIT,
+    });
+  }
+  if (blockReason === 'cooldown') {
+    const target = typeof npc.recruitCooldownUntilSceneIndex === 'number'
+      ? npc.recruitCooldownUntilSceneIndex
+      : currentSceneIndex;
+    const left = Math.max(1, target - currentSceneIndex);
+    return t('party.blockReason.cooldownScenes', 'Spróbuj za {{count}} {{noun}}', {
+      count: left,
+      noun: pluralScenes(left),
+    });
+  }
+  if (blockReason === 'not_recent') {
+    return t('party.blockReason.notRecentHint', 'Pojaw się w ostatnich {{window}} scenach', {
+      window: RECENT_SCENE_WINDOW,
+    });
+  }
+  return null;
+}
+
+function ExpandedPortrait({ src, alt, startRect, onClose }) {
+  const [open, setOpen] = useState(false);
+  const closingRef = useRef(false);
+
+  useEffect(() => {
+    const id = requestAnimationFrame(() => {
+      requestAnimationFrame(() => setOpen(true));
+    });
+    return () => cancelAnimationFrame(id);
+  }, []);
+
+  const handleClose = useCallback(() => {
+    if (closingRef.current) return;
+    closingRef.current = true;
+    setOpen(false);
+    setTimeout(onClose, 280);
+  }, [onClose]);
+
+  useEffect(() => {
+    const onKey = (e) => { if (e.key === 'Escape') handleClose(); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [handleClose]);
+
+  const targetSize = Math.min(window.innerHeight * 0.7, 480);
+  const targetLeft = (window.innerWidth - targetSize) / 2;
+  const targetTop = (window.innerHeight - targetSize) / 2;
+
+  const imgStyle = open
+    ? {
+        left: `${targetLeft}px`,
+        top: `${targetTop}px`,
+        width: `${targetSize}px`,
+        height: `${targetSize}px`,
+      }
+    : {
+        left: `${startRect.left}px`,
+        top: `${startRect.top}px`,
+        width: `${startRect.width}px`,
+        height: `${startRect.height}px`,
+      };
+
+  return (
+    <div className="fixed inset-0 z-[60]" onClick={handleClose}>
+      <div
+        className={`absolute inset-0 bg-black/70 backdrop-blur-sm transition-opacity duration-300 ease-out ${
+          open ? 'opacity-100' : 'opacity-0'
+        }`}
+      />
+      <img
+        src={src}
+        alt={alt}
+        style={imgStyle}
+        className="absolute object-cover rounded-2xl shadow-2xl border-2 border-tertiary/50 transition-all duration-300 ease-out cursor-zoom-out"
+        onClick={(e) => { e.stopPropagation(); handleClose(); }}
+      />
+    </div>
+  );
+}
+
+function NpcCard({ npc, partySize, currentSceneIndex, onAttempt, lastResult, isGenerating, onOpenNpcSheet }) {
   const { t } = useTranslation();
   const portraitUrl = npc?.portraitUrl ? apiClient.resolveMediaUrl(npc.portraitUrl) : null;
   const speciesLabel = t(`species.${npc.race}`, { defaultValue: npc.race || npc.creatureKind || '' });
   const partyFull = partySize >= MAX_COMPANIONS;
   const tier = getDispositionTier(npc.disposition);
   const dispositionPct = Math.max(0, Math.min(100, ((npc.disposition || 0) + 50) / 100 * 100));
-  const recruitable = npc.canRecruit;
+  const recruitable = npc.canRecruit && !lastResult?.success;
+  const portraitRef = useRef(null);
+  const [expandedRect, setExpandedRect] = useState(null);
+
+  const handlePortraitClick = (e) => {
+    if (!portraitUrl || isGenerating) return;
+    e.stopPropagation();
+    const node = portraitRef.current;
+    if (!node) return;
+    setExpandedRect(node.getBoundingClientRect());
+  };
 
   return (
-    <div className={`flex items-center gap-4 px-4 py-3 rounded-lg border transition-all ${
-      recruitable
-        ? 'bg-surface-container/50 border-tertiary/30 shadow-sm shadow-tertiary/5 hover:shadow-md hover:shadow-tertiary/10'
-        : 'bg-surface-container/20 border-outline-variant/15 opacity-60'
-    }`}>
+    <div
+      className={`flex items-center gap-4 px-4 py-3 rounded-lg border transition-all cursor-pointer ${
+        recruitable
+          ? 'bg-surface-container/50 border-tertiary/30 shadow-sm shadow-tertiary/5 hover:shadow-md hover:shadow-tertiary/10'
+          : 'bg-surface-container/20 border-outline-variant/15 opacity-60'
+      }`}
+      onClick={() => onOpenNpcSheet?.(npc.name)}
+    >
       {/* Portrait */}
-      <div className={`w-20 h-20 rounded-lg overflow-hidden shrink-0 relative border-2 ${
-        recruitable ? 'border-tertiary/40' : 'border-outline-variant/20'
-      }`}>
+      <div
+        ref={portraitRef}
+        onClick={handlePortraitClick}
+        className={`w-28 h-28 rounded-lg overflow-hidden shrink-0 relative border-2 transition-transform ${
+          recruitable ? 'border-tertiary/40' : 'border-outline-variant/20'
+        } ${portraitUrl && !isGenerating ? 'cursor-zoom-in hover:scale-[1.03]' : ''}`}
+      >
         {isGenerating ? (
           <div className="absolute inset-0 bg-surface-container animate-pulse">
             <div className="absolute inset-0 bg-gradient-to-br from-tertiary/10 to-transparent" />
@@ -66,15 +182,25 @@ function NpcCard({ npc, partySize, onAttempt, lastResult, isGenerating }) {
           />
         ) : (
           <div className="absolute inset-0 flex items-center justify-center bg-surface-container">
-            <span className="material-symbols-outlined text-3xl text-on-surface-variant/50">{speciesIcon(npc.race)}</span>
+            <span className="material-symbols-outlined text-4xl text-on-surface-variant/50">{speciesIcon(npc.race)}</span>
           </div>
         )}
         {npc.alive === false && (
           <div className="absolute inset-0 bg-black/60 flex items-center justify-center">
-            <span className="material-symbols-outlined text-error text-xl">skull</span>
+            <span className="material-symbols-outlined text-error text-2xl">skull</span>
           </div>
         )}
       </div>
+
+      {expandedRect && portraitUrl && createPortal(
+        <ExpandedPortrait
+          src={portraitUrl}
+          alt={npc.name}
+          startRect={expandedRect}
+          onClose={() => setExpandedRect(null)}
+        />,
+        document.body,
+      )}
 
       {/* Info */}
       <div className="min-w-0 flex-1">
@@ -82,6 +208,19 @@ function NpcCard({ npc, partySize, onAttempt, lastResult, isGenerating }) {
         <div className="text-xs text-on-surface-variant truncate mt-0.5">
           {speciesLabel}{npc.role ? ` · ${npc.role}` : ''}
         </div>
+        {npc.appearance && (
+          <div className="text-[11px] text-on-surface-variant/80 italic mt-0.5 line-clamp-2">
+            {npc.appearance}
+          </div>
+        )}
+        {npc.personality && (
+          <div
+            className="text-[11px] text-on-surface-variant/70 italic truncate mt-0.5"
+            title={npc.personality}
+          >
+            {npc.personality}
+          </div>
+        )}
 
         <div className="flex items-center gap-2 mt-2">
           <span className={`text-xs font-semibold ${tier.colorClass}`}>{tier.label}</span>
@@ -99,15 +238,24 @@ function NpcCard({ npc, partySize, onAttempt, lastResult, isGenerating }) {
 
         {recruitable && (
           <div className="text-xs text-on-surface-variant mt-1">
-            {t('party.recruitChance', 'Szansa werbunku')}: <span className="tabular-nums text-tertiary font-bold">{calculateRecruitChance(npc.disposition || 0)}%</span>
+            <span className="tabular-nums text-tertiary font-bold">{t('party.recruitChance', { chance: calculateRecruitChance(npc.disposition || 0) })}</span>
           </div>
         )}
 
         {!recruitable && npc.blockReason && (
-          <div className="mt-1.5">
+          <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
             <span className="text-[10px] px-2 py-0.5 rounded bg-surface-container border border-outline-variant/20 text-on-surface-variant">
               {t(BLOCK_REASON_KEYS[npc.blockReason], BLOCK_REASON_DEFAULTS[npc.blockReason] || npc.blockReason)}
             </span>
+            {(() => {
+              const hint = buildBlockHint(npc, npc.blockReason, currentSceneIndex, t);
+              if (!hint) return null;
+              return (
+                <span className="text-[10px] text-on-surface-variant/80 tabular-nums">
+                  {hint}
+                </span>
+              );
+            })()}
           </div>
         )}
 
@@ -122,7 +270,10 @@ function NpcCard({ npc, partySize, onAttempt, lastResult, isGenerating }) {
       {recruitable && (
         <button
           type="button"
-          onClick={() => onAttempt(npc)}
+          onClick={(e) => {
+            e.stopPropagation();
+            onAttempt(npc);
+          }}
           disabled={partyFull}
           className="px-4 py-2 rounded-lg border text-xs font-bold uppercase tracking-wider transition-colors bg-tertiary/15 text-tertiary border-tertiary/30 hover:bg-tertiary/25 hover:border-tertiary/50 disabled:opacity-40 disabled:cursor-not-allowed shrink-0"
         >
@@ -135,9 +286,11 @@ function NpcCard({ npc, partySize, onAttempt, lastResult, isGenerating }) {
 
 export default function RecruitModal({ scenes, world, party, dispatch, onClose }) {
   const { t } = useTranslation();
+  const { openNpcSheet } = useModals();
   const [results, setResults] = useState({});
   const [generatingIds, setGeneratingIds] = useState(new Set());
   const generationTriggered = useRef(false);
+  const successIds = useRef(new Set());
   const { state, autoSave } = useGame();
   const { settings } = useSettings();
 
@@ -156,6 +309,7 @@ export default function RecruitModal({ scenes, world, party, dispatch, onClose }
   );
 
   const partySize = Array.isArray(party) ? party.length : 0;
+  const currentSceneIndex = Array.isArray(scenes) ? scenes.length : 0;
 
   const triggerPortraitGeneration = useCallback(async () => {
     if (generationTriggered.current) return;
@@ -200,11 +354,13 @@ export default function RecruitModal({ scenes, world, party, dispatch, onClose }
   }, [triggerPortraitGeneration]);
 
   const handleAttempt = (npc) => {
+    if (npc?.id && successIds.current.has(npc.id)) return;
     const chance = calculateRecruitChance(npc.disposition || 0);
     const roll = rollD100();
     const success = roll <= chance;
     if (success) {
       const criticalSuccess = roll <= 5;
+      if (npc.id) successIds.current.add(npc.id);
       dispatch({
         type: 'RECRUIT_NPC_SUCCESS',
         payload: { npcId: npc.id, npcName: npc.name, criticalSuccess },
@@ -259,9 +415,11 @@ export default function RecruitModal({ scenes, world, party, dispatch, onClose }
                 key={npc.id}
                 npc={npc}
                 partySize={partySize}
+                currentSceneIndex={currentSceneIndex}
                 onAttempt={handleAttempt}
                 lastResult={results[npc.id]}
                 isGenerating={generatingIds.has(npc.id)}
+                onOpenNpcSheet={openNpcSheet}
               />
             ))}
           </div>

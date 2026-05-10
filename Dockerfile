@@ -4,7 +4,7 @@ FROM node:20-alpine AS frontend-build
 WORKDIR /app
 
 COPY package.json package-lock.json ./
-RUN npm ci --ignore-scripts
+RUN --mount=type=cache,target=/root/.npm npm ci --ignore-scripts
 
 COPY index.html vite.config.js tailwind.config.js postcss.config.js ./
 COPY shared/ shared/
@@ -21,7 +21,7 @@ WORKDIR /app/backend
 COPY backend/package.json backend/package-lock.json ./
 COPY backend/prisma/ prisma/
 
-RUN npm ci
+RUN --mount=type=cache,target=/root/.npm npm ci
 RUN npx prisma generate
 
 # ---- Stage 3: Production image ----

@@ -66,7 +66,41 @@ export function buildCharacterBlock(character) {
     }).join(', ')}`);
   }
   lines.push(`Money: ${formatMoney(character.money)}`);
-  if (character.statuses?.length) lines.push(`Statuses: ${character.statuses.join(', ')}`);
+  if (character.activeEffects?.length) {
+    const fxLines = character.activeEffects.map((fx) => {
+      const parts = [fx.name];
+      if (fx.category) parts.push(`[${fx.category}]`);
+      const dur = fx.duration;
+      if (dur) {
+        if (dur.type === 'rounds' && dur.remaining != null) parts.push(`${dur.remaining} rnd`);
+        else if (dur.type === 'scenes' && dur.remaining != null) parts.push(`${dur.remaining} scenes`);
+        else if (dur.type === 'permanent') parts.push('permanent');
+        else if (dur.type === 'until_rest') parts.push('until rest');
+        else if (dur.type === 'manual') parts.push('manual removal');
+      }
+      const m = fx.mechanics || {};
+      const mechParts = [];
+      if (m.attributeMods && Object.keys(m.attributeMods).length) {
+        mechParts.push(Object.entries(m.attributeMods).map(([k, v]) => `${k}${v > 0 ? '+' : ''}${v}`).join(','));
+      }
+      if (m.dotDamage) mechParts.push(`${m.dotDamage} dmg/tick`);
+      if (m.dotHeal) mechParts.push(`+${m.dotHeal} heal/tick`);
+      if (m.restrictions?.length) mechParts.push(m.restrictions.join(','));
+      if (mechParts.length) parts.push(`(${mechParts.join('; ')})`);
+      return parts.join(' ');
+    });
+    lines.push(`Active effects: ${fxLines.join(' | ')}`);
+  } else if (character.statuses?.length) {
+    lines.push(`Statuses: ${character.statuses.join(', ')}`);
+  }
+
+  if (Array.isArray(character.skillBadges) && character.skillBadges.length > 0) {
+    const active = character.skillBadges.filter((b) => !b.redeemed).map((b) => b.name);
+    const redeemed = character.skillBadges.filter((b) => b.redeemed).map((b) => b.name);
+    if (active.length) lines.push(`Skill badges (earned, not yet redeemed): ${active.join(', ')}`);
+    if (redeemed.length) lines.push(`Skill badges (redeemed): ${redeemed.join(', ')}`);
+    lines.push('(When awarding a non-standard skill in skillsUsed, briefly praise the player\'s creative approach.)');
+  }
 
   return lines.join('\n');
 }

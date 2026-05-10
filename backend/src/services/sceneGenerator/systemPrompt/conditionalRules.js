@@ -7,6 +7,7 @@
  */
 
 import { BESTIARY_RACES } from '../../../data/equipment/index.js';
+import { itemCombinationBlock } from './staticRules.js';
 
 const BESTIARY_RACES_STR = BESTIARY_RACES.join(', ');
 const COMBAT_INTENTS = new Set(['combat', 'stealth', 'freeform', 'idle', 'first_scene']);
@@ -22,7 +23,9 @@ const SUBLOCATION_HOST_TYPES = new Set([
   'capital', 'city', 'town', 'village', 'hamlet', 'interior', 'dungeon',
 ]);
 
-export function buildConditionalRules({ intent, coreState, scenePhase = null, livingWorldEnabled = false }) {
+const ITEM_COMBINATION_RE = /\[ŁĄCZENIE PRZEDMIOTÓW|łącz[ęe]|kombinuj|owijam.{1,20}wokół|wsadzam.{1,20}w\s|składam.{1,20}połów|wbijam.{1,20}w\s/i;
+
+export function buildConditionalRules({ intent, coreState, scenePhase = null, livingWorldEnabled = false, magicExposure = null, playerAction = '' }) {
   const rules = [];
   const cs = coreState;
   const campaign = cs.campaign || {};
@@ -72,6 +75,17 @@ export function buildConditionalRules({ intent, coreState, scenePhase = null, li
     rules.push(
       `canTrain: in npcs stateChange, 1-3 skill names NPC can teach. ` +
       `Only experienced, friendly NPCs. Not merchants/peasants/hostile.`,
+    );
+  }
+
+  const mana = character.mana || { current: 0, max: 0 };
+  if (mana.max > 0) {
+    rules.push(
+      `MANA RULES:\n` +
+      `- Spell cost: emit manaChange with NEGATIVE delta (−1 cantrip, −2 basic, −3 advanced, −5 powerful).\n` +
+      `- If mana.current (${mana.current}) < spell cost, narrate failure — insufficient mana. Do NOT emit the spell effect.\n` +
+      `- Mana restore: rest/meditation/potion → manaChange POSITIVE. Short rest +2-3, full rest = full pool, mana potion +3-5.\n` +
+      `- spellUsage: {"SpellName": 1} for every spell cast — tracks progression.`,
     );
   }
 
@@ -193,6 +207,25 @@ export function buildConditionalRules({ intent, coreState, scenePhase = null, li
       `- New passage described in narration → { action:"create_edge", fromLocation:"X", toLocation:"Y", relationType:"path"|"door"|"stairs"|... }\n` +
       `Do NOT emit graphUpdates for: purely decorative details, movement on already-known edges, info already in the graph.`,
     );
+  }
+
+  if (magicExposure?.eligible) {
+    const spellList = (magicExposure.availableSpells || []).join(', ');
+    const spellOption = spellList
+      ? `\n- learnSpell: one of [${spellList}] — character learns a starting spell. Pick one that fits the narrative.`
+      : '';
+    rules.push(
+      `MAGIC BREAKTHROUGH: Character has been interacting with magic beyond their abilities and had a breakthrough moment. ` +
+      `You MAY grant ONE magical reward this scene:` +
+      spellOption +
+      `\n- manaMaxChange: 2-4 — character's max mana pool increases.` +
+      `\nChoose whichever fits the narrative. Narrate organically — a sudden insight, dormant power awakening, a surge of energy. ` +
+      `Do NOT grant both in the same scene. This is a rare event — weave it into the story naturally.`,
+    );
+  }
+
+  if (playerAction && ITEM_COMBINATION_RE.test(playerAction)) {
+    rules.push(itemCombinationBlock());
   }
 
   return rules;

@@ -12,6 +12,7 @@ import {
   applyActProgression,
   applyNarrativeState,
 } from './sceneFlow.js';
+import { devLog } from '../../devEventLogStore';
 
 /**
  * Mega-handler for `APPLY_STATE_CHANGES` — applies a full AI-scene state-change
@@ -32,6 +33,8 @@ import {
  */
 export function applyStateChangesHandler(draft, action) {
   const changes = action.payload;
+  const activeBuckets = Object.keys(changes).filter((k) => changes[k] != null && changes[k] !== undefined);
+  devLog.emit({ category: 'state', type: 'dispatch_state_changes', label: `Dispatch APPLY_STATE_CHANGES [${activeBuckets.length} buckets]`, data: { buckets: activeBuckets, hasCombatUpdate: !!changes.combatUpdate, hasNpcs: !!changes.npcs, hasCurrentLocation: !!changes.currentLocation } });
 
   applyCampaignEnd(draft, changes);
   applyCharacterMutations(draft, changes);

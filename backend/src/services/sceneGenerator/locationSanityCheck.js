@@ -27,6 +27,70 @@ function normalizeLocName(name) {
 }
 
 /**
+ * Check whether the proposed destination is reachable from the current location
+ * via the location graph (movement edges). Returns `{ reachable, path }`.
+ * If not reachable, logs a warning but does NOT block the change (preserves
+ * existing behavior). Flags potential teleport for the graph extractor.
+ *
+ * @param {object} args
+ * @param {string} args.fromKind  Current location kind
+ * @param {string} args.fromId    Current location ID
+ * @param {string} args.toKind    Proposed destination kind
+ * @param {string} args.toId      Proposed destination ID
+ * @param {string} args.campaignId
+ * @returns {Promise<{reachable:boolean, teleportWarning:boolean}>}
+ */
+export async function checkGraphReachability({ fromKind, fromId, toKind, toId, campaignId }) {
+  if (!fromKind || !fromId || !toKind || !toId) return { reachable: true, teleportWarning: false };
+  if (fromKind === toKind && fromId === toId) return { reachable: true, teleportWarning: false };
+
+  try {
+    const { prisma } = await import('../../lib/prisma.js');
+    const edges = await prisma.locationEdge.findMany({
+      where: {
+        isActive: true,
+        category: 'movement',
+        OR: [{ campaignId: null }, { campaignId }],
+      },
+      select: { fromKind: true, fromId: true, toKind: true, toId: true, bidirectional: true },
+    });
+
+    const startKey = `${fromKind}:${fromId}`;
+    const endKey = `${toKind}:${toId}`;
+
+    // BFS on movement edges
+    const adj = new Map();
+    for (const e of edges) {
+      const fk = `${e.fromKind}:${e.fromId}`;
+      const tk = `${e.toKind}:${e.toId}`;
+      if (!adj.has(fk)) adj.set(fk, []);
+      adj.get(fk).push(tk);
+      if (e.bidirectional) {
+        if (!adj.has(tk)) adj.set(tk, []);
+        adj.get(tk).push(fk);
+      }
+    }
+
+    const visited = new Set([startKey]);
+    const queue = [startKey];
+    while (queue.length > 0) {
+      const cur = queue.shift();
+      if (cur === endKey) return { reachable: true, teleportWarning: false };
+      for (const neighbor of (adj.get(cur) || [])) {
+        if (!visited.has(neighbor)) {
+          visited.add(neighbor);
+          queue.push(neighbor);
+        }
+      }
+    }
+
+    return { reachable: false, teleportWarning: true };
+  } catch {
+    return { reachable: true, teleportWarning: false };
+  }
+}
+
+/**
  * @param {object} args
  * @param {string} args.playerAction        Raw player action text.
  * @param {object} args.sceneResult         Scene object returned by the LLM.
@@ -57,7 +121,10 @@ export function detectSuspiciousLocationChange({ playerAction, sceneResult, prev
   // the LATEST entry is scene N-1 (the prior scene); the one before it is N-2.
   // The current scene is being generated NOW so it is NOT in recentTrail yet.
   // Flip pattern means N-1 is some other location AND N-2 equals the new emit.
-  if (recentTrail.length >= 2) {
+  // Skip when the player has explicit movement vocabulary — returning to a
+  // parent location from a sublocation (e.g. "wracam do świątyni") is a valid
+  // A→B→A transition, not a hallucinated teleport.
+  if (!hasMovementCue(playerAction) && recentTrail.length >= 2) {
     const nMinus1 = recentTrail[recentTrail.length - 1];
     const nMinus2 = recentTrail[recentTrail.length - 2];
     const aiLocN = normalizeLocName(aiLoc);

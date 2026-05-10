@@ -93,6 +93,8 @@ export async function syncNPCsToNormalized(campaignId, npcs) {
         lastLocation: npc.lastLocation || null,
         factionId: npc.factionId || null,
         notes: npc.notes || null,
+        portraitUrl: npc.portraitUrl || null,
+        spriteUrl: npc.spriteUrl || null,
       },
     }));
   if (valid.length === 0) return;
@@ -380,7 +382,7 @@ export async function syncQuestsToNormalized(campaignId, quests) {
   }
 }
 
-export async function reconstructFromNormalized(campaignId, coreState, { currentLocationName = null } = {}) {
+export async function reconstructFromNormalized(campaignId, coreState, { currentLocationName = null, currentLocationKind = null, currentLocationId = null } = {}) {
   if (!coreState.world) coreState.world = {};
 
   // F5 — inject currentLocationName from the dedicated column. Doesn't clobber
@@ -389,16 +391,29 @@ export async function reconstructFromNormalized(campaignId, coreState, { current
     coreState.world.currentLocation = currentLocationName;
   }
 
+  // Faza 3a — synthesize composite ref from the FK trio columns. The graph
+  // hook (useLocationGraph) subscribes to this so it can refetch when the
+  // player transitions to a new node (mid-scene auto-create-on-miss, incident
+  // correction, normal travel). coreState rarely carries this directly because
+  // it's a slim JSON blob; the FK trio is the source of truth.
+  if (currentLocationKind && currentLocationId && !coreState.world.currentLocationRef) {
+    coreState.world.currentLocationRef = { kind: currentLocationKind, id: currentLocationId };
+  }
+
   const dbNpcs = await prisma.campaignNPC.findMany({
     where: { campaignId },
     include: { relationships: true },
   });
   if (dbNpcs.length > 0) {
     coreState.world.npcs = dbNpcs.map((n) => ({
+      id: `npc_${n.npcId}`,
       name: n.name,
       gender: n.gender,
       role: n.role,
       personality: n.personality,
+      appearance: n.appearance,
+      // dialect celowo nie hydratujemy do FE state — używany tylko w
+      // backendowym prompcie dialogu, nie wystawiany graczowi
       attitude: n.attitude,
       disposition: n.disposition,
       alive: n.alive,
@@ -409,6 +424,12 @@ export async function reconstructFromNormalized(campaignId, coreState, { current
       creatureKind: n.creatureKind,
       level: n.level,
       stats: n.stats && typeof n.stats === 'object' ? n.stats : {},
+      portraitUrl: n.portraitUrl || null,
+      spriteUrl: n.spriteUrl || null,
+      // ID-y backendowe — pozwalają FE wywołać /ai/npc-missing-fields dla
+      // legacy NPC bez kanonicznego appearance
+      campaignNpcId: n.id,
+      worldNpcId: n.worldNpcId || null,
       relationships: (n.relationships || []).map((r) => ({
         npcName: r.targetRef,
         type: r.relation,

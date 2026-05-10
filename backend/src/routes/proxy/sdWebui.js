@@ -16,6 +16,58 @@ const GENERATE_TIMEOUT_MS = 180_000;
 
 const DEFAULT_NEGATIVE_PROMPT = 'blurry, lowres, worst quality, low quality, jpeg artifacts, text, watermark, signature, username, deformed, distorted, disfigured, bad anatomy, wrong anatomy, extra limbs, missing limbs, extra fingers, fewer fingers, mutated hands, poorly drawn hands, poorly drawn face, deformed face, bad proportions, out of frame, duplicate, cropped';
 
+// ---------------------------------------------------------------------------
+// IP-Adapter (ControlNet extension) — face-preserving portrait generation
+// ---------------------------------------------------------------------------
+
+let cachedIpaProbe = undefined; // undefined = not yet probed
+
+const IPA_FACE_RE = /ip[_-]?adapter.*face/i;
+const IPA_ANY_SDXL_RE = /ip[_-]?adapter.*sdxl/i;
+const VITH_RE = /vit[_-]?h/i;
+
+function pickPreprocessor(modelName) {
+  if (VITH_RE.test(modelName)) return 'ip-adapter_clip_sdxl_plus_vith';
+  return 'ip-adapter_clip_sdxl';
+}
+
+async function probeIpaModel(baseUrl) {
+  if (config.sdWebui.ipaModel) return config.sdWebui.ipaModel;
+  if (cachedIpaProbe !== undefined) return cachedIpaProbe;
+  try {
+    const res = await fetchWithTimeout(
+      `${baseUrl}/controlnet/model_list`, { method: 'GET' }, 10_000,
+    );
+    if (!res.ok) { cachedIpaProbe = null; return null; }
+    const data = await res.json();
+    const models = data.model_list || [];
+    const face = models.find((m) => IPA_FACE_RE.test(m));
+    const any = face || models.find((m) => IPA_ANY_SDXL_RE.test(m));
+    cachedIpaProbe = any || null;
+    if (any) {
+      console.log(`[sd-webui] IP-Adapter model: ${any} (preprocessor: ${pickPreprocessor(any)})`);
+    } else {
+      console.warn('[sd-webui] No IP-Adapter model found among ControlNet models. Portrait generation will fall back to plain img2img. Install an IP-Adapter model (e.g. ip-adapter-plus-face_sdxl_vit-h) into models/ControlNet/.');
+    }
+    return cachedIpaProbe;
+  } catch {
+    cachedIpaProbe = null;
+    return null;
+  }
+}
+
+function buildIpAdapterUnit(imageBase64, weight, modelName) {
+  return {
+    enabled: true,
+    module: pickPreprocessor(modelName),
+    model: modelName,
+    image: imageBase64,
+    weight: Math.max(0, Math.min(1.5, weight)),
+    resize_mode: 'Just Resize',
+    control_mode: 'My prompt is more important',
+  };
+}
+
 // SDXL leans hard on "Renaissance" / "heroic composition" / "sweeping vista"
 // style scaffolding — even when the scene is a tavern or forest, those cues
 // push the model toward castles, cathedrals, and fortress ruins. The style
@@ -59,12 +111,11 @@ const GENERATE_BODY_SCHEMA = {
     steps: { type: 'integer', minimum: 1, maximum: 150 },
     cfg: { type: 'number', minimum: 1, maximum: 30 },
     sampler: { type: 'string', maxLength: 64 },
-    // Seed: 0..2^32-1. Absent/null → backend rolls a random one per request
-    // (each call is unique → cache is effectively bypassed). Explicit value →
-    // deterministic output for the same prompt+model, cache hits are correct.
     seed: { type: 'integer', minimum: 0, maximum: 4294967295 },
     campaignId: { type: 'string', pattern: UUID_PATTERN },
     forceNew: { type: 'boolean' },
+    portraitBase64: { type: 'string', maxLength: 5_000_000 },
+    ipaWeight: { type: 'number', minimum: 0, maximum: 1.5 },
   },
 };
 
@@ -204,6 +255,8 @@ export async function sdWebuiProxyRoutes(fastify) {
       seed: bodySeed,
       campaignId,
       forceNew = false,
+      portraitBase64 = null,
+      ipaWeight: rawIpaWeight,
     } = request.body;
 
     // Parameter resolution chain: explicit body value > per-model preset >
@@ -224,6 +277,10 @@ export async function sdWebuiProxyRoutes(fastify) {
     const userSuppliedSeed = Number.isInteger(bodySeed);
     const seed = userSuppliedSeed ? bodySeed : randomSeed();
 
+    const ipaModelName =
+      portraitBase64 ? await probeIpaModel(baseUrl) : null;
+    const useTwoPassFaceRefine = Boolean(portraitBase64 && ipaModelName);
+
     const cacheParams = {
       provider: 'sd-webui',
       prompt,
@@ -232,6 +289,7 @@ export async function sdWebuiProxyRoutes(fastify) {
       height,
       seed,
       resolutionScale: GENERATED_IMAGE_SCALE,
+      ...(useTwoPassFaceRefine ? { faceRefine2p: true, ipaW: rawIpaWeight ?? null } : {}),
       ...(forceNew ? { requestTs: Date.now() } : {}),
     };
     const cacheKey = generateKey('image', cacheParams, campaignId);
@@ -264,9 +322,6 @@ export async function sdWebuiProxyRoutes(fastify) {
       save_images: true,
     };
 
-    // Opt-in hires fix (SD_WEBUI_HIRES_FIX=1) — ~2x generation time but
-    // fixes blurry faces in wide scene framing. Skip for /portrait (768x1024
-    // already gives faces ~1/3 of the frame, hires pass adds little there).
     if (config.sdWebui.hiresFix) {
       payload.enable_hr = true;
       payload.hr_scale = 1.5;
@@ -275,7 +330,12 @@ export async function sdWebuiProxyRoutes(fastify) {
       payload.denoising_strength = 0.3;
     }
 
+    // Portrait + IP-Adapter: single-pass txt2img with face IP-Adapter locks the
+    // whole frame to the reference (same posing / framing every time). Generate
+    // the environment first, then img2img with IP-Adapter to graft identity.
+
     let res;
+    let b64;
     try {
       res = await fetchWithTimeout(
         `${baseUrl}/sdapi/v1/txt2img`,
@@ -296,8 +356,58 @@ export async function sdWebuiProxyRoutes(fastify) {
     }
 
     const data = await res.json();
-    const b64 = Array.isArray(data.images) ? data.images[0] : null;
+    b64 = Array.isArray(data.images) ? data.images[0] : null;
     if (!b64) return reply.code(502).send({ error: 'sd-webui returned no image' });
+
+    if (useTwoPassFaceRefine) {
+      const ipaWeight = rawIpaWeight ?? 0.35;
+      const refineDenoise = Math.min(0.52, Math.max(0.24, 0.26 + ipaWeight * 0.32));
+      const refineSteps = Math.max(12, Math.round(steps * 0.55));
+      const refineSeed = userSuppliedSeed ? (seed + 1) >>> 0 : randomSeed();
+      const refinePayload = {
+        init_images: [b64],
+        resize_mode: 0,
+        prompt,
+        negative_prompt: negativePrompt,
+        denoising_strength: refineDenoise,
+        width,
+        height,
+        steps: refineSteps,
+        cfg_scale: cfg,
+        sampler_name: sampler,
+        seed: refineSeed,
+        n_iter: 1,
+        batch_size: 1,
+        save_images: true,
+        alwayson_scripts: {
+          controlnet: {
+            args: [buildIpAdapterUnit(portraitBase64, ipaWeight, ipaModelName)],
+          },
+        },
+      };
+      try {
+        const res2 = await fetchWithTimeout(
+          `${baseUrl}/sdapi/v1/img2img`,
+          {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(refinePayload),
+          },
+          GENERATE_TIMEOUT_MS,
+        );
+        if (res2.ok) {
+          const data2 = await res2.json();
+          const b642 = Array.isArray(data2.images) ? data2.images[0] : null;
+          if (b642) b64 = b642;
+          else console.warn('[sd-webui] face-refine img2img returned no image; keeping txt2img output');
+        } else {
+          const errText = await res2.text().catch(() => '');
+          console.warn(`[sd-webui] face-refine img2img failed (${res2.status}): ${errText.slice(0, 200)}; keeping txt2img output`);
+        }
+      } catch (err) {
+        console.warn(`[sd-webui] face-refine img2img unreachable: ${err.message}; keeping txt2img output`);
+      }
+    }
 
     const originalBuffer = Buffer.from(b64, 'base64');
     const buffer = await downscaleGeneratedImage(originalBuffer);
@@ -324,6 +434,7 @@ export async function sdWebuiProxyRoutes(fastify) {
     let strength = '0.55';
     let model = '';
     let seedRaw = null;
+    let ipaWeightRaw = null;
 
     for await (const part of parts) {
       if (part.type === 'file' && part.fieldname === 'image') {
@@ -334,6 +445,7 @@ export async function sdWebuiProxyRoutes(fastify) {
         if (part.fieldname === 'strength') strength = part.value;
         if (part.fieldname === 'model') model = part.value;
         if (part.fieldname === 'seed') seedRaw = part.value;
+        if (part.fieldname === 'ipaWeight') ipaWeightRaw = part.value;
       }
     }
 
@@ -348,10 +460,6 @@ export async function sdWebuiProxyRoutes(fastify) {
     const coerced = coerceSeed(seedRaw);
     const seed = coerced === null ? randomSeed() : coerced;
 
-    // Portrait dims come from the per-model preset (832x1216 = SDXL-native
-    // 2:3 portrait bucket) instead of the legacy 768x1024 which sits
-    // off-bucket and hurts Starlight/Painter's quality. For unknown models we
-    // keep the old 768x1024 — safe across non-SDXL checkpoints too.
     const preset = getModelPreset(model);
     const width = preset?.portraitWidth ?? 768;
     const height = preset?.portraitHeight ?? 1024;
@@ -360,9 +468,42 @@ export async function sdWebuiProxyRoutes(fastify) {
     const cfg = preset?.cfg ?? config.sdWebui.cfg;
     const negativePrompt = mergeNegatives(rawNegativePrompt, preset, prompt);
 
+    const ipaModelName = imageBuffer ? await probeIpaModel(baseUrl) : null;
+    const useIpa = !!imageBuffer && !!ipaModelName;
+
     let res;
     try {
-      if (imageBuffer) {
+      if (useIpa) {
+        const initImage = imageBuffer.toString('base64');
+        const ipaWeight = ipaWeightRaw != null ? Math.max(0, Math.min(1.5, parseFloat(ipaWeightRaw) || 0.7)) : 0.7;
+        const payload = {
+          prompt,
+          negative_prompt: negativePrompt,
+          width,
+          height,
+          steps,
+          cfg_scale: cfg,
+          sampler_name: sampler,
+          seed,
+          n_iter: 1,
+          batch_size: 1,
+          save_images: true,
+          alwayson_scripts: {
+            controlnet: {
+              args: [buildIpAdapterUnit(initImage, ipaWeight, ipaModelName)],
+            },
+          },
+        };
+        res = await fetchWithTimeout(
+          `${baseUrl}/sdapi/v1/txt2img`,
+          {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload),
+          },
+          GENERATE_TIMEOUT_MS,
+        );
+      } else if (imageBuffer) {
         const initImage = imageBuffer.toString('base64');
         const payload = {
           init_images: [initImage],
@@ -433,6 +574,7 @@ export async function sdWebuiProxyRoutes(fastify) {
       model: model || null,
       seed,
       hasInit: !!imageBuffer,
+      ipa: useIpa || undefined,
     };
     const result = await persistGeneratedImage({
       userId: request.user.id,
@@ -441,5 +583,29 @@ export async function sdWebuiProxyRoutes(fastify) {
       cacheParams,
     });
     return { ...result, seed };
+  });
+
+  fastify.get('/controlnet/models', async (_request, reply) => {
+    const baseUrl = requireSdUrl(reply);
+    if (!baseUrl) return;
+
+    try {
+      const res = await fetchWithTimeout(
+        `${baseUrl}/controlnet/model_list`, { method: 'GET' }, 10_000,
+      );
+      if (!res.ok) {
+        return reply.code(502).send({ error: `controlnet model_list failed: ${res.status}` });
+      }
+      const data = await res.json();
+      const models = data.model_list || [];
+      const ipaModels = models.filter((m) => IPA_FACE_RE.test(m) || IPA_ANY_SDXL_RE.test(m));
+      const activeIpa = await probeIpaModel(baseUrl);
+      return { models, ipaModels, activeIpa };
+    } catch (err) {
+      return reply.code(503).send({
+        error: `sd-webui unreachable: ${err.message}`,
+        code: 'SD_WEBUI_OFFLINE',
+      });
+    }
   });
 }

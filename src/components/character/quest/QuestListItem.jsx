@@ -1,10 +1,17 @@
 import { TYPE_ICONS, isReadyToTurnIn, getVisibleObjectives } from './helpers';
 
 export default function QuestListItem({ quest, isSelected, onSelect, t }) {
-  const { visible: visibleObjs } = getVisibleObjectives(quest.objectives);
-  const completedCount = visibleObjs.filter((o) => o.completed).length;
-  const totalCount = visibleObjs.length;
+  // Graph-aware shape: { done, pending, locked, failed, hiddenCount, branchGroups }
+  const sections = getVisibleObjectives(quest.objectives);
+  const completedCount = sections.done.length;
+  const totalVisible = sections.done.length + sections.pending.length + sections.locked.length + sections.failed.length;
+  // Total count includes "???" placeholders so player vidocznie wie ile
+  // jeszcze przed nim — mechanika graf-a jest schowana, ale liczba kroków
+  // pozostaje pomocna dla pacing-u.
+  const totalCount = totalVisible + sections.hiddenCount;
   const ready = isReadyToTurnIn(quest);
+  const isStalled = quest.status === 'stalled';
+  const isFailedQuest = quest.status === 'failed';
   const typeKey = quest.type || 'side';
 
   return (
@@ -22,19 +29,36 @@ export default function QuestListItem({ quest, isSelected, onSelect, t }) {
       }`}
     >
       <div className="flex items-center gap-2">
-        <span className={`material-symbols-outlined text-sm shrink-0 ${ready ? 'text-amber-400' : isSelected ? 'text-primary' : 'text-primary-dim'}`}>
-          {ready ? 'assignment_return' : 'task_alt'}
+        <span className={`material-symbols-outlined text-sm shrink-0 ${
+          isFailedQuest ? 'text-rose-400'
+          : isStalled ? 'text-amber-400'
+          : ready ? 'text-amber-400'
+          : isSelected ? 'text-primary'
+          : 'text-primary-dim'
+        }`}>
+          {isFailedQuest ? 'cancel' : isStalled ? 'pause_circle' : ready ? 'assignment_return' : 'task_alt'}
         </span>
-        <span className={`text-sm font-headline truncate flex-1 ${ready ? 'text-amber-300' : isSelected ? 'text-tertiary' : 'text-on-surface'}`}>
+        <span className={`text-sm font-headline truncate flex-1 ${
+          isFailedQuest ? 'text-rose-300/80 line-through'
+          : isStalled ? 'text-amber-300'
+          : ready ? 'text-amber-300'
+          : isSelected ? 'text-tertiary'
+          : 'text-on-surface'
+        }`}>
           {quest.name}
         </span>
         <div className="flex items-center gap-1.5 shrink-0">
-          {ready && (
+          {isStalled && (
+            <span className="text-[8px] font-label uppercase tracking-wider text-amber-400 bg-amber-500/15 px-1 py-0.5 rounded-sm">
+              {t('quests.statusStalled', { defaultValue: 'pauza' })}
+            </span>
+          )}
+          {ready && !isStalled && !isFailedQuest && (
             <span className="text-[8px] font-label uppercase tracking-wider text-amber-400 bg-amber-500/15 px-1 py-0.5 rounded-sm">
               {t('quests.readyToTurnIn')}
             </span>
           )}
-          {!ready && totalCount > 0 && (
+          {!ready && totalCount > 0 && !isFailedQuest && (
             <span className="text-[10px] font-label text-on-surface-variant whitespace-nowrap">
               {completedCount}/{totalCount}
             </span>

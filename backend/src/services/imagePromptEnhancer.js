@@ -44,7 +44,7 @@ export async function enhanceImagePrompt({
     resolvedProvider === 'anthropic' ? 'Anthropic' : 'OpenAI',
   );
   const overrideModel = await resolveModelForTask('imagePrompt', resolvedProvider);
-  const resolvedModel = model || overrideModel || config.aiModels.standard[resolvedProvider];
+  const resolvedModel = overrideModel || model || config.aiModels.standard[resolvedProvider];
 
   const systemPrompt = [
     'You write concise, vivid visual scene descriptions for AI image generators.',

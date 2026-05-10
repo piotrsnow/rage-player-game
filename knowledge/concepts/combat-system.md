@@ -1,6 +1,6 @@
 # Combat System
 
-Turn-based tactical combat on a linear 0-20 position strip. d50 resolution, margin-based. Same engine powers solo and multiplayer — MP host runs it locally and syncs results, guests see the results dispatched back through the same reducer.
+Turn-based tactical combat on a linear 0-40 position strip. d50 resolution, margin-based. Same engine powers solo and multiplayer — MP host runs it locally and syncs results, guests see the results dispatched back through the same reducer.
 
 ## Files
 
@@ -95,6 +95,86 @@ Skill caps per difficulty: trivial 1-3, low 1-5, medium 1-8, high 1-12, deadly 1
 - **Playwright smoke:** `e2e/specs/combat.spec.js` seeds a combat-active campaign via `GET /v1/campaigns/:id` mock (see [patterns/e2e-campaign-seeding.md](../patterns/e2e-campaign-seeding.md))
 
 Before changing combat resolution logic, run: `npx vitest run src/hooks/useCombat src/hooks/useEnemy src/services/combatEngine.test.js`.
+
+## Status effects integration
+
+Status effects (`shared/domain/statusEffects.js`) are fully wired into combat:
+
+### Data tables
+
+- `CRIT_EFFECTS` (in `combatEngine.js`) — random effect on critical hit (roll=1): `Głęboka rana` (DoT) or `Oszołomienie` (testMod -10).
+- `SPELL_EFFECTS` (in `src/data/rpgMagic.js`) — per-spell effects applied on successful cast.
+
+### Mechanical impact on combat
+
+| Mechanic | Where applied | Helper |
+|---|---|---|
+| `attributeMods` + `testMod` | `resolveCombatTest()` | `computeEffectiveMods()` |
+| `damageReduction` | Offensive damage path + magic damage path in `resolveManoeuvre()` | `computeEffectiveMods()` on target |
+| `movementMod` | `moveCombatant()` + enemy movement in `resolveEnemyTurns()` | `computeEffectiveMods()` on actor |
+| `restrictions` (`no_attack`, `no_magic`, `skip_turn`, `no_movement`) | `resolveManoeuvre()` blocks the action; `getEnemyAction()` returns skip for `skip_turn`; `moveCombatant()` blocks `no_movement` | `isRestricted()` |
+| `dotDamage` / `dotHeal` | `advanceRound()` — applied per round | `tickEffects()` |
+
+### Effect lifecycle
+
+1. **Application** — `addEffect()` called from:
+   - Crit hit → random `CRIT_EFFECTS` entry
+   - Spell cast → `SPELL_EFFECTS[spellName]`
+   - AI combat-turn resolver → structured `statusEffects` in response (via `CombatPanel.handleAiAction`)
+   - Scene generation → `stateChanges.characterEffects` bucket (backend `characterMutations.js`)
+
+2. **Per-round tick** — `advanceRound()` calls `tickEffects(effects, 'rounds')`. Decrements remaining, applies DoT/heal, removes expired.
+
+3. **Combat end** — `endCombat()` returns `survivingEffects` (player's `activeEffects` at combat end). These persist into the character state for scene-generation to narrate/clear later.
+
+### UI
+
+- `ActiveEffectsRow` — badge row per combatant in `CombatantsList`
+- `CombatDetailPanel` — expanded view with effect descriptions
+
+### Backend AI combat-turn resolver
+
+`combatTurnResolver.js` prompts the AI with structured effects:
+- `formatCombatant` renders existing `activeEffects` (name, category, duration, restrictions) so the AI sees current state.
+- AI response `statusEffects` array uses structured format: `{ target, action: "add"|"remove", effect: { name, category, duration, mechanics } }`.
+- `CombatPanel.handleAiAction` applies via `addEffect()`; legacy string-style effects are gracefully migrated via `migrateStatusStrings()`.
+
+### Backend prompt (characterBlock.js)
+
+`characterBlock.js` renders active effects in the scene-generation system prompt so the premium model is aware of buffs/debuffs when narrating.
+
+## Terrain Tiles (Pola Specjalne)
+
+Random special tiles spawned on the 16×9 battlefield at combat start (5-8 tiles). Each tile applies a mechanical effect to any combatant standing on it.
+
+### Tile types
+
+| Type | Polish name | Effect | One-shot? |
+|------|-------------|--------|-----------|
+| `sureHit` | Pole Pewnego Trafienia | Attacker's next offensive attack auto-hits (bypass d50) | Yes |
+| `fury` | Pole Furii | +50% raw damage on attacks from this tile | No |
+| `damageReduction` | Pole Ochrony | Combatant takes 50% less damage | No |
+| `regeneration` | Pole Regeneracji | Heal 1 wound at round start | No |
+| `extraTurn` | Pole Dodatkowej Tury | Grants a bonus turn on entry | Yes |
+| `teleport` | Pole Teleportacji | Teleports combatant to random empty cell on entry | No |
+| `poison` | Pole Trucizny | 2 damage at round start | No |
+| `freeze` | Pole Zamrożenia | Double movement cost to enter; 50% chance to skip next turn | No |
+
+### Data flow
+
+- **Definitions:** `backend/src/data/equipment/combatConstants.js` (`TERRAIN_TILES`, `TERRAIN_SPAWN_CONFIG`)
+- **Served:** via `/game-data/combat` → `gameDataService.terrainTiles`
+- **Spawned:** `spawnTerrainTiles()` in `combatEngine.js`, called from `createCombatState` / `createMultiplayerCombatState`
+- **State:** `combat.terrainTiles: [{ x, y, type, consumed }]`
+- **Mechanics:** integrated into `resolveManoeuvre` (sureHit, fury, damageReduction), `moveCombatant` (extraTurn, teleport, freeze cost), `advanceRound` (regeneration, poison, freeze skip), `advanceTurn` (bonus turn)
+- **Enemy AI:** basic tile awareness — avoids poison/freeze, prefers fury/sureHit when multiple paths are equal
+- **Rendering:** `drawTerrainTiles()` in `combatCanvasDraw.js` — radial glow + emoji, animated pulse, consumed tiles dimmed
+
+### Spawn rules
+
+- 5-8 tiles per combat (random count)
+- Placed in middle columns only (margin of 4 cols from each edge to avoid spawn zones)
+- No two tiles on the same cell; no tiles on occupied cells
 
 ## Related
 

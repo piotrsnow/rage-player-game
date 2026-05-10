@@ -2,9 +2,13 @@ import { shortId } from '../../../utils/ids';
 
 /**
  * Location mutations from AI: `mapChanges` (per-location descriptive mods),
- * and `currentLocation` (teleport/walk target). currentLocation also seeds
- * the explored-set, the mapConnections edge list, and a mapState entry for
- * any previously-unseen location so the FE map has a node to render.
+ * and `currentLocation` (teleport/walk target).
+ *
+ * DEPRECATION: mapState, mapConnections, and exploredLocations are DEPRECATED
+ * as independent state — the Location Graph (LocationEdge table) is now the
+ * source of truth for spatial relationships. These fields are kept for backward
+ * compatibility reads only. New mapConnections entries are NO LONGER created;
+ * the graph edges are the canonical connectivity data.
  */
 export function applyMapChanges(draft, changes) {
   if (!changes.mapChanges?.length) return;
@@ -33,7 +37,29 @@ export function applyMapChanges(draft, changes) {
   }
 }
 
+/**
+ * Parse composite ref string "kind:UUID" → { kind, id } or null.
+ */
+function parseCompositeRef(value) {
+  if (!value) return null;
+  if (typeof value === 'object' && value.kind && value.id) {
+    return { kind: value.kind, id: value.id };
+  }
+  if (typeof value !== 'string') return null;
+  const m = value.match(/^(world|campaign):([0-9a-f-]{36})$/i);
+  if (!m) return null;
+  return { kind: m[1].toLowerCase(), id: m[2] };
+}
+
 export function applyCurrentLocation(draft, changes) {
+  // Faza 3a — preferowane źródło: composite ref. AI/BE może zwrócić
+  // `currentLocationRef` (string "kind:UUID" lub object). Legacy `currentLocation`
+  // (free-text string) zachowane jako fallback do Fazy 8.
+  const ref = parseCompositeRef(changes.currentLocationRef);
+  if (ref) {
+    draft.world.currentLocationRef = ref;
+  }
+
   if (!changes.currentLocation) return;
 
   if (!draft.world.exploredLocations) draft.world.exploredLocations = [];
@@ -41,32 +67,9 @@ export function applyCurrentLocation(draft, changes) {
   explored.add(changes.currentLocation);
   draft.world.exploredLocations = [...explored];
 
-  const prevLoc = draft.world.currentLocation;
-  const newLoc = changes.currentLocation;
+  // DEPRECATED: mapConnections writes removed — the LocationEdge graph is the
+  // source of truth for location connectivity. Graph edges are maintained by
+  // the post-scene graph extractor (postSceneWork → extractGraphUpdate).
 
-  if (prevLoc && newLoc && prevLoc.toLowerCase() !== newLoc.toLowerCase()) {
-    if (!draft.world.mapConnections) draft.world.mapConnections = [];
-    const already = draft.world.mapConnections.some(
-      (c) =>
-        (c.from.toLowerCase() === prevLoc.toLowerCase() && c.to.toLowerCase() === newLoc.toLowerCase())
-        || (c.from.toLowerCase() === newLoc.toLowerCase() && c.to.toLowerCase() === prevLoc.toLowerCase()),
-    );
-    if (!already) {
-      draft.world.mapConnections.push({ from: prevLoc, to: newLoc });
-    }
-
-    if (!draft.world.mapState) draft.world.mapState = [];
-    for (const locName of [prevLoc, newLoc]) {
-      if (!draft.world.mapState.some((m) => m.name?.toLowerCase() === locName.toLowerCase())) {
-        draft.world.mapState.push({
-          id: `loc_${Date.now()}_${shortId(5)}`,
-          name: locName,
-          description: '',
-          modifications: [],
-        });
-      }
-    }
-  }
-
-  draft.world.currentLocation = newLoc;
+  draft.world.currentLocation = changes.currentLocation;
 }
