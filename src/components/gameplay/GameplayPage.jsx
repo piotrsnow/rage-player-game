@@ -21,6 +21,7 @@ import {
 import { useSettings } from '../../contexts/SettingsContext';
 import { useMultiplayer } from '../../contexts/MultiplayerContext';
 import { useAI } from '../../hooks/useAI';
+import { useQuickBeat } from '../../hooks/sceneGeneration/useQuickBeat';
 import { useDictation } from '../../hooks/useDictation';
 import { useDictationContext } from '../../contexts/DictationContext';
 import { useNarrator } from '../../hooks/useNarrator';
@@ -459,6 +460,16 @@ export default function GameplayPage({ readOnly = false, shareToken = null, onRe
     }
   };
 
+  const quickBeat = useQuickBeat({
+    generateScene,
+    onError: (err) => {
+      // Quick beat failures are non-blocking — just log so the player can
+      // try again with the same input. We don't surface a global error
+      // because the input box still has the player's text.
+      console.warn('[useQuickBeat] error:', err);
+    },
+  });
+
   const handleActionRef = useRef(handleAction);
   handleActionRef.current = handleAction;
   const stableHandleAction = useCallback((...args) => handleActionRef.current(...args), []);
@@ -836,6 +847,10 @@ export default function GameplayPage({ readOnly = false, shareToken = null, onRe
               key={currentScene.id || `scene-${scenes.length}`}
               actions={currentScene.actions || currentScene.suggestedActions || []}
               onAction={handleAction}
+              onQuickBeat={quickBeat.submitQuickBeat}
+              quickBeatStreak={quickBeat.quickBeatStreak}
+              quickBeatLimit={quickBeat.limit}
+              isQuickBeatLocked={quickBeat.isQuickBeatLocked}
               disabled={isGeneratingScene}
               autoPlayerTypingText={autoPlayer.typingText}
               npcs={(() => {

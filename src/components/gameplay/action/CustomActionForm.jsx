@@ -1,12 +1,18 @@
-import { useEffect, useCallback, useRef, useState } from 'react';
+import { useEffect, useCallback, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import TaggableInput from './TaggableInput';
+import { looksLikeQuickBeat } from '../../../services/quickBeatDetector';
 
 export default function CustomActionForm({
   customAction,
   onTypingChange,
   onSubmit,
   onSoloSubmit,
+  onQuickBeatSubmit = null,
+  quickBeatAvailable = false,
+  quickBeatStreak = 0,
+  quickBeatLimit = 5,
+  isQuickBeatLocked = false,
   disabled,
   autoPlayerTypingText,
   listening,
@@ -44,6 +50,17 @@ export default function CustomActionForm({
   const handleEditorSubmit = useCallback(() => {
     onSubmit(new Event('submit'));
   }, [onSubmit]);
+
+  const trimmedAction = (customAction || '').trim();
+  const quickBeatHinted = useMemo(
+    () => quickBeatAvailable && !isQuickBeatLocked && trimmedAction.length > 0 && looksLikeQuickBeat(trimmedAction),
+    [quickBeatAvailable, isQuickBeatLocked, trimmedAction],
+  );
+  const quickBeatRemaining = Math.max(0, quickBeatLimit - quickBeatStreak);
+  const handleQuickBeatClick = useCallback((e) => {
+    e?.preventDefault?.();
+    if (onQuickBeatSubmit) onQuickBeatSubmit();
+  }, [onQuickBeatSubmit]);
 
   return (
     <form onSubmit={handleSubmit} className="flex-1 min-w-0">
@@ -201,6 +218,24 @@ export default function CustomActionForm({
             <span className="material-symbols-outlined text-sm">bolt</span>
           </button>
         )}
+        {quickBeatAvailable && (
+          <button
+            type="button"
+            data-testid="quick-beat-button"
+            onClick={handleQuickBeatClick}
+            disabled={!customAction.trim() || disabled || isQuickBeatLocked}
+            title={isQuickBeatLocked
+              ? t('gameplay.quickBeatLocked', { defaultValue: 'Limit małych akcji osiągnięty — wyślij pełną akcję' })
+              : t('gameplay.quickBeatTooltip', { defaultValue: 'Mała akcja (drobny RP-beat, bez nowej sceny). Pozostało: {{remaining}}/{{limit}}', remaining: quickBeatRemaining, limit: quickBeatLimit })}
+            className={`shrink-0 flex items-center justify-center w-9 h-9 rounded-sm transition-all duration-300 disabled:opacity-30 disabled:cursor-not-allowed ${
+              quickBeatHinted
+                ? 'text-amber-200 bg-amber-400/15 border border-amber-400/30 shadow-[0_0_8px_rgba(251,191,36,0.15)]'
+                : 'text-on-surface-variant/70 hover:text-amber-200 hover:bg-amber-400/10 border border-outline-variant/20'
+            }`}
+          >
+            <span className="material-symbols-outlined text-[18px]">flash_on</span>
+          </button>
+        )}
         <button
           data-testid="submit-action"
           type="submit"
@@ -212,6 +247,16 @@ export default function CustomActionForm({
           <span className="material-symbols-outlined text-[22px]">send</span>
         </button>
       </div>
+      {quickBeatAvailable && quickBeatHinted && !isQuickBeatLocked && (
+        <span className="text-[10px] font-label uppercase tracking-widest text-amber-200/80 mt-1 block">
+          {t('gameplay.quickBeatHint', { defaultValue: 'Wygląda na małą akcję — kliknij ⚡ żeby wysłać bez nowej sceny' })}
+        </span>
+      )}
+      {quickBeatAvailable && isQuickBeatLocked && (
+        <span className="text-[10px] font-label uppercase tracking-widest text-on-surface-variant/60 mt-1 block">
+          {t('gameplay.quickBeatLockedHint', { defaultValue: 'Limit małych akcji osiągnięty — następna akcja musi być pełną sceną' })}
+        </span>
+      )}
       {dictation?.pausedByTTS && (
         <span className="text-[10px] font-bold uppercase tracking-widest text-sky-300/70 mt-1 block">
           {t('gameplay.dictationMutedByNarrator', { defaultValue: 'Narrator speaking — mic muted' })}

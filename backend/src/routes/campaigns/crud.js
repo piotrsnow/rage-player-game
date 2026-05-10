@@ -131,13 +131,28 @@ export async function crudCampaignRoutes(app) {
     });
 
     const characterIds = await getCampaignCharacterIds(campaign.id);
-    const [scenes, characters] = await Promise.all([
+    const [scenes, characters, quickBeats] = await Promise.all([
       prisma.campaignScene.findMany({
         where: { campaignId: campaign.id },
         orderBy: { sceneIndex: 'asc' },
         select: SCENE_CLIENT_SELECT,
       }),
       fetchCampaignCharacters(characterIds),
+      prisma.campaignQuickBeat.findMany({
+        where: { campaignId: campaign.id },
+        orderBy: { createdAt: 'asc' },
+        select: {
+          id: true,
+          parentSceneIndex: true,
+          characterId: true,
+          playerAction: true,
+          narrationText: true,
+          npcSpeaker: true,
+          npcReply: true,
+          timeAdvance: true,
+          createdAt: true,
+        },
+      }),
     ]);
     const dedupedScenes = dedupeScenesByIndexAsc(scenes);
 
@@ -146,6 +161,7 @@ export async function crudCampaignRoutes(app) {
       coreState,
       characterIds,
       scenes: dedupedScenes,
+      quickBeats,
       characters,
     };
   });

@@ -55,6 +55,10 @@ const normalizeQuotes = (text) =>
 export default function ActionPanel({
   actions = [],
   onAction,
+  onQuickBeat = null,
+  quickBeatStreak = 0,
+  quickBeatLimit = 5,
+  isQuickBeatLocked = false,
   disabled,
   npcs = [],
   autoPlayerTypingText = '',
@@ -158,6 +162,24 @@ export default function ActionPanel({
       inputRef.current?.clear();
     }
   };
+
+  // Quick beat ("mała akcja") — solo-only path. Bypasses scene-gen pipeline.
+  // BE may escalate (combat/travel/trade keyword) → falls back to full scene
+  // automatically inside useQuickBeat. UI just clears the input and trusts
+  // the hook to land an ADD_QUICK_BEAT or trigger generateScene.
+  const handleQuickBeatSubmit = useCallback(() => {
+    if (!onQuickBeat || isMultiplayer || isQuickBeatLocked) return;
+    const action = normalizeQuotes(resolveTrailingSpellAtMention(customAction.trim(), character));
+    if (!action || disabled) return;
+    if (listening && !dictation?.handsFree) toggle();
+    cancelPendingBroadcasts();
+    emitTypingStop(false);
+    const tags = serializeTags(entityTagsRef.current);
+    onQuickBeat(action, { entityTags: tags.length > 0 ? tags : null });
+    setCustomAction('');
+    entityTagsRef.current = [];
+    inputRef.current?.clear();
+  }, [onQuickBeat, isMultiplayer, isQuickBeatLocked, customAction, character, disabled, listening, dictation, toggle, cancelPendingBroadcasts, emitTypingStop]);
 
   // Hands-free auto-submit fires after a quiet pause; never toggles the mic
   // and is suppressed while another writer (auto-player typewriter) is active.
@@ -572,6 +594,11 @@ export default function ActionPanel({
             onTypingChange={handleTypingChange}
             onSubmit={handleCustomSubmit}
             onSoloSubmit={handleSoloCustomSubmit}
+            onQuickBeatSubmit={handleQuickBeatSubmit}
+            quickBeatAvailable={!!onQuickBeat && !isMultiplayer}
+            quickBeatStreak={quickBeatStreak}
+            quickBeatLimit={quickBeatLimit}
+            isQuickBeatLocked={isQuickBeatLocked}
             disabled={disabled}
             autoPlayerTypingText={autoPlayerTypingText}
             listening={listening}

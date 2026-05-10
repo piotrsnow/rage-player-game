@@ -21,6 +21,7 @@ export function buildUserPrompt(playerAction, {
   pendingSlip = null,
   pendingProvidence = null,
   entityTags = null,
+  recentQuickBeats = null,
 } = {}) {
   if (isFirstScene) {
     return `Generate the opening scene. Set the stage with an atmospheric description. Introduce the setting, hint at adventure hooks, and include at least one NPC who speaks in direct dialogue. This is scene 1 — keep it concise (1-2 short paragraphs).
@@ -109,6 +110,20 @@ Do NOT re-emit the same questUpdates / npcs / location changes — they're alrea
 
   if (talkNpcMatch) {
     parts.push(`Player wants to talk to "${talkNpcMatch[1]}". Narrate the conversation normally with dialogue segments for each NPC line.`);
+  }
+
+  // Recent quick beats ("małe akcje") since the last full scene — short
+  // RP-beats the player did between scenes (drink ale, check gear, ask
+  // trivia). Premium uses these for continuity so the next scene picks up
+  // naturally without re-establishing the situation.
+  if (Array.isArray(recentQuickBeats) && recentQuickBeats.length > 0) {
+    const beatLines = recentQuickBeats.map((qb, i) => {
+      const reply = qb.npcSpeaker && qb.npcReply
+        ? ` | NPC ${qb.npcSpeaker}: "${qb.npcReply}"`
+        : '';
+      return `${i + 1}. Gracz: ${qb.playerAction}\n   DM: ${qb.narrationText}${reply}`;
+    });
+    parts.push(`## [RECENT QUICK BEATS] — drobne RP-bity od ostatniej pełnej sceny (kontynuuj z tego punktu, NIE powtarzaj ich):\n${beatLines.join('\n')}`);
   }
 
   // Structured entity references selected by the player

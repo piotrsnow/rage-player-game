@@ -118,7 +118,7 @@ export const campaignHandlers = {
       // missing a DM message. Timestamps must be strictly monotonic so the sort
       // below doesn't interleave player/dice/dm rows from different scenes.
       const existingDmCount = (loaded.chatHistory || [])
-        .filter((m) => m.role === 'dm').length;
+        .filter((m) => m.role === 'dm' && m.subtype !== 'quick_beat').length;
       const reconstructed = [];
       const reloadBaseTs = Date.now() - loaded.scenes.length * 1000;
       loaded.scenes.forEach((scene, idx) => {

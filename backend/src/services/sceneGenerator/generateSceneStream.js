@@ -272,6 +272,27 @@ export async function generateSceneStream(campaignId, playerAction, options = {}
     });
     recentScenes.reverse();
 
+    // Quick beats anchored to the most recent full scene — provide continuity
+    // context to premium so the next scene picks up after any unflushed
+    // RP-beats (e.g. player asked an NPC trivia, narrated checking gear).
+    // Cap at 8 to keep tokens bounded; the FE lock fires at 5 so the live
+    // ceiling is rarely above that anyway.
+    let recentQuickBeats = [];
+    if (recentScenes.length > 0) {
+      const lastSceneIdx = recentScenes[recentScenes.length - 1].sceneIndex;
+      recentQuickBeats = await prisma.campaignQuickBeat.findMany({
+        where: { campaignId, parentSceneIndex: lastSceneIdx },
+        orderBy: { createdAt: 'asc' },
+        take: 8,
+        select: {
+          playerAction: true,
+          narrationText: true,
+          npcSpeaker: true,
+          npcReply: true,
+        },
+      });
+    }
+
     const magicExposure = detectMagicExposure(recentScenes, coreState.character);
 
     const systemPromptParts = buildLeanSystemPrompt(coreState, recentScenes, language, {
@@ -300,6 +321,7 @@ export async function generateSceneStream(campaignId, playerAction, options = {}
       pendingSlip,
       pendingProvidence,
       entityTags,
+      recentQuickBeats,
     });
 
     // One-shot incident-system payloads — clear them as soon as the prompt
