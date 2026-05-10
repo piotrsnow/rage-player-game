@@ -1,0 +1,167 @@
+/** Magical creature catalog for random encounters. */
+
+export const MAGICAL_CREATURES = [
+  {
+    id: 'jednorozec',
+    namePl: 'Jednorożec',
+    temperament: 'gentle',
+    size: 'medium',
+    environments: ['las', 'pole'],
+    fleePenalty: 0,
+    behaviorHints: ['podchodzi z ciekawością', 'emanuje spokojnym światłem', 'ocenia czystość serca podróżnika'],
+    icon: 'pets',
+  },
+  {
+    id: 'smok',
+    namePl: 'Smok',
+    temperament: 'aggressive',
+    size: 'large',
+    environments: ['gory', 'jaskinia'],
+    fleePenalty: -8,
+    behaviorHints: ['zieje ogniem w stronę nieba', 'wpatruje się w podróżnika z wyższością', 'jego łuski lśnią jak roztopione złoto'],
+    icon: 'local_fire_department',
+  },
+  {
+    id: 'maly_smok',
+    namePl: 'Mały smok',
+    temperament: 'unpredictable',
+    size: 'small',
+    environments: ['gory', 'ruiny'],
+    fleePenalty: -3,
+    behaviorHints: ['skacze chaotycznie z kamienia na kamień', 'próbuje ukraść błyszczący przedmiot', 'warczy i mruczy jednocześnie'],
+    icon: 'local_fire_department',
+  },
+  {
+    id: 'ognisty_lew',
+    namePl: 'Ognisty lew',
+    temperament: 'aggressive',
+    size: 'medium',
+    environments: ['pole', 'droga'],
+    fleePenalty: -5,
+    behaviorHints: ['grzywa płonie żywym ogniem', 'krąży wokół ofiary z dziką gracją', 'ryczy i ziemia drży pod łapami'],
+    icon: 'local_fire_department',
+  },
+  {
+    id: 'sniezny_kormoran',
+    namePl: 'Śnieżny kormoran',
+    temperament: 'gentle',
+    size: 'small',
+    environments: ['gory', 'wybrzeze'],
+    fleePenalty: 0,
+    behaviorHints: ['trzepocze skrzydłami pokrytymi szronem', 'przysiada na ramieniu podróżnika', 'zostawia lodowe piórka na ścieżce'],
+    icon: 'ac_unit',
+  },
+  {
+    id: 'krysztalowy_lis',
+    namePl: 'Kryształowy lis',
+    temperament: 'neutral',
+    size: 'small',
+    environments: ['las', 'jaskinia'],
+    fleePenalty: -2,
+    behaviorHints: ['przemyka między drzewami jak pryzmat światła', 'obserwuje z bezpiecznej odległości', 'jego futro załamuje światło w tęczowe refleksy'],
+    icon: 'diamond',
+  },
+  {
+    id: 'cienisty_zajac',
+    namePl: 'Cienisty zając',
+    temperament: 'neutral',
+    size: 'tiny',
+    environments: ['las', 'bagno'],
+    fleePenalty: 2,
+    behaviorHints: ['migocze między cieniami drzew', 'znika i pojawia się w innym miejscu', 'zostawia ślady z ciemnej mgły'],
+    icon: 'dark_mode',
+  },
+  {
+    id: 'mrozny_wilk',
+    namePl: 'Mroźny wilk',
+    temperament: 'aggressive',
+    size: 'medium',
+    environments: ['gory', 'las'],
+    fleePenalty: -4,
+    behaviorHints: ['oddech zamraża powietrze wokół pyska', 'szczerzy kły pokryte lodem', 'porusza się cicho po zamarzniętej ziemi'],
+    icon: 'ac_unit',
+  },
+  {
+    id: 'bursztynowy_motyl',
+    namePl: 'Bursztynowy motyl (wielki)',
+    temperament: 'gentle',
+    size: 'medium',
+    environments: ['las', 'pole'],
+    fleePenalty: 3,
+    behaviorHints: ['skrzydła migoczą ciepłym, złotym blaskiem', 'siada na kwiatach i ożywia je magią', 'unosi się łagodnie w promieniach słońca'],
+    icon: 'filter_vintage',
+  },
+  {
+    id: 'drzewny_duszek',
+    namePl: 'Drzewny duszek',
+    temperament: 'unpredictable',
+    size: 'tiny',
+    environments: ['las', 'bagno'],
+    fleePenalty: 1,
+    behaviorHints: ['chichotze ukryty w korze drzewa', 'rzuca drobne szyszki w przechodniów', 'mruga fosforyzującymi oczkami z gałęzi'],
+    icon: 'park',
+  },
+  {
+    id: 'ognisty_feniks_mlody',
+    namePl: 'Ognisty feniks (młody)',
+    temperament: 'neutral',
+    size: 'medium',
+    environments: ['gory', 'ruiny'],
+    fleePenalty: -3,
+    behaviorHints: ['pióra tląsię pomarańczowym żarem', 'wydaje melodyjny, ciepły trel', 'wzbija się w powietrze zostawiając smugę iskier'],
+    icon: 'whatshot',
+  },
+  {
+    id: 'szmaragdowy_waz',
+    namePl: 'Szmaragdowy wąż',
+    temperament: 'neutral',
+    size: 'small',
+    environments: ['bagno', 'jaskinia'],
+    fleePenalty: -1,
+    behaviorHints: ['łuski mieniąsię odcieniami zieleni', 'syczy cicho i obserwuje spod liści', 'owija się wokół gałęzi z hipnotyczną gracją'],
+    icon: 'pets',
+  },
+  {
+    id: 'lodowy_jelen',
+    namePl: 'Lodowy jeleń',
+    temperament: 'gentle',
+    size: 'large',
+    environments: ['gory', 'las'],
+    fleePenalty: 0,
+    behaviorHints: ['poroże lśni jak wyrzeźbione z lodu', 'stąpa cicho zostawiając mroźne ślady', 'patrzy spokojnie głębokimi, błękitnymi oczami'],
+    icon: 'ac_unit',
+  },
+  {
+    id: 'kamienny_zolw',
+    namePl: 'Kamienny żółw',
+    temperament: 'neutral',
+    size: 'large',
+    environments: ['gory', 'droga'],
+    fleePenalty: 5,
+    behaviorHints: ['porusza się z majestatyczną powolnością', 'pancerz pokryty jest mchem i runami', 'ziemia lekko drży przy każdym kroku'],
+    icon: 'landscape',
+  },
+  {
+    id: 'mglisty_puchacz',
+    namePl: 'Mglisty puchacz',
+    temperament: 'unpredictable',
+    size: 'medium',
+    environments: ['las', 'bagno', 'ruiny'],
+    fleePenalty: 1,
+    behaviorHints: ['pojawia się znikąd w kłębach mgły', 'wpatruje się nieruchomo wielkimi oczami', 'wydaje niski, wibrujący pohukiwanie'],
+    icon: 'visibility',
+  },
+];
+
+/**
+ * Pick a random creature matching the current location environment.
+ * Falls back to a fully random pick if no creature matches.
+ */
+export function pickCreature(currentLocation) {
+  const loc = (currentLocation || '').toLowerCase().trim();
+  const matched = loc
+    ? MAGICAL_CREATURES.filter((c) => c.environments.includes(loc))
+    : [];
+  const pool = matched.length > 0 ? matched : MAGICAL_CREATURES;
+  return pool[Math.floor(Math.random() * pool.length)];
+}

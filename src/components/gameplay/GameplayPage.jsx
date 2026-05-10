@@ -75,6 +75,8 @@ import MainQuestCompleteModal from './MainQuestCompleteModal';
 import { ActionTagProvider } from '../../contexts/ActionTagContext';
 import { claimExclusiveReadAloud } from '../../utils/readAloudExclusive';
 import WorldNewsPanel from './WorldNewsPanel';
+import { useCreatureEncounter } from '../../hooks/useCreatureEncounter';
+import CreatureEncounterModal from './CreatureEncounterModal';
 
 function hashCode(str) {
   let h = 0;
@@ -85,8 +87,7 @@ function hashCode(str) {
 }
 
 export default function GameplayPage({ readOnly = false, shareToken = null, onRefresh = null }) {
-  // Temporary kill switch for timer-driven idle world events.
-  const IDLE_WORLD_EVENTS_ENABLED = false;
+  const CREATURE_ENCOUNTERS_ENABLED = true;
 
   const navigate = useNavigate();
   const location = useLocation();
@@ -617,22 +618,28 @@ export default function GameplayPage({ readOnly = false, shareToken = null, onRe
 
   const MAX_CONSECUTIVE_IDLE_EVENTS = 2;
 
+  const creatureEncounter = useCreatureEncounter({ generateScene });
+
   const handleIdleEvent = useCallback(({ roll, threshold }) => {
-    if (!IDLE_WORLD_EVENTS_ENABLED) return;
+    if (!CREATURE_ENCOUNTERS_ENABLED) return;
+    if (creatureEncounter.encounter || creatureEncounter.isLoading) return;
     if (consecutiveIdleEventsRef.current >= MAX_CONSECUTIVE_IDLE_EVENTS) return;
     consecutiveIdleEventsRef.current += 1;
-    generateScene(`[IDLE_WORLD_EVENT: d50=${roll}, threshold=${threshold}]`, false, false).catch(() => {});
-  }, [IDLE_WORLD_EVENTS_ENABLED, generateScene]);
+    const backendCampaignId = campaign?.backendId;
+    if (!backendCampaignId) return;
+    creatureEncounter.submitEncounter(backendCampaignId);
+  }, [creatureEncounter, campaign?.backendId]);
 
   const idlePaused = isMultiplayer
-    || !IDLE_WORLD_EVENTS_ENABLED
+    || !CREATURE_ENCOUNTERS_ENABLED
     || isGeneratingScene
     || !!(combat?.active)
     || autoPlayer.isAutoPlaying
     || isReviewingPastScene
     || (campaign?.status && campaign.status !== 'active')
     || character?.status === 'dead'
-    || !currentScene;
+    || !currentScene
+    || !!creatureEncounter.encounter;
 
   const idleTimer = useIdleTimer({
     paused: idlePaused,
@@ -1112,6 +1119,15 @@ export default function GameplayPage({ readOnly = false, shareToken = null, onRe
           momentumMinigameActive={momentum.active}
         />
       </aside>
+
+      <CreatureEncounterModal
+          encounter={creatureEncounter.encounter}
+          fleeResult={creatureEncounter.fleeResult}
+          isLoading={creatureEncounter.isLoading}
+          onRespond={(action) => creatureEncounter.respondToCreature(action)}
+          onFlee={() => creatureEncounter.fleeFromCreature(character)}
+          onDismiss={() => creatureEncounter.dismiss()}
+        />
 
       <GameplayModals
         readOnly={readOnly}
