@@ -62,7 +62,7 @@ function StatDetailPanel({ attrKey, value, t }) {
   );
 }
 
-export default function StatsGrid({ attributes, characterLevel, characterXp, attributePoints }) {
+export default function StatsGrid({ attributes, characterLevel, characterXp, attributePoints, backstory }) {
   const { t } = useTranslation();
   const [selectedStat, setSelectedStat] = useState(null);
 
@@ -96,6 +96,25 @@ export default function StatsGrid({ attributes, characterLevel, characterXp, att
             +{attributePoints}
           </span>
         )}
+      </div>
+
+      <div className="bg-surface-container-low p-6 rounded-sm border border-outline-variant/10 relative">
+        <div className="absolute top-0 right-0 p-4">
+          <span className="material-symbols-outlined text-primary-dim text-sm opacity-50">
+            psychology
+          </span>
+        </div>
+        <h3 className="text-tertiary font-headline mb-4 flex items-center gap-2">
+          <span className="material-symbols-outlined text-sm">auto_stories</span>
+          {t('character.origins')}
+        </h3>
+        <div className="text-on-surface-variant font-body leading-relaxed text-sm">
+          {backstory || (
+            <p className="italic text-outline">
+              {t('character.originsEmpty')}
+            </p>
+          )}
+        </div>
       </div>
 
       <div className="grid grid-cols-3 sm:grid-cols-6 gap-3">

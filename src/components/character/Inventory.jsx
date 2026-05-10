@@ -9,7 +9,7 @@ import Tooltip from '../ui/Tooltip';
 import Button from '../ui/Button';
 import { rarityColors, rarityGlows, typeIcons, SLOT_CONFIG, getEquippedSlot, getEquippableSlots } from './inventory/constants';
 
-const ITEMS_PER_PAGE = 20;
+const ITEMS_PER_PAGE = 16;
 
 function CoinDisplay({ value, label, color }) {
   return (
@@ -64,139 +64,146 @@ export default function Inventory({
   }
 
   return (
-    <div className="bg-surface-container-low p-6 rounded-sm border border-outline-variant/10 shadow-xl">
-      <div className="flex justify-between items-center mb-4">
-        <h3 className="text-tertiary font-headline text-xl">{t('inventory.title')}</h3>
-        <div className="flex items-center gap-3">
-          <button
-            onClick={() => setShowMaterialBag(true)}
-            className="flex items-center gap-1.5 px-2.5 py-1 text-[9px] font-label font-bold uppercase tracking-wider rounded-sm bg-surface-container-highest/50 border border-outline-variant/15 text-on-surface-variant hover:bg-primary/10 hover:border-primary/20 hover:text-primary transition-colors"
-          >
-            <span className="material-symbols-outlined text-[12px]">inventory_2</span>
-            {t('materialBag.title', 'Materials')}
-            {totalMaterials > 0 && (
-              <span className="ml-0.5 inline-flex items-center justify-center min-w-[16px] h-4 px-1 text-[8px] font-bold bg-primary/20 text-primary rounded-full">
-                {totalMaterials}
-              </span>
-            )}
-          </button>
-          <span className="text-[10px] text-on-surface-variant font-label uppercase tracking-widest">
-            {t('inventory.slots', { current: items.length, max: maxSlots })}
-          </span>
+    <>
+      {/* Box 1: Equipment + Money */}
+      <div className="bg-surface-container-low p-6 rounded-sm border border-outline-variant/10 shadow-xl">
+        <h3 className="text-tertiary font-headline text-xl mb-4">{t('inventory.title')}</h3>
+
+        <EquipmentSlotsBar
+          equipped={equipped}
+          items={items}
+          onEquipItem={onEquipItem}
+          onUnequipItem={onUnequipItem}
+        />
+
+        <div className="flex items-center gap-1.5 px-3 py-2.5 bg-surface-container-highest/50 border border-outline-variant/10 rounded-sm">
+          <span className="material-symbols-outlined text-base text-on-surface-variant mr-1">account_balance_wallet</span>
+          <span className="text-[10px] text-on-surface-variant font-label uppercase tracking-widest mr-3">{t('currency.purse')}</span>
+          <div className="flex items-center gap-4">
+            <CoinDisplay value={purse.gold} label={t('currency.goldShort')} color="bg-yellow-500/90 text-yellow-950" />
+            <CoinDisplay value={purse.silver} label={t('currency.silverShort')} color="bg-gray-300/90 text-gray-700" />
+            <CoinDisplay value={purse.copper} label={t('currency.copperShort')} color="bg-orange-600/80 text-orange-100" />
+          </div>
         </div>
       </div>
 
-      <div className="flex items-center gap-1.5 mb-5 px-3 py-2.5 bg-surface-container-highest/50 border border-outline-variant/10 rounded-sm">
-        <span className="material-symbols-outlined text-base text-on-surface-variant mr-1">account_balance_wallet</span>
-        <span className="text-[10px] text-on-surface-variant font-label uppercase tracking-widest mr-3">{t('currency.purse')}</span>
-        <div className="flex items-center gap-4">
-          <CoinDisplay value={purse.gold} label={t('currency.goldShort')} color="bg-yellow-500/90 text-yellow-950" />
-          <CoinDisplay value={purse.silver} label={t('currency.silverShort')} color="bg-gray-300/90 text-gray-700" />
-          <CoinDisplay value={purse.copper} label={t('currency.copperShort')} color="bg-orange-600/80 text-orange-100" />
-        </div>
-      </div>
-
-      <EquipmentSlotsBar
-        equipped={equipped}
-        items={items}
-        onEquipItem={onEquipItem}
-        onUnequipItem={onUnequipItem}
-      />
-
-      <div className="grid grid-cols-5 gap-3">
-        {pageItems.map((item) => {
-          const rarityKey = item.rarity || item.availability || 'common';
-          const rarity = rarityColors[rarityKey] || rarityColors.common;
-          const glow = rarityGlows[rarityKey] || '';
-          const icon = typeIcons[item.type] || typeIcons.misc;
-          const resolvedImageUrl = item.imageUrl ? apiClient.resolveMediaUrl(item.imageUrl) : null;
-          const isSelected = selectedItemId === item.id;
-          const eqSlot = getEquippedSlot(item, equipped);
-          const equippableSlots = getEquippableSlots(item);
-          const handleDoubleClick = () => {
-            if (eqSlot) {
-              onUnequipItem?.(eqSlot);
-            } else if (equippableSlots.length > 0) {
-              onEquipItem?.(item.id, equippableSlots[0]);
-            }
-          };
-          return (
-            <Tooltip
-              key={item.id}
-              content={<ItemTooltip item={item} />}
-              delay={100}
-              className="contents"
-              tooltipClassName="!max-w-none !p-3"
+      {/* Box 2: Inventory items */}
+      <div className="bg-surface-container-low p-6 rounded-sm border border-outline-variant/10 shadow-xl">
+        <div className="flex justify-between items-center mb-4">
+          <h3 className="text-tertiary font-headline text-xl">{t('inventory.backpackTitle', 'Plecak')}</h3>
+          <div className="flex items-center gap-3">
+            <button
+              onClick={() => setShowMaterialBag(true)}
+              className="flex items-center gap-1.5 px-2.5 py-1 text-[9px] font-label font-bold uppercase tracking-wider rounded-sm bg-surface-container-highest/50 border border-outline-variant/15 text-on-surface-variant hover:bg-primary/10 hover:border-primary/20 hover:text-primary transition-colors"
             >
-              <div
-                className={`aspect-square bg-surface-container-highest border ${rarity} ${glow} relative group cursor-pointer hover:scale-105 transition-transform ${isSelected ? 'ring-1 ring-primary/50 scale-105' : ''} ${eqSlot ? 'ring-1 ring-primary/40' : ''}`}
-                onClick={() => handleSelect(isSelected ? null : item.id)}
+              <span className="material-symbols-outlined text-[12px]">inventory_2</span>
+              {t('materialBag.title', 'Materials')}
+              {totalMaterials > 0 && (
+                <span className="ml-0.5 inline-flex items-center justify-center min-w-[16px] h-4 px-1 text-[8px] font-bold bg-primary/20 text-primary rounded-full">
+                  {totalMaterials}
+                </span>
+              )}
+            </button>
+            <span className="text-[10px] text-on-surface-variant font-label uppercase tracking-widest">
+              {t('inventory.slots', { current: items.length, max: maxSlots })}
+            </span>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-4 gap-3">
+          {pageItems.map((item) => {
+            const rarityKey = item.rarity || item.availability || 'common';
+            const rarity = rarityColors[rarityKey] || rarityColors.common;
+            const glow = rarityGlows[rarityKey] || '';
+            const icon = typeIcons[item.type] || typeIcons.misc;
+            const resolvedImageUrl = item.imageUrl ? apiClient.resolveMediaUrl(item.imageUrl) : null;
+            const isSelected = selectedItemId === item.id;
+            const eqSlot = getEquippedSlot(item, equipped);
+            const equippableSlots = getEquippableSlots(item);
+            const handleDoubleClick = () => {
+              if (eqSlot) {
+                onUnequipItem?.(eqSlot);
+              } else if (equippableSlots.length > 0) {
+                onEquipItem?.(item.id, equippableSlots[0]);
+              }
+            };
+            return (
+              <Tooltip
+                key={item.id}
+                content={<ItemTooltip item={item} />}
+                delay={100}
+                className="contents"
+                tooltipClassName="!max-w-none !p-3"
               >
-                <InventoryImage
-                  imageUrl={resolvedImageUrl}
-                  alt={item.name}
-                  sizeClass="w-full h-full"
-                  fallbackIcon={icon}
-                  fallbackIconClass="text-3xl"
-                  imageClassName="group-hover:scale-110 transition-transform"
-                  wrapperClassName="flex items-center justify-center"
-                />
-                <div className="absolute inset-x-0 bottom-0 px-1 pt-3 pb-0.5 bg-gradient-to-t from-black/85 via-black/40 to-transparent pointer-events-none">
-                  <span className="block text-[9px] font-label leading-tight truncate text-on-surface">
-                    {item.name}
-                  </span>
-                </div>
-                {eqSlot && (
-                  <div className="absolute -top-1 -left-1 w-4 h-4 bg-primary rounded-full flex items-center justify-center shadow-[0_0_6px_rgba(147,130,220,0.4)]">
-                    <span className="material-symbols-outlined text-[10px] text-on-primary" style={{ fontVariationSettings: "'FILL' 1" }}>
-                      {SLOT_CONFIG[eqSlot].icon}
+                <div
+                  className={`aspect-square bg-surface-container-highest border ${rarity} ${glow} relative group cursor-pointer hover:scale-105 transition-transform ${isSelected ? 'ring-1 ring-primary/50 scale-105' : ''} ${eqSlot ? 'ring-1 ring-primary/40' : ''}`}
+                  onClick={() => handleSelect(isSelected ? null : item.id)}
+                >
+                  <InventoryImage
+                    imageUrl={resolvedImageUrl}
+                    alt={item.name}
+                    sizeClass="w-full h-full"
+                    fallbackIcon={icon}
+                    fallbackIconClass="text-3xl"
+                    imageClassName="group-hover:scale-110 transition-transform"
+                    wrapperClassName="flex items-center justify-center"
+                  />
+                  <div className="absolute inset-x-0 bottom-0 px-1 pt-3 pb-0.5 bg-gradient-to-t from-black/85 via-black/40 to-transparent pointer-events-none">
+                    <span className="block text-[9px] font-label leading-tight truncate text-on-surface">
+                      {item.name}
                     </span>
                   </div>
-                )}
-                {(item.rarity === 'legendary' || item.availability === 'exotic') && (
-                  <div className="absolute -top-1 -right-1 w-2 h-2 bg-tertiary rounded-full shadow-[0_0_6px_rgba(255,239,213,0.6)]" />
-                )}
-                {(item.rarity === 'epic' || item.rarity === 'rare') && (
-                  <div className="absolute -top-1 -right-1 w-2 h-2 bg-primary rounded-full shadow-[0_0_6px_rgba(197,154,255,0.6)]" />
-                )}
-              </div>
-            </Tooltip>
-          );
-        })}
-        {Array.from({ length: emptySlots }).map((_, i) => (
-          <div
-            key={`empty-${i}`}
-            className="aspect-square bg-surface-dim/50 border border-outline-variant/10 border-dashed"
-          />
-        ))}
-      </div>
-
-      {totalPages > 1 && (
-        <div className="mt-4 flex items-center justify-center gap-3">
-          <Button
-            variant="secondary"
-            size="icon"
-            disabled={safePage <= 1}
-            onClick={() => setPage((p) => Math.max(1, p - 1))}
-            aria-label={t('gallery.prev', 'Previous')}
-          >
-            <span className="material-symbols-outlined text-base">chevron_left</span>
-          </Button>
-          <span className="text-[10px] text-on-surface-variant font-label uppercase tracking-widest tabular-nums">
-            {safePage}/{totalPages}
-          </span>
-          <Button
-            variant="secondary"
-            size="icon"
-            disabled={safePage >= totalPages}
-            onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-            aria-label={t('gallery.next', 'Next')}
-          >
-            <span className="material-symbols-outlined text-base">chevron_right</span>
-          </Button>
+                  {eqSlot && (
+                    <div className="absolute -top-1 -left-1 w-4 h-4 bg-primary rounded-full flex items-center justify-center shadow-[0_0_6px_rgba(147,130,220,0.4)]">
+                      <span className="material-symbols-outlined text-[10px] text-on-primary" style={{ fontVariationSettings: "'FILL' 1" }}>
+                        {SLOT_CONFIG[eqSlot].icon}
+                      </span>
+                    </div>
+                  )}
+                  {(item.rarity === 'legendary' || item.availability === 'exotic') && (
+                    <div className="absolute -top-1 -right-1 w-2 h-2 bg-tertiary rounded-full shadow-[0_0_6px_rgba(255,239,213,0.6)]" />
+                  )}
+                  {(item.rarity === 'epic' || item.rarity === 'rare') && (
+                    <div className="absolute -top-1 -right-1 w-2 h-2 bg-primary rounded-full shadow-[0_0_6px_rgba(197,154,255,0.6)]" />
+                  )}
+                </div>
+              </Tooltip>
+            );
+          })}
+          {Array.from({ length: emptySlots }).map((_, i) => (
+            <div
+              key={`empty-${i}`}
+              className="aspect-square bg-surface-dim/50 border border-outline-variant/10 border-dashed"
+            />
+          ))}
         </div>
-      )}
 
-    </div>
+        {totalPages > 1 && (
+          <div className="mt-4 flex items-center justify-center gap-3">
+            <Button
+              variant="secondary"
+              size="icon"
+              disabled={safePage <= 1}
+              onClick={() => setPage((p) => Math.max(1, p - 1))}
+              aria-label={t('gallery.prev', 'Previous')}
+            >
+              <span className="material-symbols-outlined text-base">chevron_left</span>
+            </Button>
+            <span className="text-[10px] text-on-surface-variant font-label uppercase tracking-widest tabular-nums">
+              {safePage}/{totalPages}
+            </span>
+            <Button
+              variant="secondary"
+              size="icon"
+              disabled={safePage >= totalPages}
+              onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+              aria-label={t('gallery.next', 'Next')}
+            >
+              <span className="material-symbols-outlined text-base">chevron_right</span>
+            </Button>
+          </div>
+        )}
+      </div>
+    </>
   );
 }

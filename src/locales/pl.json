@@ -850,6 +850,7 @@
   },
   "inventory": {
     "title": "Zbrojownia i Artefakty",
+    "backpackTitle": "Plecak",
     "slots": "{{current}}/{{max}} Miejsc",
     "type": "Typ:",
     "rarityCommon": "Zwykły",

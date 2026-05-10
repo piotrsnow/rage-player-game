@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useMemo, useState, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useChatScrollSync } from '../../hooks/useChatScrollSync';
 import { useChatAutoNarration } from '../../hooks/useChatAutoNarration';
@@ -11,6 +11,19 @@ import {
   QuickBeatMessage,
 } from './chat/ChatMessages';
 import DiceRollCard from './DiceRollCard';
+
+const FONT_SIZE_KEY = 'rpgon:chatFontScale';
+const FONT_STEP = 0.1;
+const FONT_MIN = 0.7;
+const FONT_MAX = 1.8;
+
+function readInitialScale() {
+  try {
+    const v = parseFloat(localStorage.getItem(FONT_SIZE_KEY));
+    if (Number.isFinite(v) && v >= FONT_MIN && v <= FONT_MAX) return v;
+  } catch { /* ignore */ }
+  return 1;
+}
 
 function formatDuration(totalSeconds) {
   const h = Math.floor(totalSeconds / 3600);
@@ -41,6 +54,16 @@ export default function ChatPanel({
   chatGate = false,
 }) {
   const { t } = useTranslation();
+  const [fontScale, setFontScale] = useState(readInitialScale);
+
+  const adjustFont = useCallback((delta) => {
+    setFontScale((prev) => {
+      const next = Math.round(Math.min(FONT_MAX, Math.max(FONT_MIN, prev + delta)) * 10) / 10;
+      try { localStorage.setItem(FONT_SIZE_KEY, String(next)); } catch { /* ignore */ }
+      return next;
+    });
+  }, []);
+
   const { bottomRef, containerRef } = useChatScrollSync({
     messageCount: messages.length,
     streamingNarrative,
@@ -105,6 +128,23 @@ export default function ChatPanel({
             </span>
             {t('gameplay.momentumActive', { bonus: (momentumBonus > 0 ? '+' : '') + momentumBonus })}
           </button>
+          <div className="flex items-center gap-0.5 px-1 py-0.5 rounded-sm bg-on-surface/5 border border-outline-variant/20">
+            <button
+              type="button"
+              onClick={() => adjustFont(-FONT_STEP)}
+              disabled={fontScale <= FONT_MIN}
+              className="w-5 h-5 flex items-center justify-center rounded text-on-surface-variant/60 hover:text-on-surface hover:bg-on-surface/10 disabled:opacity-30 disabled:cursor-default transition-colors text-xs font-bold"
+              title={t('chat.fontDecrease', 'Zmniejsz czcionkę')}
+            >−</button>
+            <span className="text-[10px] tabular-nums text-on-surface-variant/50 w-7 text-center select-none">{Math.round(fontScale * 100)}%</span>
+            <button
+              type="button"
+              onClick={() => adjustFont(FONT_STEP)}
+              disabled={fontScale >= FONT_MAX}
+              className="w-5 h-5 flex items-center justify-center rounded text-on-surface-variant/60 hover:text-on-surface hover:bg-on-surface/10 disabled:opacity-30 disabled:cursor-default transition-colors text-xs font-bold"
+              title={t('chat.fontIncrease', 'Zwiększ czcionkę')}
+            >+</button>
+          </div>
           {narrator?.isNarratorReady && narrator.playbackState !== narrator.STATES.IDLE && (
             <button
               onClick={narrator.stop}
@@ -121,7 +161,8 @@ export default function ChatPanel({
       <div
         ref={containerRef}
         data-chat-scroll-root
-        className="flex-1 overflow-y-auto p-4 space-y-4 custom-scrollbar"
+        className="flex-1 overflow-y-auto p-4 space-y-4 custom-scrollbar origin-top"
+        style={{ zoom: fontScale }}
       >
         {messages.length === 0 && (
           <div className="text-center py-12">

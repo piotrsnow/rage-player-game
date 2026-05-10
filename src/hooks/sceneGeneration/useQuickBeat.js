@@ -4,6 +4,7 @@ import { useGame } from '../../contexts/GameContext';
 import { useSettings } from '../../contexts/SettingsContext';
 import { aiService } from '../../services/ai';
 import { devLog } from '../../stores/devEventLogStore';
+import { stopAllDialogAudio } from '../../utils/readAloudExclusive';
 
 const QUICK_BEAT_LIMIT = 5;
 
@@ -30,6 +31,8 @@ export function useQuickBeat({ generateScene, onEscalate, onError } = {}) {
       onError?.({ code: 'QUICK_BEAT_LOCKED', message: t('gameplay.quickBeatLocked', { defaultValue: 'Quick beat limit reached — submit a full action' }) });
       return;
     }
+
+    stopAllDialogAudio();
 
     const backendCampaignId = state.campaign?.backendId;
     if (!backendCampaignId) {

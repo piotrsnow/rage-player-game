@@ -589,10 +589,10 @@ function SpellsGrid({
                     </div>
                   )}
                   <div className="p-2 w-full">
-                    <span className="text-on-surface-variant font-label text-[9px] uppercase tracking-[0.1em] leading-tight block">
+                    <span className="text-on-surface-variant font-label text-[11px] uppercase tracking-[0.1em] leading-tight block">
                       {spell.name}
                     </span>
-                    <span className="text-[10px] text-outline mt-0.5 block">
+                    <span className="text-xs text-outline mt-0.5 block font-bold">
                       {spell.manaCost} {t('magic.manaShort', 'many')}
                     </span>
                   </div>
@@ -1044,30 +1044,12 @@ export default function CharacterPanel({
         )}
 
         <div className={`${spellViewMode === 'trees' ? 'lg:col-start-4 ' : ''}lg:col-span-5 space-y-6 animate-fade-in`}>
-          <div className="bg-surface-container-low p-6 rounded-sm border border-outline-variant/10 relative">
-            <div className="absolute top-0 right-0 p-4">
-              <span className="material-symbols-outlined text-primary-dim text-sm opacity-50">
-                psychology
-              </span>
-            </div>
-            <h3 className="text-tertiary font-headline mb-4 flex items-center gap-2">
-              <span className="material-symbols-outlined text-sm">auto_stories</span>
-              {t('character.origins')}
-            </h3>
-            <div className="text-on-surface-variant font-body leading-relaxed text-sm">
-              {character.backstory || (
-                <p className="italic text-outline">
-                  {t('character.originsEmpty')}
-                </p>
-              )}
-            </div>
-          </div>
-
           <StatsGrid
             attributes={character.attributes}
             characterLevel={character.characterLevel}
             characterXp={character.characterXp}
             attributePoints={character.attributePoints}
+            backstory={character.backstory}
           />
 
           <SkillsGrid character={character} t={t} />
