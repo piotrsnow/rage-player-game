@@ -118,7 +118,7 @@ export default function Header() {
   }, [location.pathname, entryRoute]);
   const { settings, updateSettings, backendUser } = useSettings();
   const music = useGlobalMusic();
-  const { openCharacterSheet, openTasksInfo, openSettings, openKeys, openImageConfig, openAudioConfig, openProfile, openAdminUsers, openLocationGraph, openGmModal, openPrivacy } = useModals();
+  const { openCharacterSheet, openTasksInfo, openSettings, openKeys, openImageConfig, openAudioConfig, openProfile, openAdminUsers, openLocationGraph, openWorldLocationGraph, openGmModal, openPrivacy } = useModals();
   const { dictation } = useDictationContext() ?? {};
   const campaign = useGameCampaign();
   const aiLogSidebarVisible = useAiCallLogStore((s) => s.sidebarVisible);
@@ -465,7 +465,7 @@ export default function Header() {
               </Tooltip>
               {volumeOpen && (
                 <div className="absolute right-0 top-full mt-2 px-3 py-2.5 rounded-sm bg-surface-container-high/95 backdrop-blur-xl border border-outline-variant/15 shadow-xl space-y-2 animate-scale-in w-52">
-                  <div className="flex items-center gap-2">
+                  <div className="grid grid-cols-[auto,1fr,auto] items-center gap-2">
                     <span className="material-symbols-outlined text-xs text-on-surface-variant/70 shrink-0">music_note</span>
                     <input
                       type="range"
@@ -477,11 +477,11 @@ export default function Header() {
                         music.setVolume(v);
                         if (v > 0) preMuteVolumesRef.current = null;
                       }}
-                      className="flex-1 h-1 accent-primary cursor-pointer"
+                      className="w-full min-w-0 h-1 accent-primary cursor-pointer"
                     />
                     <span className="text-[10px] text-on-surface-variant font-mono w-7 text-right">{vol}%</span>
                   </div>
-                  <div className="flex items-center gap-2">
+                  <div className="grid grid-cols-[auto,1fr,auto] items-center gap-2">
                     <span className="material-symbols-outlined text-xs text-on-surface-variant/70 shrink-0">record_voice_over</span>
                     <input
                       type="range"
@@ -493,7 +493,7 @@ export default function Header() {
                         updateSettings({ dialogueVolume: v });
                         if (v > 0) preMuteVolumesRef.current = null;
                       }}
-                      className="flex-1 h-1 accent-primary cursor-pointer"
+                      className="w-full min-w-0 h-1 accent-primary cursor-pointer"
                     />
                     <span className="text-[10px] text-on-surface-variant font-mono w-7 text-right">{dlgVol}%</span>
                   </div>
@@ -558,6 +558,18 @@ export default function Header() {
                   className="material-symbols-outlined text-on-surface-variant hover:text-tertiary transition-all active:scale-95 duration-200 cursor-pointer w-9 h-9 flex items-center justify-center rounded-full hover:bg-surface-container-high/40"
                 >
                   hub
+                </button>
+              </Tooltip>
+            )}
+            {backendUser?.isAdmin && (
+              <Tooltip content={t('nav.worldLocationGraph', { defaultValue: 'Graf lokacji świata' })} placement="bottom" variant="compact" asChild>
+                <button
+                  type="button"
+                  onClick={openWorldLocationGraph}
+                  aria-label={t('nav.worldLocationGraph', { defaultValue: 'Graf lokacji świata' })}
+                  className="material-symbols-outlined text-on-surface-variant hover:text-tertiary transition-all active:scale-95 duration-200 cursor-pointer w-9 h-9 flex items-center justify-center rounded-full hover:bg-surface-container-high/40"
+                >
+                  public
                 </button>
               </Tooltip>
             )}

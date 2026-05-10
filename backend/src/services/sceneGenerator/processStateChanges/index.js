@@ -12,6 +12,7 @@ import {
   findOrCreateCampaignLocation,
 } from '../../livingWorld/worldStateService.js';
 import { LOCATION_KIND_WORLD, LOCATION_KIND_CAMPAIGN, lookupLocationByKindId } from '../../locationRefs.js';
+import { slugifyItemName } from '../../../../../shared/domain/itemKeys.js';
 
 import { generateSceneEmbedding } from './sceneEmbedding.js';
 import { processNpcChanges, processItemAttributions } from './npcs.js';
@@ -44,6 +45,7 @@ import {
 import { createEdge } from '../../locationGraph/graphService.js';
 import { findSimilarNodeImage } from '../../locationGraph/imageMatcher.js';
 import { markLocationEdgeTraversed, markLocationDiscovered } from '../../livingWorld/userDiscoveryService.js';
+import { loadCampaignNpcNames, isNpcName } from '../../livingWorld/npcNameGuard.js';
 
 // Re-exported so existing test file processStateChanges.test.js keeps
 // working via `import { shouldPromoteToGlobal } from './processStateChanges.js'`.
@@ -129,6 +131,33 @@ const GENERIC_TERRAIN_TOKENS = new Set([
   'pustkowie', 'pustkowia',
 ]);
 
+async function registerNewItemDefinitions(campaignId, newItems) {
+  if (!Array.isArray(newItems) || newItems.length === 0) return;
+  for (const item of newItems) {
+    const name = item?.name || item?.itemName;
+    if (!name || typeof name !== 'string') continue;
+    const itemKey = slugifyItemName(name);
+    if (!itemKey || itemKey === 'unnamed') continue;
+    try {
+      await prisma.worldItemDefinition.upsert({
+        where: { itemKey },
+        create: {
+          itemKey,
+          displayName: name.trim(),
+          baseType: item.baseType || item.type || null,
+          description: item.description || '',
+          props: item.props || {},
+          globallyActive: false,
+          originCampaignId: campaignId,
+        },
+        update: {},
+      });
+    } catch (err) {
+      log.debug({ err: err?.message, itemKey, campaignId }, 'WorldItemDefinition registry upsert failed (non-fatal)');
+    }
+  }
+}
+
 function isGenericTerrainName(name) {
   const lower = String(name || '').toLowerCase().trim();
   if (!lower) return true;
@@ -167,6 +196,15 @@ export async function processStateChanges(campaignId, stateChanges, { prevLoc = 
   // `new Date()` drifting by milliseconds). Cross-user time reconstruction
   // later depends on this being stable per scene.
   const sceneGameTime = new Date();
+
+  // NPC name guard — loaded once, reused by all location-write paths in
+  // this scene. Prevents AI from materializing NPC names as location rows.
+  let npcNames = new Set();
+  try {
+    npcNames = await loadCampaignNpcNames(campaignId);
+  } catch {
+    // non-fatal — guard runs permissive if load fails
+  }
 
   if (stateChanges.npcs?.length) {
     const parsed = parseNpcChanges(stateChanges.npcs);
@@ -222,6 +260,7 @@ export async function processStateChanges(campaignId, stateChanges, { prevLoc = 
 
   if (livingWorldEnabled && stateChanges.newItems?.length) {
     await processItemAttributions(campaignId, stateChanges.newItems, ownerUserId, sceneGameTime);
+    await registerNewItemDefinitions(campaignId, stateChanges.newItems);
   }
 
   // AI emits `stateChanges.currentLocation` (string) and/or `currentX/currentY`
@@ -241,6 +280,10 @@ export async function processStateChanges(campaignId, stateChanges, { prevLoc = 
   const aiName = typeof stateChanges.currentLocation === 'string' && stateChanges.currentLocation.trim()
     ? stateChanges.currentLocation.trim()
     : null;
+  // AI may emit a composite ref "kind:uuid" directly — resolve it first.
+  const aiLocRef = typeof stateChanges.currentLocationRef === 'string'
+    ? stateChanges.currentLocationRef.match(/^(world|campaign):([0-9a-f-]{36})$/i)
+    : null;
   const aiX = typeof stateChanges.currentX === 'number' && Number.isFinite(stateChanges.currentX)
     ? stateChanges.currentX
     : null;
@@ -250,11 +293,29 @@ export async function processStateChanges(campaignId, stateChanges, { prevLoc = 
   const hasCoords = aiX !== null && aiY !== null;
 
   let aiNameResolved = false;
-  if (aiName || hasCoords) {
+  if (aiName || aiLocRef || hasCoords) {
     try {
       let updates = null;
-      if (aiName) {
-        const resolved = await resolveCurrentLocationTarget(campaignId, aiName);
+      // Prefer the composite ref if AI provided one.
+      let resolved = null;
+      if (aiLocRef) {
+        const refKind = aiLocRef[1].toLowerCase();
+        const refId = aiLocRef[2];
+        const row = await lookupLocationByKindId({
+          prisma,
+          kind: refKind,
+          id: refId,
+          select: { id: true, canonicalName: true, name: true, regionX: true, regionY: true },
+        }).catch(() => null);
+        if (row) {
+          resolved = { kind: refKind, id: refId, name: row.canonicalName || row.name || aiName || '' };
+          log.info({ campaignId, ref: stateChanges.currentLocationRef }, 'currentLocation resolved via AI-emitted ref');
+        }
+      }
+      if (!resolved && aiName) {
+        resolved = await resolveCurrentLocationTarget(campaignId, aiName);
+      }
+      if (aiName || resolved) {
         if (resolved) {
           aiNameResolved = true;
           const coords = await lookupLocationByKindId({
@@ -272,17 +333,11 @@ export async function processStateChanges(campaignId, stateChanges, { prevLoc = 
           };
           log.info({ campaignId, name: resolved.name, kind: resolved.kind, x: updates.currentX, y: updates.currentY }, 'currentLocation updated (anchored at POI)');
         } else if (
-          // Create-on-miss with guards. AI emitted a name that doesn't resolve
-          // to any known POI — but if it's a plausible POI label (≥2 words, not
-          // generic terrain) AND the player has a known prevLoc to anchor from,
-          // materialize a CampaignLocation node + a movement edge + transition.
-          // Coords inherited from prevLoc when AI didn't supply them; smart
-          // placer is intentionally NOT used here (we'd need direction/distance
-          // hints AI doesn't reliably emit on plain currentLocation switches).
           livingWorldEnabled
           && currentRef?.kind && currentRef?.id
           && aiName.trim().split(/\s+/).length >= 2
           && !isGenericTerrainName(aiName)
+          && !isNpcName(aiName, npcNames)
         ) {
           const anchorRow = await lookupLocationByKindId({
             prisma,
@@ -402,7 +457,7 @@ export async function processStateChanges(campaignId, stateChanges, { prevLoc = 
 
   let locResult = { createdSublocs: [] };
   if (livingWorldEnabled && stateChanges.newLocations?.length) {
-    locResult = await processLocationChanges(campaignId, stateChanges.newLocations, { prevLoc }) || { createdSublocs: [] };
+    locResult = await processLocationChanges(campaignId, stateChanges.newLocations, { prevLoc, npcNames }) || { createdSublocs: [] };
   }
 
   // Retry: initial aiName resolution failed (sublocation didn't exist yet),

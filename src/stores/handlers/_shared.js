@@ -38,46 +38,29 @@ export function normalizeCustomAttackPresets(presets) {
 
 export const PERIOD_START_HOUR = { morning: 6, afternoon: 12, evening: 18, night: 22 };
 
-/** Merge new materials into the bag, stacking by slugified name. */
+/** Add new materials to the bag. Each material gets its own entry (no name-merge). */
 export function stackMaterials(bag, newItems) {
   const result = bag.map((m) => ({ ...m }));
   for (const item of newItems) {
-    const key = slugifyItemName(item.name);
-    const existing = result.find((m) => slugifyItemName(m.name) === key);
-    if (existing) {
-      existing.quantity = (existing.quantity || 1) + (item.quantity || 1);
-    } else {
-      result.push({
-        name: item.name,
-        quantity: item.quantity || 1,
-      });
-    }
+    const id = item.id || `mat_${Date.now()}_${shortId(5)}`;
+    result.push({
+      id,
+      name: item.name,
+      quantity: item.quantity || 1,
+    });
   }
   return result;
 }
 
 /**
- * F4 — merge regular inventory items by slugify(name). Mirrors BE persistence
- * so optimistic FE updates don't show duplicate rows for one scene before
- * the server reconcile collapses them.
+ * Add regular inventory items. Each item gets a unique ID (no name-merge).
+ * Per-instance identity replaces the old F4 name-stacking model.
  */
 export function stackInventory(inventory, newItems) {
   const result = inventory.map((it) => ({ ...it, props: it.props ? { ...it.props } : {} }));
   for (const item of newItems) {
-    const key = slugifyItemName(item.name);
-    const existing = result.find((i) => slugifyItemName(i.name) === key);
-    if (existing) {
-      existing.quantity = (existing.quantity || 1) + (item.quantity || 1);
-      // Latest write wins for non-quantity props.
-      const KNOWN_COLS = new Set(['id', 'name', 'baseType', 'quantity', 'props', 'imageUrl', 'addedAt']);
-      for (const [k, v] of Object.entries(item)) {
-        if (!KNOWN_COLS.has(k) && v !== undefined) existing[k] = v;
-        else if (k === 'baseType' && v) existing.baseType = v;
-        else if (k === 'imageUrl' && v) existing.imageUrl = v;
-      }
-    } else {
-      result.push({ ...item, id: key, name: item.name, quantity: item.quantity || 1 });
-    }
+    const id = item.id || `item_${Date.now()}_${shortId(5)}`;
+    result.push({ ...item, id, name: item.name, quantity: item.quantity || 1 });
   }
   return result;
 }

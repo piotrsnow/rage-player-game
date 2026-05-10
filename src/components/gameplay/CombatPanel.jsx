@@ -324,7 +324,7 @@ export default function CombatPanel({
     return { x: 0, y: 0 };
   }, [combat.combatants]);
 
-  const triggerProjectileAnim = useCallback((actorId, targetId, hit = true) => {
+  const triggerProjectileAnim = useCallback((actorId, targetId, hit = true, opts = {}) => {
     const fromCell = getCombatantCell(actorId);
     const toCell = getCombatantCell(targetId);
     const angle = Math.random() * Math.PI * 2;
@@ -335,6 +335,7 @@ export default function CombatPanel({
       hit,
       missOffsetX: Math.cos(angle),
       missOffsetY: Math.sin(angle),
+      ...(opts.spellVfxVariant != null ? { spellVfxVariant: opts.spellVfxVariant } : {}),
     });
     return new Promise((resolve) => setTimeout(() => {
       setProjectileAnim(null);

@@ -1,6 +1,7 @@
 export {
   getOutgoingEdges,
   loadSubgraph,
+  loadWorldGraph,
   createEdge,
   createEdges,
   deactivateEdge,

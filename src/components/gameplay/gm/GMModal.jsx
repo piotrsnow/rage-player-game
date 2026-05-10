@@ -21,9 +21,10 @@ const AdminWorldLoreTab = lazy(() => import('../../admin/AdminWorldLoreTab'));
 const PromotionsTab = lazy(() => import('../../admin/adminLivingWorld/tabs/PromotionsTab'));
 const CanonGraphTab = lazy(() => import('../../admin/adminLivingWorld/tabs/CanonGraphTab'));
 const FontConfigTab = lazy(() => import('../../admin/adminLivingWorld/tabs/FontConfigTab'));
+const EntityRegistryTab = lazy(() => import('../../admin/adminLivingWorld/tabs/EntityRegistryTab'));
 
 const GAME_TABS = ['graph', 'entities', 'quests', 'journal', 'assets', 'overview'];
-const ADMIN_TABS = ['admin-npcs', 'admin-locations', 'admin-events', 'admin-reputation', 'admin-lore', 'admin-promotions', 'admin-canon', 'admin-fonts'];
+const ADMIN_TABS = ['admin-npcs', 'admin-locations', 'admin-events', 'admin-reputation', 'admin-lore', 'admin-promotions', 'admin-canon', 'admin-registry', 'admin-fonts'];
 
 const TAB_ICONS = {
   graph: 'hub',
@@ -39,6 +40,7 @@ const TAB_ICONS = {
   'admin-lore': 'auto_stories',
   'admin-promotions': 'approval',
   'admin-canon': 'account_tree',
+  'admin-registry': 'fact_check',
   'admin-fonts': 'font_download',
 };
 
@@ -50,6 +52,7 @@ const TAB_LABELS = {
   'admin-lore': 'Lore',
   'admin-promotions': 'Promotions',
   'admin-canon': 'Canon',
+  'admin-registry': 'Registry',
   'admin-fonts': 'Fonts',
 };
 
@@ -61,6 +64,7 @@ const ADMIN_TAB_COMPONENTS = {
   'admin-lore': AdminWorldLoreTab,
   'admin-promotions': PromotionsTab,
   'admin-canon': CanonGraphTab,
+  'admin-registry': EntityRegistryTab,
   'admin-fonts': FontConfigTab,
 };
 
@@ -150,7 +154,7 @@ export default function GMModal({ onClose }) {
         {/* Content */}
         <div className="flex-1 overflow-hidden">
           {activeTab === 'graph' && <GMGraphTab gameState={gameState} />}
-          {activeTab === 'entities' && <GMEntitiesTab gameState={gameState} />}
+          {activeTab === 'entities' && <GMEntitiesTab gameState={gameState} onClose={onClose} isAdmin={isAdmin} />}
           {activeTab === 'quests' && <GMQuestsTab gameState={gameState} />}
           {activeTab === 'journal' && <GMJournalTab gameState={gameState} />}
           {activeTab === 'assets' && <GMAssetsTab gameState={gameState} />}

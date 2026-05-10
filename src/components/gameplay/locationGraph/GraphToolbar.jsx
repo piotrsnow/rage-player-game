@@ -5,6 +5,7 @@ import { EDGE_VISUALS } from './graphVisuals.js';
 const CATEGORIES = Object.keys(EDGE_CATEGORIES);
 
 export default function GraphToolbar({
+  readOnly = false,
   filters, onToggleFilter,
   scaleFilter, onScaleChange,
   onAddNode, onAddEdge,
@@ -14,6 +15,7 @@ export default function GraphToolbar({
   onValidate,
   searchInputRef,
   snapToGrid, onToggleSnap, onResetLayout,
+  spriteJob,
 }) {
   const { t } = useTranslation();
 
@@ -72,28 +74,33 @@ export default function GraphToolbar({
 
       <div className="w-px h-5 bg-outline-variant/20" />
 
-      {/* Action buttons */}
-      <button
-        onClick={onAddNode}
-        title={t('locationGraph.tooltips.addNode')}
-        className={`flex items-center gap-1 px-3 py-1.5 rounded-sm transition-colors uppercase tracking-widest ${
-          addingNode ? 'bg-primary/30 text-primary' : 'hover:bg-white/5 text-on-surface-variant'
-        }`}
-      >
-        <span className="material-symbols-outlined text-sm">add_location</span>
-        {t('locationGraph.toolbar.addNode')}
-      </button>
+      {!readOnly && (
+        <>
+          <button
+            type="button"
+            onClick={onAddNode}
+            title={t('locationGraph.tooltips.addNode')}
+            className={`flex items-center gap-1 px-3 py-1.5 rounded-sm transition-colors uppercase tracking-widest ${
+              addingNode ? 'bg-primary/30 text-primary' : 'hover:bg-white/5 text-on-surface-variant'
+            }`}
+          >
+            <span className="material-symbols-outlined text-sm">add_location</span>
+            {t('locationGraph.toolbar.addNode')}
+          </button>
 
-      <button
-        onClick={onAddEdge}
-        title={t('locationGraph.tooltips.addEdge')}
-        className={`flex items-center gap-1 px-3 py-1.5 rounded-sm transition-colors uppercase tracking-widest ${
-          addingEdge ? 'bg-primary/30 text-primary' : 'hover:bg-white/5 text-on-surface-variant'
-        }`}
-      >
-        <span className="material-symbols-outlined text-sm">conversion_path</span>
-        {t('locationGraph.toolbar.addEdge')}
-      </button>
+          <button
+            type="button"
+            onClick={onAddEdge}
+            title={t('locationGraph.tooltips.addEdge')}
+            className={`flex items-center gap-1 px-3 py-1.5 rounded-sm transition-colors uppercase tracking-widest ${
+              addingEdge ? 'bg-primary/30 text-primary' : 'hover:bg-white/5 text-on-surface-variant'
+            }`}
+          >
+            <span className="material-symbols-outlined text-sm">conversion_path</span>
+            {t('locationGraph.toolbar.addEdge')}
+          </button>
+        </>
+      )}
 
       <button
         onClick={onToggleSnap}
@@ -115,26 +122,97 @@ export default function GraphToolbar({
         {t('locationGraph.toolbar.resetLayout')}
       </button>
 
-      {/* Mode toggle */}
-      <div className="w-px h-5 bg-outline-variant/20" />
-      <button
-        onClick={onModeChange}
-        title={t(`locationGraph.tooltips.${mode === 'gm' ? 'gm' : 'player'}`)}
-        className="flex items-center gap-1 px-3 py-1.5 rounded-sm hover:bg-white/5 text-on-surface-variant uppercase tracking-widest"
-      >
-        <span className="material-symbols-outlined text-sm">
-          {mode === 'gm' ? 'shield_person' : 'person'}
-        </span>
-        {mode === 'gm' ? 'GM' : t('locationGraph.toolbar.player')}
-      </button>
+      {!readOnly && (
+        <>
+          <div className="w-px h-5 bg-outline-variant/20" />
+          <button
+            type="button"
+            onClick={onModeChange}
+            title={t(`locationGraph.tooltips.${mode === 'gm' ? 'gm' : 'player'}`)}
+            className="flex items-center gap-1 px-3 py-1.5 rounded-sm hover:bg-white/5 text-on-surface-variant uppercase tracking-widest"
+          >
+            <span className="material-symbols-outlined text-sm">
+              {mode === 'gm' ? 'shield_person' : 'person'}
+            </span>
+            {mode === 'gm' ? 'GM' : t('locationGraph.toolbar.player')}
+          </button>
 
-      <button
-        onClick={onValidate}
-        title={t('locationGraph.tooltips.validate')}
-        className="flex items-center gap-1 px-3 py-1.5 rounded-sm hover:bg-white/5 text-on-surface-variant uppercase tracking-widest"
-      >
-        <span className="material-symbols-outlined text-sm">verified</span>
-      </button>
+          <button
+            type="button"
+            onClick={onValidate}
+            title={t('locationGraph.tooltips.validate')}
+            className="flex items-center gap-1 px-3 py-1.5 rounded-sm hover:bg-white/5 text-on-surface-variant uppercase tracking-widest"
+          >
+            <span className="material-symbols-outlined text-sm">verified</span>
+          </button>
+        </>
+      )}
+
+      {spriteJob && (
+        <>
+          <div className="w-px h-5 bg-outline-variant/20" />
+          <SpriteJobControls spriteJob={spriteJob} t={t} />
+        </>
+      )}
     </div>
+  );
+}
+
+function SpriteJobControls({ spriteJob, t }) {
+  const { start, cancel, clearJob, starting, isActive, status } = spriteJob;
+
+  if (isActive && status) {
+    const pct = status.total > 0 ? Math.round(((status.done + status.failed) / status.total) * 100) : 0;
+    return (
+      <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-sm bg-primary/10 border border-primary/20 text-primary text-xs">
+          <span className="material-symbols-outlined text-sm animate-spin">progress_activity</span>
+          <span>{status.done}/{status.total}</span>
+          {status.failed > 0 && <span className="text-red-400">({status.failed} err)</span>}
+          <span className="text-primary/50">{pct}%</span>
+        </div>
+        <button
+          type="button"
+          onClick={cancel}
+          className="flex items-center gap-1 px-2 py-1 rounded-sm bg-red-500/10 border border-red-500/20 hover:bg-red-500/20 text-red-400 text-xs transition-colors"
+        >
+          <span className="material-symbols-outlined text-sm">stop</span>
+          {t('locationGraph.toolbar.cancelSprites', { defaultValue: 'Stop' })}
+        </button>
+      </div>
+    );
+  }
+
+  if (status && (status.status === 'completed' || status.status === 'failed')) {
+    return (
+      <div className="flex items-center gap-2">
+        <span className={`text-xs ${status.status === 'completed' ? 'text-green-400' : 'text-red-400'}`}>
+          {status.status === 'completed'
+            ? t('locationGraph.toolbar.spritesDone', { done: status.done, failed: status.failed, defaultValue: `Gotowe: ${status.done}, err: ${status.failed}` })
+            : t('locationGraph.toolbar.spritesFailed', { defaultValue: 'Job nie powiódł się' })}
+        </span>
+        <button
+          type="button"
+          onClick={clearJob}
+          className="text-outline hover:text-on-surface text-xs"
+        >
+          ×
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={() => start(spriteJob.nodes)}
+      disabled={starting}
+      className="flex items-center gap-1 px-3 py-1.5 rounded-sm bg-primary/10 border border-primary/20 hover:bg-primary/20 text-primary text-xs transition-colors uppercase tracking-widest disabled:opacity-50"
+    >
+      <span className="material-symbols-outlined text-sm">auto_fix_high</span>
+      {starting
+        ? t('locationGraph.toolbar.startingSprites', { defaultValue: 'Startuję...' })
+        : t('locationGraph.toolbar.generateAllSprites', { defaultValue: 'Generuj wszystkie' })}
+    </button>
   );
 }

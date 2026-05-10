@@ -13,6 +13,7 @@ import {
 } from '../../locationRefs.js';
 import { createEdge } from '../../locationGraph/graphService.js';
 import { findSimilarNodeImage } from '../../locationGraph/imageMatcher.js';
+import { isNpcName } from '../../livingWorld/npcNameGuard.js';
 
 const log = childLogger({ module: 'sceneGenerator' });
 
@@ -56,12 +57,20 @@ const log = childLogger({ module: 'sceneGenerator' });
  *
  * @returns {Promise<{createdSublocs: Array<{kind:string,row:Object}>}>}
  */
-export async function processLocationChanges(campaignId, newLocations, { prevLoc: _prevLoc = null } = {}) {
+export async function processLocationChanges(campaignId, newLocations, { prevLoc: _prevLoc = null, npcNames = null } = {}) {
   if (!Array.isArray(newLocations) || newLocations.length === 0) return { createdSublocs: [] };
 
   const createdSublocs = [];
   for (const entry of newLocations) {
     if (!entry?.name || typeof entry.name !== 'string') continue;
+
+    if (npcNames && isNpcName(entry.name, npcNames)) {
+      log.info(
+        { campaignId, name: entry.name },
+        'newLocations entry rejected — name matches a known NPC',
+      );
+      continue;
+    }
 
     try {
       if (entry.parentLocationName) {

@@ -167,7 +167,9 @@ export const NewNodeEntrySchema = z.object({
 }).passthrough();
 
 export const NewEdgeEntrySchema = z.object({
+  fromRef: z.string().max(80).optional(),
   fromName: z.string().min(1).max(120),
+  toRef: z.string().max(80).optional(),
   toName: z.string().min(1).max(120),
   edgeType: z.string().min(1).max(40),
   category: z.string().min(1).max(20),
@@ -177,7 +179,9 @@ export const NewEdgeEntrySchema = z.object({
 }).passthrough();
 
 export const UpdatedEdgeEntrySchema = z.object({
+  fromRef: z.string().max(80).optional(),
   fromName: z.string().min(1).max(120),
+  toRef: z.string().max(80).optional(),
   toName: z.string().min(1).max(120),
   edgeType: z.string().min(1).max(40),
   changes: z.record(z.unknown()),
@@ -185,12 +189,15 @@ export const UpdatedEdgeEntrySchema = z.object({
 }).passthrough();
 
 export const NpcMoveSchema = z.object({
+  campaignNpcId: z.string().uuid().optional(),
   npcName: z.string().min(1).max(120),
+  toLocationRef: z.string().max(80).optional(),
   toLocationName: z.string().min(1).max(120),
   reason: z.string().max(200).optional().default(''),
 }).passthrough();
 
 export const DiscoveryChangeSchema = z.object({
+  locationRef: z.string().max(80).optional(),
   locationName: z.string().min(1).max(120),
   newState: z.enum(['unknown', 'rumored', 'known', 'visited', 'mapped', 'hidden']),
   reason: z.string().max(200).optional().default(''),

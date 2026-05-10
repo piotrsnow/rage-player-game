@@ -9,6 +9,7 @@ import { LOCATION_KIND_WORLD, LOCATION_KIND_CAMPAIGN } from '../locationRefs.js'
 import { createEdge, updateEdge } from './graphService.js';
 import { findSimilarNodeImage } from './imageMatcher.js';
 import { childLogger } from '../../lib/logger.js';
+import { loadCampaignNpcNames, isNpcName } from '../livingWorld/npcNameGuard.js';
 
 const log = childLogger({ module: 'graphValidator' });
 
@@ -68,9 +69,16 @@ export async function applyGraphUpdate(update, { campaignId }) {
   // Resolve location names → (kind, id) for the campaign
   const nameIndex = await buildNameIndex(campaignId);
 
+  let npcNames = new Set();
+  try { npcNames = await loadCampaignNpcNames(campaignId); } catch { /* permissive */ }
+
   // 1. Create new nodes (as CampaignLocation)
   for (const node of update.newNodes || []) {
     if (nameIndex.has(normalize(node.name))) continue;
+    if (isNpcName(node.name, npcNames)) {
+      log.info({ campaignId, name: node.name }, 'Graph newNode rejected — name matches a known NPC');
+      continue;
+    }
     try {
       const parentRef = node.parentName ? nameIndex.get(normalize(node.parentName)) : null;
       const slug = normalize(node.name);

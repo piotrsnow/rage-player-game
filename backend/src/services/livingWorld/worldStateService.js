@@ -80,13 +80,13 @@ export async function resolveWorldLocation(rawName, { region = null } = {}) {
   const norm = normalizeLocationName(name);
   if (!norm) return null;
 
-  // Fast path: exact canonicalName hit
+  // Fast path: exact canonicalName hit (skip draft registry entries)
   const exact = await prisma.worldLocation.findUnique({ where: { canonicalName: name } });
-  if (exact) return exact;
+  if (exact && !exact.softDeletedAt && !name.startsWith('__draft::')) return exact;
 
   // Fuzzy path: scan aliases + existing canonical names
   const candidates = await prisma.worldLocation.findMany({
-    where: region ? { region } : undefined,
+    where: { ...(region ? { region } : {}), softDeletedAt: null, NOT: { canonicalName: { startsWith: '__draft::' } } },
     select: { id: true, canonicalName: true, aliases: true, region: true, description: true, embeddingText: true },
   });
   for (const rec of candidates) {
@@ -96,8 +96,13 @@ export async function resolveWorldLocation(rawName, { region = null } = {}) {
     if (aliases.some((a) => normalizeLocationName(a) === norm)) {
       return rec;
     }
-    // Substring containment — very loose, only for close variants
-    if (recNorm && norm && (recNorm.includes(norm) || norm.includes(recNorm))) {
+    // Substring containment — bounded so short tokens or NPC-like names
+    // don't false-positive against long canonical names.
+    if (recNorm && norm && recNorm.length >= 5 && norm.length >= 5) {
+      const shorter = Math.min(recNorm.length, norm.length);
+      const longer = Math.max(recNorm.length, norm.length);
+      if (shorter / longer < 0.6) continue;
+      if (!(recNorm.includes(norm) || norm.includes(recNorm))) continue;
       if (!aliases.includes(name)) {
         try {
           await prisma.worldLocation.update({
@@ -133,13 +138,13 @@ export async function resolveLocationByName(rawName, { campaignId = null, region
   const norm = normalizeLocationName(name);
   if (!norm) return null;
 
-  // Canonical — exact canonicalName hit
+  // Canonical — exact canonicalName hit (skip draft registry entries + soft-deleted)
   const exact = await prisma.worldLocation.findUnique({ where: { canonicalName: name } });
-  if (exact) return { kind: LOCATION_KIND_WORLD, row: exact };
+  if (exact && !exact.softDeletedAt && !name.startsWith('__draft::')) return { kind: LOCATION_KIND_WORLD, row: exact };
 
   // Canonical — fuzzy via aliases / normalized name / substring
   const wlCandidates = await prisma.worldLocation.findMany({
-    where: region ? { region } : undefined,
+    where: { ...(region ? { region } : {}), softDeletedAt: null, NOT: { canonicalName: { startsWith: '__draft::' } } },
     select: {
       id: true, canonicalName: true, displayName: true, aliases: true,
       region: true, regionX: true, regionY: true, locationType: true,
@@ -187,7 +192,17 @@ function matchesByNormName(displayOrCanonical, aliases, queryNorm) {
   if (recNorm === queryNorm) return true;
   const aliasArr = Array.isArray(aliases) ? aliases : [];
   if (aliasArr.some((a) => normalizeLocationName(a) === queryNorm)) return true;
-  if (recNorm && queryNorm && (recNorm.includes(queryNorm) || queryNorm.includes(recNorm))) return true;
+  // Substring containment — bounded to avoid false positives from short
+  // tokens ("las" matching "Stary Las Wilczy") or NPC-like names matching
+  // partial location substrings. Both sides must be >= 5 chars and the
+  // shorter side must be at least 60% of the longer to count.
+  if (recNorm && queryNorm && recNorm.length >= 5 && queryNorm.length >= 5) {
+    const shorter = Math.min(recNorm.length, queryNorm.length);
+    const longer = Math.max(recNorm.length, queryNorm.length);
+    if (shorter / longer >= 0.6 && (recNorm.includes(queryNorm) || queryNorm.includes(recNorm))) {
+      return true;
+    }
+  }
   return false;
 }
 
@@ -251,6 +266,15 @@ export async function findOrCreateCampaignLocation(rawName, {
     // Separate RAG entityType keeps campaign rows from polluting world-scope
     // semantic queries; promotion (Phase 12c) reindexes as 'location' on flip.
     ragService.index('campaign_location', created.id, embText).catch(() => {});
+
+    // Entity registry — register as inactive WorldLocation so the admin
+    // registry tracks campaign-born locations from the moment of creation.
+    // Uses a namespaced canonicalName to avoid collisions with canonical
+    // hand-authored locations; promotion pipeline renames on activation.
+    registerCampaignLocationInWorldRegistry(created, campaignId).catch((err) => {
+      log.debug({ err: err?.message, locName: name }, 'entity registry WorldLocation upsert failed (non-fatal)');
+    });
+
     return created;
   } catch (err) {
     if (err?.code === 'P2002') {
@@ -261,6 +285,29 @@ export async function findOrCreateCampaignLocation(rawName, {
     }
     throw err;
   }
+}
+
+async function registerCampaignLocationInWorldRegistry(campaignLoc, campaignId) {
+  const registryName = `__draft::${campaignId}::${campaignLoc.canonicalSlug}`;
+  await prisma.worldLocation.upsert({
+    where: { canonicalName: registryName },
+    create: {
+      canonicalName: registryName,
+      displayName: campaignLoc.name,
+      description: campaignLoc.description || '',
+      category: campaignLoc.category || 'generic',
+      locationType: campaignLoc.locationType || 'generic',
+      region: campaignLoc.region,
+      regionX: campaignLoc.regionX ?? 0,
+      regionY: campaignLoc.regionY ?? 0,
+      positionConfidence: campaignLoc.positionConfidence ?? 0.5,
+      dangerLevel: campaignLoc.dangerLevel || 'safe',
+      embeddingText: campaignLoc.embeddingText || campaignLoc.name,
+      globallyActive: false,
+      originCampaignId: campaignId,
+    },
+    update: {},
+  });
 }
 
 // ──────────────────────────────────────────────────────────────────────
@@ -275,14 +322,21 @@ export async function findOrCreateCampaignLocation(rawName, {
  * `take: 2` detects ambiguity cheaply — if two or more share the name we
  * never link to the wrong person. Never creates.
  */
-export async function findCanonicalWorldNpcByName(name) {
+export async function findCanonicalWorldNpcByName(name, { campaignId = null } = {}) {
   if (!name || typeof name !== 'string') return null;
   const trimmed = name.trim();
   if (!trimmed) return null;
-  const matches = await prisma.worldNPC.findMany({
-    where: { name: { equals: trimmed, mode: 'insensitive' }, alive: true },
-    take: 2,
-  });
+  const where = {
+    name: { equals: trimmed, mode: 'insensitive' },
+    alive: true,
+    softDeletedAt: null,
+  };
+  if (campaignId) {
+    where.OR = [{ globallyActive: true }, { originCampaignId: campaignId }];
+  } else {
+    where.globallyActive = true;
+  }
+  const matches = await prisma.worldNPC.findMany({ where, take: 2 });
   return matches.length === 1 ? matches[0] : null;
 }
 
@@ -313,6 +367,10 @@ export async function findOrCreateWorldNPC(npcData) {
   });
   if (existing) return existing;
 
+  // Entity registry: callers pass `_registryDefaults` to create inactive
+  // entries that show up only in the origin campaign until admin activates.
+  const reg = npcData._registryDefaults || {};
+
   // Embedding text populated for future backfill — no vector written now.
   const embText = buildNPCEmbeddingText(npcData);
   const canonicalId = buildNpcCanonicalId(npcData);
@@ -326,6 +384,8 @@ export async function findOrCreateWorldNPC(npcData) {
       alive: npcData.alive !== false,
       currentLocationId: npcData.currentLocationId || null,
       embeddingText: embText,
+      globallyActive: reg.globallyActive ?? true,
+      originCampaignId: reg.originCampaignId ?? null,
     },
   });
 
@@ -439,7 +499,7 @@ export async function createSublocation({
  */
 export async function listNpcsAtLocation(locationId, { aliveOnly = true } = {}) {
   if (!locationId) return [];
-  const where = { currentLocationId: locationId };
+  const where = { currentLocationId: locationId, softDeletedAt: null };
   if (aliveOnly) where.alive = true;
   return prisma.worldNPC.findMany({ where });
 }

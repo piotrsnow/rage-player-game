@@ -117,10 +117,10 @@ Emit stateChanges reflecting ALL of the above. Empty fields are OK only when the
   * placeholderHint: optional vague hint shown to player as "??? — <hint>" before reveal (e.g. "??? — coś związanego z lasem"). Default: just "???".
   When emitting from a Pending quest opportunity hook, copy questGiverId from the hook and include relatedHookId. Side/personal quests in living-world MUST have ≥2 objectives + ≥1 branch group with branchType="path" when relations contradict (NPC vs NPC conflict). Min 2 objectives, max 12.
 - rewards: for standard loot/drops/found items/money. Array of [{type, rarity?, category?, quantity?, context?}]. type: 'material'|'weapon'|'armour'|'shield'|'gear'|'medical'|'money'|'potion'. rarity: 'common'|'uncommon'|'rare'. category: materials only ('metal'|'wood'|'fabric'|'herb'|'liquid'|'misc'). quantity: 'one'|'few'|'some'|'many'. context: 'loot'|'found'|'gift' (NO 'quest_reward' — quest rewards are applied automatically on completedQuests using the quest's defined reward, do NOT duplicate via rewards[]). Do NOT specify item names — just type and tier.
-- newItems: ONLY unique quest/story items (MacGuffins, keys, letters, artifacts). {id, name, type, description}. Standard loot → use rewards.
-- removeItems: only items in character's inventory.
+- newItems: ONLY unique quest/story items (MacGuffins, keys, letters, artifacts). {id, name, type, description}. id is auto-assigned — do NOT invent your own. Standard loot → use rewards.
+- removeItems: array of item UUIDs from character's Inventory [id] tags. Use the EXACT id shown in square brackets.
 - moneyChange: {gold,silver,copper} NEGATIVE deltas for purchases only. For income/loot use rewards with type:'money'.
-- npcs: {action:"introduce"|"update", name, gender, role, personality, appearance, dialect, attitude, location, dispositionChange, relationships:[{npcName,type}], race?, creatureKind?, level?, statsOverride?}. gender MUST be "male" or "female" — never "unknown", never omitted. dispositionChange scales with margin: lucky/great success +3-5, success +1-2, failure -1-2, hard failure -3-5.
+- npcs: {action:"introduce"|"update", campaignNpcId?, name, gender, role, personality, appearance, dialect, attitude, location, dispositionChange, relationships:[{npcId?,npcName,type}], race?, creatureKind?, level?, statsOverride?}. When updating an existing NPC, ALWAYS include \`campaignNpcId\` from its [id: ...] tag in context. gender MUST be "male" or "female" — never "unknown", never omitted. dispositionChange scales with margin: lucky/great success +3-5, success +1-2, failure -1-2, hard failure -3-5.
   * race: "Human"|"Dwarf"|"Halfling"|"Orc" — REQUIRED for regular mortal NPCs on "introduce". Elfy są zablokowane — nie emituj elfów.
   * creatureKind: wolny tekst dla istot fabularnych (zjawa, sfinks, demon, potwór, duch) ZAMIAST race. Emituj creatureKind TYLKO gdy fabuła wymaga nietypowej istoty; reguła: każdy NPC ma albo race albo creatureKind, nigdy oba.
   * level: 1-30 — opcjonalne. Zwykli mieszkańcy 1-3, weterani/rzemieślnicy 4-6, postacie kluczowe 7-10, bossowie 10+. Jeśli pominiesz, backend dobierze poziom z category. Ważni NPC mogą dodać keyNpc:true.
@@ -128,10 +128,11 @@ Emit stateChanges reflecting ALL of the above. Empty fields are OK only when the
   * Nie wymagaj podawania statów — backend generuje pełną kartę postaci z rasy+roli+poziomu. Emituj race/creatureKind/level a ewentualny statsOverride tylko gdy postać jest naprawdę wyróżniająca się.
   * appearance: WYMAGANE przy "introduce" — JEDNO zdanie po polsku opisujące fizyczny wygląd (budowa, włosy, twarz, ubiór, charakterystyczny detal). To jest kanoniczny rysopis NPC — używany przy generowaniu portretu i pokazywany graczowi. Stabilny: nie zmieniaj go przy "update", chyba że fabularnie się zmienił (zranienie, nowe ubranie, transformacja).
   * dialect: WYMAGANE przy "introduce" — JEDNO zdanie po polsku opisujące JAK NPC mówi: gwara/akcent (góralska, kresowa, miejski slang), rejestr (chłopski/kupiecki/szlachecki/książkowy), charakterystyczne zwroty lub przekleństwa. Spójne z rolą i charakterem. Stabilne: nie zmieniaj przy "update".
-- npcMemoryUpdates: [{npcName, memory, importance?, actionType?}] — emit ONLY gdy coś narracyjnie znaczącego dzieje się z/dla NPC, co by zapamiętał (obietnica, sekret, cud, groźba, zdrada, uratowanie bliskiego). 1 zdanie z perspektywy NPC. importance: 'major' = trwała zmiana relacji, 'minor' = drobne wrażenie (default: minor). SKIP dla small talk / routine. Max ~3 per scene.
+- npcMemoryUpdates: [{campaignNpcId?, npcName, memory, importance?, actionType?}] — emit ONLY gdy coś narracyjnie znaczącego dzieje się z/dla NPC, co by zapamiętał. ALWAYS include \`campaignNpcId\` from the NPC's [id: ...] tag when available. 1 zdanie z perspektywy NPC. importance: 'major' = trwała zmiana relacji, 'minor' = drobne wrażenie (default: minor). SKIP dla small talk / routine. Max ~3 per scene.
   * actionType (optional): "killed" | "saved" | "betrayed" | "aided" | "insulted" | "broke_promise" | "kept_promise". Include when the memory describes a directional act FROM player TO this NPC. This routes through relationshipRipple service — connected NPCs (brother, lover, rival) auto-react with disposition shifts and their own memory entries ("Słyszał, że <player> zabił mojego brata"). SKIP for routine observations. Use sparingly — high-impact events only.
-- locationMentioned: [{locationName, byNpcId}] — emit whenever a scene NPC NAMES OR DESCRIBES a location to the player (gives directions, recalls a rumour, mentions a place by name). Copy the location name EXACTLY as written in the prompt (Key NPCs block, Active Quests, [NPC_KNOWLEDGE], or the player's current location). \`byNpcId\` is the speaker NPC's name. If a [NPC_KNOWLEDGE] block lists allowed locations for the speaker, only mention locations from that list; otherwise the NPC narrates "doesn't know / speculates" and you DO NOT emit. Moves the location into the player's "heard-about" fog state so it appears on the map.
-- currentLocation: emit ONLY when the player ARRIVES at a different location THIS scene (travel montage to a known place, walking into a sublocation you just created, dungeon-room nav). Value is the EXACT canonical name from the [TRAVEL] block / sublocation entry / [DUNGEON ROOM] exits. NEVER invent a name — unrecognized locations are dropped silently and the player stays put. Do NOT emit when the scene happens entirely at the current location.
+- locationMentioned: [{locationRef?, locationName, byCampaignNpcId?, byNpcId}] — emit whenever a scene NPC NAMES OR DESCRIBES a location to the player. Include \`locationRef\` (e.g. "world:uuid" or "campaign:uuid") from context [id: ...] tags when available. \`byCampaignNpcId\` is the speaker NPC's UUID; \`byNpcId\` is the speaker's name (kept for compat). If a [NPC_KNOWLEDGE] block lists allowed locations for the speaker, only mention those; otherwise the NPC narrates "doesn't know / speculates" and you DO NOT emit.
+- currentLocation: emit ONLY when the player ARRIVES at a different location THIS scene. Value is the EXACT canonical name from the [TRAVEL] block / sublocation entry / [DUNGEON ROOM] exits. NEVER invent a name.
+- currentLocationRef: emit alongside currentLocation when you have the location's ref (e.g. "world:uuid") from context. This is the preferred identifier.
 - skillsUsed: ["SkillName"] — skills the PC actively used or exercised in this scene. Max 3. ALWAYS emit at least 1 skill unless the scene is pure passive dialogue with zero challenge. Skills at level 0 are VALID — the character is learning by doing. Pick the skill that best fits the action:
   riding/mounted travel = Jezdziectwo, swimming/crossing water = Plywanie, finding a path = Nawigacja, climbing/jumping = Atletyka, wilderness survival/foraging = Przetrwanie, tracking = Tropienie, noticing details = Spostrzegawczosc, acrobatic dodge = Akrobatyka, persuading = Perswazja, lying = Blef, bartering = Handel, performing = Wystepy, flirting = Flirt, leading = Przywodztwo, intimidating = Zastraszanie, crafting/repairing = Rzemioslo, alchemy/potions = Alchemia, medicine/first aid = Medycyna, lockpicking = Otwieranie zamkow, pickpocketing = Kradziez kieszonkowa, traps = Pulapki i mechanizmy, sneaking = Skradanie, enduring pain/cold/fatigue = Odpornosc, resisting giving up = Upartosc, drinking contest = Picie alkoholu, gambling = Hazard, praying = Modlitwa, gut feeling = Przeczucie, flexing/showing off strength = Prezenie sie, kicking down doors = Wywazanie drzwi, tactics/battle planning = Taktyka, monster lore = Wiedza o potworach, nature lore = Wiedza o naturze, general knowledge = Wiedza ogolna, lucky break = Fart.
 - actionDifficulty: "easy"|"medium"|"hard"|"veryHard"|"extreme".
@@ -173,9 +174,9 @@ WHEN SENSIBLE — stateChanges MUST contain BOTH:
 2. \`newItems\`: one entry — the resulting combined item with full \`{name, type, rarity, description}\` (and \`baseType\` if it maps onto a known equipment base). Description should mention it's a combination ("Pochodnia zwinięta z kija owiniętego naoliwioną szmatą").
 
 HARD RULES (no exceptions):
-- NEVER emit \`newItems\` for combination without matching \`removeItemsByName\` for the components — orphaned new items break inventory consistency.
-- NEVER emit \`removeItemsByName\` for items the character does NOT have in Inventory. Check the Inventory line before combining.
-- NEVER use \`removeItems\` (by id) for combinations — you don't have item ids in context. Always \`removeItemsByName\`.
+- NEVER emit \`newItems\` for combination without matching \`removeItems\` (by UUID) or \`removeItemsByName\` for the components — orphaned new items break inventory consistency.
+- NEVER emit removals for items the character does NOT have in Inventory. Check the Inventory line before combining.
+- Prefer \`removeItems\` with item UUIDs from [id: ...] tags. Use \`removeItemsByName\` as fallback when IDs aren't visible.
 - If a component is stackable and player has multiple, decrement only what was used (quantity:1, not the whole stack).
 - If combining is a partial success (e.g. broken result), still consume both components but emit a degraded \`newItems\` entry.
 - The narration in dialogueSegments MUST describe the combining process and the resulting item — keep prose and stateChanges in sync.`;
@@ -227,14 +228,14 @@ export function responseFormatBlock(language) {
     "branchGroupReveals": [{"questId":"","branchGroup":"","revealedNodeKeys":[],"revealSource":""}],
     "questMutations": [{"questId":"","mutation":"stall|fail|reroute","reason":""}],
     "completedQuests": [],
-    "npcs": [{"action":"introduce|update","name":"","dispositionChange":0}],
-    "npcMemoryUpdates": [{"npcName":"","memory":"","importance":"minor|major","actionType":null}],
-    "locationMentioned": [{"locationName":"","byNpcId":""}],
+    "npcs": [{"action":"introduce|update","campaignNpcId":"<uuid-from-context>","name":"","dispositionChange":0}],
+    "npcMemoryUpdates": [{"campaignNpcId":"<uuid-from-context>","npcName":"","memory":"","importance":"minor|major","actionType":null}],
+    "locationMentioned": [{"locationRef":"world:<uuid>","locationName":"","byCampaignNpcId":"<uuid>","byNpcId":""}],
     "currentLocation": null,
     "currentX": null,
     "currentY": null,
     "newItems": [],
-    "removeItems": [],
+    "removeItems": ["<item-uuid-from-inventory>"],
     "removeItemsByName": [{"name":"","quantity":1}],
     "rewards": [{"type":"","rarity":"","quantity":"","context":""}],
     "moneyChange": null,

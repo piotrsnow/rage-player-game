@@ -176,14 +176,21 @@ export async function processNpcMemoryUpdates(campaignId, rawUpdates) {
   let mirrored = 0;
   let skippedNoTarget = 0;
 
+  // Build UUID→npcId index for fast campaignNpcId resolution
+  const byUuid = new Map(campaignNpcs.map((n) => [n.id, n.npcId]));
+
   for (const u of updates) {
-    const sourceNpcId = npcNameToId(u.npcName);
+    // Primary: resolve by campaignNpcId (UUID). Fallback: slug from npcName.
+    let sourceNpcId;
+    if (u.campaignNpcId && byUuid.has(u.campaignNpcId)) {
+      sourceNpcId = byUuid.get(u.campaignNpcId);
+    } else {
+      sourceNpcId = npcNameToId(u.npcName);
+    }
     if (!sourceNpcId) { skippedNoTarget += 1; continue; }
     const sourceEntry = toMemoryEntry(u);
     pushFor(sourceNpcId, sourceEntry);
 
-    // Symmetry hook — only major memories mirror; minor entries skip
-    // detection entirely so we don't waste regex cycles.
     if (sourceEntry.importance !== 'major') continue;
     const sourceRow = byNpcIdRow.get(sourceNpcId);
     const sourceDisplayName = sourceRow?.name || u.npcName;

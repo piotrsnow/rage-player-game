@@ -2576,7 +2576,12 @@
       "player": "Player",
       "validate": "Validate",
       "snapToGrid": "Snap",
-      "resetLayout": "Reset"
+      "resetLayout": "Reset",
+      "generateAllSprites": "Generate all",
+      "startingSprites": "Starting…",
+      "cancelSprites": "Stop",
+      "spritesDone": "Done: {{done}}, err: {{failed}}",
+      "spritesFailed": "Job failed"
     },
     "addNode": {
       "title": "New Location",

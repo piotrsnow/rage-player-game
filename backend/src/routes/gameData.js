@@ -45,8 +45,16 @@ export async function gameDataRoutes(fastify) {
 
   // ── Global spell catalog + images ──
 
-  fastify.get('/custom-spells', async () => {
+  fastify.get('/custom-spells', async (request) => {
+    const campaignId = request.query?.campaignId || null;
+    const where = { softDeletedAt: null };
+    if (campaignId) {
+      where.OR = [{ globallyActive: true }, { originCampaignId: campaignId }];
+    } else {
+      where.globallyActive = true;
+    }
     const rows = await prisma.customSpell.findMany({
+      where,
       orderBy: { createdAt: 'desc' },
       select: { name: true, school: true, description: true, icon: true, manaCost: true },
     });

@@ -354,6 +354,8 @@ export async function inventSpellRoutes(fastify) {
               icon: spellCard.icon || null,
               manaCost: spellCard.manaCost || 2,
               createdById: userId,
+              globallyActive: false,
+              originCampaignId: campaignId,
             },
             update: {},
           });

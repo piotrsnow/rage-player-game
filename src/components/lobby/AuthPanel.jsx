@@ -28,6 +28,11 @@ function characterIdsMatch(a, b) {
   return ia != null && ib != null && String(ia) === String(ib);
 }
 
+function getCharacterId(character) {
+  const id = character?.backendId ?? character?.id;
+  return id != null ? String(id) : null;
+}
+
 const ATTR_LABELS = {
   sila: { icon: 'fitness_center', short: 'STR', label: 'Siła' },
   inteligencja: { icon: 'psychology', short: 'INT', label: 'Inteligencja' },
@@ -161,6 +166,24 @@ function LoggedInBanner({ user }) {
   const [charCount, setCharCount] = useState(0);
   const [lastLobbyDiceRoll, setLastLobbyDiceRoll] = useState(null);
 
+  const resolveFallbackCharacter = useCallback(async (preferredId = null) => {
+    let chars = [];
+    try {
+      chars = await apiClient.get('/characters');
+    } catch {
+      return null;
+    }
+    if (!Array.isArray(chars) || chars.length === 0) return null;
+    const preferred = preferredId
+      ? chars.find((candidate) => getCharacterId(candidate) === String(preferredId))
+      : null;
+    if (preferred) return preferred;
+    const sorted = [...chars].sort(
+      (a, b) => (b.characterLevel || b.level || 1) - (a.characterLevel || a.level || 1),
+    );
+    return sorted[0] || null;
+  }, []);
+
   useEffect(() => {
     const chars = storage.getCharacters();
     setCharCount(chars.length);
@@ -196,7 +219,7 @@ function LoggedInBanner({ user }) {
     return () => window.removeEventListener('focus', onFocus);
   }, [refreshLastLobbyDice]);
 
-  const fetchBadge = useCallback(async (charId, force = false) => {
+  const fetchBadge = useCallback(async (charId, force = false, canRetryFallback = true) => {
     if (!charId || !apiClient.isConnected()) return;
     setBadgeLoading(true);
     try {
@@ -208,13 +231,33 @@ function LoggedInBanner({ user }) {
       if (res?.snark) setBadgeSnark(res.snark);
       if (res?.diceStats) setDiceStats(res.diceStats);
       sessionStorage.setItem(BADGE_SESSION_KEY, '1');
-    } catch {}
+    } catch (error) {
+      const message = String(error?.message || '');
+      if (canRetryFallback && message.includes('Character not found')) {
+        const fallback = await resolveFallbackCharacter();
+        if (!fallback) {
+          setTopChar(null);
+          setFullChar(null);
+          setBadgeLegend('');
+          setBadgeSnark('');
+          setDiceStats(null);
+          setBadgeLoading(false);
+          return;
+        }
+        const fallbackId = getCharacterId(fallback);
+        if (fallbackId && fallbackId !== String(charId)) {
+          setTopChar(fallback);
+          await fetchBadge(fallbackId, force, false);
+          return;
+        }
+      }
+    }
     setBadgeLoading(false);
-  }, [i18n.language]);
+  }, [i18n.language, resolveFallbackCharacter]);
 
   useEffect(() => {
     if (!topChar) return;
-    const charId = topChar.backendId || topChar.id;
+    const charId = getCharacterId(topChar);
     const alreadyFetched = sessionStorage.getItem(BADGE_SESSION_KEY);
     fetchBadge(charId, !alreadyFetched);
   }, [topChar, fetchBadge]);
@@ -224,7 +267,7 @@ function LoggedInBanner({ user }) {
   // skills grid alongside attributes.
   useEffect(() => {
     if (!topChar || !apiClient.isConnected()) return;
-    const charId = topChar.backendId || topChar.id;
+    const charId = getCharacterId(topChar);
     if (!charId) return;
     let cancelled = false;
     apiClient.get(`/characters/${charId}`)
@@ -236,7 +279,7 @@ function LoggedInBanner({ user }) {
   const handleRefresh = (e) => {
     e.stopPropagation();
     if (!topChar || badgeLoading) return;
-    fetchBadge(topChar.backendId || topChar.id, true);
+    fetchBadge(getCharacterId(topChar), true);
   };
 
   const stopSnarkAudio = useCallback(() => {
@@ -546,6 +589,10 @@ function LoggedInBanner({ user }) {
           : []),
       ]
     : [];
+
+  if (!topChar) {
+    return null;
+  }
 
   return (
     <div

@@ -823,6 +823,11 @@ model WorldLocation {
   knownByDefault     Boolean      @default(false)
   dangerLevel        DangerLevel  @default(safe)
 
+  // Entity registry lifecycle — existing rows backfilled as globally active.
+  globallyActive   Boolean   @default(true)
+  softDeletedAt    DateTime? @db.Timestamptz
+  originCampaignId String?   @db.Uuid
+
   aliases        Json    @default("[]")
   roomMetadata   Json?
   tags           Json    @default("[]")
@@ -870,6 +875,7 @@ model WorldLocation {
   @@index([parentLocationId])
   @@index([locationType])
   @@index([regionX, regionY])
+  @@index([globallyActive, softDeletedAt])
 }
 
 // DEPRECATED (Faza 0) — Road jest zaszeregowany do usunięcia w Fazie 8.
@@ -1109,6 +1115,11 @@ model WorldNPC {
   // in player UI.
   dialect String?
 
+  // Entity registry lifecycle — existing rows backfilled as globally active.
+  globallyActive   Boolean   @default(true)
+  softDeletedAt    DateTime? @db.Timestamptz
+  originCampaignId String?   @db.Uuid
+
   embeddingText String?
   embedding     Unsupported("vector(1536)")?
 
@@ -1127,6 +1138,7 @@ model WorldNPC {
   @@index([alive])
   @@index([companionOfCampaignId])
   @@index([lockedByCampaignId])
+  @@index([globallyActive, softDeletedAt])
 }
 
 model WorldEvent {
@@ -1800,6 +1812,35 @@ model CustomSpell {
   createdById String?  @db.Uuid
   createdBy   User?    @relation(fields: [createdById], references: [id])
   createdAt   DateTime @default(now()) @db.Timestamptz
+
+  // Entity registry lifecycle
+  globallyActive   Boolean   @default(true)
+  softDeletedAt    DateTime? @db.Timestamptz
+  originCampaignId String?   @db.Uuid
+
+  @@index([globallyActive, softDeletedAt])
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// Global item definition registry — tracks item definitions born in
+// campaigns. Characters hold their own inventory stacks; this table is
+// the canonical catalog of "item templates" that the world knows about.
+// ═══════════════════════════════════════════════════════════════════════
+
+model WorldItemDefinition {
+  id               String    @id @default(uuid(7)) @db.Uuid
+  itemKey          String    @unique
+  displayName      String
+  baseType         String?
+  description      String    @default("")
+  props            Json      @default("{}")
+  globallyActive   Boolean   @default(true)
+  softDeletedAt    DateTime? @db.Timestamptz
+  originCampaignId String?   @db.Uuid
+  createdAt        DateTime  @default(now()) @db.Timestamptz
+  updatedAt        DateTime  @updatedAt @db.Timestamptz
+
+  @@index([globallyActive, softDeletedAt])
 }
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -1812,4 +1853,45 @@ model SpellImage {
   imageUrl    String
   imagePrompt String?
   updatedAt   DateTime @default(now()) @updatedAt @db.Timestamptz
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// Bulk location-sprite generation jobs — admin-only background pipeline
+// that iterates over graph nodes and generates PixelLab sprites for
+// those without a nodeImageUrl.
+// ═══════════════════════════════════════════════════════════════════════
+
+model LocationSpriteJob {
+  id          String   @id @default(uuid(7)) @db.Uuid
+  status      String   @default("pending") // pending | running | completed | cancelled | failed
+  total       Int      @default(0)
+  done        Int      @default(0)
+  failed      Int      @default(0)
+  concurrency Int      @default(3)
+  createdBy   String?  @db.Uuid
+  startedAt   DateTime? @db.Timestamptz
+  finishedAt  DateTime? @db.Timestamptz
+  createdAt   DateTime @default(now()) @db.Timestamptz
+  updatedAt   DateTime @updatedAt @db.Timestamptz
+
+  items LocationSpriteJobItem[]
+
+  @@index([status])
+}
+
+model LocationSpriteJobItem {
+  id           String   @id @default(uuid(7)) @db.Uuid
+  jobId        String   @db.Uuid
+  job          LocationSpriteJob @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  nodeKind     String   // world | campaign
+  nodeId       String   @db.Uuid
+  status       String   @default("pending") // pending | running | done | failed
+  attempts     Int      @default(0)
+  error        String?
+  resultingUrl String?
+  createdAt    DateTime @default(now()) @db.Timestamptz
+  updatedAt    DateTime @updatedAt @db.Timestamptz
+
+  @@index([jobId, status])
+  @@unique([jobId, nodeKind, nodeId])
 }

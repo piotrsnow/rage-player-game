@@ -17,13 +17,15 @@ import { NPC_RACES } from '../../../../../shared/domain/npcRaces.js';
 const MAX_LOCATION_MENTIONS = 20;
 
 const LocationMentionSchema = z.object({
+  locationRef: z.string().regex(/^(world|campaign):[0-9a-f-]{36}$/i).optional(),
   locationName: z.string().min(1),
   byNpcId: z.string().min(1).optional(),
   npcId: z.string().min(1).optional(),
   byNpc: z.string().min(1).optional(),
+  byCampaignNpcId: z.string().uuid().optional(),
 }).passthrough().refine(
-  (m) => Boolean(m.byNpcId || m.npcId || m.byNpc),
-  { message: 'locationMention requires byNpcId/npcId/byNpc' },
+  (m) => Boolean(m.byNpcId || m.npcId || m.byNpc || m.byCampaignNpcId),
+  { message: 'locationMention requires byNpcId/npcId/byNpc/byCampaignNpcId' },
 );
 
 export const LocationMentionsSchema = z.array(LocationMentionSchema).max(MAX_LOCATION_MENTIONS);
@@ -66,6 +68,7 @@ export const DungeonRoomFlagsSchema = z.object({
 // downstream persistence.
 const NpcChangeSchema = z.object({
   action: z.enum(['introduce', 'update']).optional().default('introduce'),
+  campaignNpcId: z.string().uuid().optional(),
   name: z.string().trim().min(1).max(120),
   gender: z.enum(['male', 'female']).optional(),
   role: z.string().max(200).optional().nullable(),
@@ -80,11 +83,10 @@ const NpcChangeSchema = z.object({
   factionId: z.string().nullable().optional(),
   relatedQuestIds: z.array(z.string()).optional(),
   relationships: z.array(z.object({
+    npcId: z.string().uuid().optional(),
     npcName: z.string().min(1).max(120),
     type: z.string().max(60).optional(),
     strength: z.number().optional(),
-    // rippleStrength (oś 2) — 0..100, jak mocno ten NPC reaguje na zmiany
-    // u target. Optional — gdy pominięte, BE liczy z |strength| heurystycznie.
     rippleStrength: z.number().int().min(0).max(100).optional(),
   }).passthrough()).optional(),
   // NPC character card — regular NPCs get one of NPC_RACES, story creatures
@@ -130,6 +132,7 @@ export const NPC_ACTION_TYPES = [
 ];
 
 const NpcMemoryUpdateSchema = z.object({
+  campaignNpcId: z.string().uuid().optional(),
   npcName: z.string().trim().min(1).max(120),
   memory: z.string().trim().min(1).max(300),
   importance: z.enum(['minor', 'major']).optional(),
@@ -266,16 +269,19 @@ function safeParse(schema, input) {
 
 const GraphUpdateActionSchema = z.object({
   action: z.enum([
-    'discover_location',    // player learns about a location
-    'discover_edge',        // player discovers an existing edge
-    'create_edge',          // AI creates a new campaign edge (narrative → graph)
-    'update_edge',          // modify metadata on an existing edge
-    'remove_edge',          // edge destroyed (bridge collapsed, path blocked)
-    'add_perception',       // new perception relation (visible/audible/smell)
-    'update_discovery',     // change a location's discoveryState
+    'discover_location',
+    'discover_edge',
+    'create_edge',
+    'update_edge',
+    'remove_edge',
+    'add_perception',
+    'update_discovery',
   ]),
+  locationRef: z.string().regex(/^(world|campaign):[0-9a-f-]{36}$/i).optional(),
   locationName: z.string().trim().max(200).optional(),
+  fromLocationRef: z.string().regex(/^(world|campaign):[0-9a-f-]{36}$/i).optional(),
   fromLocation: z.string().trim().max(200).optional(),
+  toLocationRef: z.string().regex(/^(world|campaign):[0-9a-f-]{36}$/i).optional(),
   toLocation: z.string().trim().max(200).optional(),
   relationType: z.string().trim().max(60).optional(),
   bidirectional: z.boolean().optional(),

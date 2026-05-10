@@ -3,7 +3,8 @@
 
 import {
   SPELL_TREES, SCROLL_BASE_CHANCE, SPELL_EFFECTS,
-  findSpell, isSpellUnlocked, getAvailableSpells as getAvailable,
+  findSpell, findSpellById, isSpellUnlocked, getAvailableSpells as getAvailable,
+  spellNameToId,
 } from '../data/rpgMagic.js';
 
 export { findSpell };
@@ -18,12 +19,22 @@ function normalizeSpellName(name) {
   return String(name || '').trim().toLowerCase();
 }
 
-/** Resolves the canonical string from character.spells.known (exact or case-insensitive match). */
-export function resolveKnownSpellNameFromCharacter(character, spellInputName) {
+/**
+ * Resolves a spell reference (ID or name) to the canonical entry in
+ * character.spells.known. Tries exact match, then spellId↔name cross-lookup,
+ * then case-insensitive name match.
+ */
+export function resolveKnownSpellNameFromCharacter(character, spellInput) {
   const known = character?.spells?.known;
   if (!Array.isArray(known) || known.length === 0) return null;
-  if (known.includes(spellInputName)) return spellInputName;
-  const target = normalizeSpellName(spellInputName);
+  if (known.includes(spellInput)) return spellInput;
+  const catalogEntry = findSpell(spellInput);
+  if (catalogEntry) {
+    const { spell } = catalogEntry;
+    if (known.includes(spell.id)) return spell.id;
+    if (known.includes(spell.name)) return spell.name;
+  }
+  const target = normalizeSpellName(spellInput);
   return known.find((n) => normalizeSpellName(n) === target) || null;
 }
 
@@ -246,8 +257,8 @@ export function getSpellProgressionStatus(character) {
  * Get the status effect definition for a spell, if any.
  * Returns { target, effect } or null.
  */
-export function getSpellEffect(spellName) {
-  return SPELL_EFFECTS[spellName] || null;
+export function getSpellEffect(spellIdOrName) {
+  return SPELL_EFFECTS[spellIdOrName] || null;
 }
 
 /**
@@ -287,19 +298,24 @@ export function formatMagicStatusForPrompt(character) {
 
   if (spells.known.length > 0) {
     lines.push('Znane zaklecia:');
-    for (const name of spells.known) {
-      const found = findSpell(name);
-      const uses = spells.usageCounts[name] || 0;
+    for (const spellRef of spells.known) {
+      const found = findSpell(spellRef);
+      const uses = (found ? spells.usageCounts[found.spell.id] : null)
+        || spells.usageCounts[spellRef] || 0;
       if (found) {
-        lines.push(`  ${name} [${found.spell.manaCost} many, uzycia: ${uses}] — ${found.spell.description}`);
+        lines.push(`  ${found.spell.name} [id: ${found.spell.id}] [${found.spell.manaCost} many, uzycia: ${uses}] — ${found.spell.description}`);
       } else {
-        lines.push(`  ${name} [${CUSTOM_KNOWN_SPELL_MANA_COST} many, uzycia: ${uses}] — (niestandardowe / wymyslone)`);
+        lines.push(`  ${spellRef} [${CUSTOM_KNOWN_SPELL_MANA_COST} many, uzycia: ${uses}] — (niestandardowe / wymyslone)`);
       }
     }
   }
 
   if (spells.scrolls.length > 0) {
-    lines.push(`Scrolle: ${spells.scrolls.join(', ')}`);
+    const scrollDisplay = spells.scrolls.map((s) => {
+      const f = findSpell(s);
+      return f ? `${f.spell.name} [id: ${f.spell.id}]` : s;
+    }).join(', ');
+    lines.push(`Scrolle: ${scrollDisplay}`);
   }
 
   const progression = getSpellProgressionStatus(character);

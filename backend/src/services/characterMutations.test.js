@@ -192,8 +192,8 @@ describe('applyCharacterStateChanges', () => {
     });
   });
 
-  describe('inventory stacking (F4 — name-keyed)', () => {
-    it('stacks newItems with the same slugified name into one row with summed qty', () => {
+  describe('inventory — per-instance UUID model', () => {
+    it('adds each newItem as a separate entry with unique ID', () => {
       const c = baseCharacter({
         inventory: [{ id: 'mikstura_zycia', name: 'Mikstura Życia', quantity: 1 }],
       });
@@ -203,12 +203,13 @@ describe('applyCharacterStateChanges', () => {
           { name: 'mikstura zycia', quantity: 1 },
         ],
       });
-      expect(result.inventory).toHaveLength(1);
-      expect(result.inventory[0]).toMatchObject({
-        id: 'mikstura_zycia',
-        name: 'Mikstura Życia',
-        quantity: 4,
-      });
+      expect(result.inventory).toHaveLength(3);
+      expect(result.inventory[0].id).toBe('mikstura_zycia');
+      expect(result.inventory[1].name).toBe('Mikstura Życia');
+      expect(result.inventory[2].name).toBe('mikstura zycia');
+      expect(result.inventory[1].id).toBeTruthy();
+      expect(result.inventory[2].id).toBeTruthy();
+      expect(result.inventory[1].id).not.toBe(result.inventory[2].id);
     });
 
     it('keeps materials separate from items even when names collide', () => {
@@ -219,9 +220,12 @@ describe('applyCharacterStateChanges', () => {
           { name: 'Skóra', quantity: 1 },
         ],
       });
-      expect(result.materialBag).toEqual([{ name: 'Skóra', quantity: 3 }]);
+      expect(result.materialBag).toHaveLength(1);
+      expect(result.materialBag[0]).toMatchObject({ name: 'Skóra', quantity: 3 });
+      expect(result.materialBag[0].id).toBeTruthy();
       expect(result.inventory).toHaveLength(1);
       expect(result.inventory[0]).toMatchObject({ name: 'Skóra', quantity: 1 });
+      expect(result.inventory[0].id).toBeTruthy();
     });
 
     it('removeItemsByName drains the materialBag first, then spills into inventory', () => {

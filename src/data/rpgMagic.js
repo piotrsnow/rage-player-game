@@ -5,6 +5,12 @@
 
 export const SCROLL_BASE_CHANCE = 0.25; // 25% base chance to learn a spell from a scroll
 
+// ── Spell ID helper ──
+
+export function makeSpellId(treeId, spellName) {
+  return `${treeId}_${spellName.toLowerCase().replace(/\s+/g, '_')}`;
+}
+
 // ── SPELL TREES ──
 
 export const SPELL_TREES = {
@@ -312,13 +318,50 @@ export const SPELL_TREES = {
 
 export const SPELL_TREE_LIST = Object.keys(SPELL_TREES);
 
+// ── Auto-assign spell IDs + convert unlockCondition from name → spellId ──
+// Runs once at module load. Every spell gets a stable deterministic ID:
+//   makeSpellId(treeId, spellName) → e.g. "ogien_iskra"
+// unlockCondition is converted from the prerequisite's display name to its ID.
+for (const [treeId, tree] of Object.entries(SPELL_TREES)) {
+  for (const spell of tree.spells) {
+    spell.id = makeSpellId(treeId, spell.name);
+  }
+  for (const spell of tree.spells) {
+    if (spell.unlockCondition) {
+      spell.unlockCondition = makeSpellId(treeId, spell.unlockCondition);
+    }
+  }
+}
+
+// ── Reverse lookup: spellId → { spell, treeId } ──
+const SPELL_BY_ID = new Map();
+const SPELL_ID_BY_NAME = new Map();
+for (const [treeId, tree] of Object.entries(SPELL_TREES)) {
+  for (const spell of tree.spells) {
+    SPELL_BY_ID.set(spell.id, { spell, treeId });
+    SPELL_ID_BY_NAME.set(spell.name, spell.id);
+  }
+}
+
+/**
+ * Resolve a spell name (display) to its stable ID. Returns null for
+ * custom/AI-invented spells not in the catalog.
+ */
+export function spellNameToId(name) {
+  return SPELL_ID_BY_NAME.get(name) || null;
+}
+
 /**
  * Spell → status effect mapping. When a spell hits, the corresponding effect
  * is applied to the target (or caster for self-buffs). Only spells with
  * mechanical effects are listed; pure-damage spells rely on the combat engine
  * damage formula.
+ *
+ * Keyed by spellId (stable). Legacy name-based lookup supported via
+ * `getSpellEffect()`.
  */
-export const SPELL_EFFECTS = {
+const SPELL_EFFECTS_BY_ID = {};
+const SPELL_EFFECTS_RAW = {
   'Lodowy Dotyk': {
     target: 'enemy',
     effect: {
@@ -453,6 +496,27 @@ export const SPELL_EFFECTS = {
   },
 };
 
+// Build ID-keyed SPELL_EFFECTS from name-keyed raw map
+for (const [spellName, fx] of Object.entries(SPELL_EFFECTS_RAW)) {
+  const id = spellNameToId(spellName);
+  if (id) SPELL_EFFECTS_BY_ID[id] = fx;
+}
+
+// Public export: supports lookup by BOTH spellId and legacy name
+export const SPELL_EFFECTS = new Proxy(SPELL_EFFECTS_BY_ID, {
+  get(target, prop) {
+    if (prop in target) return target[prop];
+    const id = spellNameToId(prop);
+    if (id && id in target) return target[id];
+    return undefined;
+  },
+  has(target, prop) {
+    if (prop in target) return true;
+    const id = spellNameToId(prop);
+    return id ? id in target : false;
+  },
+});
+
 // ── MANA BALANCE NOTES ──
 
 export const MANA_BALANCE = {
@@ -488,15 +552,26 @@ export function getSpellsFromTree(treeId) {
 }
 
 /**
- * Find a spell by name across all trees.
+ * Find a spell by ID or name across all trees.
+ * Tries spellId first, then falls back to name match.
  * Returns { spell, treeId } or null.
  */
-export function findSpell(spellName) {
+export function findSpell(spellIdOrName) {
+  const byId = SPELL_BY_ID.get(spellIdOrName);
+  if (byId) return byId;
   for (const [treeId, tree] of Object.entries(SPELL_TREES)) {
-    const spell = tree.spells.find((s) => s.name === spellName);
+    const spell = tree.spells.find((s) => s.name === spellIdOrName);
     if (spell) return { spell, treeId };
   }
   return null;
+}
+
+/**
+ * Find a spell strictly by its stable ID.
+ * Returns { spell, treeId } or null.
+ */
+export function findSpellById(spellId) {
+  return SPELL_BY_ID.get(spellId) || null;
 }
 
 /**
@@ -517,15 +592,20 @@ export function getStartingSpells() {
  * @param {Object} usageCounts - { spellName: numberOfUses }
  * @returns {boolean}
  */
-export function isSpellUnlocked(spellName, usageCounts = {}) {
-  const found = findSpell(spellName);
+export function isSpellUnlocked(spellIdOrName, usageCounts = {}) {
+  const found = findSpell(spellIdOrName);
   if (!found) return false;
   const { spell } = found;
 
-  // Level 1 spells are always available once the tree is known
   if (!spell.unlockCondition) return true;
 
-  const previousUses = usageCounts[spell.unlockCondition] || 0;
+  // unlockCondition is now a spellId; usageCounts may be keyed by ID or
+  // legacy name — check both for backward compat during migration.
+  const prereqEntry = SPELL_BY_ID.get(spell.unlockCondition);
+  const prereqName = prereqEntry?.spell?.name;
+  const previousUses = usageCounts[spell.unlockCondition]
+    || (prereqName ? usageCounts[prereqName] : 0)
+    || 0;
   return previousUses >= spell.unlockUses;
 }
 
@@ -540,7 +620,7 @@ export function getAvailableSpells(knownTrees = [], usageCounts = {}) {
     const tree = SPELL_TREES[treeId];
     if (!tree) continue;
     for (const spell of tree.spells) {
-      if (isSpellUnlocked(spell.name, usageCounts)) {
+      if (isSpellUnlocked(spell.id, usageCounts)) {
         available.push({ ...spell, treeId });
       }
     }
@@ -588,7 +668,7 @@ export function formatSpellDamageLabel(spell) {
   const cs = spell?.combatStats;
   if (!cs) return null;
 
-  const fx = SPELL_EFFECTS[spell.name];
+  const fx = SPELL_EFFECTS[spell.id || spell.name];
   const dotInfo = fx?.effect?.mechanics?.dotDamage;
   const dotDuration = fx?.effect?.duration?.remaining;
   const hotInfo = fx?.effect?.mechanics?.dotHeal;
@@ -644,17 +724,21 @@ export function formatMagicForPrompt(character) {
 
   if (known.length > 0) {
     lines.push('Znane zaklecia:');
-    for (const spellName of known) {
-      const found = findSpell(spellName);
+    for (const spellRef of known) {
+      const found = findSpell(spellRef);
       if (found) {
-        const uses = usageCounts[spellName] || 0;
-        lines.push(`  ${spellName} (${found.spell.manaCost} many, uzycia: ${uses}) — ${found.spell.description}`);
+        const uses = usageCounts[found.spell.id] || usageCounts[spellRef] || 0;
+        lines.push(`  ${found.spell.name} [id: ${found.spell.id}] (${found.spell.manaCost} many, uzycia: ${uses}) — ${found.spell.description}`);
       }
     }
   }
 
   if (scrolls.length > 0) {
-    lines.push(`Scrolle: ${scrolls.join(', ')}`);
+    const scrollDisplay = scrolls.map((s) => {
+      const f = findSpell(s);
+      return f ? `${f.spell.name} [id: ${f.spell.id}]` : s;
+    }).join(', ');
+    lines.push(`Scrolle: ${scrollDisplay}`);
   }
 
   return lines.join('\n');

@@ -4,7 +4,7 @@ import { buildNPCEmbeddingText, embedText } from '../../embeddingService.js';
 import { writeEmbedding } from '../../embeddingWrite.js';
 import { updateLoyalty } from '../../livingWorld/companionService.js';
 import { appendEvent } from '../../livingWorld/worldEventLog.js';
-import { resolveLocationByName, findCanonicalWorldNpcByName, killWorldNpc } from '../../livingWorld/worldStateService.js';
+import { resolveLocationByName, findCanonicalWorldNpcByName, killWorldNpc, findOrCreateWorldNPC, buildNpcCanonicalId } from '../../livingWorld/worldStateService.js';
 import { getOrCloneCampaignNpc } from '../../livingWorld/campaignSandbox.js';
 import { propagateRelationshipRipple } from '../../livingWorld/relationshipRippleService.js';
 import { coerceGender, normalizeGender } from '../../../../../shared/domain/npcGender.js';
@@ -120,9 +120,20 @@ export async function processNpcChanges(campaignId, npcs, { livingWorldEnabled =
     const npcId = npcChange.name.toLowerCase().replace(/\s+/g, '_');
 
     try {
-      const existing = await prisma.campaignNPC.findUnique({
-        where: { campaignId_npcId: { campaignId, npcId } },
-      });
+      // Primary: lookup by campaignNpcId (UUID) if AI emitted one.
+      // Fallback: slug-based lookup (legacy name-based identity).
+      let existing = null;
+      if (npcChange.campaignNpcId) {
+        existing = await prisma.campaignNPC.findUnique({
+          where: { id: npcChange.campaignNpcId },
+        });
+        if (existing && existing.campaignId !== campaignId) existing = null;
+      }
+      if (!existing) {
+        existing = await prisma.campaignNPC.findUnique({
+          where: { campaignId_npcId: { campaignId, npcId } },
+        });
+      }
 
       if (existing) {
         const contentUpdate = {};
@@ -372,6 +383,29 @@ export async function processNpcChanges(campaignId, npcs, { livingWorldEnabled =
           const emb = await embedText(embText);
           if (emb) writeEmbedding('CampaignNPC', created.id, emb, embText);
           affectedNpcIds.push(created.id);
+
+          // Entity registry — register ephemeral NPCs as inactive WorldNPC
+          // so the admin registry knows about them from the moment of creation.
+          if (livingWorldEnabled && !created.worldNpcId) {
+            try {
+              const registryNpc = await findOrCreateWorldNPC({
+                name: created.name,
+                role: created.role,
+                personality: created.personality,
+                alignment: 'neutral',
+                alive: created.alive,
+                _registryDefaults: { globallyActive: false, originCampaignId: campaignId },
+              });
+              if (registryNpc) {
+                await prisma.campaignNPC.update({
+                  where: { id: created.id },
+                  data: { worldNpcId: registryNpc.id },
+                });
+              }
+            } catch (regErr) {
+              log.debug({ err: regErr?.message, npcName: created.name }, 'entity registry WorldNPC upsert failed (non-fatal)');
+            }
+          }
         } catch (createErr) {
           // P2002 = unique constraint (campaignId+npcId) — retry created it already, safe to skip
           if (createErr.code !== 'P2002') throw createErr;

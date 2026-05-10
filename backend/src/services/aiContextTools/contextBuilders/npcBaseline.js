@@ -308,7 +308,7 @@ export async function buildNpcMemory({ ambientNpcs, ambientNpcsWithGoals, sceneQ
 
     const entries = [...baseline, ...experience];
     if (entries.length === 0) continue;
-    result.push({ npcName, entries, usedRag });
+    result.push({ npcName, campaignNpcId, entries, usedRag });
   }
   return result;
 }

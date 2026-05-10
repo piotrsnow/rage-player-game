@@ -4,6 +4,7 @@ import {
   resolveManoeuvre,
   advanceTurn,
 } from '../services/combatEngine';
+import { SPELL_VFX_COUNT } from '../components/gameplay/combat/combatCanvasDraw';
 
 const CHARGE_SLIDE_MS = 500;
 
@@ -120,7 +121,11 @@ export function buildManoeuvreExecutor({
         combat, actorId, manoeuvreKey, targetId, { customDescription: customDesc, ...extraOpts },
       );
       const hit = result?.outcome === 'hit';
-      await triggerProjectileAnim(actorId, targetId, hit);
+      const spellVfxVariant = manoeuvreKey === 'castSpell'
+        ? Math.floor(Math.random() * SPELL_VFX_COUNT)
+        : undefined;
+      if (result && spellVfxVariant != null) result.spellVfxVariant = spellVfxVariant;
+      await triggerProjectileAnim(actorId, targetId, hit, { spellVfxVariant });
 
       const anims = diffPositionAnims(updatedCombat.combatants, positionsBefore, 1000);
       if (Object.keys(anims).length) scheduleTokenAnim(anims);

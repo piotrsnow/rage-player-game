@@ -126,9 +126,12 @@ function autoPopulateKnowledgeBase(draft, changes) {
   if (changes.npcs?.length > 0) {
     if (!kb.characters) kb.characters = {};
     for (const npc of (draft.world.npcs || [])) {
-      const changedNpc = changes.npcs.find((n) => n.name?.toLowerCase() === npc.name?.toLowerCase());
+      const changedNpc = changes.npcs.find((n) =>
+        (n.campaignNpcId && npc.campaignNpcId && n.campaignNpcId === npc.campaignNpcId)
+        || n.name?.toLowerCase() === npc.name?.toLowerCase(),
+      );
       if (!changedNpc) continue;
-      const key = npc.name.toLowerCase();
+      const key = npc.campaignNpcId || npc.name.toLowerCase();
       const existing = kb.characters[key] || { interactionCount: 0, knownFacts: [] };
       kb.characters[key] = {
         name: npc.name,

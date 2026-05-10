@@ -32,15 +32,23 @@ export function applyNpcs(draft, changes) {
   const pendingRecruits = [];
 
   for (const incoming of changes.npcs) {
-    const idx = draft.world.npcs.findIndex(
-      (n) => n.name?.toLowerCase() === incoming.name?.toLowerCase(),
-    );
+    // Primary: match by campaignNpcId (UUID) when present.
+    // Fallback: case-insensitive name match.
+    let idx = -1;
+    if (incoming.campaignNpcId) {
+      idx = draft.world.npcs.findIndex((n) => n.campaignNpcId === incoming.campaignNpcId);
+    }
+    if (idx < 0) {
+      idx = draft.world.npcs.findIndex(
+        (n) => n.name?.toLowerCase() === incoming.name?.toLowerCase(),
+      );
+    }
 
     if (incoming.action === 'introduce' && idx < 0) {
-      // Faza 3a — preferowane: locationRef (composite). Fallback: location string.
       const incomingRef = parseLocationRef(incoming.locationRef);
       const npcEntry = {
-        id: `npc_${Date.now()}_${shortId(5)}`,
+        id: incoming.campaignNpcId || `npc_${Date.now()}_${shortId(5)}`,
+        campaignNpcId: incoming.campaignNpcId || null,
         name: incoming.name,
         gender: incoming.gender || 'unknown',
         role: incoming.role || '',
@@ -101,7 +109,9 @@ export function applyNpcs(draft, changes) {
       }
       if (incoming.relationships?.length > 0) {
         const filteredExisting = (npc.relationships || []).filter(
-          (r) => !incoming.relationships.some((nr) => nr.npcName === r.npcName),
+          (r) => !incoming.relationships.some((nr) =>
+            (nr.npcId && r.npcId && nr.npcId === r.npcId) || nr.npcName === r.npcName,
+          ),
         );
         npc.relationships = [...filteredExisting, ...incoming.relationships];
       }

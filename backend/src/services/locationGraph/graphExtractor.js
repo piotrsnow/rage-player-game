@@ -26,6 +26,7 @@ const SYSTEM_PROMPT = `You are a Location Graph Analyst for an RPG world. Analyz
 - Decorative descriptions (furniture, weather, mood) — just narration, not graph-worthy
 - Locations that already exist in the graph under the same or similar name
 - Vague references without spatial significance
+- NEVER use NPC or character names as location names. Locations must be geographic sites (buildings, rooms, areas, paths). If an NPC is mentioned, they belong in npcMoves, not newNodes
 
 ## OUTPUT (JSON)
 {

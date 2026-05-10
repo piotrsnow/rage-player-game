@@ -22,12 +22,13 @@ import { runPostCampaignWorldWriteback } from '../services/livingWorld/postCampa
 import { applyApprovedPendingChange } from '../services/livingWorld/postCampaignWorldChanges.js';
 import { promoteCampaignNpcToWorld } from '../services/livingWorld/postCampaignPromotion.js';
 import { promoteWorldLocationToCanonical } from '../services/livingWorld/postCampaignLocationPromotion.js';
-import { migrateExistingCampaignGraph, runGraphConsistencyCheck, loadCampaignGraph, createEdge } from '../services/locationGraph/index.js';
+import { migrateExistingCampaignGraph, runGraphConsistencyCheck, loadCampaignGraph, loadWorldGraph, createEdge } from '../services/locationGraph/index.js';
 import { getExtractionStats } from '../services/locationGraph/graphExtractor.js';
 import { LOCATION_KIND_WORLD, LOCATION_KIND_CAMPAIGN } from '../services/locationRefs.js';
 import { getModelOverrides, setModelOverrides, TASK_CATEGORIES } from '../services/serverConfig.js';
 import { config } from '../config.js';
 import { ensureCharacterSpritesBatch, MAX_CHARACTER_SPRITE_BATCH } from '../services/characterSpriteService.js';
+import { startSpriteJob, getSpriteJobStatus, cancelSpriteJob, getActiveJobId } from '../services/locationGraph/spriteJobService.js';
 
 const log = childLogger({ module: 'adminLivingWorld' });
 
@@ -578,6 +579,367 @@ export async function adminLivingWorldRoutes(fastify) {
       })),
       npcs: npcNodes,
     };
+  });
+
+  // Admin LocationGraph modal (world scope) — full LocationEdge graph + orphans,
+  // canonical WorldNPC occupants, campaigns linked per discovery / current pose / sandbox.
+  fastify.get('/world-graph', guard(), async () => {
+    let { nodes: nodeMap, edges } = await loadWorldGraph();
+
+    const seenWorldIds = new Set();
+    const seenCampaignLocIds = new Set();
+    for (const [, row] of nodeMap) {
+      if (row._kind === LOCATION_KIND_WORLD) seenWorldIds.add(row.id);
+      else if (row._kind === LOCATION_KIND_CAMPAIGN) seenCampaignLocIds.add(row.id);
+    }
+
+    const [orphanWorldRows, orphanCampaignRows] = await Promise.all([
+      seenWorldIds.size > 0
+        ? prisma.worldLocation.findMany({ where: { id: { notIn: [...seenWorldIds] } } })
+        : prisma.worldLocation.findMany(),
+      seenCampaignLocIds.size > 0
+        ? prisma.campaignLocation.findMany({ where: { id: { notIn: [...seenCampaignLocIds] } } })
+        : prisma.campaignLocation.findMany(),
+    ]);
+    for (const r of orphanWorldRows) {
+      nodeMap.set(`${LOCATION_KIND_WORLD}:${r.id}`, { ...r, _kind: LOCATION_KIND_WORLD });
+    }
+    for (const r of orphanCampaignRows) {
+      nodeMap.set(`${LOCATION_KIND_CAMPAIGN}:${r.id}`, { ...r, _kind: LOCATION_KIND_CAMPAIGN });
+    }
+
+    /** @typedef {{ id: string, name: string, discoveredAt: string|null, relations: string[] }} CampaignRefMerged */
+    /** @type Map<string, Map<string, CampaignRefMerged>> compositeKey -> cid -> merged */
+    const campaignsByComposite = new Map();
+
+    function touchCampaignMap(compositeKey) {
+      if (!campaignsByComposite.has(compositeKey)) campaignsByComposite.set(compositeKey, new Map());
+      return campaignsByComposite.get(compositeKey);
+    }
+
+    /** @param {string} compositeKey `"world:id"|"campaign:id"` */
+    function mergeCampaignRef(compositeKey, campaignId, name, fragment) {
+      if (!campaignId) return;
+      const m = touchCampaignMap(compositeKey);
+      let row = m.get(campaignId);
+      if (!row) {
+        row = { id: campaignId, name: name || '', discoveredAt: null, relations: [] };
+        m.set(campaignId, row);
+      } else if (name && !row.name) row.name = name;
+      if (fragment.discoveredAt) {
+        const iso = fragment.discoveredAt instanceof Date
+          ? fragment.discoveredAt.toISOString()
+          : String(fragment.discoveredAt);
+        if (!row.discoveredAt || iso < row.discoveredAt) row.discoveredAt = iso;
+      }
+      if (fragment.relation && !row.relations.includes(fragment.relation)) row.relations.push(fragment.relation);
+    }
+
+    const worldIdsAll = [];
+    const campaignLocIdsAll = [];
+    const ownerCampaignIds = new Set();
+    for (const [, row] of nodeMap) {
+      if (row._kind === LOCATION_KIND_WORLD) worldIdsAll.push(row.id);
+      else if (row._kind === LOCATION_KIND_CAMPAIGN) {
+        campaignLocIdsAll.push(row.id);
+        if (row.campaignId) ownerCampaignIds.add(row.campaignId);
+      }
+    }
+
+    const ownerMeta = ownerCampaignIds.size > 0
+      ? await prisma.campaign.findMany({
+          where: { id: { in: [...ownerCampaignIds] } },
+          select: { id: true, name: true },
+        })
+      : [];
+    const nameByCampaignId = new Map(ownerMeta.map((c) => [c.id, c.name]));
+
+    for (const [, row] of nodeMap) {
+      if (row._kind === LOCATION_KIND_CAMPAIGN && row.campaignId) {
+        mergeCampaignRef(
+          `${LOCATION_KIND_CAMPAIGN}:${row.id}`,
+          row.campaignId,
+          nameByCampaignId.get(row.campaignId),
+          { relation: 'owner' },
+        );
+      }
+    }
+
+    const discoveryWhereOr = [];
+    if (worldIdsAll.length > 0) {
+      discoveryWhereOr.push({
+        locationKind: LOCATION_KIND_WORLD,
+        locationId: { in: worldIdsAll },
+        state: 'visited',
+      });
+    }
+    if (campaignLocIdsAll.length > 0) {
+      discoveryWhereOr.push({
+        locationKind: LOCATION_KIND_CAMPAIGN,
+        locationId: { in: campaignLocIdsAll },
+        state: 'visited',
+      });
+    }
+    const discoveries = discoveryWhereOr.length > 0
+      ? await prisma.campaignDiscoveredLocation.findMany({
+          where: { OR: discoveryWhereOr },
+          include: { campaign: { select: { id: true, name: true } } },
+        })
+      : [];
+    for (const d of discoveries) {
+      const compositeKey = `${d.locationKind}:${d.locationId}`;
+      mergeCampaignRef(compositeKey, d.campaignId, d.campaign?.name ?? '', {
+        relation: 'visited',
+        discoveredAt: d.discoveredAt,
+      });
+    }
+
+    const [atWorld, atSandbox] = await Promise.all([
+      worldIdsAll.length > 0
+        ? prisma.campaign.findMany({
+            where: {
+              currentLocationKind: LOCATION_KIND_WORLD,
+              currentLocationId: { in: worldIdsAll },
+            },
+            select: { id: true, name: true, currentLocationId: true },
+          })
+        : [],
+      campaignLocIdsAll.length > 0
+        ? prisma.campaign.findMany({
+            where: {
+              currentLocationKind: LOCATION_KIND_CAMPAIGN,
+              currentLocationId: { in: campaignLocIdsAll },
+            },
+            select: { id: true, name: true, currentLocationId: true },
+          })
+        : [],
+    ]);
+
+    for (const c of atWorld) {
+      mergeCampaignRef(
+        `${LOCATION_KIND_WORLD}:${c.currentLocationId}`,
+        c.id,
+        c.name,
+        { relation: 'current_here' },
+      );
+    }
+    for (const c of atSandbox) {
+      mergeCampaignRef(
+        `${LOCATION_KIND_CAMPAIGN}:${c.currentLocationId}`,
+        c.id,
+        c.name,
+        { relation: 'current_here' },
+      );
+    }
+
+    const dedupedEdges = edges;
+    const nodeList = [];
+
+    const tagsFromJson = (tags) => (Array.isArray(tags) ? tags : []);
+
+    for (const [, node] of nodeMap) {
+      const ck = `${node._kind}:${node.id}`;
+      const campaignRefsRaw = [...(campaignsByComposite.get(ck)?.values() || [])];
+      const campaignsSorted = campaignRefsRaw
+        .map((cr) => ({
+          id: cr.id,
+          name: cr.name,
+          discoveredAt: cr.discoveredAt,
+          relations: [...cr.relations],
+        }))
+        .sort((a, b) => String(a.name).localeCompare(String(b.name), 'pl'));
+
+      const serialized = node._kind === LOCATION_KIND_WORLD
+        ? {
+            id: node.id,
+            kind: LOCATION_KIND_WORLD,
+            name: node.canonicalName || node.displayName || node.name || node.id,
+            type: node.locationType || 'generic',
+            scale: node.scale ?? 5,
+            tags: tagsFromJson(node.tags),
+            atmosphere: node.atmosphere ?? null,
+            description: node.description ?? null,
+            biome: node.biome ?? null,
+            region: node.region ?? null,
+            visitCount: node.visitCount ?? 0,
+            dangerLevel: node.dangerLevel || 'safe',
+            regionX: node.regionX ?? 0,
+            regionY: node.regionY ?? 0,
+            nodeShape: node.nodeShape ?? null,
+            nodeIcon: node.nodeIcon ?? null,
+            nodeImageUrl: node.nodeImageUrl ?? null,
+            campaigns: campaignsSorted,
+          }
+        : {
+            id: node.id,
+            kind: LOCATION_KIND_CAMPAIGN,
+            name: node.name,
+            type: node.locationType || 'generic',
+            scale: node.scale ?? 5,
+            tags: tagsFromJson(node.tags),
+            atmosphere: node.atmosphere ?? null,
+            description: node.description ?? null,
+            biome: node.biome ?? null,
+            region: node.region ?? null,
+            visitCount: node.visitCount ?? 0,
+            dangerLevel: node.dangerLevel || 'safe',
+            regionX: node.regionX ?? 0,
+            regionY: node.regionY ?? 0,
+            nodeShape: node.nodeShape ?? null,
+            nodeIcon: node.nodeIcon ?? null,
+            nodeImageUrl: node.nodeImageUrl ?? null,
+            campaigns: campaignsSorted,
+          };
+
+      nodeList.push(serialized);
+    }
+
+    const edgeList = dedupedEdges.map((e) => ({
+      id: e.id,
+      fromKind: e.fromKind,
+      fromId: e.fromId,
+      toKind: e.toKind,
+      toId: e.toId,
+      edgeType: e.edgeType,
+      category: e.category,
+      bidirectional: e.bidirectional,
+      weight: e.weight,
+      metadata: e.metadata,
+      discoveryState: e.discoveryState,
+      createdBy: e.createdBy,
+    }));
+
+    const FACTION_EDGE_TYPES = new Set(['controlled_by', 'patrolled_by', 'contested_between']);
+    const factionOverlay = dedupedEdges
+      .filter((e) => e.category === 'social' && FACTION_EDGE_TYPES.has(e.edgeType))
+      .map((e) => ({
+        locationId: e.fromId,
+        locationKind: e.fromKind,
+        factionId: e.metadata?.factionId || null,
+        factionName: e.metadata?.factionName || e.metadata?.factionId || null,
+        strength: e.metadata?.strength ?? 50,
+        type: e.edgeType,
+        color: e.metadata?.color || null,
+      }))
+      .filter((f) => f.factionId);
+
+    const worldNpcs = await prisma.worldNPC.findMany({
+      where: {
+        alive: true,
+        OR: [{ currentLocationId: { not: null } }, { homeLocationId: { not: null } }],
+      },
+      select: {
+        id: true,
+        name: true,
+        role: true,
+        category: true,
+        currentLocationId: true,
+        homeLocationId: true,
+        spriteUrl: true,
+      },
+    });
+
+    const occupants = [];
+    for (const npc of worldNpcs) {
+      const locId = npc.currentLocationId || npc.homeLocationId;
+      if (!locId) continue;
+      occupants.push({
+        id: npc.id,
+        name: npc.name,
+        type: 'npc',
+        role: npc.role,
+        category: npc.category,
+        locationKind: LOCATION_KIND_WORLD,
+        locationId: locId,
+        spriteUrl: npc.spriteUrl ?? null,
+      });
+    }
+
+    return {
+      nodes: nodeList,
+      edges: edgeList,
+      factionOverlay,
+      occupants,
+    };
+  });
+
+  // ── Bulk sprite generation jobs ─────────────────────────────────────
+  // Admin kicks off a background PixelLab job for every node without a sprite.
+
+  fastify.post('/world-graph/sprite-jobs', guard({
+    config: { rateLimit: { max: 3, timeWindow: '1 minute' } },
+    schema: {
+      body: {
+        type: 'object',
+        required: ['nodes'],
+        additionalProperties: false,
+        properties: {
+          nodes: {
+            type: 'array',
+            maxItems: 2000,
+            items: {
+              type: 'object',
+              required: ['kind', 'id'],
+              additionalProperties: false,
+              properties: {
+                kind: { type: 'string', enum: ['world', 'campaign'] },
+                id: { type: 'string', format: 'uuid' },
+              },
+            },
+          },
+        },
+      },
+    },
+  }), async (request, reply) => {
+    const { nodes } = request.body;
+    if (nodes.length === 0) {
+      return reply.code(400).send({ error: 'No nodes provided' });
+    }
+    try {
+      const result = await startSpriteJob(nodes, { userId: request.user.id });
+      return reply.code(201).send(result);
+    } catch (err) {
+      log.error({ err }, 'start sprite job failed');
+      if (err.message.includes('not configured')) {
+        return reply.code(503).send({ error: err.message });
+      }
+      return reply.code(500).send({ error: err.message });
+    }
+  });
+
+  fastify.get('/world-graph/sprite-jobs/active', guard(), async () => {
+    const jobId = await getActiveJobId();
+    if (!jobId) return { jobId: null };
+    const status = await getSpriteJobStatus(jobId);
+    return { jobId, ...status };
+  });
+
+  fastify.get('/world-graph/sprite-jobs/:jobId', guard({
+    schema: {
+      params: {
+        type: 'object',
+        required: ['jobId'],
+        properties: { jobId: { type: 'string', format: 'uuid' } },
+      },
+    },
+  }), async (request, reply) => {
+    const status = await getSpriteJobStatus(request.params.jobId);
+    if (!status) return reply.code(404).send({ error: 'Job not found' });
+    return status;
+  });
+
+  fastify.post('/world-graph/sprite-jobs/:jobId/cancel', guard({
+    schema: {
+      params: {
+        type: 'object',
+        required: ['jobId'],
+        properties: { jobId: { type: 'string', format: 'uuid' } },
+      },
+    },
+  }), async (request, reply) => {
+    const result = await cancelSpriteJob(request.params.jobId);
+    if (!result) return reply.code(404).send({ error: 'Job not found' });
+    return { ok: true, ...result };
   });
 
   // Round C Phase 8 — children of a single top-level location, used by the
@@ -1354,7 +1716,7 @@ export async function adminLivingWorldRoutes(fastify) {
       if (searchFilter) where.name = searchFilter;
       queries.WorldNPC = prisma.worldNPC.findMany({
         where, take: limit, skip, orderBy: { updatedAt: 'desc' },
-        select: { id: true, name: true, role: true, alive: true, category: true, currentLocationId: true, updatedAt: true },
+        select: { id: true, name: true, role: true, alive: true, category: true, currentLocationId: true, updatedAt: true, globallyActive: true, softDeletedAt: true, originCampaignId: true },
       });
     }
     if (typesToQuery.includes('WorldLocation')) {
@@ -1362,7 +1724,7 @@ export async function adminLivingWorldRoutes(fastify) {
       if (searchFilter) where.canonicalName = searchFilter;
       queries.WorldLocation = prisma.worldLocation.findMany({
         where, take: limit, skip, orderBy: { updatedAt: 'desc' },
-        select: { id: true, canonicalName: true, locationType: true, region: true, parentLocationId: true, updatedAt: true },
+        select: { id: true, canonicalName: true, locationType: true, region: true, parentLocationId: true, updatedAt: true, globallyActive: true, softDeletedAt: true, originCampaignId: true },
       });
     }
     if (typesToQuery.includes('Road')) {
@@ -1582,6 +1944,169 @@ export async function adminLivingWorldRoutes(fastify) {
     }
     await setModelOverrides(overrides);
     return { ok: true, overrides };
+  });
+
+  // ── Entity registry moderation ──────────────────────────────────────
+  // activate / deactivate / soft-delete / hard-delete for lifecycle-aware
+  // entities (WorldNPC, WorldLocation, CustomSpell, WorldItemDefinition).
+
+  const LIFECYCLE_TYPES = ['WorldNPC', 'WorldLocation', 'CustomSpell', 'WorldItemDefinition'];
+  const lifecycleModelName = (t) => ({
+    WorldNPC: 'worldNPC',
+    WorldLocation: 'worldLocation',
+    CustomSpell: 'customSpell',
+    WorldItemDefinition: 'worldItemDefinition',
+  })[t];
+  const lifecycleIdField = (t) => (t === 'CustomSpell' ? 'name' : 'id');
+
+  // GET /entity-registry — list lifecycle-aware entities with status filters
+  fastify.get('/entity-registry', guard({
+    schema: {
+      querystring: {
+        type: 'object',
+        additionalProperties: false,
+        properties: {
+          type: { type: 'string', enum: LIFECYCLE_TYPES },
+          active: BOOL_STRING,
+          deleted: BOOL_STRING,
+          originCampaignId: ID_STRING,
+          search: { type: 'string', maxLength: 200 },
+          limit: { type: 'integer', minimum: 1, maximum: 200, default: 50 },
+          skip: { type: 'integer', minimum: 0, default: 0 },
+        },
+      },
+    },
+  }), async (request) => {
+    const { type, active, deleted, originCampaignId, search, limit, skip } = request.query;
+    const types = type ? [type] : LIFECYCLE_TYPES;
+    const results = {};
+
+    for (const t of types) {
+      const model = lifecycleModelName(t);
+      if (!model) continue;
+      const where = {};
+      if (active === 'true') where.globallyActive = true;
+      if (active === 'false') where.globallyActive = false;
+      if (deleted === 'true') where.softDeletedAt = { not: null };
+      if (deleted === 'false') where.softDeletedAt = null;
+      if (originCampaignId) where.originCampaignId = originCampaignId;
+      if (search) {
+        const searchFilter = { contains: search, mode: 'insensitive' };
+        if (t === 'WorldNPC') where.name = searchFilter;
+        else if (t === 'WorldLocation') where.canonicalName = searchFilter;
+        else if (t === 'CustomSpell') where.name = searchFilter;
+        else if (t === 'WorldItemDefinition') where.displayName = searchFilter;
+      }
+      const [rows, total] = await Promise.all([
+        prisma[model].findMany({ where, take: limit, skip, orderBy: { createdAt: 'desc' } }),
+        prisma[model].count({ where }),
+      ]);
+      results[t] = { rows, total };
+    }
+    return results;
+  });
+
+  // POST /entity-registry/:type/:id/activate
+  fastify.post('/entity-registry/:type/:id/activate', guard({
+    schema: { params: { type: 'object', properties: { type: { type: 'string', enum: LIFECYCLE_TYPES }, id: { type: 'string', maxLength: 256 } }, required: ['type', 'id'] } },
+  }), async (request, reply) => {
+    const { type, id } = request.params;
+    const model = lifecycleModelName(type);
+    if (!model) return reply.code(400).send({ error: 'Invalid type' });
+    const idField = lifecycleIdField(type);
+    try {
+      const row = await prisma[model].update({
+        where: { [idField]: id },
+        data: { globallyActive: true },
+      });
+      return { ok: true, row };
+    } catch (err) {
+      if (err?.code === 'P2025') return reply.code(404).send({ error: 'Not found' });
+      throw err;
+    }
+  });
+
+  // POST /entity-registry/:type/:id/deactivate
+  fastify.post('/entity-registry/:type/:id/deactivate', guard({
+    schema: { params: { type: 'object', properties: { type: { type: 'string', enum: LIFECYCLE_TYPES }, id: { type: 'string', maxLength: 256 } }, required: ['type', 'id'] } },
+  }), async (request, reply) => {
+    const { type, id } = request.params;
+    const model = lifecycleModelName(type);
+    if (!model) return reply.code(400).send({ error: 'Invalid type' });
+    const idField = lifecycleIdField(type);
+    try {
+      const row = await prisma[model].update({
+        where: { [idField]: id },
+        data: { globallyActive: false },
+      });
+      return { ok: true, row };
+    } catch (err) {
+      if (err?.code === 'P2025') return reply.code(404).send({ error: 'Not found' });
+      throw err;
+    }
+  });
+
+  // POST /entity-registry/:type/:id/soft-delete
+  fastify.post('/entity-registry/:type/:id/soft-delete', guard({
+    schema: { params: { type: 'object', properties: { type: { type: 'string', enum: LIFECYCLE_TYPES }, id: { type: 'string', maxLength: 256 } }, required: ['type', 'id'] } },
+  }), async (request, reply) => {
+    const { type, id } = request.params;
+    const model = lifecycleModelName(type);
+    if (!model) return reply.code(400).send({ error: 'Invalid type' });
+    const idField = lifecycleIdField(type);
+    try {
+      const row = await prisma[model].update({
+        where: { [idField]: id },
+        data: { softDeletedAt: new Date(), globallyActive: false },
+      });
+      return { ok: true, row };
+    } catch (err) {
+      if (err?.code === 'P2025') return reply.code(404).send({ error: 'Not found' });
+      throw err;
+    }
+  });
+
+  // POST /entity-registry/:type/:id/restore — undo soft-delete
+  fastify.post('/entity-registry/:type/:id/restore', guard({
+    schema: { params: { type: 'object', properties: { type: { type: 'string', enum: LIFECYCLE_TYPES }, id: { type: 'string', maxLength: 256 } }, required: ['type', 'id'] } },
+  }), async (request, reply) => {
+    const { type, id } = request.params;
+    const model = lifecycleModelName(type);
+    if (!model) return reply.code(400).send({ error: 'Invalid type' });
+    const idField = lifecycleIdField(type);
+    try {
+      const row = await prisma[model].update({
+        where: { [idField]: id },
+        data: { softDeletedAt: null },
+      });
+      return { ok: true, row };
+    } catch (err) {
+      if (err?.code === 'P2025') return reply.code(404).send({ error: 'Not found' });
+      throw err;
+    }
+  });
+
+  // DELETE /entity-registry/:type/:id/hard-delete — permanent with FK guards
+  fastify.delete('/entity-registry/:type/:id/hard-delete', guard({
+    schema: { params: { type: 'object', properties: { type: { type: 'string', enum: LIFECYCLE_TYPES }, id: { type: 'string', maxLength: 256 } }, required: ['type', 'id'] } },
+  }), async (request, reply) => {
+    const { type, id } = request.params;
+    const model = lifecycleModelName(type);
+    if (!model) return reply.code(400).send({ error: 'Invalid type' });
+    const idField = lifecycleIdField(type);
+    try {
+      await prisma[model].delete({ where: { [idField]: id } });
+      return { ok: true };
+    } catch (err) {
+      if (err?.code === 'P2025') return reply.code(404).send({ error: 'Not found' });
+      if (err?.code === 'P2003') {
+        return reply.code(409).send({
+          error: 'Cannot hard-delete: entity has dependent records (FK constraint). Use soft-delete instead.',
+          code: 'FK_CONSTRAINT',
+        });
+      }
+      throw err;
+    }
   });
 
   // ── Available fonts (scan public/fonts/) ──

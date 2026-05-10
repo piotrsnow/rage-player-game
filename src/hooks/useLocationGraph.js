@@ -13,11 +13,11 @@ export function notifyLocationGraphMutated(campaignId) {
 }
 
 /**
- * @param {string} campaignId
- * @param {{ openGeneration?: number }} [options] — pass `openGeneration` from modal refresh key so graph refetches every time the location-graph modal opens.
+ * @param {string|null|undefined} campaignId
+ * @param {{ openGeneration?: number, paused?: boolean }} [options] — pass `openGeneration` from modal refresh key so graph refetches every time the location-graph modal opens. Set `paused` when another hook instance owns the modal (world graph).
  */
 export function useLocationGraph(campaignId, options = {}) {
-  const { openGeneration } = options;
+  const { openGeneration, paused = false } = options;
   // Subskrypcja do currentLocationRef + currentLocation (string fallback)
   // żeby otwarty modal sam się odświeżał, gdy gracz przeszedł do nowej
   // lokacji (zwykła scena z create-on-miss, korekta incydentu, ręczne move).
@@ -47,7 +47,7 @@ export function useLocationGraph(campaignId, options = {}) {
   const abortRef = useRef(null);
 
   const fetchGraph = useCallback(async ({ focusKind, focusId, hops } = {}) => {
-    if (!campaignId) return;
+    if (!campaignId || paused) return;
     setLoading(true);
     setError(null);
     try {
@@ -65,21 +65,22 @@ export function useLocationGraph(campaignId, options = {}) {
     } finally {
       setLoading(false);
     }
-  }, [campaignId]);
+  }, [campaignId, paused]);
 
   useEffect(() => {
+    if (paused || !campaignId) return;
     fetchGraph({ hops: 3 });
-  }, [fetchGraph, currentRefKey, openGeneration]);
+  }, [fetchGraph, currentRefKey, openGeneration, paused, campaignId]);
 
   useEffect(() => {
-    if (!campaignId) return;
+    if (paused || !campaignId) return;
     const onMutated = (e) => {
       if (e.detail?.campaignId !== campaignId) return;
       fetchGraph({ hops: 3 });
     };
     window.addEventListener(LOCATION_GRAPH_MUTATED_EVENT, onMutated);
     return () => window.removeEventListener(LOCATION_GRAPH_MUTATED_EVENT, onMutated);
-  }, [campaignId, fetchGraph]);
+  }, [campaignId, fetchGraph, paused]);
 
   const createNode = useCallback(async (body) => {
     setError(null);
@@ -223,5 +224,6 @@ export function useLocationGraph(campaignId, options = {}) {
     createEdge, updateEdge, deleteEdge,
     moveNpc, validate,
     fetchNpcDetails,
+    readOnly: false,
   };
 }

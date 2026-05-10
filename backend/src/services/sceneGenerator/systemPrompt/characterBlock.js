@@ -54,23 +54,24 @@ export function buildCharacterBlock(character) {
   );
 
   if (character.spells?.known?.length) {
-    lines.push(`Known spells: ${character.spells.known.join(', ')}`);
+    // Spell refs may be spellIds (e.g. "ogien_iskra") or legacy names.
+    // Show both the ref and the human name when distinguishable.
+    lines.push(`Known spells: ${character.spells.known.map((ref) => {
+      if (ref.includes('_')) return `${ref}`;
+      return ref;
+    }).join(', ')}`);
   }
   if (character.inventory?.length) {
-    // Pełne opisy tylko dla quest/MacGuffin itemów (source='quest', fromNpcId,
-    // lub unique typy). Seed equipment (weapon/armor/gear) renderujemy zwięźle —
-    // model i tak prawie nigdy nie używa flavor description seed-itemów, a to
-    // ~400-500 znaków per scena w typowej kampanii.
     const isUniqueItem = (i) => {
       if (typeof i === 'string') return false;
       if (i.source === 'quest' || i.fromNpcId) return true;
-      // unique story types — MacGuffins, scrolls, keys, letters, artifacts
       const uniqueTypes = new Set(['key', 'letter', 'artifact', 'scroll', 'relic', 'macguffin']);
       return uniqueTypes.has(i.type);
     };
     lines.push(`Inventory: ${character.inventory.map((i) => {
       if (typeof i === 'string') return i;
-      const base = `${i.name} (${i.type})`;
+      const idTag = i.id ? ` [id: ${i.id}]` : '';
+      const base = `${i.name} (${i.type})${idTag}`;
       return isUniqueItem(i) && i.description ? `${base} — ${i.description}` : base;
     }).join(', ')}`);
   }

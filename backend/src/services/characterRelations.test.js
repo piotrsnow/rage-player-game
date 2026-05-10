@@ -87,7 +87,7 @@ describe('reconstructCharacterSnapshot', () => {
     expect(out.equippedArmour).toBeUndefined();
   });
 
-  it('folds materials into the FE-shape materialBag array', () => {
+  it('folds materials into the FE-shape materialBag array with id from materialKey', () => {
     const row = {
       id: 'c1',
       characterSkills: [],
@@ -99,8 +99,8 @@ describe('reconstructCharacterSnapshot', () => {
     };
     const out = reconstructCharacterSnapshot(row);
     expect(out.materialBag).toEqual([
-      { name: 'Skóra', quantity: 5 },
-      { name: 'Drewno', quantity: 12 },
+      { id: 'skora', name: 'Skóra', quantity: 5 },
+      { id: 'drewno', name: 'Drewno', quantity: 12 },
     ]);
   });
 });
@@ -141,10 +141,12 @@ describe('splitCharacterSnapshot', () => {
       props: { damage: 5 },
       imageUrl: null,
     }]);
-    expect(materialRows).toEqual([{ materialKey: 'skora', displayName: 'Skóra', quantity: 5 }]);
+    expect(materialRows).toHaveLength(1);
+    expect(materialRows[0]).toMatchObject({ displayName: 'Skóra', quantity: 5 });
+    expect(materialRows[0].materialKey).toBeTruthy();
   });
 
-  it('stacks duplicate-by-name inventory entries into one row with summed quantity', () => {
+  it('creates separate rows for each inventory entry (per-instance UUID model)', () => {
     const snapshot = {
       inventory: [
         { name: 'Mikstura Życia', quantity: 1 },
@@ -153,12 +155,12 @@ describe('splitCharacterSnapshot', () => {
       ],
     };
     const { inventoryRows } = splitCharacterSnapshot(snapshot);
-    expect(inventoryRows).toHaveLength(1);
-    expect(inventoryRows[0]).toMatchObject({
-      itemKey: 'mikstura_zycia',
-      displayName: 'Mikstura Życia',
-      quantity: 4,
-    });
+    expect(inventoryRows).toHaveLength(3);
+    expect(inventoryRows[0]).toMatchObject({ displayName: 'Mikstura Życia', quantity: 1 });
+    expect(inventoryRows[1]).toMatchObject({ displayName: 'mikstura życia', quantity: 2 });
+    expect(inventoryRows[2]).toMatchObject({ displayName: 'Mikstura Życia', quantity: 1 });
+    const keys = new Set(inventoryRows.map((r) => r.itemKey));
+    expect(keys.size).toBe(3);
   });
 
   it('captures arbitrary AI-emitted fields into props JSONB', () => {

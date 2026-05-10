@@ -2263,7 +2263,12 @@
       "player": "Gracz",
       "validate": "Waliduj",
       "snapToGrid": "Siatka",
-      "resetLayout": "Reset"
+      "resetLayout": "Reset",
+      "generateAllSprites": "Generuj wszystkie",
+      "startingSprites": "Startuję…",
+      "cancelSprites": "Stop",
+      "spritesDone": "Gotowe: {{done}}, err: {{failed}}",
+      "spritesFailed": "Job nie powiódł się"
     },
     "addNode": {
       "title": "Nowa Lokacja",

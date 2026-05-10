@@ -24,6 +24,8 @@ export default function InspectorPanel({
   selectedNode, selectedEdge, allNodes, occupants = [],
   onUpdateNode, onUpdateEdge, onDeleteNode, onDeleteEdge,
   mode, campaignId,
+  worldMode = false,
+  readOnly = false,
   onNpcClick,
 }) {
   const { t } = useTranslation();
@@ -38,7 +40,10 @@ export default function InspectorPanel({
   }
 
   if (selectedNode) {
-    const nodeOccupants = occupants.filter((o) => o.locationId === selectedNode.id);
+    const nk = selectedNode.kind;
+    const nodeOccupants = occupants.filter(
+      (o) => o.locationId === selectedNode.id && (o.locationKind ?? 'world') === (nk || o.locationKind),
+    );
     return (
       <NodeInspector
         node={selectedNode}
@@ -47,6 +52,8 @@ export default function InspectorPanel({
         onDelete={onDeleteNode}
         mode={mode}
         campaignId={campaignId}
+        worldMode={worldMode}
+        readOnly={readOnly}
         onNpcClick={onNpcClick}
         t={t}
       />
@@ -60,12 +67,13 @@ export default function InspectorPanel({
       onUpdate={onUpdateEdge}
       onDelete={onDeleteEdge}
       mode={mode}
+      readOnly={readOnly}
       t={t}
     />
   );
 }
 
-function NodeInspector({ node, occupants = [], onUpdate, onDelete, mode, campaignId, onNpcClick, t }) {
+function NodeInspector({ node, occupants = [], onUpdate, onDelete, mode, campaignId, worldMode = false, readOnly = false, onNpcClick, t }) {
   const vis = getNodeVisual(node.type);
   const { backendUser } = useSettings();
   const isAdmin = backendUser?.isAdmin;
@@ -73,21 +81,22 @@ function NodeInspector({ node, occupants = [], onUpdate, onDelete, mode, campaig
   const [saveError, setSaveError] = useState(null);
 
   const handleField = useCallback((field, value) => {
+    if (readOnly) return;
     setSaveError(null);
     onUpdate(node.id, { [field]: value }).catch((err) => {
       setSaveError(err.message || t('locationGraph.inspector.saveFailed', { defaultValue: 'Zapis nie powiódł się' }));
     });
-  }, [node.id, onUpdate, t]);
+  }, [node.id, onUpdate, readOnly, t]);
 
   const handleMentionLocation = useCallback(() => {
-    if (!actionTagCtx) return;
+    if (!actionTagCtx || readOnly || worldMode) return;
     actionTagCtx.insertTag({
       kind: 'location',
       id: node.id,
       name: node.name,
       meta: node.type ? { locationType: node.type } : undefined,
     });
-  }, [actionTagCtx, node]);
+  }, [actionTagCtx, node, readOnly, worldMode]);
 
   return (
     <div className="overflow-y-auto custom-scrollbar pl-6 py-4 !pr-8 text-sm">
@@ -95,7 +104,7 @@ function NodeInspector({ node, occupants = [], onUpdate, onDelete, mode, campaig
       <div className="flex items-center gap-2.5 pb-3 mb-1 border-b border-outline-variant/10">
         <span className="w-4 h-4 rounded-full flex-shrink-0" style={{ backgroundColor: vis.color }} />
         <span className="font-headline text-lg text-on-surface truncate">{node.name}</span>
-        {actionTagCtx && (
+        {actionTagCtx && !readOnly && !worldMode && (
           <button
             type="button"
             onClick={handleMentionLocation}
@@ -106,7 +115,7 @@ function NodeInspector({ node, occupants = [], onUpdate, onDelete, mode, campaig
           </button>
         )}
         <span className="ml-auto text-[10px] uppercase tracking-widest text-outline bg-white/5 rounded px-1.5 py-0.5">
-          {vis.label}
+          {worldMode ? (node.kind === 'campaign' ? 'Sandbox' : vis.label) : vis.label}
         </span>
       </div>
 
@@ -118,11 +127,55 @@ function NodeInspector({ node, occupants = [], onUpdate, onDelete, mode, campaig
         </div>
       )}
 
+      {(worldMode || (Array.isArray(node.campaigns) && node.campaigns.length > 0)) && (
+        <CollapsibleSection
+          title={t('locationGraph.inspector.sectionCampaigns', { defaultValue: 'Kampanie' })}
+          icon="flag"
+          defaultOpen={worldMode}
+        >
+          {(!node.campaigns || node.campaigns.length === 0) ? (
+            <p className="text-xs text-outline italic">
+              {t('locationGraph.inspector.noCampaignRefs', { defaultValue: 'Brak powiązań z kampaniami.' })}
+            </p>
+          ) : (
+            <ul className="space-y-2">
+              {node.campaigns.map((c) => (
+                <li
+                  key={c.id}
+                  className="rounded border border-outline-variant/15 bg-white/[0.03] px-2.5 py-2"
+                >
+                  <div className="flex items-start justify-between gap-2">
+                    <span className="text-on-surface text-sm font-medium truncate">{c.name || c.id}</span>
+                    {c.discoveredAt ? (
+                      <span className="text-[10px] text-outline shrink-0 whitespace-nowrap" title={c.discoveredAt}>
+                        {c.discoveredAt.slice(0, 10)}
+                      </span>
+                    ) : null}
+                  </div>
+                  {Array.isArray(c.relations) && c.relations.length > 0 && (
+                    <div className="mt-1 flex flex-wrap gap-1">
+                      {c.relations.map((rel) => (
+                        <span
+                          key={rel}
+                          className="text-[9px] uppercase tracking-wider px-1.5 py-0.5 rounded bg-primary/10 text-primary/90"
+                        >
+                          {t(`locationGraph.inspector.campaignRelation.${rel}`, { defaultValue: rel })}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                </li>
+              ))}
+            </ul>
+          )}
+        </CollapsibleSection>
+      )}
+
       <CollapsibleSection
         title={t('locationGraph.inspector.sectionImage', { defaultValue: 'Obrazek' })}
         icon="image"
       >
-        <NodeImageSection node={node} campaignId={campaignId} onUpdate={handleField} isAdmin={isAdmin} />
+        <NodeImageSection node={node} campaignId={campaignId} onUpdate={handleField} isAdmin={isAdmin} readOnly={readOnly} />
       </CollapsibleSection>
 
       {occupants.length > 0 && (
@@ -137,11 +190,16 @@ function NodeInspector({ node, occupants = [], onUpdate, onDelete, mode, campaig
                 <li key={occ.id}>
                   <button
                     type="button"
+                    disabled={worldMode}
                     onClick={() => onNpcClick?.(occ)}
-                    className={`w-full flex items-center gap-2 px-2 py-1.5 rounded border text-left outline-none focus-visible:ring-2 focus-visible:ring-primary/40 transition-colors cursor-pointer ${
-                      occ.alive === false
-                        ? 'bg-red-500/5 hover:bg-red-500/10 border-red-500/10 hover:border-red-500/20 opacity-60'
-                        : 'bg-white/5 hover:bg-white/10 border-transparent hover:border-outline-variant/20'
+                    className={`w-full flex items-center gap-2 px-2 py-1.5 rounded border text-left outline-none focus-visible:ring-2 focus-visible:ring-primary/40 transition-colors ${
+                      worldMode
+                        ? 'opacity-60 cursor-not-allowed border-transparent bg-white/5'
+                        : `cursor-pointer ${
+                          occ.alive === false
+                            ? 'bg-red-500/5 hover:bg-red-500/10 border-red-500/10 hover:border-red-500/20 opacity-60'
+                            : 'bg-white/5 hover:bg-white/10 border-transparent hover:border-outline-variant/20'
+                        }`
                     }`}
                   >
                     {occ.alive === false ? (
@@ -192,6 +250,7 @@ function NodeInspector({ node, occupants = [], onUpdate, onDelete, mode, campaig
         <Field label={t('locationGraph.inspector.type')}>
           <select
             className={SELECT_CLS}
+            disabled={readOnly}
             value={node.type || 'generic'}
             onChange={(e) => handleField('type', e.target.value)}
           >
@@ -223,6 +282,7 @@ function NodeInspector({ node, occupants = [], onUpdate, onDelete, mode, campaig
         <Field label={t('locationGraph.inspector.dangerLevel')}>
           <select
             className={SELECT_CLS}
+            disabled={readOnly}
             value={node.dangerLevel || 'safe'}
             onChange={(e) => handleField('dangerLevel', e.target.value)}
           >
@@ -292,9 +352,10 @@ function NodeInspector({ node, occupants = [], onUpdate, onDelete, mode, campaig
         </CollapsibleSection>
       )}
 
-      {mode === 'gm' && (
+      {mode === 'gm' && !readOnly && (
         <div className="pt-3 mt-1">
           <button
+            type="button"
             onClick={() => onDelete(node.id)}
             className="flex items-center gap-1.5 w-full px-3 py-2 rounded border border-red-500/20 text-red-400 hover:bg-red-500/10 transition-colors text-xs uppercase tracking-widest"
           >
@@ -307,7 +368,7 @@ function NodeInspector({ node, occupants = [], onUpdate, onDelete, mode, campaig
   );
 }
 
-function EdgeInspector({ edge, allNodes, onUpdate, onDelete, mode, t }) {
+function EdgeInspector({ edge, allNodes, onUpdate, onDelete, mode, readOnly = false, t }) {
   const vis = getEdgeVisual(edge.category);
   const fromNode = allNodes.find((n) => n.id === edge.fromId);
   const toNode = allNodes.find((n) => n.id === edge.toId);
@@ -321,8 +382,9 @@ function EdgeInspector({ edge, allNodes, onUpdate, onDelete, mode, t }) {
   }
 
   const handleField = useCallback((field, value) => {
+    if (readOnly) return;
     onUpdate(edge.id, { [field]: value });
-  }, [edge.id, onUpdate]);
+  }, [edge.id, onUpdate, readOnly]);
 
   return (
     <div className="overflow-y-auto custom-scrollbar pl-6 py-4 !pr-8 text-sm">
@@ -345,6 +407,7 @@ function EdgeInspector({ edge, allNodes, onUpdate, onDelete, mode, t }) {
         <Field label={t('locationGraph.inspector.edgeType')}>
           <select
             className={SELECT_CLS}
+            disabled={readOnly}
             value={edge.edgeType}
             onChange={(e) => handleField('edgeType', e.target.value)}
           >
@@ -360,6 +423,7 @@ function EdgeInspector({ edge, allNodes, onUpdate, onDelete, mode, t }) {
           <label className="flex items-center gap-2 cursor-pointer">
             <input
               type="checkbox"
+              disabled={readOnly}
               checked={edge.bidirectional}
               onChange={(e) => handleField('bidirectional', e.target.checked)}
               className="rounded"
@@ -371,6 +435,7 @@ function EdgeInspector({ edge, allNodes, onUpdate, onDelete, mode, t }) {
         <Field label={t('locationGraph.inspector.discoveryState')}>
           <select
             className={SELECT_CLS}
+            disabled={readOnly}
             value={edge.discoveryState || 'unknown'}
             onChange={(e) => handleField('discoveryState', e.target.value)}
           >
@@ -398,9 +463,11 @@ function EdgeInspector({ edge, allNodes, onUpdate, onDelete, mode, t }) {
             type="number"
             min={0}
             max={359}
+            disabled={readOnly}
             className={INPUT_CLS}
             defaultValue={typeof edge.metadata?.directionDeg === 'number' ? edge.metadata.directionDeg : 0}
             onBlur={(e) => {
+              if (readOnly) return;
               const v = parseFloat(e.target.value, 10);
               if (!Number.isFinite(v)) return;
               onUpdate(edge.id, { directionDeg: ((v % 360) + 360) % 360 });
@@ -413,9 +480,11 @@ function EdgeInspector({ edge, allNodes, onUpdate, onDelete, mode, t }) {
             type="number"
             min={0}
             step={0.01}
+            disabled={readOnly}
             className={INPUT_CLS}
             defaultValue={typeof edge.metadata?.lengthKm === 'number' ? edge.metadata.lengthKm : defaultLen}
             onBlur={(e) => {
+              if (readOnly) return;
               const v = parseFloat(e.target.value, 10);
               if (!Number.isFinite(v) || v < 0) return;
               onUpdate(edge.id, { lengthKm: v });
@@ -429,9 +498,10 @@ function EdgeInspector({ edge, allNodes, onUpdate, onDelete, mode, t }) {
         </p>
       </CollapsibleSection>
 
-      {mode === 'gm' && (
+      {mode === 'gm' && !readOnly && (
         <div className="pt-3 mt-1">
           <button
+            type="button"
             onClick={() => onDelete(edge.id)}
             className="flex items-center gap-1.5 w-full px-3 py-2 rounded border border-red-500/20 text-red-400 hover:bg-red-500/10 transition-colors text-xs uppercase tracking-widest"
           >
@@ -562,7 +632,7 @@ function IconPicker({ value, onChange }) {
 
 const SCALE_PX = [32, 32, 48, 48, 64, 80, 96, 128];
 
-function NodeImageSection({ node, campaignId, onUpdate, isAdmin }) {
+function NodeImageSection({ node, campaignId, onUpdate, isAdmin, readOnly = false }) {
   const { t } = useTranslation();
   const fileRef = useRef(null);
   const [generating, setGenerating] = useState(false);
@@ -640,7 +710,7 @@ function NodeImageSection({ node, campaignId, onUpdate, isAdmin }) {
             className="max-w-[180px] w-full rounded-lg border border-outline-variant/15 bg-black/20"
             style={{ imageRendering: 'pixelated' }}
           />
-          {isAdmin && (
+          {isAdmin && !readOnly && (
             <button
               type="button"
               onClick={() => onUpdate('nodeImageUrl', null)}
@@ -652,85 +722,89 @@ function NodeImageSection({ node, campaignId, onUpdate, isAdmin }) {
         </div>
       )}
 
-      <div className="flex gap-1.5 flex-wrap">
-        {isAdmin && (
-          <>
-            <button
-              type="button"
-              onClick={() => fileRef.current?.click()}
-              disabled={uploading}
-              className="flex items-center gap-1 px-2 py-1 rounded bg-white/5 border border-outline-variant/10 hover:bg-white/10 transition-colors text-on-surface-variant text-xs disabled:opacity-50"
-            >
-              <span className="material-symbols-outlined text-sm">upload</span>
-              {uploading ? '...' : t('locationGraph.inspector.upload', { defaultValue: 'Wgraj' })}
-            </button>
-            <button
-              type="button"
-              onClick={openPicker}
-              className="flex items-center gap-1 px-2 py-1 rounded bg-white/5 border border-outline-variant/10 hover:bg-white/10 transition-colors text-on-surface-variant text-xs"
-            >
-              <span className="material-symbols-outlined text-sm">photo_library</span>
-              {t('locationGraph.inspector.pick', { defaultValue: 'Wybierz' })}
-            </button>
-          </>
-        )}
-        <button
-          type="button"
-          onClick={handleGenerate}
-          disabled={generating}
-          className="flex items-center gap-1 px-2 py-1 rounded bg-primary/10 border border-primary/20 hover:bg-primary/20 transition-colors text-primary text-xs disabled:opacity-50"
-        >
-          <span className="material-symbols-outlined text-sm">auto_fix_high</span>
-          {generating
-            ? t('locationGraph.inspector.generating', { defaultValue: 'Generuję...' })
-            : t('locationGraph.inspector.generate', { defaultValue: 'Generuj' })}
-          <span className="text-[10px] text-primary/60 ml-0.5">{spritePx}px</span>
-        </button>
-      </div>
-
-      {isAdmin && <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={handleUpload} />}
-
-      <input
-        className="bg-white/5 rounded px-2.5 py-1.5 w-full text-on-surface text-xs border border-outline-variant/10 focus:border-primary/40 outline-none"
-        placeholder={t('locationGraph.inspector.customPrompt')}
-        title={t('locationGraph.inspector.customPromptHint')}
-        value={customPrompt}
-        onChange={(e) => setCustomPrompt(e.target.value)}
-      />
-
-      {isAdmin && showPicker && (
-        <div className="space-y-1.5">
-          <div className="flex items-center justify-between">
-            <span className="text-[10px] text-outline uppercase tracking-widest">
-              {t('locationGraph.inspector.availableImages', { defaultValue: 'Dostępne' })}
-              {gallery && gallery.length > 0 && (
-                <span className="ml-1 normal-case tracking-normal text-outline/60">({gallery.length})</span>
-              )}
-            </span>
-            <button type="button" onClick={() => setShowPicker(false)} className="text-outline hover:text-on-surface text-xs">×</button>
-          </div>
-          {!gallery ? (
-            <div className="text-[10px] text-outline py-2 text-center">...</div>
-          ) : gallery.length === 0 ? (
-            <div className="text-[10px] text-outline py-2 text-center">
-              {t('locationGraph.inspector.noImages', { defaultValue: 'Brak obrazków' })}
-            </div>
-          ) : (
-            <div className="grid grid-cols-4 gap-1">
-              {gallery.map((img, i) => (
+      {!readOnly && (
+        <>
+          <div className="flex gap-1.5 flex-wrap">
+            {isAdmin && (
+              <>
                 <button
-                  key={img.url + i}
                   type="button"
-                  onClick={() => { onUpdate('nodeImageUrl', img.url); setShowPicker(false); }}
-                  className="relative group rounded border border-outline-variant/10 hover:border-primary/40 transition-colors overflow-hidden aspect-square bg-black/20"
-                  title={img.name}
+                  onClick={() => fileRef.current?.click()}
+                  disabled={uploading}
+                  className="flex items-center gap-1 px-2 py-1 rounded bg-white/5 border border-outline-variant/10 hover:bg-white/10 transition-colors text-on-surface-variant text-xs disabled:opacity-50"
                 >
-                  <img src={apiClient.resolveMediaUrl(img.url)} alt={img.name} className="w-full h-full object-cover" style={{ imageRendering: 'pixelated' }} />
+                  <span className="material-symbols-outlined text-sm">upload</span>
+                  {uploading ? '...' : t('locationGraph.inspector.upload', { defaultValue: 'Wgraj' })}
                 </button>
-              ))}
+                <button
+                  type="button"
+                  onClick={openPicker}
+                  className="flex items-center gap-1 px-2 py-1 rounded bg-white/5 border border-outline-variant/10 hover:bg-white/10 transition-colors text-on-surface-variant text-xs"
+                >
+                  <span className="material-symbols-outlined text-sm">photo_library</span>
+                  {t('locationGraph.inspector.pick', { defaultValue: 'Wybierz' })}
+                </button>
+              </>
+            )}
+            <button
+              type="button"
+              onClick={handleGenerate}
+              disabled={generating}
+              className="flex items-center gap-1 px-2 py-1 rounded bg-primary/10 border border-primary/20 hover:bg-primary/20 transition-colors text-primary text-xs disabled:opacity-50"
+            >
+              <span className="material-symbols-outlined text-sm">auto_fix_high</span>
+              {generating
+                ? t('locationGraph.inspector.generating', { defaultValue: 'Generuję...' })
+                : t('locationGraph.inspector.generate', { defaultValue: 'Generuj' })}
+              <span className="text-[10px] text-primary/60 ml-0.5">{spritePx}px</span>
+            </button>
+          </div>
+
+          {isAdmin && <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={handleUpload} />}
+
+          <input
+            className="bg-white/5 rounded px-2.5 py-1.5 w-full text-on-surface text-xs border border-outline-variant/10 focus:border-primary/40 outline-none"
+            placeholder={t('locationGraph.inspector.customPrompt')}
+            title={t('locationGraph.inspector.customPromptHint')}
+            value={customPrompt}
+            onChange={(e) => setCustomPrompt(e.target.value)}
+          />
+
+          {isAdmin && showPicker && (
+            <div className="space-y-1.5">
+              <div className="flex items-center justify-between">
+                <span className="text-[10px] text-outline uppercase tracking-widest">
+                  {t('locationGraph.inspector.availableImages', { defaultValue: 'Dostępne' })}
+                  {gallery && gallery.length > 0 && (
+                    <span className="ml-1 normal-case tracking-normal text-outline/60">({gallery.length})</span>
+                  )}
+                </span>
+                <button type="button" onClick={() => setShowPicker(false)} className="text-outline hover:text-on-surface text-xs">×</button>
+              </div>
+              {!gallery ? (
+                <div className="text-[10px] text-outline py-2 text-center">...</div>
+              ) : gallery.length === 0 ? (
+                <div className="text-[10px] text-outline py-2 text-center">
+                  {t('locationGraph.inspector.noImages', { defaultValue: 'Brak obrazków' })}
+                </div>
+              ) : (
+                <div className="grid grid-cols-4 gap-1">
+                  {gallery.map((img, i) => (
+                    <button
+                      key={img.url + i}
+                      type="button"
+                      onClick={() => { onUpdate('nodeImageUrl', img.url); setShowPicker(false); }}
+                      className="relative group rounded border border-outline-variant/10 hover:border-primary/40 transition-colors overflow-hidden aspect-square bg-black/20"
+                      title={img.name}
+                    >
+                      <img src={apiClient.resolveMediaUrl(img.url)} alt={img.name} className="w-full h-full object-cover" style={{ imageRendering: 'pixelated' }} />
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
           )}
-        </div>
+        </>
       )}
     </div>
   );

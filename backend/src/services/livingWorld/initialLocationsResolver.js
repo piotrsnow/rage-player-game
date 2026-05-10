@@ -23,6 +23,7 @@ import {
   resolveAnchorToken,
 } from '../sceneGenerator/processStateChanges/locations.js';
 import { slugifyLocationName } from '../locationRefs.js';
+import { loadCampaignNpcNames, isNpcName } from './npcNameGuard.js';
 
 const log = childLogger({ module: 'initialLocationsResolver' });
 
@@ -84,11 +85,14 @@ export async function applyInitialLocations({
       })
     : null;
 
+  let npcNames = new Set();
+  try { npcNames = await loadCampaignNpcNames(campaignId); } catch { /* permissive */ }
+
   let created = 0;
   let dropped = 0;
 
   for (const raw of locations) {
-    const validation = validateEntry(raw, { allowed, usedSlugs });
+    const validation = validateEntry(raw, { allowed, usedSlugs, npcNames });
     if (!validation.ok) {
       dropped += 1;
       log.warn({ campaignId, name: raw?.name, reason: validation.reason }, 'Initial location dropped');
@@ -159,10 +163,12 @@ export async function applyInitialLocations({
   return { created, dropped };
 }
 
-function validateEntry(raw, { allowed, usedSlugs }) {
+function validateEntry(raw, { allowed, usedSlugs, npcNames = null }) {
   if (!raw || typeof raw !== 'object') return { ok: false, reason: 'not_object' };
   const name = typeof raw.name === 'string' ? raw.name.trim() : '';
   if (!name) return { ok: false, reason: 'missing_name' };
+
+  if (npcNames && isNpcName(name, npcNames)) return { ok: false, reason: 'name_matches_npc' };
 
   const slug = slugifyLocationName(name);
   if (!slug) return { ok: false, reason: 'unsluggable_name' };

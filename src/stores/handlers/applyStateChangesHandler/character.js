@@ -156,16 +156,21 @@ function applyInventoryAndMaterials(draft, changes) {
   }
 }
 
-// Remove items by id (AI echoes inventory ids) AND by name+quantity (crafting,
-// alchemy, ritual consumption). Name removal checks the materialBag first,
-// then inventory — most consumables are in the bag.
+// Remove items by UUID (primary) AND by name+quantity (legacy/crafting fallback).
 function applyRemovals(draft, changes) {
   if (!draft.character) return;
 
   if (changes.removeItems && draft.character.inventory) {
+    const idsToRemove = new Set(changes.removeItems);
     draft.character.inventory = draft.character.inventory.filter(
-      (i) => !changes.removeItems.includes(i.id),
+      (i) => !idsToRemove.has(i.id),
     );
+    // Also check materialBag for UUID-based removal
+    if (draft.character.materialBag) {
+      draft.character.materialBag = draft.character.materialBag.filter(
+        (m) => !idsToRemove.has(m.id),
+      );
+    }
   }
 
   if (changes.removeItemsByName) {

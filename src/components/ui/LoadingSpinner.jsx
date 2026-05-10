@@ -33,8 +33,8 @@ export default function LoadingSpinner({ size = 'md', text }) {
     const coarse = window.matchMedia?.('(pointer: coarse)').matches;
     if (reduced || coarse) return;
 
-    const MAX_TILT = 12;
-    const EASING = 0.12;
+    const MAX_TILT = 18;
+    const EASING = 0.16;
     const clamp = (v) => Math.max(-1, Math.min(1, v));
 
     let targetX = 0;
@@ -47,8 +47,8 @@ export default function LoadingSpinner({ size = 'md', text }) {
       const rect = el.getBoundingClientRect();
       const cx = rect.left + rect.width / 2;
       const cy = rect.top + rect.height / 2;
-      const dx = clamp((e.clientX - cx) / (window.innerWidth / 2));
-      const dy = clamp((e.clientY - cy) / (window.innerHeight / 2));
+      const dx = clamp((e.clientX - cx) / (window.innerWidth / 3));
+      const dy = clamp((e.clientY - cy) / (window.innerHeight / 3));
       targetX = -dy * MAX_TILT;
       targetZ = dx * MAX_TILT;
     };

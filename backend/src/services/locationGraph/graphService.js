@@ -303,6 +303,22 @@ export async function getNpcsAtLocation(locationKind, locationId, campaignId) {
 }
 
 /**
+ * Full LocationEdge subgraph for admin world view — all active edges, no campaign scope.
+ */
+export async function loadWorldGraph() {
+  const edges = await prisma.locationEdge.findMany({
+    where: { isActive: true },
+  });
+  const nodeKeys = new Set();
+  for (const e of edges) {
+    nodeKeys.add(`${e.fromKind}:${e.fromId}`);
+    nodeKeys.add(`${e.toKind}:${e.toId}`);
+  }
+  const nodes = await resolveNodeKeys([...nodeKeys]);
+  return { nodes, edges };
+}
+
+/**
  * Load full graph view for a campaign (used by the API endpoint).
  */
 export async function loadCampaignGraph(campaignId, { focusKind, focusId, hops = 2 } = {}) {

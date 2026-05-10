@@ -1,15 +1,20 @@
 import { useState, useMemo } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { FACTION_DEFINITIONS, getReputationTierData } from '../../../data/rpgFactions';
+import { apiClient } from '../../../services/apiClient';
 
 const ENTITY_FILTERS = ['all', 'npcs', 'locations', 'factions'];
 
-export default function GMEntitiesTab({ gameState }) {
+export default function GMEntitiesTab({ gameState, onClose, isAdmin = false }) {
   const { t } = useTranslation();
+  const navigate = useNavigate();
   const [filter, setFilter] = useState('all');
   const [search, setSearch] = useState('');
+  const [opBusy, setOpBusy] = useState('');
 
   const world = gameState?.world || {};
+  const campaignId = typeof gameState?.campaign?.id === 'string' ? gameState.campaign.id : null;
   const npcs = world.npcs || [];
   const mapState = world.mapState || [];
   const factions = world.factions || {};
@@ -33,8 +38,62 @@ export default function GMEntitiesTab({ gameState }) {
   const showNpcs = filter === 'all' || filter === 'npcs';
   const showLocations = filter === 'all' || filter === 'locations';
   const showFactions = filter === 'all' || filter === 'factions';
+  const hasCampaign = Boolean(campaignId);
 
   const isEmpty = (showNpcs ? filteredNpcs.length : 0) + (showLocations ? filteredLocations.length : 0) + (showFactions ? filteredFactions.length : 0) === 0;
+
+  async function handleDeleteCampaign() {
+    if (!hasCampaign || opBusy) return;
+    if (!window.confirm(`Usunąć kampanię ${campaignId}?`)) return;
+    const typed = window.prompt('Wpisz dokładnie DELETE_CAMPAIGN aby potwierdzić.');
+    if (typed !== 'DELETE_CAMPAIGN') return;
+    setOpBusy('delete-campaign');
+    try {
+      await apiClient.del(`/admin/campaigns/${campaignId}`);
+      window.alert('Kampania została usunięta.');
+      if (typeof onClose === 'function') onClose();
+      navigate('/');
+    } catch (err) {
+      window.alert(err?.message || 'Nie udało się usunąć kampanii.');
+    } finally {
+      setOpBusy('');
+    }
+  }
+
+  async function handleClearStory() {
+    if (!hasCampaign || opBusy) return;
+    if (!window.confirm('Wyczyścić fabułę tej kampanii? (sceny/NPC/questy/lokacje kampanijne)')) return;
+    const typed = window.prompt('Wpisz dokładnie CLEAR_STORY aby potwierdzić.');
+    if (typed !== 'CLEAR_STORY') return;
+    setOpBusy('clear-story');
+    try {
+      await apiClient.post(`/admin/campaigns/${campaignId}/clear-story`, {});
+      window.alert('Fabuła kampanii została wyczyszczona. Odświeżam widok.');
+      window.location.reload();
+    } catch (err) {
+      window.alert(err?.message || 'Nie udało się wyczyścić fabuły.');
+    } finally {
+      setOpBusy('');
+    }
+  }
+
+  async function handleWipeAllCampaigns() {
+    if (opBusy) return;
+    if (!window.confirm('USUNĄĆ WSZYSTKIE kampanie z bazy? Tej operacji nie da się cofnąć.')) return;
+    const typed = window.prompt('Wpisz dokładnie WIPE_ALL_CAMPAIGNS aby potwierdzić.');
+    if (typed !== 'WIPE_ALL_CAMPAIGNS') return;
+    setOpBusy('wipe-all');
+    try {
+      await apiClient.post('/admin/campaigns/wipe-all', { confirm: 'WIPE_ALL_CAMPAIGNS' });
+      window.alert('Wszystkie kampanie zostały usunięte.');
+      if (typeof onClose === 'function') onClose();
+      navigate('/');
+    } catch (err) {
+      window.alert(err?.message || 'Nie udało się wyczyścić wszystkich kampanii.');
+    } finally {
+      setOpBusy('');
+    }
+  }
 
   return (
     <div className="h-full flex flex-col overflow-hidden">
@@ -66,6 +125,41 @@ export default function GMEntitiesTab({ gameState }) {
           />
         </div>
       </div>
+
+      {isAdmin && (
+        <div className="px-4 py-3 border-b border-error/20 bg-error/5">
+          <div className="flex items-center gap-2 mb-2">
+            <span className="material-symbols-outlined text-error text-base">warning</span>
+            <span className="text-[11px] font-label uppercase tracking-wider text-error">Operacje fabuły (admin)</span>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              disabled={!hasCampaign || !!opBusy}
+              onClick={handleDeleteCampaign}
+              className="px-2.5 py-1.5 text-[11px] font-label uppercase tracking-wider rounded-sm border border-error/40 text-error hover:bg-error/10 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {opBusy === 'delete-campaign' ? 'Usuwam kampanię…' : 'A: Usuń kampanię'}
+            </button>
+            <button
+              type="button"
+              disabled={!hasCampaign || !!opBusy}
+              onClick={handleClearStory}
+              className="px-2.5 py-1.5 text-[11px] font-label uppercase tracking-wider rounded-sm border border-amber-400/40 text-amber-300 hover:bg-amber-400/10 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {opBusy === 'clear-story' ? 'Czyszczę fabułę…' : 'B: Wyczyść fabułę kampanii'}
+            </button>
+            <button
+              type="button"
+              disabled={!!opBusy}
+              onClick={handleWipeAllCampaigns}
+              className="px-2.5 py-1.5 text-[11px] font-label uppercase tracking-wider rounded-sm border border-error/60 text-error hover:bg-error/15 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {opBusy === 'wipe-all' ? 'Czyszczę wszystkie…' : 'C: Wyczyść wszystkie kampanie'}
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Content */}
       <div className="flex-1 overflow-y-auto custom-scrollbar p-4 space-y-6">

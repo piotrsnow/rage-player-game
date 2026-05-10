@@ -85,12 +85,14 @@ export async function buildHearsayByNpc({ ambientNpcs, ambientNpcsWithGoals }) {
       .filter(Boolean)
       .map((r) => ({
         id: r.id,
+        ref: `world:${r.id}`,
         name: r.canonicalName,
         type: r.locationType,
         danger: r.dangerLevel || null,
       }));
     if (locations.length === 0) continue;
-    result.push({ npcName: goalEntry.name, locations });
+    const campaignNpcId = keyNpcEntries.find((e) => e.goalEntry === goalEntry)?.nEnriched?.id || null;
+    result.push({ npcName: goalEntry.name, campaignNpcId, locations });
   }
   return result;
 }

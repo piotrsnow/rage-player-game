@@ -110,6 +110,7 @@ export function reconstructCharacterSnapshot(row) {
   });
 
   snapshot.materialBag = (row.materials || []).map((m) => ({
+    id: m.materialKey,
     name: m.displayName,
     quantity: m.quantity,
   }));
@@ -212,16 +213,20 @@ function snapshotNeedsDbBaseline(snapshot) {
 }
 
 /**
- * Stack inventory items by itemKey. Two items with the same slugified name
- * merge into one row; props of the latest entry win. This is the F4
- * "option A" decision — name-keyed stacking, no per-stack UUID.
+ * Per-instance inventory rows — each item gets its own row with a unique
+ * itemKey (the item's UUID/ID from the FE snapshot). No name-merge.
  */
 function stackInventoryRows(items) {
-  const byKey = new Map();
+  const rows = [];
+  const usedKeys = new Set();
   for (const item of items) {
     if (!item) continue;
     const displayName = item.name || item.displayName || '';
-    const itemKey = slugifyItemName(displayName);
+    let itemKey = item.id || `item_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+    while (usedKeys.has(itemKey)) {
+      itemKey = `item_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+    }
+    usedKeys.add(itemKey);
     const knownColumns = new Set([
       'id', 'name', 'displayName', 'baseType', 'quantity',
       'props', 'imageUrl', 'addedAt',
@@ -231,45 +236,37 @@ function stackInventoryRows(items) {
       if (!knownColumns.has(k)) inlineProps[k] = v;
     }
     const props = { ...(item.props || {}), ...inlineProps };
-    const existing = byKey.get(itemKey);
     const normalizedImageUrl = item.imageUrl ? toCanonicalStoragePath(item.imageUrl) : null;
-    if (existing) {
-      existing.quantity += item.quantity || 1;
-      existing.props = { ...existing.props, ...props };
-      if (normalizedImageUrl) existing.imageUrl = normalizedImageUrl;
-      if (item.baseType) existing.baseType = item.baseType;
-    } else {
-      byKey.set(itemKey, {
-        itemKey,
-        displayName,
-        baseType: item.baseType ?? null,
-        quantity: item.quantity || 1,
-        props,
-        imageUrl: normalizedImageUrl,
-      });
-    }
+    rows.push({
+      itemKey,
+      displayName,
+      baseType: item.baseType ?? null,
+      quantity: item.quantity || 1,
+      props,
+      imageUrl: normalizedImageUrl,
+    });
   }
-  return Array.from(byKey.values());
+  return rows;
 }
 
 function stackMaterialRows(materials) {
-  const byKey = new Map();
+  const rows = [];
+  const usedKeys = new Set();
   for (const m of materials) {
     if (!m) continue;
     const displayName = m.name || m.displayName || '';
-    const materialKey = slugifyItemName(displayName);
-    const existing = byKey.get(materialKey);
-    if (existing) {
-      existing.quantity += m.quantity || 1;
-    } else {
-      byKey.set(materialKey, {
-        materialKey,
-        displayName,
-        quantity: m.quantity || 1,
-      });
+    let materialKey = m.id || `mat_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+    while (usedKeys.has(materialKey)) {
+      materialKey = `mat_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
     }
+    usedKeys.add(materialKey);
+    rows.push({
+      materialKey,
+      displayName,
+      quantity: m.quantity || 1,
+    });
   }
-  return Array.from(byKey.values());
+  return rows;
 }
 
 /**

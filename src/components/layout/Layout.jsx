@@ -56,6 +56,9 @@ function ModalLayer() {
     locationGraphOpen,
     locationGraphRefreshKey,
     closeLocationGraph,
+    worldLocationGraphOpen,
+    worldLocationGraphRefreshKey,
+    closeWorldLocationGraph,
     gmModalOpen,
     closeGmModal,
     privacyOpen,
@@ -68,7 +71,7 @@ function ModalLayer() {
   const dispatch = useGameDispatch();
   const autoSave = useGameAutoSave();
   const mp = useMultiplayer();
-  const { settings, voicePools } = useSettings();
+  const { settings, voicePools, backendUser } = useSettings();
   const isMultiplayer = mp.state.isMultiplayer && mp.state.phase === 'playing';
 
   return (
@@ -107,9 +110,20 @@ function ModalLayer() {
       {locationGraphOpen && campaign?.backendId && (
         <Suspense fallback={null}>
           <LocationGraphModal
+            key={`campaign-graph-${campaign.backendId}`}
             campaignId={campaign.backendId}
             openGeneration={locationGraphRefreshKey}
             onClose={closeLocationGraph}
+          />
+        </Suspense>
+      )}
+      {worldLocationGraphOpen && backendUser?.isAdmin && (
+        <Suspense fallback={null}>
+          <LocationGraphModal
+            key="world-graph"
+            worldMode
+            openGeneration={worldLocationGraphRefreshKey}
+            onClose={closeWorldLocationGraph}
           />
         </Suspense>
       )}

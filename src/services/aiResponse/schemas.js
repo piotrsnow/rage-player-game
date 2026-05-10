@@ -47,12 +47,14 @@ const DiceRollSchema = z.object({
 }).passthrough().nullable().optional();
 
 const NpcRelationshipSchema = z.object({
+  npcId: z.string().uuid().optional(),
   npcName: z.string(),
   type: z.enum(['ally', 'enemy', 'family', 'employer', 'rival', 'friend', 'mentor', 'subordinate']),
 }).passthrough();
 
 const NpcChangeSchema = z.object({
   action: z.string().optional().default('introduce'),
+  campaignNpcId: z.string().uuid().optional(),
   name: z.string(),
   gender: z.string().optional(),
   role: z.string().optional(),
@@ -366,6 +368,7 @@ const StateChangesSchema = z.object({
   // npcMemoryUpdates — actionType jest dorzucony jako passthrough field;
   // BE waliduje enum w schemas.js (NPC_ACTION_TYPES).
   npcMemoryUpdates: z.array(z.object({
+    campaignNpcId: z.string().uuid().optional(),
     npcName: z.string(),
     memory: z.string(),
     importance: z.enum(['minor', 'major']).optional(),

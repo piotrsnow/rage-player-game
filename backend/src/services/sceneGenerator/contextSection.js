@@ -142,9 +142,10 @@ export function buildContextSection(contextBlocks) {
       lines.push('');
       lines.push(`## NPCS AT CURRENT LOCATION`);
       if (lw.npcs?.length) {
-        lines.push(`Key characters already here (USE THEIR NAMES when relevant, DO NOT introduce duplicates):`);
+        lines.push(`Key characters already here (USE THEIR NAMES when relevant, DO NOT introduce duplicates). Use [id: ...] in stateChanges.npcs.campaignNpcId and npcMemoryUpdates.campaignNpcId:`);
         for (const n of lw.npcs) {
           const bits = [n.name];
+          if (n.id) bits.push(`[id: ${n.id}]`);
           if (n.role) bits.push(`(${n.role})`);
           if (n.category) bits.push(`[${n.category}]`);
           if (n.paused) bits.push('[recently away]');
@@ -165,12 +166,14 @@ export function buildContextSection(contextBlocks) {
       if (Array.isArray(lw.hearsayByNpc) && lw.hearsayByNpc.length > 0) {
         lines.push('');
         lines.push('## [NPC_KNOWLEDGE] — miejsca, o których każdy NPC MOŻE mówić');
-        lines.push('Jeśli gracz pyta o miejsce, NPC może ujawnić TYLKO lokacje z własnej listy. Inne miejsca: NPC mówi "nie wiem" lub spekuluje bez szczegółów. Gdy NPC faktycznie ujawnia lokację, emit `stateChanges.locationMentioned: [{locationName, byNpcId}]` — locationName skopiowane DOKŁADNIE z tej listy.');
+        lines.push('Jeśli gracz pyta o miejsce, NPC może ujawnić TYLKO lokacje z własnej listy. Inne miejsca: NPC mówi "nie wiem" lub spekuluje bez szczegółów. Gdy NPC faktycznie ujawnia lokację, emit `stateChanges.locationMentioned: [{locationRef, locationName, byCampaignNpcId, byNpcId}]` — copy locationRef and locationName EXACTLY from this list.');
         for (const h of lw.hearsayByNpc) {
-          lines.push(`- ${h.npcName} wie o:`);
+          const npcIdTag = h.campaignNpcId ? ` [id: ${h.campaignNpcId}]` : '';
+          lines.push(`- ${h.npcName}${npcIdTag} wie o:`);
           for (const loc of h.locations) {
             const danger = loc.danger && loc.danger !== 'safe' ? ` ⚠ ${loc.danger}` : '';
-            lines.push(`  · ${loc.name} (${loc.type}${danger}) [id: ${loc.id}]`);
+            const refTag = loc.ref ? ` [ref: ${loc.ref}]` : `[id: ${loc.id}]`;
+            lines.push(`  · ${loc.name} (${loc.type}${danger}) ${refTag}`);
           }
         }
       }
@@ -186,7 +189,8 @@ export function buildContextSection(contextBlocks) {
         lines.push('## [NPC_MEMORY] — co każdy NPC wie, pamięta i uważa');
         lines.push('Każdy NPC ma stałe przekonania + osobiste doświadczenia. Część jest publiczna, część NPC ujawni tylko zaufanej osobie lub przy mocnej perswazji. Nie powtarzaj dosłownie — zaadaptuj do stylu NPC. Prefiks `(zawsze)` = stałe przekonanie / baseline; `(ta kampania)` = coś, co NPC PRZEŻYŁ z graczem w trakcie tej rozgrywki (zawsze bierz pod uwagę zanim wygenerujesz dialog). Jeśli nowe wydarzenie w scenie kształtuje dalszy obraz NPC — emit `npcMemoryUpdates`.');
         for (const b of lw.memoryByNpc) {
-          lines.push(`- ${b.npcName}:`);
+          const npcIdTag = b.campaignNpcId ? ` [id: ${b.campaignNpcId}]` : '';
+          lines.push(`- ${b.npcName}${npcIdTag}:`);
           for (const entry of b.entries) {
             const tag = entry.source === 'campaign_current' ? '(ta kampania)'
               : entry.source === 'baseline' ? '(zawsze)'

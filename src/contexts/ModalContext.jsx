@@ -21,6 +21,9 @@ export function ModalProvider({ children }) {
   /** Incremented on each openLocationGraph — forces fresh GET in LocationGraphModal. */
   const [locationGraphRefreshKey, setLocationGraphRefreshKey] = useState(0);
   const [gmModalOpen, setGmModalOpen] = useState(false);
+  const [worldLocationGraphOpen, setWorldLocationGraphOpen] = useState(false);
+  /** Increment on each open so `LocationGraphModal` world snapshot refetches. */
+  const [worldLocationGraphRefreshKey, setWorldLocationGraphRefreshKey] = useState(0);
   const [npcSheetName, setNpcSheetName] = useState(null);
 
   const openCharacterSheet = useCallback(() => setCharacterSheetOpen(true), []);
@@ -30,6 +33,11 @@ export function ModalProvider({ children }) {
     setLocationGraphOpen(true);
   }, []);
   const closeLocationGraph = useCallback(() => setLocationGraphOpen(false), []);
+  const openWorldLocationGraph = useCallback(() => {
+    setWorldLocationGraphRefreshKey((k) => k + 1);
+    setWorldLocationGraphOpen(true);
+  }, []);
+  const closeWorldLocationGraph = useCallback(() => setWorldLocationGraphOpen(false), []);
   const openGmModal = useCallback(() => setGmModalOpen(true), []);
   const closeGmModal = useCallback(() => setGmModalOpen(false), []);
   const openWorldState = useCallback(() => setWorldStateOpen(true), []);
@@ -65,6 +73,8 @@ export function ModalProvider({ children }) {
         locationGraphOpen,
         locationGraphRefreshKey,
         gmModalOpen,
+        worldLocationGraphOpen,
+        worldLocationGraphRefreshKey,
         worldStateOpen,
         tasksInfoOpen,
         settingsOpen,
@@ -79,6 +89,8 @@ export function ModalProvider({ children }) {
         closeCharacterSheet,
         openLocationGraph,
         closeLocationGraph,
+        openWorldLocationGraph,
+        closeWorldLocationGraph,
         openGmModal,
         closeGmModal,
         openWorldState,

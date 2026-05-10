@@ -75,44 +75,22 @@ function normalizeMoney(money) {
   return { gold, silver, copper };
 }
 
-// ── Material / inventory stacking (F4: name-keyed merge for both) ──
+// ── Material / inventory — per-instance identity (no name-merge) ──
 
 function stackMaterials(bag, newItems) {
   const result = (bag || []).map((m) => ({ ...m }));
   for (const item of newItems) {
-    const key = slugifyItemName(item.name);
-    const existing = result.find((m) => slugifyItemName(m.name) === key);
-    if (existing) {
-      existing.quantity = (existing.quantity || 1) + (item.quantity || 1);
-    } else {
-      result.push({ name: item.name, quantity: item.quantity || 1 });
-    }
+    const id = item.id || `mat_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+    result.push({ id, name: item.name, quantity: item.quantity || 1 });
   }
   return result;
 }
 
-/**
- * Stack regular inventory items by slugify(name). After F4, items are
- * keyed in the DB by itemKey, so the in-memory snapshot must merge by the
- * same rule — otherwise FE would briefly show duplicate rows that the
- * next BE reconcile collapses into one.
- */
 function stackInventory(inventory, newItems) {
   const result = (inventory || []).map((it) => ({ ...it, props: it.props ? { ...it.props } : {} }));
   for (const item of newItems) {
-    const key = slugifyItemName(item.name);
-    const existing = result.find((i) => slugifyItemName(i.name) === key);
-    if (existing) {
-      existing.quantity = (existing.quantity || 1) + (item.quantity || 1);
-      // Latest write wins for non-quantity props (matches DB stacking).
-      const knownColumns = new Set(['id', 'name', 'baseType', 'quantity', 'props', 'imageUrl', 'addedAt']);
-      for (const [k, v] of Object.entries(item)) {
-        if (!knownColumns.has(k)) existing[k] = v;
-        else if (k !== 'id' && k !== 'name' && k !== 'quantity' && v !== undefined) existing[k] = v;
-      }
-    } else {
-      result.push({ ...item, id: key, name: item.name, quantity: item.quantity || 1 });
-    }
+    const id = item.id || `item_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+    result.push({ ...item, id, name: item.name, quantity: item.quantity || 1 });
   }
   return result;
 }
@@ -319,7 +297,9 @@ export function applyCharacterStateChanges(character, changes) {
   }
 
   if (changes.removeItems) {
-    next.inventory = (next.inventory || []).filter((i) => !changes.removeItems.includes(i.id));
+    const idsToRemove = new Set(changes.removeItems);
+    next.inventory = (next.inventory || []).filter((i) => !idsToRemove.has(i.id));
+    next.materialBag = (next.materialBag || []).filter((m) => !idsToRemove.has(m.id));
   }
 
   if (changes.removeItemsByName) {
