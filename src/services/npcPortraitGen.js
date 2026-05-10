@@ -1,9 +1,6 @@
 import { imageService } from './imageGen';
-<<<<<<< ours
 import { buildNpcPortraitSubject } from './npcPortraitPromptLlm';
-=======
 import { apiClient } from './apiClient';
->>>>>>> theirs
 
 function ageGuess(npc) {
   if (typeof npc?.age === 'number' && Number.isFinite(npc.age)) return npc.age;
@@ -97,7 +94,11 @@ export async function generateNpcPortrait(npc, options = {}) {
     sdSeed = null,
     forcePromptRefresh = false,
   } = options;
-<<<<<<< ours
+  // Lazy backfill: dla legacy NPC bez canonical `appearance` poprosimy backend
+  // o jego dogenerowanie. Działa równolegle z subjectOverride — appearance jest
+  // stabilnym opisem z DB, subjectOverride to świeżo zbudowany przez nano-LLM
+  // angielski subject. Łącząc oba, retry produkuje ten sam wygląd.
+  const enriched = await ensureNpcAppearance(npc);
 
   // Ask the nano LLM for a polished English subject built from the full NPC
   // card (race, creatureKind, role, personality, gender, age, level). When
@@ -105,16 +106,12 @@ export async function generateNpcPortrait(npc, options = {}) {
   // and feed the subject straight into buildPortraitPrompt. When it fails
   // we fall back to the deterministic spec — image generation never blocks
   // on the prompt LLM.
-  const subjectOverride = await buildNpcPortraitSubject(npc, { force: forcePromptRefresh });
+  const subjectOverride = await buildNpcPortraitSubject(enriched, { force: forcePromptRefresh });
 
   const spec = subjectOverride
-    ? { ...buildNpcPortraitSpec(npc, genre), subjectOverride }
-    : buildNpcPortraitSpec(npc, genre);
+    ? { ...buildNpcPortraitSpec(enriched, genre), subjectOverride }
+    : buildNpcPortraitSpec(enriched, genre);
 
-=======
-  const enriched = await ensureNpcAppearance(npc);
-  const spec = buildNpcPortraitSpec(enriched, genre);
->>>>>>> theirs
   return imageService.generatePortrait(
     null,
     spec,

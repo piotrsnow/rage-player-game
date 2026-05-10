@@ -613,15 +613,15 @@ export function buildPortraitPrompt(species, gender, age, careerName, genre = 'F
     }
     const compositionTail = ' Sharp focus on the subject, intricate detail, moody atmospheric background, head and shoulders composition.';
     if (isSD) {
-      return `ART STYLE: ${styleDirective}. Close-up portrait of ${anchoredSubject}.${compositionTail}${darkDirective}${seriousnessDirective}${emotionDirective} No text, no watermarks.`;
+      return `ART STYLE: ${styleDirective}. Close-up portrait of ${anchoredSubject}.${appearanceDirective}${compositionTail}${darkDirective}${seriousnessDirective}${emotionDirective} No text, no watermarks.`;
     }
     if (isGemini) {
-      return `Generate an image in this EXACT art style: ${styleDirective}. Portrait of ${anchoredSubject}.${compositionTail} Square 1:1 aspect ratio.${darkDirective}${seriousnessDirective}${emotionDirective} No text, no watermarks.`;
+      return `Generate an image in this EXACT art style: ${styleDirective}. Portrait of ${anchoredSubject}.${appearanceDirective}${compositionTail} Square 1:1 aspect ratio.${darkDirective}${seriousnessDirective}${emotionDirective} No text, no watermarks.`;
     }
     if (provider === 'gpt-image') {
-      return `ART STYLE: ${styleDirective}. Portrait of ${anchoredSubject}.${compositionTail}${darkDirective}${seriousnessDirective}${emotionDirective} No text, no watermarks.`;
+      return `ART STYLE: ${styleDirective}. Portrait of ${anchoredSubject}.${appearanceDirective}${compositionTail}${darkDirective}${seriousnessDirective}${emotionDirective} No text, no watermarks.`;
     }
-    return `ART STYLE: ${styleDirective}. Portrait of ${anchoredSubject}.${compositionTail}${darkDirective}${seriousnessDirective}${emotionDirective} No text, no watermarks, no borders.`;
+    return `ART STYLE: ${styleDirective}. Portrait of ${anchoredSubject}.${appearanceDirective}${compositionTail}${darkDirective}${seriousnessDirective}${emotionDirective} No text, no watermarks, no borders.`;
   }
 
   const isHumanoid = isHumanoidSpecies(species);
@@ -681,24 +681,15 @@ export function buildPortraitPrompt(species, gender, age, careerName, genre = 'F
     : '';
 
   if (isSdWebui) {
-<<<<<<< ours
     // With IP-Adapter active the reference photo feeds through a separate
     // conditioning pathway — no init image bleed, so fantasy anchors and
     // likeness tags in the prompt are unnecessary. When IP-Adapter is NOT
     // available the backend falls back to img2img and these tags are still
     // harmless, so we simply skip them unconditionally for cleaner prompts.
-    const sdSubject = `close-up portrait of a ${genderLabel} ${speciesDesc}${ageDirective}${career}, head and shoulders`;
-=======
-    // Subject-first compact form. Fantasy anchors (img2img bleed guard) stay
-    // as a weighted prefix — they're technical not stylistic and SD reads the
-    // :weight syntax. Age/gender are already baked into the subject string,
-    // so we skip the extra tags for those.
-    const sdAnchor = hasReferenceImage ? '(fantasy character:1.3), (fantasy armor:1.2), ' : '';
     const sdAppearance = typeof extras.appearance === 'string' && extras.appearance.trim()
       ? `, ${extras.appearance.trim()}`
       : '';
-    const sdSubject = `${sdAnchor}close-up portrait of a ${genderLabel} ${speciesDesc}${ageDirective}${career}${sdAppearance}, head and shoulders`;
->>>>>>> theirs
+    const sdSubject = `close-up portrait of a ${genderLabel} ${speciesDesc}${ageDirective}${career}${sdAppearance}, head and shoulders`;
     const extraTags = [
       ...getSdEmotionTags(extras.emotions),
     ].filter(Boolean);

@@ -30,6 +30,8 @@ export default function DiceRoller({
   durationMultiplier = 1,
   variant = 'default',
   isVisible = true,
+  /** Delay before `start_throw` (overlay should align with CSS fly-in end). */
+  preRollRevealMs = PRE_ROLL_REVEAL_MS,
   /** Overlay perf: cap canvas DPR (1 = big win on HiDPI) */
   maxPixelRatio,
   antialias,
@@ -115,12 +117,12 @@ export default function DiceRoller({
           onComplete?.();
         }
       );
-    }, PRE_ROLL_REVEAL_MS);
+    }, preRollRevealMs);
 
     return () => {
       clearTimers();
     };
-  }, [ready, diceRoll, onComplete, isVisible]);
+  }, [ready, diceRoll, onComplete, isVisible, preRollRevealMs]);
 
   return (
     <div className={`relative h-full w-full overflow-visible bg-transparent transition-opacity duration-300 ${showDice && isVisible ? 'opacity-100' : 'opacity-0'}`}>

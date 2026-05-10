@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import DiceRoller from '../../effects/DiceRoller';
+import { DICE_OVERLAY_INTRO_MS, DICE_OVERLAY_THROW_DELAY_MS } from '../../effects/diceOverlayIntro.js';
 import { translateSkill, translateAttribute } from '../../utils/rpgTranslate';
 import { normalizeDiceRoll } from '../../utils/normalizeDiceRoll.js';
 
@@ -112,11 +113,14 @@ export default function DiceRollAnimationOverlay({ diceRoll, onDismiss, holdOpen
       style={{ paddingTop: isImage ? '270px' : '430px' }}
     >
       {/* 3D Dice roller area — fades out once roll completes, slightly before result card appears */}
-      <div className={`relative w-[260px] h-[200px] -mt-16 animate-dice-fly-in transition-all ease-out ${
-        phase === 'rolling'
-          ? 'opacity-100 scale-100 duration-0'
-          : 'opacity-0 scale-90 -translate-y-3 duration-[400ms]'
-      }`}>
+      <div
+        className={`relative w-[260px] h-[200px] -mt-16 animate-dice-fly-in transition-all ease-out ${
+          phase === 'rolling'
+            ? 'opacity-100 scale-100 duration-0'
+            : 'opacity-0 scale-90 -translate-y-3 duration-[400ms]'
+        }`}
+        style={{ animationDuration: `${DICE_OVERLAY_INTRO_MS}ms` }}
+      >
         <DiceRoller
           diceRoll={dr}
           onComplete={handleRollComplete}
@@ -124,6 +128,7 @@ export default function DiceRollAnimationOverlay({ diceRoll, onDismiss, holdOpen
           sizeMultiplier={2}
           durationMultiplier={1.25}
           variant="overlay"
+          preRollRevealMs={DICE_OVERLAY_THROW_DELAY_MS}
           isVisible
         />
       </div>

@@ -263,18 +263,24 @@ const _imageServiceImpl = {
     return { url, prompt };
   },
 
-<<<<<<< ours
-  async generatePortrait(imageBlob, { species, age, gender, careerName, genre, subjectOverride = null } = {}, _apiKeyIgnored, strength = 0.45, provider = 'stability', imageStyle = 'painting', darkPalette = false, seriousness = null, sdModel = null, extras = {}, sdSeed = null) {
+  async generatePortrait(imageBlob, { species, age, gender, careerName, genre, subjectOverride = null, appearanceText = null } = {}, _apiKeyIgnored, strength = 0.45, provider = 'stability', imageStyle = 'painting', darkPalette = false, seriousness = null, sdModel = null, extras = {}, sdSeed = null) {
     // NPC pipeline supplies a fully-formed English subject from the LLM
     // prompt builder (see services/npcPortraitPromptLlm.js). When present we
     // skip the per-field translation + species/career templating entirely —
     // the override IS the subject. Player creator does not pass an override
     // so it still routes through ensureEnglish + buildPortraitPrompt's
     // humanoid/creature switch below.
+    //
+    // `appearanceText` (PL) is the canonical NPC physical description from
+    // CampaignNPC.appearance. When provided we translate it and feed it as
+    // an extra appearance directive so retries/regenerations stay visually
+    // consistent — works alongside subjectOverride or the heuristic path.
     const trimmedOverride = typeof subjectOverride === 'string' ? subjectOverride.trim() : '';
+    const enAppearance = appearanceText ? await ensureEnglish(appearanceText) : null;
+    const enrichedExtras = enAppearance ? { ...extras, appearance: enAppearance } : extras;
     let prompt;
     if (trimmedOverride) {
-      prompt = buildPortraitPrompt(null, gender, age, null, genre, provider, imageStyle, Boolean(imageBlob), darkPalette, seriousness, extras, sdModel, trimmedOverride);
+      prompt = buildPortraitPrompt(null, gender, age, null, genre, provider, imageStyle, Boolean(imageBlob), darkPalette, seriousness, enrichedExtras, sdModel, trimmedOverride);
     } else {
       // `careerName` is the only free-form user-content field here for the
       // player creator (species comes from an English enum). NPC portraits
@@ -285,20 +291,8 @@ const _imageServiceImpl = {
         ensureEnglish(careerName),
         ensureEnglish(species),
       ]);
-      prompt = buildPortraitPrompt(enSpecies, gender, age, enCareerName, genre, provider, imageStyle, Boolean(imageBlob), darkPalette, seriousness, extras, sdModel);
+      prompt = buildPortraitPrompt(enSpecies, gender, age, enCareerName, genre, provider, imageStyle, Boolean(imageBlob), darkPalette, seriousness, enrichedExtras, sdModel);
     }
-=======
-  async generatePortrait(imageBlob, { species, age, gender, careerName, genre, appearanceText } = {}, _apiKeyIgnored, strength = 0.45, provider = 'stability', imageStyle = 'painting', darkPalette = false, seriousness = null, sdModel = null, extras = {}, sdSeed = null) {
-    // `careerName` is the only free-form user-content field here — species/gender
-    // are enums and genre comes from a fixed picker list. Translate if PL.
-    // `appearanceText` is the canonical NPC appearance (PL) — also free-form,
-    // also translated. When present it acts as the authoritative description
-    // so retries/regenerations stay visually consistent.
-    const enCareerName = await ensureEnglish(careerName);
-    const enAppearance = appearanceText ? await ensureEnglish(appearanceText) : null;
-    const enrichedExtras = enAppearance ? { ...extras, appearance: enAppearance } : extras;
-    const prompt = buildPortraitPrompt(species, gender, age, enCareerName, genre, provider, imageStyle, Boolean(imageBlob), darkPalette, seriousness, enrichedExtras, sdModel);
->>>>>>> theirs
 
     let url;
     if (provider === 'dalle') {
