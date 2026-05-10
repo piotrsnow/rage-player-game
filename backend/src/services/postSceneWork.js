@@ -108,6 +108,12 @@ export async function handlePostSceneWork({
     const currentRef = campaign?.currentLocationKind && campaign?.currentLocationId
       ? { kind: campaign.currentLocationKind, id: campaign.currentLocationId, name: campaign.currentLocationName || null }
       : null;
+    // Oś 3 — questOffers żyją na top-level scene-a (zgodnie z response
+    // template), ale processStateChanges materializuje quest grafy z
+    // jednego miejsca. Squash do stateChanges.questOffers przed wywołaniem.
+    if (Array.isArray(scene.questOffers) && scene.questOffers.length > 0 && !stateChanges.questOffers) {
+      stateChanges.questOffers = scene.questOffers;
+    }
     phase1Tasks.push(processStateChanges(campaignId, stateChanges, {
       prevLoc, sceneIndex: scene.sceneIndex, currentRef,
     }));

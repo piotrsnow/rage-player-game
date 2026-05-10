@@ -16,8 +16,9 @@
 import { prisma } from '../../lib/prisma.js';
 import { callNano } from '../memoryCompressor.js';
 import { childLogger } from '../../lib/logger.js';
-import { appendEvent, forNpc } from './worldEventLog.js';
+import { appendEvent, forNpc, appendQuestOpportunity } from './worldEventLog.js';
 import { setWorldNpcLocation, resolveWorldLocation } from './worldStateService.js';
+import { evaluateQuestImpactFromTick } from './questDynamicsService.js';
 
 const log = childLogger({ module: 'npcAgentLoop' });
 
@@ -96,6 +97,27 @@ export function normalizeAction(raw) {
   if (kind === 'wait') {
     return { kind: 'wait', note: typeof raw.note === 'string' ? raw.note.slice(0, 160) : null };
   }
+  if (kind === 'needs_player_help') {
+    // Oś 3 — emergence hook. NPC orientuje się że nie ruszy goal-a bez
+    // gracza (zła kompozycja, polityczna blokada, rytuał wymagający rzeczy
+    // którą tylko awanturnik może zdobyć). Emit hook do WorldEvent ledger;
+    // scene generator zobaczy go w pendingHooks i może materializować
+    // questOffer. Brak `pitch` → coerce do wait (LLM nie może ot tak emit
+    // tagu bez treści).
+    const pitch = typeof raw.questPitch === 'string' ? raw.questPitch.trim() : '';
+    if (!pitch) return { kind: 'wait', note: 'help_request_without_pitch' };
+    const involved = Array.isArray(raw.involvedNpcs)
+      ? raw.involvedNpcs.filter((n) => typeof n === 'string' && n.trim()).slice(0, 6)
+      : [];
+    const questType = ['main', 'side', 'personal'].includes(raw.questType) ? raw.questType : 'side';
+    return {
+      kind: 'needs_player_help',
+      questPitch: pitch.slice(0, 240),
+      questType,
+      involvedNpcs: involved,
+      note: typeof raw.note === 'string' ? raw.note.slice(0, 160) : null,
+    };
+  }
   return { kind: 'wait', note: 'unknown_action_kind' };
 }
 
@@ -128,11 +150,15 @@ const SYSTEM_PROMPT = `You are roleplaying as an offscreen NPC between scenes. G
 
 Action schema:
 {
-  "kind": "move" | "work_on_goal" | "finished" | "wait",
+  "kind": "move" | "work_on_goal" | "finished" | "wait" | "needs_player_help",
   // if move: include "toLocation": "<canonical name>"
   // if work_on_goal: include "progressNote": "short Polish note — what you did this tick", optional "narrative": "one Polish sentence"
   // if finished: include "reason": "short Polish phrase"
   // if wait: optional "note"
+  // if needs_player_help: include
+  //   "questPitch": "1 zdanie po polsku — co NPC chce żeby gracz dla niego zrobił",
+  //   "questType": "side" | "personal" (rzadko "main" — tylko jeśli to twój główny goal),
+  //   "involvedNpcs": ["names of OTHER NPCs your relationships pull into this — brat, rywal, frakcja"]
   "note": "optional admin/backend hint, not shown to player"
 }
 
@@ -142,7 +168,8 @@ Rules:
   require the player to witness. If you're tempted, emit wait with note "waits_for_dm".
 - One action per tick. Don't narrate multiple events.
 - Prefer incremental progress (work_on_goal) over jumps. Move only if goal requires it.
-- Match action scope to tick interval: 24h tick = "brought back 3 herbs", not "founded a guild".`;
+- Match action scope to tick interval: 24h tick = "brought back 3 herbs", not "founded a guild".
+- needs_player_help: emit ONLY when your goal genuinely cannot advance without a third party. Examples: "potrzebuję awanturnika by ukraść runę z grobu", "muszę by ktoś rozsądził spór z bratem". DON'T spam — once per goal max. Mention OTHER named NPCs from your relationships in involvedNpcs so the scene can pull them in narratively.`;
 
 async function proposeAction({ npc, recentEvents = [], provider = 'openai', timeoutMs = 5000 }) {
   const eventsDigest = recentEvents.slice(0, 6).map((e) => {
@@ -256,27 +283,74 @@ export async function runNpcTick(npcId, { provider = 'openai', timeoutMs = 5000,
   } else if (action.kind === 'finished') {
     updateData.activeGoal = null;
     updateData.goalProgress = { ...parseProgress(npc.goalProgress) || {}, finishedAt: now.toISOString(), reason: action.reason };
+  } else if (action.kind === 'needs_player_help') {
+    // Goal stays active — gracz musi być częścią rozwiązania, ale samego
+    // goal-a nie zerujemy. Goal progress dostaje "awaiting_help" marker
+    // żeby kolejne ticki nie spamowały tym samym pitch-em.
+    const prevProg = parseProgress(npc.goalProgress) || {};
+    if (prevProg.awaitingHelpAt) {
+      // Już czeka — tym razem traktuj jako wait (anti-spam).
+      action.kind = 'wait';
+      action.note = 'already_awaiting_help';
+    } else {
+      updateData.goalProgress = {
+        ...prevProg,
+        updatedAt: now.toISOString(),
+        lastAction: 'needs_player_help',
+        awaitingHelpAt: now.toISOString(),
+      };
+    }
   }
 
   await prisma.worldNPC.update({ where: { id: npc.id }, data: updateData });
 
-  await appendEvent({
-    worldNpcId: npc.id,
-    worldLocationId: locationIdForEvent,
-    eventType: action.kind === 'move' ? 'moved'
-      : action.kind === 'finished' ? 'goal_finished'
-      : action.kind === 'work_on_goal' ? 'goal_progress'
-      : 'tick_wait',
-    payload: {
-      kind: action.kind,
-      note: action.note || null,
-      toLocation: action.toLocation || null,
-      progressNote: action.progressNote || null,
-      narrative: action.narrative || null,
-      reason: action.reason || null,
-    },
-    gameTime: now,
-  });
+  if (action.kind === 'needs_player_help') {
+    // Hook do scene generator-a — pojawia się w `pendingHooks` w prompcie
+    // gdy gracz wejdzie do lokacji w której NPC jest obecny. LLM decyduje
+    // czy materializować jako questOffer.
+    const locName = await resolveLocationName(npc.currentLocationId).catch(() => null);
+    await appendQuestOpportunity({
+      worldNpcId: npc.id,
+      worldLocationId: locationIdForEvent,
+      questGiverName: npc.name,
+      locationName: locName,
+      pitch: action.questPitch,
+      type: action.questType || 'side',
+      involvedNpcs: action.involvedNpcs || [],
+      goalContext: npc.activeGoal || null,
+      gameTime: now,
+    });
+  } else {
+    await appendEvent({
+      worldNpcId: npc.id,
+      worldLocationId: locationIdForEvent,
+      eventType: action.kind === 'move' ? 'moved'
+        : action.kind === 'finished' ? 'goal_finished'
+        : action.kind === 'work_on_goal' ? 'goal_progress'
+        : 'tick_wait',
+      payload: {
+        kind: action.kind,
+        note: action.note || null,
+        toLocation: action.toLocation || null,
+        progressNote: action.progressNote || null,
+        narrative: action.narrative || null,
+        reason: action.reason || null,
+      },
+      gameTime: now,
+    });
+  }
+
+  // ── Oś 4 — quest impact from tick ────────────────────────────────
+  // Po update WorldNPC: sprawdź czy ten NPC jest questGiverId/turnInNpcId
+  // jakiegokolwiek active/stalled questa. Move → update lastKnownLocation
+  // w objectives. Finished z reasonem died/fled/betrayed → mutate quest.
+  if (action.kind === 'move' || action.kind === 'finished') {
+    try {
+      await evaluateQuestImpactFromTick(npc.id, action);
+    } catch (err) {
+      log.warn({ err: err?.message, npcId: npc.id }, 'evaluateQuestImpactFromTick failed (non-fatal)');
+    }
+  }
 
   return { status: 'ok', action };
 }

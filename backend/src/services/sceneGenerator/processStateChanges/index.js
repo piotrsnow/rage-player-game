@@ -16,9 +16,24 @@ import { LOCATION_KIND_WORLD, LOCATION_KIND_CAMPAIGN, lookupLocationByKindId } f
 import { generateSceneEmbedding } from './sceneEmbedding.js';
 import { processNpcChanges, processItemAttributions } from './npcs.js';
 import { processNpcMemoryUpdates } from './npcMemoryUpdates.js';
-import { parseNpcChanges } from './schemas.js';
+import { evaluateQuestGraphForCampaign } from '../../livingWorld/questDynamicsService.js';
+import {
+  parseNpcChanges,
+  parseObjectiveReveals,
+  parseBranchGroupReveals,
+  parseQuestMutations,
+  parseQuestUpdates,
+  parseQuestOffers,
+} from './schemas.js';
 import { processKnowledgeUpdates, processCodexUpdates } from './knowledgeCodex.js';
-import { processQuestObjectiveUpdates, processQuestStatusChange } from './quests.js';
+import {
+  processQuestObjectiveUpdates,
+  processQuestStatusChange,
+  processObjectiveReveals,
+  processBranchGroupReveals,
+  processQuestMutations,
+  processQuestOffers,
+} from './quests.js';
 import { processLocationChanges } from './locations.js';
 import {
   shouldPromoteToGlobal,
@@ -173,6 +188,19 @@ export async function processStateChanges(campaignId, stateChanges, { prevLoc = 
   // important entries to WorldNPC.knowledgeBase.
   if (Array.isArray(stateChanges.npcMemoryUpdates) && stateChanges.npcMemoryUpdates.length > 0) {
     await processNpcMemoryUpdates(campaignId, stateChanges.npcMemoryUpdates);
+  }
+
+  // ── Oś 3 — materialize questOffers (graph-aware) ────────────────────
+  // PO processNpcChanges aby questGiverId/turnInNpcId mogli mieć już
+  // CampaignNPC row utworzony w tej samej scenie. Walidacja grafu po
+  // stronie processQuestOffers (validateGraphIntegrity).
+  if (Array.isArray(stateChanges.questOffers) && stateChanges.questOffers.length > 0) {
+    const parsed = parseQuestOffers(stateChanges.questOffers);
+    if (parsed.ok) {
+      await processQuestOffers(campaignId, parsed.data);
+    } else {
+      log.warn({ campaignId, issues: parsed.error?.issues?.slice(0, 5) }, 'stateChanges.questOffers failed schema validation — skipped');
+    }
   }
 
   // Campaign completion → global WorldEvent (user's explicit requirement:
@@ -519,15 +547,54 @@ export async function processStateChanges(campaignId, stateChanges, { prevLoc = 
     );
   }
 
+  // ── Oś 5 — diegetic discovery: reveals BEFORE quest updates ────────
+  // LLM emituje reveals gdy NPC powiedział o kolejnym kroku. Reveals są
+  // sticky i mogą wyprzedzić unlock — locked node z discovered=true jest
+  // visible w UI z markerem 🔒. Aplikujemy PRZED questUpdates aby reveal
+  // status był spójny w tej samej scenie z `done` na rodzeństwie.
+  if (Array.isArray(stateChanges.objectiveReveals) && stateChanges.objectiveReveals.length > 0) {
+    const parsed = parseObjectiveReveals(stateChanges.objectiveReveals);
+    if (parsed.ok) {
+      await processObjectiveReveals(campaignId, parsed.data);
+    } else {
+      log.warn({ campaignId, issues: parsed.error?.issues?.slice(0, 5) }, 'stateChanges.objectiveReveals failed schema validation — skipped');
+    }
+  }
+  if (Array.isArray(stateChanges.branchGroupReveals) && stateChanges.branchGroupReveals.length > 0) {
+    const parsed = parseBranchGroupReveals(stateChanges.branchGroupReveals);
+    if (parsed.ok) {
+      await processBranchGroupReveals(campaignId, parsed.data);
+    } else {
+      log.warn({ campaignId, issues: parsed.error?.issues?.slice(0, 5) }, 'stateChanges.branchGroupReveals failed schema validation — skipped');
+    }
+  }
+
   if (stateChanges.questUpdates?.length) {
+    const parsed = parseQuestUpdates(stateChanges.questUpdates);
+    const updates = parsed.ok ? parsed.data : null;
+    if (!parsed.ok) {
+      log.warn({ campaignId, issues: parsed.error?.issues?.slice(0, 5) }, 'stateChanges.questUpdates failed schema validation — passing through unchanged for legacy compat');
+    }
     const autoCompleted = await processQuestObjectiveUpdates(
-      campaignId, stateChanges.questUpdates, stateChanges.completedQuests || [],
+      campaignId,
+      updates || stateChanges.questUpdates,
+      stateChanges.completedQuests || [],
     );
     if (autoCompleted.length > 0) {
       if (!Array.isArray(stateChanges.completedQuests)) stateChanges.completedQuests = [];
       for (const id of autoCompleted) {
         if (!stateChanges.completedQuests.includes(id)) stateChanges.completedQuests.push(id);
       }
+    }
+  }
+
+  // ── Oś 4 — explicit quest mutations (rare, narrative override) ──────
+  if (Array.isArray(stateChanges.questMutations) && stateChanges.questMutations.length > 0) {
+    const parsed = parseQuestMutations(stateChanges.questMutations);
+    if (parsed.ok) {
+      await processQuestMutations(campaignId, parsed.data, sceneIndex);
+    } else {
+      log.warn({ campaignId, issues: parsed.error?.issues?.slice(0, 5) }, 'stateChanges.questMutations failed schema validation — skipped');
     }
   }
 
@@ -629,4 +696,20 @@ export async function processStateChanges(campaignId, stateChanges, { prevLoc = 
     });
   }
 
+  // ── Oś 4 — reactive quest dynamics evaluation ──────────────────────
+  // Na końcu, po wszystkich mutacjach NPC/quest/location: sprawdzamy czy
+  // któryś active/stalled quest w tej kampanii ma `failsOn` matched przez
+  // zmiany w tej scenie (npcDead, deadline). Mutuje na stalled/failed +
+  // appenduje do mutationLog. Best-effort, nie blokuje commit-u sceny.
+  if (livingWorldEnabled) {
+    try {
+      await evaluateQuestGraphForCampaign(campaignId, {
+        changedNpcs: Array.isArray(stateChanges.npcs) ? stateChanges.npcs : [],
+        sceneIndex,
+        sceneGameTime,
+      });
+    } catch (err) {
+      log.warn({ err: err?.message, campaignId }, 'evaluateQuestGraphForCampaign failed (non-fatal)');
+    }
+  }
 }

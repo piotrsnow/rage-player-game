@@ -94,6 +94,7 @@ export async function generateSceneStream(campaignId, playerAction, options = {}
       dbQuests,
       dbCodex,
       livingWorldEnabled,
+      questGraphEnabled,
       currentRef,
     } = await loadCampaignState(campaignId);
     let activeCurrentRef = currentRef;
@@ -278,6 +279,7 @@ export async function generateSceneStream(campaignId, playerAction, options = {}
       sceneCount,
       intentResult,
       livingWorldEnabled,
+      questGraphEnabled,
       questGiverHint,
       magicExposure,
       playerAction,

@@ -104,7 +104,11 @@ export async function handleVerifyQuestObjective(ctx, session, msg) {
     return;
   }
 
-  const objective = quest.objectives?.find((o) => o.id === objectiveId);
+  // Lookup po `nodeKey` (oś 1) najpierw — preferowane dla graph mode;
+  // fallback na legacy `id` index. Gracz może mieć stary klient który
+  // wysyła `objectiveId` jako numeric, więc trzymamy obie ścieżki.
+  const objective = quest.objectives?.find((o) => o.nodeKey && o.nodeKey === objectiveId)
+    || quest.objectives?.find((o) => o.id === objectiveId);
   if (!objective) {
     sendTo(room, session.odId, {
       type: 'QUEST_OBJECTIVE_VERIFIED',
@@ -180,9 +184,10 @@ export async function handleVerifyQuestObjective(ctx, session, msg) {
     if (activeQuest.id !== questId) return activeQuest;
     return {
       ...activeQuest,
-      objectives: (activeQuest.objectives || []).map((obj) =>
-        obj.id === objectiveId ? { ...obj, completed: true } : obj
-      ),
+      objectives: (activeQuest.objectives || []).map((obj) => {
+        const matches = (obj.nodeKey && obj.nodeKey === objectiveId) || obj.id === objectiveId;
+        return matches ? { ...obj, completed: true, status: 'done' } : obj;
+      }),
     };
   });
 

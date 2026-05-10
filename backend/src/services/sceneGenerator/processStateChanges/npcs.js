@@ -6,6 +6,7 @@ import { updateLoyalty } from '../../livingWorld/companionService.js';
 import { appendEvent } from '../../livingWorld/worldEventLog.js';
 import { resolveLocationByName, findCanonicalWorldNpcByName } from '../../livingWorld/worldStateService.js';
 import { getOrCloneCampaignNpc } from '../../livingWorld/campaignSandbox.js';
+import { propagateRelationshipRipple } from '../../livingWorld/relationshipRippleService.js';
 import { coerceGender, normalizeGender } from '../../../../../shared/domain/npcGender.js';
 import { NPC_RACES } from '../../../../../shared/domain/npcRaces.js';
 import { generateNpcSheet, mergeSheetOverride } from '../../npcs/npcCharacterSheet.js';
@@ -61,13 +62,22 @@ async function replaceNpcRelationships(campaignNpcId, relationships, prismaClien
   await prismaClient.campaignNpcRelationship.deleteMany({ where: { campaignNpcId } });
   const inserts = (relationships || [])
     .filter((r) => r && r.npcName)
-    .map((r) => ({
-      campaignNpcId,
-      targetType: 'npc',
-      targetRef: r.npcName,
-      relation: r.type || 'unknown',
-      strength: typeof r.strength === 'number' ? r.strength : 0,
-    }));
+    .map((r) => {
+      const strength = typeof r.strength === 'number' ? r.strength : 0;
+      // rippleStrength (oś 2): jeśli LLM podał, użyj; inaczej heurystyka
+      // |strength| clamp 0..100 (mocniejsza relacja → mocniejszy ripple).
+      const ripple = typeof r.rippleStrength === 'number'
+        ? Math.max(0, Math.min(100, Math.round(r.rippleStrength)))
+        : Math.max(0, Math.min(100, Math.abs(strength)));
+      return {
+        campaignNpcId,
+        targetType: 'npc',
+        targetRef: r.npcName,
+        relation: r.type || 'unknown',
+        strength,
+        rippleStrength: ripple,
+      };
+    });
   if (inserts.length > 0) {
     await prismaClient.campaignNpcRelationship.createMany({ data: inserts, skipDuplicates: true });
   }
@@ -329,6 +339,38 @@ export async function processNpcChanges(campaignId, npcs, { livingWorldEnabled =
       });
     await Promise.allSettled(loyaltyTasks);
   }
+
+  // ── Oś 2 — relationship ripple ─────────────────────────────────────
+  // Po wszystkich update'ach NPC, dla każdego z dispositionChange ≠ 0
+  // lub alive=false, propagate ripple do powiązanych NPC. Cap 8 targets
+  // per source. Anti-loop: ripple write nie wywołuje dalej ripple.
+  // Dziala nawet gdy livingWorldEnabled=false — relationships są
+  // per-campaign, nie globalne, więc nie zaśmiecają global ledgera.
+  const rippleTasks = npcs
+    .filter((n) => n.name && (
+      (typeof n.dispositionChange === 'number' && n.dispositionChange !== 0)
+      || n.alive === false
+    ))
+    .map(async (change) => {
+      try {
+        const npcId = change.name.toLowerCase().replace(/\s+/g, '_');
+        const cn = await prisma.campaignNPC.findUnique({
+          where: { campaignId_npcId: { campaignId, npcId } },
+          select: { id: true, name: true },
+        });
+        if (!cn?.id) return;
+        await propagateRelationshipRipple(campaignId, cn.id, {
+          dispositionDelta: typeof change.dispositionChange === 'number' ? change.dispositionChange : 0,
+          alive: change.alive !== false,
+          actionType: null,  // actionType pochodzi z npcMemoryUpdates — osobny passthrough
+          sceneIndex,
+          sourceName: cn.name,
+        });
+      } catch (err) {
+        log.warn({ err: err?.message, npcName: change.name, campaignId }, 'Relationship ripple propagation failed (non-fatal)');
+      }
+    });
+  await Promise.allSettled(rippleTasks);
 }
 
 /**

@@ -1,6 +1,8 @@
 import { prisma } from '../../lib/prisma.js';
 import { loadCharacterSnapshotById } from '../characterRelations.js';
 import { getCampaignCharacterIds } from '../campaignSync.js';
+import { forLocationOpportunities } from '../livingWorld/worldEventLog.js';
+import { preparePendingHooksForPrompt } from '../livingWorld/questEmergence.js';
 
 /**
  * Load all DB state needed for scene generation for a given campaign:
@@ -24,6 +26,7 @@ export async function loadCampaignState(campaignId) {
       select: {
         coreState: true,
         livingWorldEnabled: true,
+        questGraphEnabled: true,
         currentLocationName: true,
         currentLocationKind: true,
         currentLocationId: true,
@@ -114,7 +117,12 @@ export async function loadCampaignState(campaignId) {
       relationships: (n.relationships || []).map((r) => ({
         npcName: r.targetRef,
         type: r.relation,
+        targetType: r.targetType,
         ...(r.strength ? { strength: r.strength } : {}),
+        // rippleStrength (oś 2) — natężenie ripple effect z source-a r tego
+        // NPC. Default 50 backfilled w migracji. relationshipRippleService
+        // czyta to przy propagacji disposition/death.
+        ...(typeof r.rippleStrength === 'number' ? { rippleStrength: r.rippleStrength } : {}),
       })),
     }));
   }
@@ -133,11 +141,21 @@ export async function loadCampaignState(campaignId) {
         objectives: (q.objectives || []).map((o) => ({
           description: o.description,
           completed: o.status === 'done',
+          // Raw status surfaced for graph-aware prompt rendering — locked /
+          // skipped / failed nie są pokrywane przez `completed` flag (ten
+          // jest legacy boolean). worldBlock + FE czytają oba.
+          status: o.status,
+          nodeKey: o.nodeKey,
           progress: o.progress,
           target: o.targetAmount,
           ...(o.metadata && typeof o.metadata === 'object' ? o.metadata : {}),
         })),
         reward: q.reward ?? null,
+        // Quest status w living world: active|stalled|failed|completed
+        // (oś 4). Surface raw aby buildActiveQuestsBlock mógł renderować
+        // [STALLED] i mutationLog.
+        status: q.status,
+        mutationLog: Array.isArray(q.mutationLog) ? q.mutationLog : [],
       };
       if (q.status === 'completed') completed.push({ ...quest, completedAt: q.completedAt });
       else active.push(quest);
@@ -161,6 +179,44 @@ export async function loadCampaignState(campaignId) {
     coreState.world.keyPlotFacts = dbKnowledge.map(k => k.summary);
   }
 
+  // Oś 3 — pending quest opportunities z npcAgentLoop. Tylko dla kampanii
+  // z włączonym livingWorld + questGraph (oba są zwykle on razem). Hook-i
+  // wisi do 7 dni gry; LLM dostaje top-5 dla currentLocation. Best-effort —
+  // brak hook-ów albo błąd query nic nie psuje.
+  if (campaign.livingWorldEnabled === true && campaign.questGraphEnabled === true && campaign.currentLocationKind === 'world' && campaign.currentLocationId) {
+    try {
+      const events = await forLocationOpportunities({
+        campaignId,
+        worldLocationId: campaign.currentLocationId,
+        limit: 5,
+      });
+      if (events.length > 0) {
+        // Płaska lista relacji NPC dla enrichment — z dbNpcs (już z relationships).
+        const relsFlat = [];
+        for (const npc of dbNpcs) {
+          for (const rel of (npc.relationships || [])) {
+            relsFlat.push({
+              sourceName: npc.name,
+              targetName: rel.targetRef,
+              relation: rel.relation,
+              strength: rel.strength,
+            });
+          }
+        }
+        const hooks = preparePendingHooksForPrompt({
+          events,
+          npcRelationships: relsFlat,
+          currentGameTime: new Date(),
+          gameTimeRatio: 24,
+        });
+        if (hooks.length > 0) {
+          if (!coreState.world) coreState.world = {};
+          coreState.world.pendingHooks = hooks;
+        }
+      }
+    } catch { /* non-fatal — pendingHooks block po prostu nie wystąpi */ }
+  }
+
   return {
     coreState,
     activeCharacter,
@@ -170,6 +226,7 @@ export async function loadCampaignState(campaignId) {
     dbCodex,
     dbKnowledge,
     livingWorldEnabled: campaign.livingWorldEnabled === true,
+    questGraphEnabled: campaign.questGraphEnabled === true,
     currentRef: campaign.currentLocationKind && campaign.currentLocationId
       ? { kind: campaign.currentLocationKind, id: campaign.currentLocationId, name: campaign.currentLocationName || null }
       : null,

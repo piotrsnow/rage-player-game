@@ -30,6 +30,8 @@ import {
   buildCodexSummaryBlock,
   buildNeedsCrisisBlock,
   buildActiveQuestsBlock,
+  buildNpcRelationshipsBlock,
+  buildPendingQuestHooksBlock,
   buildRecentContextBlock,
   buildRecentLocationTrailBlock,
   deriveScenePhase,
@@ -65,6 +67,7 @@ export function buildLeanSystemPrompt(coreState, recentScenes, language = 'pl', 
   sceneCount = 0,
   intentResult = {},
   livingWorldEnabled = false,
+  questGraphEnabled = false,
   questGiverHint = null,
   magicExposure = null,
   playerAction = '',
@@ -146,8 +149,23 @@ export function buildLeanSystemPrompt(coreState, recentScenes, language = 'pl', 
   const needsCrisis = buildNeedsCrisisBlock({ needsSystemEnabled, characterNeeds });
   if (needsCrisis) dynamicSections.push(needsCrisis);
 
-  const activeQuests = buildActiveQuestsBlock(quests);
+  const activeQuests = buildActiveQuestsBlock(quests, { questGraphEnabled });
   if (activeQuests) dynamicSections.push(activeQuests);
+
+  // Oś 2 — relacje NPC obecnych w scenie. Niezależne od questGraphEnabled —
+  // ripple service działa też dla legacy kampanii (NPC relations są
+  // zawsze obecne w `world.npcs[].relationships`).
+  if (livingWorldEnabled) {
+    const relBlock = buildNpcRelationshipsBlock(world);
+    if (relBlock) dynamicSections.push(relBlock);
+  }
+
+  // Oś 3 — pending quest opportunities z npcAgentLoop. Tylko dla
+  // questGraphEnabled (graf wymagany do branchy w emergent questOffers).
+  if (livingWorldEnabled && questGraphEnabled) {
+    const hooksBlock = buildPendingQuestHooksBlock(world);
+    if (hooksBlock) dynamicSections.push(hooksBlock);
+  }
 
   const recentContext = buildRecentContextBlock({
     recentScenes,

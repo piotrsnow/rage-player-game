@@ -87,8 +87,26 @@ Before emitting stateChanges, mentally run this checklist against the narrative 
 Emit stateChanges reflecting ALL of the above. Empty fields are OK only when the answer is genuinely "no".
 
 - timeAdvance: ALWAYS include {hoursElapsed: decimal}. Quick=0.25, action/combat=0.5, exploration=0.75-1, rest=2-4, sleep=6-8.
-- questUpdates: after writing dialogueSegments, ASK: did any ACTIVE OBJECTIVE get fulfilled IN THIS SCENE's narrative? Meeting the quest-giver, delivering an item, defeating a target, learning a named fact — all count. If yes, MUST emit [{questId, objectiveId, completed:true}]. questId = the id= value from the ACTIVE QUESTS block. objectiveId = the number shown before the objective (its array index, as a string). Numbers are NOT contiguous — completed objectives are hidden but their indices remain (e.g. you may see only "2." if 0 and 1 were already done). The ▶ NEXT marker points to the currently-pending objective. NEVER leave questUpdates empty when the narrative resolved an objective — also emit dialogueIfQuestTargetCompleted to close the beat.
+- questUpdates: after writing dialogueSegments, ASK: did any ACTIVE OBJECTIVE get fulfilled IN THIS SCENE's narrative? Meeting the quest-giver, delivering an item, defeating a target, learning a named fact — all count. If yes, MUST emit [{questId, nodeKey?, objectiveId?, completed:true}]. questId = the id= value from the ACTIVE QUESTS block.
+  * GRAPH MODE (Active Quests block shows [nodeKey] markers): use \`nodeKey\` (e.g. "spare_witch") — preferred and stable. Numeric \`objectiveId\` (legacy fallback) still works but DON'T mix.
+  * LEGACY MODE (no [nodeKey] markers): \`objectiveId\` is the number shown before the objective (its array index, as a string). Numbers are NOT contiguous — completed objectives are hidden but their indices remain (e.g. you may see only "2." if 0 and 1 were already done). The ▶ NEXT marker points to the currently-pending objective.
+  NEVER leave questUpdates empty when the narrative resolved an objective — also emit dialogueIfQuestTargetCompleted to close the beat.
+- branchChoice (graph mode only): when narrative locks the player into one path of an XOR branch group (you saw "Branches active: <group> (player can choose: A | B)" in Active Quests), include \`branchChoice: { group, chosen }\` on the questUpdate that closes the chosen node. Sibling nodes auto-skip backend-side — DO NOT emit their state.
 - Quest completion: add to completedQuests as soon as the quest's completionCondition is narratively satisfied in this scene (turn-in NPC if the quest has one, otherwise objective fulfillment is sufficient). Always use the id= shown for the quest.
+
+- DIEGETIC REVEALS (graph mode only): every objective starts with \`discovered=false\`. Player UI shows them as "???". When the narrative explicitly conveys information about a future step — NPC dialog, found letter, overheard conversation, discovered clue — emit \`objectiveReveals: [{questId, nodeKey, revealSource}]\`. Reveals are STICKY (once discovered = always discovered). Reveals CAN PRECEDE UNLOCKS: if an NPC mentions a still-locked node, still emit objectiveReveals — the node will be visible in the UI as 🔒 with hint, and pop into pending automatically when parents complete. NEVER reveal because "the player should know" or for pacing — let narrative drive discovery.
+- BRANCH REVEALS (graph mode only): each option in an XOR group must be individually revealed. Emit \`branchGroupReveals: [{questId, branchGroup, revealedNodeKeys, revealSource}]\` when an NPC offers alternatives or a scene presents a choice. Without a reveal, the UI hides the choice entirely — players will see only the "default" path you originally revealed.
+- QUEST GIVER FIRST CONTACT: when emitting a questOffer, in the SAME scene emit objectiveReveals for the root nodes (parents=[]) that the questgiver explicitly described aloud. Other nodes stay undiscovered.
+- questMutations (rare, narrative override): \`[{questId, mutation: "stall"|"fail"|"reroute", reason}]\`. Use ONLY when narration EXPLICITLY disrupts a quest (questgiver dies on-screen via your prose, target location is destroyed). Most disruptions are detected backend-side from npc agent loop ticks — do NOT emit unless your dialogueSegments narrate the disruption.
+- questOffers (full schema): \`[{id, name, description, type, questGiverId, turnInNpcId, relatedHookId?, relatedNpcRefs?, completionCondition, objectives}]\`. Each objective is a graph node:
+  \`{nodeKey, description, parents?, branchType?, branchGroup?, choiceLabel?, placeholderHint?, failsOn?}\`.
+  * nodeKey: snake_case [a-z0-9_]{1,40}, unique within quest. Stable refs LLM uses across scenes.
+  * parents: nodeKeys that must be \`done\` before this node unlocks. Empty parents = root node = pending immediately.
+  * branchType: "and" (default — equivalent to AND chain), "path" (XOR — chosen sibling closes the others), "or" (any-of group).
+  * branchGroup: id of the XOR/OR group (e.g. "witch_resolution") — siblings share it.
+  * failsOn.npcDead: list of NPC names — if any dies (on-screen or via off-screen tick), backend stalls the quest.
+  * placeholderHint: optional vague hint shown to player as "??? — <hint>" before reveal (e.g. "??? — coś związanego z lasem"). Default: just "???".
+  When emitting from a Pending quest opportunity hook, copy questGiverId from the hook and include relatedHookId. Side/personal quests in living-world MUST have ≥2 objectives + ≥1 branch group with branchType="path" when relations contradict (NPC vs NPC conflict). Min 2 objectives, max 12.
 - rewards: for standard loot/drops/found items/money. Array of [{type, rarity?, category?, quantity?, context?}]. type: 'material'|'weapon'|'armour'|'shield'|'gear'|'medical'|'money'|'potion'. rarity: 'common'|'uncommon'|'rare'. category: materials only ('metal'|'wood'|'fabric'|'herb'|'liquid'|'misc'). quantity: 'one'|'few'|'some'|'many'. context: 'loot'|'found'|'gift' (NO 'quest_reward' — quest rewards are applied automatically on completedQuests using the quest's defined reward, do NOT duplicate via rewards[]). Do NOT specify item names — just type and tier.
 - newItems: ONLY unique quest/story items (MacGuffins, keys, letters, artifacts). {id, name, type, description}. Standard loot → use rewards.
 - removeItems: only items in character's inventory.
@@ -99,7 +117,8 @@ Emit stateChanges reflecting ALL of the above. Empty fields are OK only when the
   * level: 1-30 — opcjonalne. Zwykli mieszkańcy 1-3, weterani/rzemieślnicy 4-6, postacie kluczowe 7-10, bossowie 10+. Jeśli pominiesz, backend dobierze poziom z category. Ważni NPC mogą dodać keyNpc:true.
   * statsOverride: OPCJONALNY, tylko dla wyjątkowych postaci (arcymag, boss, legendarny mistrz). Kształt: {attributes?:{sila,inteligencja,charyzma,zrecznosc,wytrzymalosc,szczescie}, skills?:{"Nazwa":level}, weapons?:["..."], traits?:["..."], armourDR?, maxWounds?, mana?:{current,max}}. Podawaj tylko pola które realnie chcesz podnieść/zmienić — backend dopełni resztę deterministycznie.
   * Nie wymagaj podawania statów — backend generuje pełną kartę postaci z rasy+roli+poziomu. Emituj race/creatureKind/level a ewentualny statsOverride tylko gdy postać jest naprawdę wyróżniająca się.
-- npcMemoryUpdates: [{npcName, memory, importance?}] — emit ONLY gdy coś narracyjnie znaczącego dzieje się z/dla NPC, co by zapamiętał (obietnica, sekret, cud, groźba, zdrada, uratowanie bliskiego). 1 zdanie z perspektywy NPC. importance: 'major' = trwała zmiana relacji, 'minor' = drobne wrażenie (default: minor). SKIP dla small talk / routine. Max ~3 per scene.
+- npcMemoryUpdates: [{npcName, memory, importance?, actionType?}] — emit ONLY gdy coś narracyjnie znaczącego dzieje się z/dla NPC, co by zapamiętał (obietnica, sekret, cud, groźba, zdrada, uratowanie bliskiego). 1 zdanie z perspektywy NPC. importance: 'major' = trwała zmiana relacji, 'minor' = drobne wrażenie (default: minor). SKIP dla small talk / routine. Max ~3 per scene.
+  * actionType (optional): "killed" | "saved" | "betrayed" | "aided" | "insulted" | "broke_promise" | "kept_promise". Include when the memory describes a directional act FROM player TO this NPC. This routes through relationshipRipple service — connected NPCs (brother, lover, rival) auto-react with disposition shifts and their own memory entries ("Słyszał, że <player> zabił mojego brata"). SKIP for routine observations. Use sparingly — high-impact events only.
 - locationMentioned: [{locationName, byNpcId}] — emit whenever a scene NPC NAMES OR DESCRIBES a location to the player (gives directions, recalls a rumour, mentions a place by name). Copy the location name EXACTLY as written in the prompt (Key NPCs block, Active Quests, [NPC_KNOWLEDGE], or the player's current location). \`byNpcId\` is the speaker NPC's name. If a [NPC_KNOWLEDGE] block lists allowed locations for the speaker, only mention locations from that list; otherwise the NPC narrates "doesn't know / speculates" and you DO NOT emit. Moves the location into the player's "heard-about" fog state so it appears on the map.
 - currentLocation: emit ONLY when the player ARRIVES at a different location THIS scene (travel montage to a known place, walking into a sublocation you just created, dungeon-room nav). Value is the EXACT canonical name from the [TRAVEL] block / sublocation entry / [DUNGEON ROOM] exits. NEVER invent a name — unrecognized locations are dropped silently and the player stays put. Do NOT emit when the scene happens entirely at the current location.
 - skillsUsed: ["SkillName"] — skills the PC used in this action. Max 3.
@@ -158,7 +177,7 @@ export function playerInputPolicyBlock() {
   return `## [CRITICAL] PLAYER INPUT POLICY
 The player's text describes what their character ATTEMPTS, INTENDS, or HOPES. You are the GM — you decide what ACTUALLY happens, grounded in the game state below (World State / NPCs here / Key NPCs / Active Quests / Codex / Inventory).
 - NPCs, items, quests, locations, and world facts NOT present in the game state are NOT canonical. If the player asserts a new NPC, item transfer, or world fact that doesn't exist in context, narrate a GROUNDED alternative based on what actually exists. You MAY introduce a new NPC organically when the scene calls for it — but YOU choose what they look like, what they know, and what they give. Never mirror the player's script verbatim.
-- Consistency enforcement: if you DO narrate an NPC handing over an item or offering a quest, you MUST emit the matching newItems / questOffers entry in stateChanges. Quest offers emitted this way MUST tie into the main quest line — side/faction/personal quest creation is disabled in this build.`;
+- Consistency enforcement: if you DO narrate an NPC handing over an item or offering a quest, you MUST emit the matching newItems (in stateChanges) / questOffers (TOP-LEVEL, not inside stateChanges) entry. In graph-mode campaigns side/personal quests CAN emerge from Pending quest opportunities (see World State block) and from organic NPC requests; in legacy-mode campaigns prefer questOffers tied to the main quest line.`;
 }
 
 export function responseFormatBlock(language) {
@@ -190,10 +209,13 @@ export function responseFormatBlock(language) {
   "dilemma": null,
   "stateChanges": {
     "timeAdvance": {"hoursElapsed": 0.5},
-    "questUpdates": [{"questId":"","objectiveId":"","completed":true}],
+    "questUpdates": [{"questId":"","nodeKey":"","objectiveId":"","completed":true,"branchChoice":null}],
+    "objectiveReveals": [{"questId":"","nodeKey":"","revealSource":""}],
+    "branchGroupReveals": [{"questId":"","branchGroup":"","revealedNodeKeys":[],"revealSource":""}],
+    "questMutations": [{"questId":"","mutation":"stall|fail|reroute","reason":""}],
     "completedQuests": [],
     "npcs": [{"action":"introduce|update","name":"","dispositionChange":0}],
-    "npcMemoryUpdates": [{"npcName":"","memory":"","importance":"minor|major"}],
+    "npcMemoryUpdates": [{"npcName":"","memory":"","importance":"minor|major","actionType":null}],
     "locationMentioned": [{"locationName":"","byNpcId":""}],
     "currentLocation": null,
     "currentX": null,

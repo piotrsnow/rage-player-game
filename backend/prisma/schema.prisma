@@ -283,6 +283,10 @@ model Campaign {
   lastSaved  DateTime @default(now()) @db.Timestamptz
 
   livingWorldEnabled  Boolean @default(false)
+  // Branching quest graph + diegetic discovery (oś 1+5). Nowe kampanie
+  // dostają true, stare zostają na liniowych questach — opt-in upgrade
+  // przez admin endpoint /api/admin/campaigns/:id/upgrade-quest-graph.
+  questGraphEnabled   Boolean @default(false)
   worldTimeRatio      Float   @default(24.0)
   worldTimeMaxGapDays Int     @default(7)
   // low|medium|high|deadly — encounter cap; separate scale from WorldLocation.dangerLevel
@@ -526,7 +530,12 @@ model CampaignNpcRelationship {
   targetType    String
   targetRef     String
   relation      String
+  // strength: -100..+100 — kierunkowa wartość relacji (negatywna = wrogość).
   strength      Int         @default(0)
+  // rippleStrength: 0..100 — natężenie z jakim X reaguje na zmiany u target-a
+  // (oś 2). Asymmetric: brat może mocno reagować na siostrę (90), a siostra
+  // tylko trochę na brata (40). Backfill SQL: LEAST(100, ABS(strength)).
+  rippleStrength Int        @default(50)
   campaignNpc   CampaignNPC @relation(fields: [campaignNpcId], references: [id], onDelete: Cascade)
 
   @@unique([campaignNpcId, targetType, targetRef])
@@ -570,9 +579,15 @@ model CampaignQuest {
   locationKind        String?
   locationId          String?
   reward              Json?
+  // status: active|completed|stalled|failed (oś 4 — `stalled` 1st-class
+  // dla rescue hooks; `failed` gdy questgiver dead i brak rescue path).
   status              String    @default("active")
   completedAt         DateTime? @db.Timestamptz
   forcedGiver         Boolean   @default(false)
+  // Append-only ledger mutacji (oś 4): { ts, mutation: stall|fail|reroute,
+  // reason, sceneIndex, payload }. Cap 10 entries — questDynamicsService
+  // truncates head-first.
+  mutationLog         Json      @default("[]")
   createdAt           DateTime  @default(now()) @db.Timestamptz
   updatedAt           DateTime  @updatedAt @db.Timestamptz
 
@@ -596,13 +611,32 @@ model CampaignQuestObjective {
   description  String
   progress     Int           @default(0)
   targetAmount Int           @default(1)
+  // status: pending|done|locked|skipped|failed (rozszerzone w osi 1).
+  // - pending: parents satisfied, do zrobienia
+  // - done: ukończone
+  // - locked: parents niespełnione (czeka na unlock z grafu)
+  // - skipped: branchChoice w XOR group zamknął tę gałąź
+  // - failed: failsOn match (np. questgiver dead) lub explicit questMutation
   status       String        @default("pending")
-  // Per-objective JSONB bag for AI-emitted metadata (onComplete triggers,
-  // hints, location targets). Read by quest-trigger handlers and surfaced
-  // back into the FE shape verbatim.
+  // Per-objective JSONB bag — graf + diegetic + triggers:
+  //   metadata.parents: string[]            — nodeKey-i które muszą być done
+  //   metadata.unlocks: string[]            — nodeKey-i odblokowane przy done
+  //   metadata.branchType: "and"|"path"|"or"  — XOR/równoległe/dowolny
+  //   metadata.branchGroup: string          — id grupy branchy
+  //   metadata.choiceLabel: string          — UI label dla wyboru
+  //   metadata.failsOn: { npcDead?, locationDestroyed?, deadline? } (oś 4)
+  //   metadata.discovered: boolean          — diegetic gating (oś 5)
+  //   metadata.placeholderHint?: string     — vague hint w UI "???"
+  //   metadata.lastKnownLocation?: string   — quest dynamics tick payload
+  //   metadata.onComplete: { moveNpcToPlayer, message }   — trigger (legacy)
   metadata     Json          @default("{}")
+  // Stable string ref dla LLM (snake_case). Generowany przez questOffers,
+  // BE waliduje [a-z0-9_]{1,40}. Resolver fallback do displayOrder index
+  // dla legacy linear questów (bez nodeKey).
+  nodeKey      String?
   quest        CampaignQuest @relation(fields: [questId], references: [id], onDelete: Cascade)
 
+  @@unique([questId, nodeKey])
   @@index([questId, displayOrder])
 }
 
