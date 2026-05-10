@@ -81,6 +81,19 @@ export const GENERATE_IMAGE_PROMPT_SCHEMA = {
     customStyle: { type: 'string', maxLength: 1200 },
     provider: PROVIDER_SCHEMA,
     model: MODEL_SCHEMA,
+    presentNpcs: {
+      type: 'array',
+      maxItems: 3,
+      items: {
+        type: 'object',
+        additionalProperties: false,
+        properties: {
+          name: { type: 'string', maxLength: 200 },
+          appearance: { type: 'string', maxLength: 600 },
+        },
+        required: ['name', 'appearance'],
+      },
+    },
   },
   required: ['imagePromptTags'],
 };

@@ -8,7 +8,7 @@ import { apiClient } from '../../services/apiClient';
 import { createSceneId } from '../../services/gameState';
 import { storage } from '../../services/storage';
 import { calculateCost, calculateSceneCost } from '../../services/costTracker';
-import { buildSpeculativeImageDescription } from '../../services/imagePrompts';
+import { buildSpeculativeImageDescription, pickPresentNpcsForSceneImage } from '../../services/imagePrompts';
 import { ensureEnglish } from '../../services/translateImagePrompt';
 import { resolveMechanics } from '../../services/mechanics/index';
 import { calculateNextMomentum } from '../../services/mechanics/momentumTracker';
@@ -242,6 +242,14 @@ export function useSceneGeneration({ ensureMissingInventoryImages, ensureMissing
         );
         result.stateChanges = mergedStateChanges;
 
+        const playerNamesForImage = (state.party || [state.character]).map((c) => c?.name).filter(Boolean);
+        const presentNpcsForImage = pickPresentNpcsForSceneImage(
+          state.world?.npcs || [],
+          finalSegments,
+          playerNamesForImage,
+          { maxNpcs: 3 },
+        );
+
         // Build and dispatch scene
         const sceneId = serverSceneId || createSceneId();
         const questOffers = (result.questOffers || []).map((offer) => ({
@@ -329,6 +337,7 @@ export function useSceneGeneration({ ensureMissingInventoryImages, ensureMissing
                   customStyle: settings.imagePromptCustomStyle || '',
                   provider: settings.imagePromptLlmProvider || 'openai',
                   model: settings.imagePromptLlmModel || null,
+                  ...(presentNpcsForImage.length ? { presentNpcs: presentNpcsForImage } : {}),
                 });
                 if (llmResult.prompt) {
                   llmPromptOpts.preBuiltPrompt = llmResult.prompt;
@@ -344,7 +353,16 @@ export function useSceneGeneration({ ensureMissingInventoryImages, ensureMissing
             const { url: imageUrl, prompt: fullImagePrompt } = await imageService.generateSceneImage(
               result.narrative, state.campaign?.genre, state.campaign?.tone, imageApiKey, imageProvider,
               result.imagePrompt, state.campaign?.backendId, imageStyle, darkPalette,
-              state.character?.age, state.character?.gender, { sdModel: sdWebuiModel, sdSeed: Number.isInteger(sdWebuiSeed) ? sdWebuiSeed : null, resolutionMultiplier: imageResolutionMultiplier, ipaMode: sdWebuiIpaMode, qualitySteps, qualityCfg, ...llmPromptOpts }, imageSeriousness,
+              state.character?.age, state.character?.gender, {
+                sdModel: sdWebuiModel,
+                sdSeed: Number.isInteger(sdWebuiSeed) ? sdWebuiSeed : null,
+                resolutionMultiplier: imageResolutionMultiplier,
+                ipaMode: sdWebuiIpaMode,
+                qualitySteps,
+                qualityCfg,
+                ...llmPromptOpts,
+                ...(presentNpcsForImage.length ? { presentNpcs: presentNpcsForImage } : {}),
+              }, imageSeriousness,
               state.character?.portraitUrl || null
             );
             dispatch({ type: 'UPDATE_SCENE_IMAGE', payload: { sceneId, image: imageUrl, fullImagePrompt } });

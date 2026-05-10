@@ -253,6 +253,10 @@ export async function buildLivingWorldContext(campaignId, currentLocation, { tra
       role: c.role || null,
       loyalty: typeof c.companionLoyalty === 'number' ? c.companionLoyalty : 50,
       joinedAt: c.companionJoinedAt ? new Date(c.companionJoinedAt).toISOString() : null,
+      personality: c.personality || null,
+      appearance: c.appearance || null,
+      dialect: c.dialect || null,
+      attitude: c.attitude || 'neutral',
     })),
     recentEvents,
     reputation: reputation

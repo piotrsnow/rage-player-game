@@ -3,13 +3,14 @@ import { prisma } from '../../lib/prisma.js';
 /**
  * Find an existing node sprite image that is similar enough to reuse for a
  * newly-created location node. Similarity is scored by locationType (hard
- * filter), biome match (+2), and tag overlap (+1 per shared tag, max 5).
+ * filter + base +1), biome match (+2), and tag overlap (+1 per shared tag, max 5).
+ * Candidates are ordered by updatedAt desc so ties prefer the freshest row.
  *
  * @param {{ locationType: string, biome: string|null, tags: string[] }} params
  * @returns {Promise<string|null>} URL of matching image, or null
  */
 export async function findSimilarNodeImage({ locationType, biome, tags }) {
-  if (!locationType || locationType === 'generic') return null;
+  if (!locationType) return null;
 
   const normalizedTags = (tags || []).map((t) => t.toLowerCase().trim()).filter(Boolean);
   const normalizedBiome = biome?.toLowerCase().trim() || null;
@@ -18,10 +19,12 @@ export async function findSimilarNodeImage({ locationType, biome, tags }) {
     prisma.worldLocation.findMany({
       where: { nodeImageUrl: { not: null }, locationType },
       select: { nodeImageUrl: true, biome: true, tags: true },
+      orderBy: { updatedAt: 'desc' },
     }),
     prisma.campaignLocation.findMany({
       where: { nodeImageUrl: { not: null }, locationType },
       select: { nodeImageUrl: true, biome: true, tags: true },
+      orderBy: { updatedAt: 'desc' },
     }),
   ]);
 
@@ -40,7 +43,8 @@ export async function findSimilarNodeImage({ locationType, biome, tags }) {
   let bestScore = 0;
 
   for (const c of candidates) {
-    let score = 0;
+    // Base: every candidate already matched locationType in the query.
+    let score = 1;
 
     const cBiome = c.biome?.toLowerCase().trim() || null;
     if (normalizedBiome && cBiome && normalizedBiome === cBiome) {

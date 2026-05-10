@@ -1,3 +1,5 @@
+import { hasNamedSpeaker } from '../../shared/domain/dialogueSpeaker.js';
+
 export const QUALITY_SD_PARAMS = {
   speed: { steps: 6, cfg: 2 },
   balanced: { steps: 20, cfg: 5 },
@@ -34,6 +36,70 @@ const SANITIZE_PATTERNS_LOCAL = [
   /\b(rape|assault(ed|ing)?)\b/gi,
   /\b(suicide|self-harm)\b/gi,
 ];
+
+const PRESENT_NPC_APPEARANCE_CAP = 80;
+
+/**
+ * Pick up to `maxNpcs` world NPCs who speak in this scene (dialogue order)
+ * and have a non-empty `appearance` — for scene image prompts.
+ */
+export function pickPresentNpcsForSceneImage(
+  worldNpcs,
+  dialogueSegments,
+  playerNames = [],
+  { maxNpcs = 3 } = {},
+) {
+  const npcByLower = new Map();
+  for (const npc of worldNpcs || []) {
+    if (!npc || typeof npc.name !== 'string') continue;
+    const k = npc.name.trim().toLowerCase();
+    if (!k) continue;
+    npcByLower.set(k, npc);
+  }
+  const playerLower = new Set(
+    (playerNames || [])
+      .filter((n) => typeof n === 'string' && n.trim())
+      .map((n) => n.trim().toLowerCase()),
+  );
+  const seen = new Set();
+  const out = [];
+  for (const seg of dialogueSegments || []) {
+    if (out.length >= maxNpcs) break;
+    if (!seg || seg.type !== 'dialogue') continue;
+    const ch = typeof seg.character === 'string' ? seg.character.trim() : '';
+    if (!hasNamedSpeaker(ch)) continue;
+    const lower = ch.toLowerCase();
+    if (playerLower.has(lower)) continue;
+    if (seen.has(lower)) continue;
+    const npc = npcByLower.get(lower);
+    if (!npc) continue;
+    const appearance = typeof npc.appearance === 'string' && npc.appearance.trim()
+      ? npc.appearance.trim()
+      : '';
+    if (!appearance) continue;
+    seen.add(lower);
+    const clipped = appearance.length > PRESENT_NPC_APPEARANCE_CAP
+      ? `${appearance.slice(0, PRESENT_NPC_APPEARANCE_CAP).trimEnd()}…`
+      : appearance;
+    out.push({ name: npc.name, appearance: clipped });
+  }
+  return out;
+}
+
+function appendPresentNpcCanon(sceneDesc, presentNpcs, provider) {
+  if (!Array.isArray(presentNpcs) || presentNpcs.length === 0) return sceneDesc;
+  const parts = [];
+  for (const row of presentNpcs.slice(0, 3)) {
+    const name = typeof row?.name === 'string' ? row.name.trim() : '';
+    const app = typeof row?.appearance === 'string' ? row.appearance.trim() : '';
+    if (!name || !app) continue;
+    const safe = sanitizeForImageGen(app, provider);
+    parts.push(`${name}: ${safe}`);
+  }
+  if (parts.length === 0) return sceneDesc;
+  const tail = ` Present NPC visual canon (match exactly): ${parts.join('; ')}.`;
+  return `${String(sceneDesc || '').trim()}${tail}`;
+}
 
 function sanitizeForImageGen(text, provider = 'dalle') {
   const patterns = provider === 'sd-webui' ? SANITIZE_PATTERNS_LOCAL : SANITIZE_PATTERNS_CLOUD;
@@ -436,12 +502,13 @@ export function getImageStyleSdNegative(imageStyle) {
 // room, phone lighting) — these push it back toward fantasy.
 export const REFERENCE_PHOTO_NEGATIVE = 'modern clothes, contemporary clothing, t-shirt, hoodie, jeans, sportswear, business suit, necktie, eyeglasses frame, selfie, phone photo, webcam photo, snapshot, casual photo, indoor room, plain wall background, office background, modern background, modern furniture, smartphone, headphones, earbuds';
 
-export function buildImagePrompt(narrative, genre, tone, imagePrompt, provider = 'dalle', imageStyle = 'painting', darkPalette = false, characterAge = null, characterGender = null, seriousness = null, hasPortraitRef = false, sdModel = null) {
+export function buildImagePrompt(narrative, genre, tone, imagePrompt, provider = 'dalle', imageStyle = 'painting', darkPalette = false, characterAge = null, characterGender = null, seriousness = null, hasPortraitRef = false, sdModel = null, presentNpcs = null) {
   const isGemini = provider === 'gemini';
   const isSdWebui = provider === 'sd-webui';
 
   const rawDesc = imagePrompt || narrative.substring(0, 300);
-  const sceneDesc = sanitizeForImageGen(rawDesc, provider);
+  let sceneDesc = sanitizeForImageGen(rawDesc, provider);
+  sceneDesc = appendPresentNpcCanon(sceneDesc, presentNpcs, provider);
 
   // sd-webui: scene first, compact attribute tags, short style tail at the
   // very end. Skips the model preset's old qualityHead/Tail — those are now

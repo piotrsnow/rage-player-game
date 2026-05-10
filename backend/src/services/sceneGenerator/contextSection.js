@@ -1,6 +1,61 @@
 import { pickChatterLine } from '../../../../shared/domain/npcChatterPool.js';
 import { buildNarrativeContext } from '../locationGraph/graphContextBuilder.js';
 
+/** When many key NPCs are listed, keep appearance/dialect lines from blowing the prompt. */
+const NPC_DOSSIER_FIELD_TRUNC = 80;
+
+function truncatePromptField(value, maxLen) {
+  if (value == null || typeof value !== 'string') return null;
+  const t = value.trim();
+  if (!t) return null;
+  if (t.length <= maxLen) return t;
+  return `${t.slice(0, maxLen).trimEnd()}…`;
+}
+
+/**
+ * Multi-line NPC brief for scene-gen: name/role + optional personality, appearance, dialect.
+ * @param {object} n
+ * @param {{ truncate: boolean }} opts
+ * @returns {string[]}
+ */
+function formatNpcDossierLines(n, { truncate }) {
+  const max = truncate ? NPC_DOSSIER_FIELD_TRUNC : Number.POSITIVE_INFINITY;
+  const personality = truncate ? truncatePromptField(n.personality, max) : (typeof n.personality === 'string' && n.personality.trim() ? n.personality.trim() : null);
+  const appearance = truncate ? truncatePromptField(n.appearance, max) : (typeof n.appearance === 'string' && n.appearance.trim() ? n.appearance.trim() : null);
+  const dialect = truncate ? truncatePromptField(n.dialect, max) : (typeof n.dialect === 'string' && n.dialect.trim() ? n.dialect.trim() : null);
+  const attitude = n.attitude && n.attitude !== 'neutral' ? n.attitude : null;
+  const headBits = [n.name];
+  if (n.role) headBits.push(`(${n.role})`);
+  if (attitude) headBits.push(`[${attitude}]`);
+  if (n.category) headBits.push(`[${n.category}]`);
+  if (n.paused) headBits.push('[recently away]');
+  const out = [`- ${headBits.join(' ')}`];
+  if (personality) out.push(`  Charakter: ${personality}`);
+  if (appearance) out.push(`  Wygląd: ${appearance}`);
+  if (dialect) out.push(`  Mówi: ${dialect}`);
+  return out;
+}
+
+/**
+ * Format prompt lines for a companion row (WorldNPC-shaped; may omit category/paused).
+ */
+function formatCompanionDossierLines(c, { truncate }) {
+  const max = truncate ? NPC_DOSSIER_FIELD_TRUNC : Number.POSITIVE_INFINITY;
+  const personality = truncate ? truncatePromptField(c.personality, max) : (typeof c.personality === 'string' && c.personality.trim() ? c.personality.trim() : null);
+  const appearance = truncate ? truncatePromptField(c.appearance, max) : (typeof c.appearance === 'string' && c.appearance.trim() ? c.appearance.trim() : null);
+  const dialect = truncate ? truncatePromptField(c.dialect, max) : (typeof c.dialect === 'string' && c.dialect.trim() ? c.dialect.trim() : null);
+  const attitude = c.attitude && c.attitude !== 'neutral' ? c.attitude : null;
+  const headBits = [c.name];
+  if (c.role) headBits.push(`(${c.role})`);
+  if (attitude) headBits.push(`[${attitude}]`);
+  headBits.push(`loyalty:${c.loyalty}`);
+  const out = [`- ${headBits.join(' ')}`];
+  if (personality) out.push(`  Charakter: ${personality}`);
+  if (appearance) out.push(`  Wygląd: ${appearance}`);
+  if (dialect) out.push(`  Mówi: ${dialect}`);
+  return out;
+}
+
 /**
  * Format pre-fetched context blocks (from assembleContext) into a prompt
  * section that gets appended to the dynamic suffix of the system prompt.
@@ -120,13 +175,13 @@ export function buildContextSection(contextBlocks) {
       lines.push('');
       lines.push(`## NPCS AT CURRENT LOCATION`);
       if (lw.npcs?.length) {
+        lines.push(
+          'Gdy któryś z tych NPC mówi w scenie — TRZYMAJ SIĘ jego pola "Mówi:" (gwara/akcent/zwroty). To jest stabilna cecha postaci.',
+        );
         lines.push(`Key characters already here (USE THEIR NAMES when relevant, DO NOT introduce duplicates):`);
+        const truncNpcs = lw.npcs.length > 5;
         for (const n of lw.npcs) {
-          const bits = [n.name];
-          if (n.role) bits.push(`(${n.role})`);
-          if (n.category) bits.push(`[${n.category}]`);
-          if (n.paused) bits.push('[recently away]');
-          lines.push(`- ${bits.join(' ')}`);
+          lines.push(...formatNpcDossierLines(n, { truncate: truncNpcs }));
           // Round B — one-shot introduction hint, fired by the quest trigger
           // `onComplete.moveNpcToPlayer`. Tells premium the NPC just arrived
           // and has a specific piece of news. Cleared post-assembly.
@@ -269,16 +324,15 @@ export function buildContextSection(contextBlocks) {
     }
 
     if (lw.companions?.length) {
-      const compList = lw.companions
-        .map((c) => {
-          const parts2 = [c.name];
-          if (c.role) parts2.push(`(${c.role})`);
-          parts2.push(`loyalty:${c.loyalty}`);
-          return parts2.join(' ');
-        })
-        .join(', ');
-      lines.push(`Party companions travelling with player: ${compList}`);
-      lines.push(`(Companions speak in-character and react to events. NPC voice derives from personality — not narrator voice sliders.)`);
+      lines.push('');
+      lines.push('## PARTY COMPANIONS');
+      lines.push(
+        'Towarzysze mówią in-character i reagują na wydarzenia. Gdy któryś mówi — TRZYMAJ SIĘ jego pola "Mówi:" (gwara/akcent/zwroty). Głos narratora (slidery) nie zastępuje osobowości NPC.',
+      );
+      const truncComp = lw.companions.length > 5;
+      for (const c of lw.companions) {
+        lines.push(...formatCompanionDossierLines(c, { truncate: truncComp }));
+      }
     }
     if (lw.npcs?.length) {
       const npcList = lw.npcs
@@ -290,7 +344,7 @@ export function buildContextSection(contextBlocks) {
       // premium decides whether to weave it in. Zero AI cost, data-only lookup.
       lines.push('Ambient chatter (optional — use at most one to color the scene):');
       for (const n of lw.npcs.slice(0, 3)) {
-        const line = pickChatterLine({ role: n.role, personality: n.role, disposition: 0 });
+        const line = pickChatterLine({ role: n.role, personality: n.personality || n.role, disposition: 0 });
         if (line) lines.push(`  • ${n.name} might say: "${line}"`);
       }
     }

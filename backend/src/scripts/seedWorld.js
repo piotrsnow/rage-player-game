@@ -163,6 +163,8 @@ const NAMED_NPCS = [
     name: 'Król Torvan IV',
     role: 'władca Yeraldenu',
     personality: 'Stanowczy, ceni lojalność ponad talent. Nie lubi zaskoczeń.',
+    appearance: 'Wysoki mężczyzna w sile wieku, krótko ostrzyżone siwe włosy, głębokie zmarszczki wokół oczu, ciemnoczerwony płaszcz z subtelnym haftem korony i skórzany pas z insygniami.',
+    dialect: 'Mówi powoli, oficjalnym, królewskim tonem; kończy rozkazy krótkim „niech tak będzie”.',
     alignment: 'good',
     location: 'palace',
     category: 'guard', // władca, nominalnie "commoner" wg enuma, ale w dialogu zachowuje się jak dowódca; mapujemy do guard
@@ -177,6 +179,8 @@ const NAMED_NPCS = [
     name: 'Arcykapłanka Lyana',
     role: 'arcykapłanka Yerieli',
     personality: 'Łagodna, mądra, nie traci spokoju nawet w obliczu herezji.',
+    appearance: 'Długie srebrzyste włosy spięte w skromną koronę plecioną, blada skóra, złote symbole Yerieli na białym habitu, spokojne, łagodne oczy.',
+    dialect: 'Cicho, melodyjnie, często cytuje przysłowia i przestrogi w formie modlitwy.',
     alignment: 'good',
     location: 'grand_temple',
     category: 'priest',
@@ -191,6 +195,8 @@ const NAMED_NPCS = [
     name: 'Kapitan Gerent',
     role: 'dowódca gwardii królewskiej',
     personality: 'Szorstki, praktyczny, nie znosi dworskich intryg — woli prostą odpowiedź i dobrze naostrzony miecz.',
+    appearance: 'Barczysty, skrzyżowane blizny na policzku, krótko ostrzyżona broda, skórzana kurta strażnicza, zawsze czysty miecz u boku.',
+    dialect: 'Krótkie zdania, wojskowy slang, czasem przekleństwo pod nosem gdy mówi o dworze.',
     alignment: 'neutral',
     location: 'barracks',
     category: 'guard',
@@ -206,6 +212,8 @@ const NAMED_NPCS = [
     name: 'Mistrz Broni Darvok',
     role: 'trener Walki wręcz, broni jedno- i dwuręcznej, Strzelectwa, Uników, Walki dwiema brońmi, Zastraszania',
     personality: 'Cichy, obserwujący każdy ruch. Mówi tylko to, co konieczne — ale gdy mówi, słucha każdy adept.',
+    appearance: 'Średniego wzrostu, muskularny, łysina z blizną nad uchem, skórzany fartuch treningowy, dłonie pokryte starymi modzelami.',
+    dialect: 'Jednym tchem, bez ozdobników; czasem tylko kiwnięcie głową zamiast całego zdania.',
     alignment: 'neutral',
     location: 'arena',
     category: 'adventurer',
@@ -215,6 +223,8 @@ const NAMED_NPCS = [
     name: 'Mistrzyni Ciała Ilara',
     role: 'trenerka Atletyki, Akrobatyki, Jeździectwa',
     personality: 'Energiczna, bezpośrednia, wyznaje zasadę że ciało nie kłamie.',
+    appearance: 'Szczupła, opalona, włosy w warkoczu, sportowe wdzianko, lekki pot na skroniach nawet w spoczynku.',
+    dialect: 'Szybko, wesoło, wtrąca „no dalej!” i „czuj mięśnie, nie słowa”.',
     alignment: 'good',
     location: 'arena',
     category: 'adventurer',
@@ -224,6 +234,8 @@ const NAMED_NPCS = [
     name: 'Mistrzyni Retoryki Venadra',
     role: 'trenerka Perswazji, Blefu, Handlu, Przywództwa i Występów',
     personality: 'Elokwentna, uśmiechnięta, nigdy nie odsłania więcej niż musi.',
+    appearance: 'Elegancka suknia w stonowanych barwach, delikatna biżuteria, perfekcyjny makijaż, uśmiech, który nie sięga oczu.',
+    dialect: 'Łagodny, dworski polski z lekką ironią; kończy kwestie retorycznym „prawdaż?”.',
     alignment: 'neutral',
     location: 'market',
     category: 'adventurer',
@@ -233,6 +245,8 @@ const NAMED_NPCS = [
     name: 'Mistrz Wiedzy Taelor',
     role: 'trener Wiedzy ogólnej, Wiedzy o potworach, Wiedzy o naturze, Rzemiosła',
     personality: 'Pedantyczny uczony, skarbnica cytatów. Testuje adeptów zagadkami zamiast egzaminem.',
+    appearance: 'Chudy starszy mężczyzna, okulary na sznurku, atramentowe plamy na palcach, długi surdut akademicki, torba pełna zwojów.',
+    dialect: 'Książkowy, przerywa wypowiedzi łacińskimi frazami; mówi jak z wykładu.',
     alignment: 'good',
     location: 'academy',
     category: 'adventurer',
@@ -247,6 +261,8 @@ const NAMED_NPCS = [
     name: 'Mistrzyni Medyka Senya',
     role: 'trenerka Medycyny i Alchemii',
     personality: 'Spokojna, cierpliwa, bardziej oddana pacjentom niż polityce Akademii.',
+    appearance: 'Niewysoka kobieta, siwe włosy w kok, czysty fartuch z zapachem ziół, delikatne dłonie, spokojny wzrok.',
+    dialect: 'Cicho, jak przy łóżku chorego; często mówi „oddychaj” i „powoli”.',
     alignment: 'good',
     location: 'academy',
     category: 'adventurer',
@@ -256,6 +272,8 @@ const NAMED_NPCS = [
     name: 'Mistrz Cieni Ashen',
     role: 'trener Skradania, Otwierania zamków, Kradzieży kieszonkowej, Pułapek i mechanizmów, Spostrzegawczości',
     personality: 'Niewidoczny aż do momentu gdy sam zdecyduje się ujawnić. Sprawdza uczniów, zanim ci go zauważą.',
+    appearance: 'Niski, chudy, twarz częściowo zakryta kapturem, ciemne ubranie bez odznak, buty z miękką podeszwą.',
+    dialect: 'Szeptem lub z ukrycia; zdania obojętnym tonem, jakby odliczał sekundy.',
     alignment: 'neutral',
     location: 'shadow_hall',
     category: 'adventurer',
@@ -265,6 +283,8 @@ const NAMED_NPCS = [
     name: 'Mistrz Przetrwania Karros',
     role: 'trener Przetrwania, Tropienia, Odporności',
     personality: 'Zgrubiały łowca, mówi krótko, ufa bardziej lasom niż ludziom.',
+    appearance: 'Szerokie ramiona, zmierzwione włosy, krótki zarost, skóra wiatrem i słońcem spalona, łuk i nóż na pasie.',
+    dialect: 'Urwanie pały, wiejska gwarą; „las nie kłamie” to jego ulubione wstęp do zdania.',
     alignment: 'neutral',
     location: 'hunter_camp',
     category: 'adventurer',
@@ -274,6 +294,8 @@ const NAMED_NPCS = [
     name: 'Wróżbitka Korvia',
     role: 'mistrzyni Fartu, Hazardu i Przeczucia',
     personality: 'Stara, przenikliwa, wypowiada zdania tak, że brzmią jak wyrok losu.',
+    appearance: 'Bardzo stara kobieta, zmarszczona twarz, długie palce, pierścienie z bursztynu, dym z kadzidła na szalu.',
+    dialect: 'Powoli, z pauzami; kończy często „tak mówi linia” albo „karty już wiedzą”.',
     alignment: 'neutral',
     location: 'fortune_cottage',
     category: 'adventurer',
@@ -284,6 +306,8 @@ const NAMED_NPCS = [
     name: 'Karczmarz Tamar',
     role: 'gospodarz Karczmy Pod Złotym Słońcem',
     personality: 'Jowialny, pamięta każdą twarz, każdą plotkę i każdy dług.',
+    appearance: 'Korpulentny, rumiane policzki, fartuch karczmarza, ślady mąki na rękawie, zawsze ściereczka przez ramię.',
+    dialect: 'Głośny, serdeczny, wtrąca „mój drogi” i „należy się kolejka”; śmieje się w połowie zdania.',
     alignment: 'neutral',
     location: 'tavern',
     category: 'commoner',
@@ -301,6 +325,8 @@ const NAMED_NPCS = [
     name: 'Kupiec Dorgun',
     role: 'handlarz dalekich karawan, stały bywalec Wielkiego Targu',
     personality: 'Przebiegły, ale uczciwy w liczbach — lubi rozmawiać cenami i plotkami z trzech krain na raz.',
+    appearance: 'Szczupły, opalona skóra od karawany, kolorowy szal, sakiewki przy pasie, liczydło w dłoni.',
+    dialect: 'Szybki, kupiecki; miesza ceny, trasy i plotki w jednym zdaniu, często pyta „ile pan da?”.',
     alignment: 'neutral',
     location: 'market',
     category: 'merchant',
@@ -356,6 +382,8 @@ const VILLAGES = [
         role: 'sołtys Świetłogaju i mistrz drwalski',
         personality:
           'Rozważny, opanowany, ufa tylko ludziom których sprawdził w robocie. Dba o każdą rodzinę w osadzie jak o własną.',
+        appearance: 'Szerokie barki, siwe wąsy, skórzana kamizelka nad koszulą, dłonie pokryte drzazgami i kalusami od piły.',
+        dialect: 'Mówi jak starszy gospodarz — spokojnie, konkretnie, często „w lesie nie ma miejsca na głupotę”.',
         alignment: 'good',
         location: 'sawmill',
         category: 'commoner',
@@ -371,6 +399,8 @@ const VILLAGES = [
         role: 'łowczyni potworów ze Świetłogaju',
         personality:
           'Cicha, czyta tropy lepiej niż twarze. Nie lubi dworu w Yeralden — woli las, który przynajmniej nie kłamie.',
+        appearance: 'Szczupła, twarz opalona i wyszczerbiona wiatrem, skórzany kaftan, łuk za plecami, włosy w krótkim warkoczu.',
+        dialect: 'Rzadko mówi pełnym zdaniem; krótkie „hm”, „tam”, „nie idź” — jak raport z patrolu.',
         alignment: 'neutral',
         location: 'tavern',
         category: 'adventurer',
@@ -419,6 +449,8 @@ const VILLAGES = [
         role: 'kapłan Sernetha w Kamionce Starej',
         personality:
           'Ciepły, uczynny, wierzy że każda dłoń znajdzie robotę u Sernetha. Nieufny wobec kultu Ferathona i szepczących o nim pielgrzymów.',
+        appearance: 'Łagodna twarz, siwe loczki spod kaptura, prosty habit z kłosami haftu przy kołnierzu, ręce czyste i miękkie.',
+        dialect: 'Jak kazanie w wiosce — ciepło, powtarza „Serneth da” i „praca to modlitwa”.',
         alignment: 'good',
         location: 'church',
         category: 'priest',
@@ -429,6 +461,8 @@ const VILLAGES = [
         role: 'kupcowa traktów z Kamionki Starej',
         personality:
           'Pragmatyczna, każdy interes ma swoją cenę i swój termin. Widzi więcej niż mówi — ale to, co mówi, warto kupić.',
+        appearance: 'Kolorowy chust na głowie, fartuch z kieszeniami pełnymi drobiazgów, bystre oczy, zawsze z notatką w dłoni.',
+        dialect: 'Twardo, targowo; „słuchaj, kochanie” i „taka cena albo spacer” w jednym oddechu.',
         alignment: 'neutral',
         location: 'tavern',
         category: 'merchant',
@@ -870,6 +904,14 @@ async function upsertWildLocation(loc) {
 }
 
 async function upsertNpc(npc, locationId) {
+  const flavorFields = {};
+  if (typeof npc.appearance === 'string' && npc.appearance.trim()) {
+    flavorFields.appearance = npc.appearance.trim();
+  }
+  if (typeof npc.dialect === 'string' && npc.dialect.trim()) {
+    flavorFields.dialect = npc.dialect.trim();
+  }
+
   const row = await prisma.worldNPC.upsert({
     where: { canonicalId: npc.canonicalId },
     update: {
@@ -882,6 +924,7 @@ async function upsertNpc(npc, locationId) {
       keyNpc: true,
       alive: true,
       category: npc.category || 'commoner',
+      ...flavorFields,
     },
     create: {
       canonicalId: npc.canonicalId,
@@ -894,6 +937,7 @@ async function upsertNpc(npc, locationId) {
       keyNpc: true,
       alive: true,
       category: npc.category || 'commoner',
+      ...flavorFields,
     },
   });
 

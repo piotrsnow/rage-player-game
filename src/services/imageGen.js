@@ -248,7 +248,21 @@ const _imageServiceImpl = {
         ensureEnglish(imagePrompt),
         imagePrompt ? Promise.resolve(narrative || '') : ensureEnglish((narrative || '').substring(0, 300)),
       ]);
-      prompt = buildImagePrompt(enNarrative, genre, tone, enImagePrompt, provider, imageStyle, darkPalette, characterAge, characterGender, seriousness, hasGptPortrait, sdModel);
+      prompt = buildImagePrompt(
+        enNarrative,
+        genre,
+        tone,
+        enImagePrompt,
+        provider,
+        imageStyle,
+        darkPalette,
+        characterAge,
+        characterGender,
+        seriousness,
+        hasGptPortrait,
+        sdModel,
+        options?.presentNpcs || null,
+      );
     }
 
     let negativePrompt = options?.preBuiltNegativePrompt || options?.negativePrompt || null;

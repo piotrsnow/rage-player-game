@@ -167,6 +167,29 @@ function NpcDetailModal({ id, onClose, onMutated }) {
           <KV k="lastTickAt" v={npc.lastTickAt ? new Date(npc.lastTickAt).toISOString().slice(0, 16) : '—'} />
         </div>
 
+        {(npc.personality || npc.appearance || npc.dialect) && (
+          <div className="mb-3 p-2 rounded-sm bg-surface-container/40 border border-outline-variant/10 space-y-1">
+            {npc.personality && (
+              <div>
+                <div className="text-[9px] uppercase tracking-widest text-tertiary mb-0.5">Personality</div>
+                <div className="whitespace-pre-wrap">{npc.personality}</div>
+              </div>
+            )}
+            {npc.appearance && (
+              <div>
+                <div className="text-[9px] uppercase tracking-widest text-tertiary mb-0.5">Wygląd</div>
+                <div className="whitespace-pre-wrap">{npc.appearance}</div>
+              </div>
+            )}
+            {npc.dialect && (
+              <div>
+                <div className="text-[9px] uppercase tracking-widest text-tertiary mb-0.5">Mowa / gwara</div>
+                <div className="whitespace-pre-wrap">{npc.dialect}</div>
+              </div>
+            )}
+          </div>
+        )}
+
         {npc.activeGoal && (
           <div className="mb-3 p-2 rounded-sm bg-surface-container/40 border border-outline-variant/10">
             <div className="text-[9px] uppercase tracking-widest text-tertiary mb-1">Active goal</div>

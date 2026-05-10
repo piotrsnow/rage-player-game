@@ -1,6 +1,7 @@
 // Shared state validation helpers — single source of truth for frontend + backend stateValidators
 
 import { prefixedId } from './ids.js';
+import { z } from 'zod';
 
 // ── State change limits ──
 
@@ -15,6 +16,16 @@ export const STATE_CHANGE_LIMITS = {
   maxCodexPerScene: 3,
   maxCodexFragmentLength: 1000,
 };
+
+/** Max length for `stateChanges.npcs[].appearance` / `.dialect` (PL sentences). */
+export const MAX_NPC_APPEARANCE_STATE_CHANGE_CHARS = 800;
+export const MAX_NPC_DIALECT_STATE_CHANGE_CHARS = 800;
+
+/** Optional flavor fields on NPC state-change entries — see backend `processStateChanges/schemas.js`. */
+export const NpcChangeFlavorFieldsSchema = z.object({
+  appearance: z.string().max(MAX_NPC_APPEARANCE_STATE_CHANGE_CHARS).optional(),
+  dialect: z.string().max(MAX_NPC_DIALECT_STATE_CHANGE_CHARS).optional(),
+});
 
 // ── Utilities ──
 

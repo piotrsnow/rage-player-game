@@ -6,9 +6,36 @@ import { resolveModelForTask } from './serverConfig.js';
 const MAX_TAGS_LENGTH = 1000;
 const MAX_NARRATIVE_LENGTH = 600;
 const MAX_CUSTOM_STYLE_LENGTH = 1000;
+const MAX_PRESENT_NPCS = 3;
+const MAX_NPC_APPEARANCE_IN_PROMPT = 500;
 
 function clamp(str, max) {
   return typeof str === 'string' ? str.trim().slice(0, max) : '';
+}
+
+function normalizePresentNpcs(raw) {
+  if (!Array.isArray(raw)) return [];
+  const out = [];
+  for (const row of raw) {
+    if (out.length >= MAX_PRESENT_NPCS) break;
+    const name = typeof row?.name === 'string' ? row.name.trim() : '';
+    const appearance = typeof row?.appearance === 'string' ? row.appearance.trim() : '';
+    if (!name || !appearance) continue;
+    out.push({
+      name: name.slice(0, 200),
+      appearance: appearance.slice(0, MAX_NPC_APPEARANCE_IN_PROMPT),
+    });
+  }
+  return out;
+}
+
+function formatPresentNpcsBlock(presentNpcs) {
+  if (!presentNpcs.length) return '';
+  const lines = presentNpcs.map((p) => `- ${p.name}: ${p.appearance}`);
+  return [
+    'These named NPCs appear in the scene. Their visual descriptions are CANON — the image must match them (faces, hair, build, clothing cues):',
+    ...lines,
+  ].join('\n');
 }
 
 function buildSystemPrompt({ imageProvider, imageStyle, darkPalette, seriousness, customStyleEnabled, customStyle }) {
@@ -63,11 +90,13 @@ export async function generateImagePrompt({
   provider = 'openai',
   model = null,
   userApiKeys = null,
+  presentNpcs = null,
 } = {}) {
   const tags = clamp(imagePromptTags, MAX_TAGS_LENGTH);
   const narrativeExcerpt = clamp(narrative, MAX_NARRATIVE_LENGTH);
+  const npcCanon = normalizePresentNpcs(presentNpcs);
 
-  if (!tags && !narrativeExcerpt) {
+  if (!tags && !narrativeExcerpt && npcCanon.length === 0) {
     return { prompt: '', negativePrompt: '' };
   }
 
@@ -100,6 +129,7 @@ export async function generateImagePrompt({
     contextParts,
     tags ? `Scene tags: ${tags}` : '',
     narrativeExcerpt ? `Narrative context: ${narrativeExcerpt}` : '',
+    npcCanon.length ? formatPresentNpcsBlock(npcCanon) : '',
     'Return JSON only: { "prompt": "...", "negativePrompt": "..." }',
   ].filter(Boolean).join('\n');
 

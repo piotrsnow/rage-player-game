@@ -503,10 +503,12 @@ export const aiService = {
     customStyle = '',
     provider = 'openai',
     model = null,
+    presentNpcs = null,
   } = {}) {
     const requestBody = {
       imagePromptTags, narrative, imageProvider, imageStyle, darkPalette, seriousness,
       genre, tone, characterAge, characterGender, customStyleEnabled, customStyle, provider, model,
+      ...(Array.isArray(presentNpcs) && presentNpcs.length ? { presentNpcs } : {}),
     };
     const logId = aiCallLog.start({
       type: 'image-prompt',

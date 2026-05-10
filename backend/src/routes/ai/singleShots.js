@@ -133,6 +133,7 @@ export async function singleShotRoutes(fastify) {
       customStyle,
       provider,
       model,
+      presentNpcs,
     } = request.body || {};
     const userApiKeys = await loadUserApiKeys(prisma, request.user?.id);
     try {
@@ -152,6 +153,7 @@ export async function singleShotRoutes(fastify) {
         provider,
         model,
         userApiKeys,
+        presentNpcs,
       });
     } catch (err) {
       const status = err.statusCode || 502;

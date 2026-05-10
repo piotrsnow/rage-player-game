@@ -43,6 +43,11 @@ export default function NpcMiniCard({ npc }) {
       {npc.role && (
         <div className="text-[11px] text-on-surface-variant truncate">{npc.role}</div>
       )}
+      {npc.appearance && (
+        <div className="text-[10px] text-on-surface-variant line-clamp-2" title={npc.appearance}>
+          <span className="text-outline">{t('worldState.appearance')}:</span> {npc.appearance}
+        </div>
+      )}
       <div className="flex items-center justify-between text-[10px]">
         {npc.attitude && (
           <span className={`font-label uppercase tracking-wider px-1.5 py-0.5 rounded-sm ${

@@ -14,6 +14,10 @@ export function mapAmbientNpcs(ambientNpcs) {
     role: n.role || null,
     category: n.category || null,
     paused: !!n.pausedAt,
+    personality: n.personality || null,
+    appearance: n.appearance || null,
+    dialect: n.dialect || null,
+    attitude: n.attitude || 'neutral',
     // Round B — one-shot intro hint set by quest-trigger "moveNpcToPlayer".
     // Scene-gen surfaces it in the NPC brief; we clear it post-assembly so
     // the hint fires exactly once.

@@ -1,5 +1,9 @@
 import { z } from 'zod';
 import { NPC_RACES } from '../../../../../shared/domain/npcRaces.js';
+import {
+  MAX_NPC_APPEARANCE_STATE_CHANGE_CHARS,
+  MAX_NPC_DIALECT_STATE_CHANGE_CHARS,
+} from '../../../../../shared/domain/stateValidation.js';
 
 /**
  * Zod schemas for Living World `stateChanges` buckets on the BACKEND path.
@@ -70,6 +74,8 @@ const NpcChangeSchema = z.object({
   gender: z.enum(['male', 'female']).optional(),
   role: z.string().max(200).optional().nullable(),
   personality: z.string().max(400).optional().nullable(),
+  appearance: z.string().max(MAX_NPC_APPEARANCE_STATE_CHANGE_CHARS).optional().nullable(),
+  dialect: z.string().max(MAX_NPC_DIALECT_STATE_CHANGE_CHARS).optional().nullable(),
   attitude: z.string().max(40).optional().nullable(),
   disposition: z.number().optional().nullable(),
   dispositionChange: z.number().optional().nullable(),

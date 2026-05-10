@@ -141,6 +141,8 @@ function NpcCard({ npc, t }) {
       <div className="text-xs text-on-surface-variant space-y-0.5">
         {npc.role && <div><span className="text-outline">{t('gmModal.detail.role')}:</span> {npc.role}</div>}
         {npc.personality && <div><span className="text-outline">{t('gmModal.detail.personality')}:</span> {npc.personality}</div>}
+        {npc.appearance && <div><span className="text-outline">{t('gmModal.detail.appearance')}:</span> {npc.appearance}</div>}
+        {npc.dialect && <div><span className="text-outline">{t('gmModal.detail.dialect')}:</span> {npc.dialect}</div>}
         {npc.lastLocation && <div><span className="text-outline">{t('gmModal.detail.location')}:</span> {npc.lastLocation}</div>}
       </div>
       <div className="flex items-center gap-2 mt-2 flex-wrap">
