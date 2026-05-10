@@ -97,6 +97,15 @@ export default function CharacterSheet({ onClose }) {
     setDeleteConfirmId(null);
   };
 
+  const handleCharacterImported = (saved) => {
+    setLibraryChars((prev) => [saved, ...prev]);
+  };
+
+  const handleExportCurrent = () => {
+    if (!displayCharacter) return;
+    storage.exportCharacter(displayCharacter);
+  };
+
   const handleSaveToLibrary = async () => {
     if (!displayCharacter) return;
     setSaveStatus('saving');
@@ -145,9 +154,18 @@ export default function CharacterSheet({ onClose }) {
           </h2>
           <div className="flex items-center gap-3">
             {displayCharacter && campaign && (
-              <button
-                onClick={handleSaveToLibrary}
-                disabled={saveStatus === 'saving'}
+              <>
+                <button
+                  onClick={handleExportCurrent}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-sm text-xs font-label uppercase tracking-wider border bg-surface-container-high/40 text-on-surface-variant border-outline-variant/15 hover:text-primary hover:border-primary/20 transition-all"
+                  title={t('character.export')}
+                >
+                  <span className="material-symbols-outlined text-sm">download</span>
+                  {t('character.export')}
+                </button>
+                <button
+                  onClick={handleSaveToLibrary}
+                  disabled={saveStatus === 'saving'}
                 className={`flex items-center gap-1.5 px-3 py-1.5 rounded-sm text-xs font-label uppercase tracking-wider border transition-all duration-300 ${
                   saveStatus === 'saved'
                     ? 'bg-primary/15 text-primary border-primary/30'
@@ -164,7 +182,8 @@ export default function CharacterSheet({ onClose }) {
                   : saveStatus === 'error'
                     ? t('character.saveError')
                     : t('character.saveToLibrary')}
-              </button>
+                </button>
+              </>
             )}
             <button
               onClick={onClose}
@@ -190,6 +209,7 @@ export default function CharacterSheet({ onClose }) {
               onRequestDelete={setDeleteConfirmId}
               onCancelDelete={() => setDeleteConfirmId(null)}
               onLeaveToLobby={handleLeaveToLobby}
+              onCharacterImported={handleCharacterImported}
             />
           ) : (
             <div className="px-4 md:px-10 py-8">

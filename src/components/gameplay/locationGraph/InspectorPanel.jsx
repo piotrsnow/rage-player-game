@@ -24,6 +24,7 @@ export default function InspectorPanel({
   selectedNode, selectedEdge, allNodes, occupants = [],
   onUpdateNode, onUpdateEdge, onDeleteNode, onDeleteEdge,
   mode, campaignId,
+  onNpcClick,
 }) {
   const { t } = useTranslation();
 
@@ -46,6 +47,7 @@ export default function InspectorPanel({
         onDelete={onDeleteNode}
         mode={mode}
         campaignId={campaignId}
+        onNpcClick={onNpcClick}
         t={t}
       />
     );
@@ -63,15 +65,19 @@ export default function InspectorPanel({
   );
 }
 
-function NodeInspector({ node, occupants = [], onUpdate, onDelete, mode, campaignId, t }) {
+function NodeInspector({ node, occupants = [], onUpdate, onDelete, mode, campaignId, onNpcClick, t }) {
   const vis = getNodeVisual(node.type);
   const { backendUser } = useSettings();
   const isAdmin = backendUser?.isAdmin;
   const actionTagCtx = useActionTag();
+  const [saveError, setSaveError] = useState(null);
 
   const handleField = useCallback((field, value) => {
-    onUpdate(node.id, { [field]: value });
-  }, [node.id, onUpdate]);
+    setSaveError(null);
+    onUpdate(node.id, { [field]: value }).catch((err) => {
+      setSaveError(err.message || t('locationGraph.inspector.saveFailed', { defaultValue: 'Zapis nie powiódł się' }));
+    });
+  }, [node.id, onUpdate, t]);
 
   const handleMentionLocation = useCallback(() => {
     if (!actionTagCtx) return;
@@ -104,12 +110,71 @@ function NodeInspector({ node, occupants = [], onUpdate, onDelete, mode, campaig
         </span>
       </div>
 
+      {saveError && (
+        <div className="flex items-center gap-1.5 px-2.5 py-1.5 mb-1 rounded bg-red-500/10 border border-red-500/20 text-red-300 text-xs">
+          <span className="material-symbols-outlined text-sm">error</span>
+          <span className="flex-1 truncate">{saveError}</span>
+          <button type="button" onClick={() => setSaveError(null)} className="text-red-300/60 hover:text-red-300">×</button>
+        </div>
+      )}
+
       <CollapsibleSection
         title={t('locationGraph.inspector.sectionImage', { defaultValue: 'Obrazek' })}
         icon="image"
       >
         <NodeImageSection node={node} campaignId={campaignId} onUpdate={handleField} isAdmin={isAdmin} />
       </CollapsibleSection>
+
+      {occupants.length > 0 && (
+        <CollapsibleSection
+          title={t('locationGraph.inspector.sectionOccupants', { defaultValue: 'Postacie' })}
+          icon="group"
+          defaultOpen
+        >
+          <ul className="space-y-1">
+            {occupants.map((occ) => (
+              occ.type === 'npc' ? (
+                <li key={occ.id}>
+                  <button
+                    type="button"
+                    onClick={() => onNpcClick?.(occ)}
+                    className={`w-full flex items-center gap-2 px-2 py-1.5 rounded border text-left outline-none focus-visible:ring-2 focus-visible:ring-primary/40 transition-colors cursor-pointer ${
+                      occ.alive === false
+                        ? 'bg-red-500/5 hover:bg-red-500/10 border-red-500/10 hover:border-red-500/20 opacity-60'
+                        : 'bg-white/5 hover:bg-white/10 border-transparent hover:border-outline-variant/20'
+                    }`}
+                  >
+                    {occ.alive === false ? (
+                      <span className="material-symbols-outlined text-red-400/70 text-sm flex-shrink-0">skull</span>
+                    ) : (
+                      <span
+                        className="w-2.5 h-2.5 rounded-full flex-shrink-0"
+                        style={{ backgroundColor: '#f472b6' }}
+                      />
+                    )}
+                    <span className={`text-sm truncate ${occ.alive === false ? 'text-on-surface/50 line-through decoration-red-400/30' : 'text-on-surface'}`}>{occ.name}</span>
+                    <span className="ml-auto text-[10px] text-outline shrink-0">
+                      {occ.role || 'NPC'}
+                    </span>
+                    <span className="material-symbols-outlined text-outline text-[14px] shrink-0" aria-hidden>chevron_right</span>
+                  </button>
+                </li>
+              ) : (
+                <li key={occ.id} className="flex items-center gap-2 px-2 py-1.5 rounded bg-white/5">
+                  <span
+                    className="w-2.5 h-2.5 rounded-full flex-shrink-0"
+                    style={{ backgroundColor: '#22d3ee' }}
+                  />
+                  <span className="text-on-surface text-sm truncate">{occ.name}</span>
+                  <span className="ml-auto text-[10px] text-outline">
+                    Gracz
+                  </span>
+                </li>
+              )
+            ))}
+          </ul>
+        </CollapsibleSection>
+      )}
 
       <CollapsibleSection
         title={t('locationGraph.inspector.sectionBasic', { defaultValue: 'Podstawowe' })}
@@ -224,28 +289,6 @@ function NodeInspector({ node, occupants = [], onUpdate, onDelete, mode, campaig
                 : t('locationGraph.inspector.gridDefault', { defaultValue: 'Brak — walka użyje domyślnej siatki 12×12' })}
             </div>
           </Field>
-        </CollapsibleSection>
-      )}
-
-      {occupants.length > 0 && (
-        <CollapsibleSection
-          title={t('locationGraph.inspector.sectionOccupants', { defaultValue: 'Postacie' })}
-          icon="group"
-        >
-          <ul className="space-y-1">
-            {occupants.map((occ) => (
-              <li key={occ.id} className="flex items-center gap-2 px-2 py-1.5 rounded bg-white/5">
-                <span
-                  className="w-2.5 h-2.5 rounded-full flex-shrink-0"
-                  style={{ backgroundColor: occ.type === 'player' ? '#22d3ee' : '#f472b6' }}
-                />
-                <span className="text-on-surface text-sm truncate">{occ.name}</span>
-                <span className="ml-auto text-[10px] text-outline">
-                  {occ.type === 'player' ? 'Gracz' : occ.role || 'NPC'}
-                </span>
-              </li>
-            ))}
-          </ul>
         </CollapsibleSection>
       )}
 
@@ -660,6 +703,9 @@ function NodeImageSection({ node, campaignId, onUpdate, isAdmin }) {
           <div className="flex items-center justify-between">
             <span className="text-[10px] text-outline uppercase tracking-widest">
               {t('locationGraph.inspector.availableImages', { defaultValue: 'Dostępne' })}
+              {gallery && gallery.length > 0 && (
+                <span className="ml-1 normal-case tracking-normal text-outline/60">({gallery.length})</span>
+              )}
             </span>
             <button type="button" onClick={() => setShowPicker(false)} className="text-outline hover:text-on-surface text-xs">×</button>
           </div>

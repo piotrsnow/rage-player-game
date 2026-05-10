@@ -59,7 +59,7 @@ export async function searchNPCs(campaignId, queryEmbedding, { limit = 5, minSco
   const vec = vectorLiteral(queryEmbedding);
   const rows = await prisma.$queryRaw`
     SELECT "id", "npcId", "name", "role", "personality", "attitude", "disposition",
-           "alive", "lastLocation", "factionId", "notes", "relationships",
+           "alive", "lastLocation", "factionId", "notes",
            1 - ("embedding" <=> ${vec}::vector) AS score
     FROM "CampaignNPC"
     WHERE "campaignId" = ${campaignId}::uuid

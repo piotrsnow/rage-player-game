@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { apiClient } from '../../services/apiClient';
 import { exportAsJson, exportAsMarkdown } from '../../services/exportLog';
@@ -5,6 +6,7 @@ import { getGameState } from '../../stores/gameStore';
 import { useGameSlice } from '../../stores/gameSelectors';
 import CostBadge from '../ui/CostBadge';
 import LocationChip from '../ui/LocationChip';
+import LocationDetailsModal from './LocationDetailsModal';
 import Tooltip from '../ui/Tooltip';
 import FavoriteToggle from './FavoriteToggle';
 
@@ -75,6 +77,8 @@ export default function GameplayHeader({
     || (worldLocation ? { name: worldLocation, kind: 'settled', id: null } : null);
   const prevSceneIdx = (displayedSceneIndex ?? 0) - 1;
   const previousLocSnapshot = prevSceneIdx >= 0 ? deriveLocSnapshot(scenes?.[prevSceneIdx]) : null;
+
+  const [locationDetailName, setLocationDetailName] = useState(null);
 
   return (
     <div className="flex items-center justify-between px-2">
@@ -229,7 +233,11 @@ export default function GameplayHeader({
       </div>
       <div className="flex items-center gap-4">
         {!readOnly && aiCosts?.total > 0 && <CostBadge costs={aiCosts} />}
-        <LocationChip current={currentLocSnapshot} previous={previousLocSnapshot} />
+        <LocationChip
+          current={currentLocSnapshot}
+          previous={previousLocSnapshot}
+          onClick={(loc) => setLocationDetailName(loc?.name || null)}
+        />
         {!readOnly && attrPoints > 0 && (
           <button
             onClick={onOpenAdvancement}
@@ -362,6 +370,17 @@ export default function GameplayHeader({
           </>
         )}
       </div>
+      {locationDetailName && (
+        <LocationDetailsModal
+          locationName={locationDetailName}
+          campaignId={campaignBackendId}
+          onNavigateToScene={(sceneIndex) => {
+            setViewingSceneIndex(sceneIndex);
+            handleSceneNavigation(sceneIndex);
+          }}
+          onClose={() => setLocationDetailName(null)}
+        />
+      )}
     </div>
   );
 }

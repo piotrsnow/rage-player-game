@@ -1,6 +1,6 @@
 import { BESTIARY_RACES, BESTIARY_LOCATIONS } from '../../data/equipment/index.js';
 import { detectCombatIntent } from '../../../../shared/domain/combatIntent.js';
-import { wrapPlayerInput } from '../../../../shared/domain/playerInputSanitizer.js';
+import { wrapPlayerInput, sanitizeForPrompt } from '../../../../shared/domain/playerInputSanitizer.js';
 
 const BESTIARY_RACES_STR = BESTIARY_RACES.join(', ');
 const BESTIARY_LOCATIONS_STR = BESTIARY_LOCATIONS.join(', ');
@@ -40,7 +40,7 @@ Include stateChanges: timeAdvance, currentLocation, npcs (introduce at least 1),
 
   // Incident system — humorous penalty for unfounded complaint
   if (pendingSlip) {
-    parts.push(`MANDATORY NARRATIVE EVENT: The character slips, stumbles, or trips on something in this scene. Weave it naturally into the narrative as a minor comedic moment — e.g. steps on a slippery fish, trips over a loose cobblestone, stumbles on a tree root. This is NOT a combat event, no damage, just a brief humorous moment. Reason (internal, do not reveal to player): ${pendingSlip}`);
+    parts.push(`MANDATORY NARRATIVE EVENT: The character slips, stumbles, or trips on something in this scene. Weave it naturally into the narrative as a minor comedic moment — e.g. steps on a slippery fish, trips over a loose cobblestone, stumbles on a tree root. This is NOT a combat event, no damage, just a brief humorous moment. Reason (internal, do not reveal to player): ${sanitizeForPrompt(pendingSlip, 200)}`);
   }
 
   // Needs crisis reminder
@@ -69,7 +69,7 @@ Include stateChanges: timeAdvance, currentLocation, npcs (introduce at least 1),
     const summaryArr = Array.isArray(pendingProvidence?.summary) ? pendingProvidence.summary : [];
     const summaryLine = summaryArr.length > 0 ? summaryArr.join('; ') : '(no specific corrections recorded)';
     const narratorLine = pendingProvidence?.narrativeComment
-      ? String(pendingProvidence.narrativeComment).replace(/\s+/g, ' ').trim()
+      ? sanitizeForPrompt(String(pendingProvidence.narrativeComment).replace(/\s+/g, ' ').trim(), 300)
       : '';
     parts.push(`PROVIDENCE EVENT — last scene the player flagged a continuity error and the judge ruled in their favour. The world has been silently corrected. Now weave a SHORT (1-2 paragraphs) atmospheric scene where the correction manifests through a fitting in-world mechanism — adapt the flavour to the campaign's genre and tone:
   • fantasy / mythic     → providence, fate, omen, divine whim
@@ -122,7 +122,7 @@ Do NOT re-emit the same questUpdates / npcs / location changes — they're alrea
       const reply = qb.npcSpeaker && qb.npcReply
         ? ` | NPC ${qb.npcSpeaker}: "${qb.npcReply}"`
         : '';
-      return `${i + 1}. Gracz: ${qb.playerAction}\n   DM: ${qb.narrationText}${reply}`;
+      return `${i + 1}. Gracz: ${sanitizeForPrompt(qb.playerAction, 300)}\n   DM: ${qb.narrationText}${reply}`;
     });
     parts.push(`## [RECENT QUICK BEATS] — drobne RP-bity od ostatniej pełnej sceny (kontynuuj z tego punktu, NIE powtarzaj ich):\n${beatLines.join('\n')}`);
   }
@@ -131,12 +131,12 @@ Do NOT re-emit the same questUpdates / npcs / location changes — they're alrea
   if (Array.isArray(entityTags) && entityTags.length > 0) {
     const tagLines = entityTags.map((tag) => {
       const extras = [];
-      if (tag.meta?.tree) extras.push(`drzewo: ${tag.meta.tree}`);
+      if (tag.meta?.tree) extras.push(`drzewo: ${sanitizeForPrompt(tag.meta.tree, 60)}`);
       if (tag.meta?.manaCost != null) extras.push(`koszt: ${tag.meta.manaCost} many`);
-      if (tag.meta?.role) extras.push(tag.meta.role);
-      if (tag.meta?.locationType) extras.push(tag.meta.locationType);
+      if (tag.meta?.role) extras.push(sanitizeForPrompt(tag.meta.role, 60));
+      if (tag.meta?.locationType) extras.push(sanitizeForPrompt(tag.meta.locationType, 60));
       const suffix = extras.length > 0 ? ` (${extras.join(', ')})` : '';
-      return `- ${tag.kind}: ${tag.name}${suffix}`;
+      return `- ${tag.kind}: ${sanitizeForPrompt(tag.name, 100)}${suffix}`;
     });
     parts.push(`## Entity references (player-selected)\n${tagLines.join('\n')}`);
   }

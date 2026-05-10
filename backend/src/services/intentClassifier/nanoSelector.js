@@ -11,7 +11,7 @@ import { config } from '../../config.js';
 import { childLogger } from '../../lib/logger.js';
 import { resolveModelForTask } from '../serverConfig.js';
 import { NANO_SYSTEM_PROMPT } from './nanoPrompt.js';
-import { wrapPlayerInput } from '../../../../shared/domain/playerInputSanitizer.js';
+import { wrapPlayerInput, sanitizeForPrompt } from '../../../../shared/domain/playerInputSanitizer.js';
 
 const log = childLogger({ module: 'intentClassifier' });
 
@@ -83,7 +83,7 @@ export function buildAvailableSummary(coreState, { dbNpcs = [], dbQuests = [], d
   if (prevScene?.narrative) {
     const excerpt = String(prevScene.narrative).slice(0, 800);
     const sceneTag = prevScene.sceneIndex != null ? `[Scene ${prevScene.sceneIndex}] ` : '';
-    const actionTag = prevScene.chosenAction ? `(action: "${String(prevScene.chosenAction).slice(0, 120)}") ` : '';
+    const actionTag = prevScene.chosenAction ? `(action: "${sanitizeForPrompt(prevScene.chosenAction, 120)}") ` : '';
     parts.push(`Previous scene: ${sceneTag}${actionTag}${excerpt}${prevScene.narrative.length > 800 ? '…' : ''}`);
   }
 

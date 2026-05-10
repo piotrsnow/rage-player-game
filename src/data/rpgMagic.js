@@ -22,6 +22,7 @@ export const SPELL_TREES = {
         unlockCondition: null, // starting spell
         unlockUses: 0,
         description: 'Tworzy maly impuls ognia do zapalania, aktywacji prostych obiektow albo zadania lekkich obrazen',
+        combatStats: { type: 'offensive', damage: { intScale: 0.25, flat: 0 } },
       },
       {
         name: 'Ognisty Pocisk',
@@ -31,6 +32,7 @@ export const SPELL_TREES = {
         unlockCondition: 'Iskra',
         unlockUses: 10, // 2 * (5 * 1)
         description: 'Wystrzeliwuje skupiony pocisk ognia w jeden cel',
+        combatStats: { type: 'offensive', damage: { intScale: 0.5, flat: 2 } },
       },
       {
         name: 'Kula Ognia',
@@ -40,6 +42,7 @@ export const SPELL_TREES = {
         unlockCondition: 'Ognisty Pocisk',
         unlockUses: 10, // 5 * 2
         description: 'Tworzy wybuch ognia raniacy wielu przeciwnikow na obszarze',
+        combatStats: { type: 'offensive', damage: { intScale: 0.5, flat: 4 } },
       },
     ],
   },
@@ -58,6 +61,7 @@ export const SPELL_TREES = {
         unlockCondition: null,
         unlockUses: 0,
         description: 'Uderza pojedynczy cel silnym wyladowaniem',
+        combatStats: { type: 'offensive', damage: { intScale: 0.75, flat: 0 } },
       },
       {
         name: 'Lancuch Blyskawic',
@@ -67,6 +71,7 @@ export const SPELL_TREES = {
         unlockCondition: 'Piorun',
         unlockUses: 30, // 2 * (5 * 3)
         description: 'Wyladowanie przeskakuje miedzy kilkoma przeciwnikami',
+        combatStats: { type: 'offensive', damage: { intScale: 0.5, flat: 3 } },
       },
     ],
   },
@@ -85,6 +90,7 @@ export const SPELL_TREES = {
         unlockCondition: null,
         unlockUses: 0,
         description: 'Zmniejsza obrazenia fizyczne i magiczne otrzymywane przez jeden cel',
+        combatStats: { type: 'buff' },
       },
       {
         name: 'Wielka Ochrona',
@@ -94,6 +100,7 @@ export const SPELL_TREES = {
         unlockCondition: 'Ochrona',
         unlockUses: 30,
         description: 'Znacznie silniejsza wersja zaklecia, dajaca wieksza redukcje obrazen albo dluzszy czas dzialania',
+        combatStats: { type: 'buff' },
       },
     ],
   },
@@ -112,6 +119,7 @@ export const SPELL_TREES = {
         unlockCondition: null,
         unlockUses: 0,
         description: 'Ukrywa jedna postac przed wzrokiem innych na krotki czas',
+        combatStats: { type: 'utility' },
       },
       {
         name: 'Grupowa Niewidzialnosc',
@@ -121,6 +129,7 @@ export const SPELL_TREES = {
         unlockCondition: 'Niewidzialnosc',
         unlockUses: 40,
         description: 'Ukrywa kilka bliskich sobie postaci jednoczesnie',
+        combatStats: { type: 'utility' },
       },
     ],
   },
@@ -139,6 +148,7 @@ export const SPELL_TREES = {
         unlockCondition: null,
         unlockUses: 0,
         description: 'Zadaje obrazenia od zimna i lekko spowalnia cel',
+        combatStats: { type: 'offensive', damage: { intScale: 0.33, flat: 1 } },
       },
       {
         name: 'Lodowa Bariera',
@@ -148,6 +158,7 @@ export const SPELL_TREES = {
         unlockCondition: 'Lodowy Dotyk',
         unlockUses: 20,
         description: 'Tworzy osłone z lodu absorbujaça obrazenia albo blokujaça przejscie',
+        combatStats: { type: 'buff' },
       },
       {
         name: 'Zamiec',
@@ -157,6 +168,7 @@ export const SPELL_TREES = {
         unlockCondition: 'Lodowa Bariera',
         unlockUses: 15,
         description: 'Atakuje obszar lodem i mrozem, spowalniajac wielu przeciwnikow',
+        combatStats: { type: 'offensive', damage: { intScale: 0.5, flat: 2 } },
       },
     ],
   },
@@ -175,6 +187,7 @@ export const SPELL_TREES = {
         unlockCondition: null,
         unlockUses: 0,
         description: 'Przywraca niewielka ilosc zdrowia jednej postaci',
+        combatStats: { type: 'heal', heal: { intScale: 0.33, flat: 2 } },
       },
       {
         name: 'Regeneracja',
@@ -184,6 +197,7 @@ export const SPELL_TREES = {
         unlockCondition: 'Leczenie Ran',
         unlockUses: 20,
         description: 'Leczy mocniej i moze przywracac zdrowie przez kilka tur lub chwil',
+        combatStats: { type: 'heal' },
       },
       {
         name: 'Wskrzeszenie Iskry Zycia',
@@ -193,6 +207,7 @@ export const SPELL_TREES = {
         unlockCondition: 'Regeneracja',
         unlockUses: 20,
         description: 'Ratuje swiezo powalona postac przed smiercia albo przywraca ja do stanu krytycznego',
+        combatStats: { type: 'heal' },
       },
     ],
   },
@@ -211,6 +226,7 @@ export const SPELL_TREES = {
         unlockCondition: null,
         unlockUses: 0,
         description: 'Pozwala przesuwac przedmioty, manipulowac mechanizmami i lekko odpychac cele',
+        combatStats: { type: 'utility' },
       },
       {
         name: 'Teleportacja',
@@ -220,6 +236,7 @@ export const SPELL_TREES = {
         unlockCondition: 'Telekineza',
         unlockUses: 30,
         description: 'Natychmiast przenosi postac na niewielka lub srednia odleglosc',
+        combatStats: { type: 'utility' },
       },
     ],
   },
@@ -238,6 +255,7 @@ export const SPELL_TREES = {
         unlockCondition: null,
         unlockUses: 0,
         description: 'Wywoluje lek, utrudniajac przeciwnikowi dzialanie',
+        combatStats: { type: 'control' },
       },
       {
         name: 'Sen',
@@ -247,6 +265,7 @@ export const SPELL_TREES = {
         unlockCondition: 'Strach',
         unlockUses: 20,
         description: 'Usypia slabszy cel lub grupe drobnych przeciwnikow na krotki czas',
+        combatStats: { type: 'control' },
       },
     ],
   },
@@ -265,6 +284,7 @@ export const SPELL_TREES = {
         unlockCondition: null,
         unlockUses: 0,
         description: 'Pozwala wyczuc aktywna magie, artefakty i zaklocenia magiczne w poblizu',
+        combatStats: { type: 'utility' },
       },
       {
         name: 'Tarcza Wiatru',
@@ -274,6 +294,7 @@ export const SPELL_TREES = {
         unlockCondition: 'Wykrycie Magii',
         unlockUses: 10,
         description: 'Tworzy wir ochronny utrudniajacy trafienie atakami dystansowymi',
+        combatStats: { type: 'buff' },
       },
       {
         name: 'Rozproszenie Magii',
@@ -283,6 +304,7 @@ export const SPELL_TREES = {
         unlockCondition: 'Tarcza Wiatru',
         unlockUses: 10,
         description: 'Probuje zdjac aktywny efekt magiczny albo oslabic zaklecie przeciwnika',
+        combatStats: { type: 'utility' },
       },
     ],
   },
@@ -524,6 +546,84 @@ export function getAvailableSpells(knownTrees = [], usageCounts = {}) {
     }
   }
   return available;
+}
+
+/**
+ * Compute spell damage for a given inteligencja value.
+ * Returns 0 for spells without a damage formula.
+ */
+export function computeSpellDamage(spellName, inteligencja) {
+  const found = findSpell(spellName);
+  const dmg = found?.spell?.combatStats?.damage;
+  if (!dmg) return 0;
+  return Math.max(1, Math.floor(inteligencja * dmg.intScale) + dmg.flat);
+}
+
+/**
+ * Compute spell heal for a given inteligencja value.
+ * Returns 0 for spells without a heal formula.
+ */
+export function computeSpellHeal(spellName, inteligencja) {
+  const found = findSpell(spellName);
+  const h = found?.spell?.combatStats?.heal;
+  if (!h) return 0;
+  return Math.max(1, Math.floor(inteligencja * h.intScale) + h.flat);
+}
+
+function _formatScale(scale) {
+  if (scale === 1) return 'INT';
+  if (scale === 0.5) return 'INT/2';
+  if (scale === 0.25) return 'INT/4';
+  if (scale === 0.33) return 'INT/3';
+  if (scale === 0.75) return '3/4 INT';
+  return `${scale}×INT`;
+}
+
+/**
+ * Build a human-readable stat label for a spell's combat stats.
+ * Includes DoT/HoT info from SPELL_EFFECTS when present.
+ * Returns null for spells with no displayable stats.
+ */
+export function formatSpellDamageLabel(spell) {
+  const cs = spell?.combatStats;
+  if (!cs) return null;
+
+  const fx = SPELL_EFFECTS[spell.name];
+  const dotInfo = fx?.effect?.mechanics?.dotDamage;
+  const dotDuration = fx?.effect?.duration?.remaining;
+  const hotInfo = fx?.effect?.mechanics?.dotHeal;
+  const hotDuration = fx?.effect?.duration?.remaining;
+
+  if (cs.type === 'offensive' && cs.damage) {
+    const base = _formatScale(cs.damage.intScale);
+    const flat = cs.damage.flat > 0 ? ` + ${cs.damage.flat}` : '';
+    let label = `${base}${flat} obrz.`;
+    if (dotInfo) label += ` | DoT: ${dotInfo}/rd (${dotDuration} rd)`;
+    return label;
+  }
+
+  if (cs.type === 'heal' && cs.heal) {
+    const base = _formatScale(cs.heal.intScale);
+    const flat = cs.heal.flat > 0 ? ` + ${cs.heal.flat}` : '';
+    let label = `Leczy ${base}${flat} HP`;
+    if (hotInfo) label += ` | HoT: ${hotInfo}/rd (${hotDuration} rd)`;
+    return label;
+  }
+
+  if (cs.type === 'heal' && !cs.heal) {
+    if (hotInfo) return `HoT: ${hotInfo}/rd (${hotDuration} rd)`;
+    return null;
+  }
+
+  if (cs.type === 'control' && fx) {
+    return fx.effect.description;
+  }
+
+  if (cs.type === 'buff' && fx) {
+    return fx.effect.description;
+  }
+
+  return null;
 }
 
 /**

@@ -21,6 +21,19 @@ function DamageTypeLabel({ damageType, t }) {
   return null;
 }
 
+function weaponFormulaLabel(combat, t) {
+  const bonus = combat.bonus ?? 0;
+  const bonusStr = bonus !== 0 ? ` + ${bonus}` : '';
+  switch (combat.damageType) {
+    case 'melee-1h':       return `${t('rpgAttributeShort.sila', 'SIŁ')}${bonusStr}`;
+    case 'melee-2h':       return `${t('rpgAttributeShort.sila', 'SIŁ')} ×2${bonusStr}`;
+    case 'ranged-dex':     return `${t('rpgAttributeShort.zrecznosc', 'ZRĘ')}${bonusStr}`;
+    case 'ranged-str-dex': return `${t('rpgAttributeShort.sila', 'SIŁ')} + ${t('rpgAttributeShort.zrecznosc', 'ZRĘ')}${bonusStr}`;
+    case 'ranged-fixed':   return `${combat.fixedDamage ?? 0}`;
+    default:               return `+${bonus}`;
+  }
+}
+
 export default function ItemTooltip({ item }) {
   const { t } = useTranslation();
 
@@ -81,14 +94,17 @@ export default function ItemTooltip({ item }) {
               {t('inventory.damage', 'Obrażenia')}
             </span>
             <span className="font-headline text-sm text-error">
-              {combat.damageType === 'ranged-fixed'
-                ? `${combat.fixedDamage ?? 0}`
-                : `+${combat.bonus ?? 0}`}
+              {weaponFormulaLabel(combat, t)}
             </span>
             {combat.twoHanded && (
               <span className="text-[11px] font-label text-on-surface-variant/50 ml-auto">2H</span>
             )}
           </div>
+          {combat.damageType !== 'ranged-fixed' && (
+            <div className="text-[10px] text-on-surface-variant/50 font-label leading-tight">
+              {t('inventory.damageFormulaSuffix', '- WYT celu - Pancerz = finalne obrażenia')}
+            </div>
+          )}
           <div className="text-[11px] text-on-surface-variant/60 font-label">
             <DamageTypeLabel damageType={combat.damageType} t={t} />
             {combat.range && <span> · {t('inventory.range', 'Zasięg')} {combat.range}</span>}
@@ -115,6 +131,9 @@ export default function ItemTooltip({ item }) {
             <span className="font-headline text-sm text-primary">
               {combat.damageReduction ?? 0}
             </span>
+          </div>
+          <div className="text-[10px] text-on-surface-variant/50 font-label leading-tight">
+            {t('inventory.armourAbsorbHint', { dr: combat.damageReduction ?? 0, defaultValue: `Pochłania ${combat.damageReduction ?? 0} obrażeń z każdego trafienia` })}
           </div>
           {combat.dodgePenalty !== 0 && combat.dodgePenalty != null && (
             <div className="text-[11px] text-on-surface-variant/60 font-label">

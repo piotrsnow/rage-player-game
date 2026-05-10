@@ -195,6 +195,15 @@ export function useLocationGraph(campaignId, options = {}) {
     return apiClient.request(`${BASE}/${campaignId}/location-graph/validate`, { method: 'POST' });
   }, [campaignId]);
 
+  const fetchNpcDetails = useCallback(async (npcId, { limit = 100 } = {}) => {
+    const qs = new URLSearchParams();
+    if (limit) qs.set('limit', String(limit));
+    const suffix = qs.toString() ? `?${qs}` : '';
+    return apiClient.request(
+      `${BASE}/${campaignId}/location-graph/npcs/${npcId}/details${suffix}`,
+    );
+  }, [campaignId]);
+
   const selectedNode = selected?.type === 'node' ? nodes.find((n) => n.id === selected.id) : null;
   const selectedEdge = selected?.type === 'edge' ? edges.find((e) => e.id === selected.id) : null;
 
@@ -213,5 +222,6 @@ export function useLocationGraph(campaignId, options = {}) {
     fetchGraph, createNode, updateNode, deleteNode,
     createEdge, updateEdge, deleteEdge,
     moveNpc, validate,
+    fetchNpcDetails,
   };
 }

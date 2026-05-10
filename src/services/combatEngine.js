@@ -3,7 +3,7 @@ import { rollLuckCheck } from '../../shared/domain/luck.js';
 import { computeEffectiveMods, tickEffects, isRestricted, addEffect } from '../../shared/domain/statusEffects.js';
 import { gameData } from './gameDataService';
 import { DIFFICULTY_THRESHOLDS, COMBAT_SKILL_XP, WEAPON_SKILL_MAP } from '../data/rpgSystem';
-import { SPELL_EFFECTS } from '../data/rpgMagic.js';
+import { SPELL_EFFECTS, findSpell } from '../data/rpgMagic.js';
 import { calculateCreativityBonus } from './mechanics/creativityBonus';
 import { resolveD50Test } from './mechanics/d50Test';
 import { castSpell } from './magicEngine.js';
@@ -964,7 +964,11 @@ export function resolveManoeuvre(combat, actorId, manoeuvreKey, targetId, option
     };
 
     if (test.success) {
-      const baseDamage = Math.max(1, Math.floor(inteligencja / 2));
+      const spellStats = spellName ? findSpell(spellName)?.spell?.combatStats : null;
+      const dmg = spellStats?.damage;
+      const baseDamage = dmg
+        ? Math.max(1, Math.floor(inteligencja * dmg.intScale) + dmg.flat)
+        : Math.max(1, Math.floor(inteligencja / 2));
       const toughness = getToughness(target);
       const magicTargetMods = computeEffectiveMods(target.activeEffects);
       let totalDamage = Math.max(1, baseDamage - Math.floor(toughness / 3) - magicTargetMods.damageReduction);

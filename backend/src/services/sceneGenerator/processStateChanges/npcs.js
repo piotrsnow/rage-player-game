@@ -4,12 +4,16 @@ import { buildNPCEmbeddingText, embedText } from '../../embeddingService.js';
 import { writeEmbedding } from '../../embeddingWrite.js';
 import { updateLoyalty } from '../../livingWorld/companionService.js';
 import { appendEvent } from '../../livingWorld/worldEventLog.js';
-import { resolveLocationByName, findCanonicalWorldNpcByName } from '../../livingWorld/worldStateService.js';
+import { resolveLocationByName, findCanonicalWorldNpcByName, killWorldNpc } from '../../livingWorld/worldStateService.js';
 import { getOrCloneCampaignNpc } from '../../livingWorld/campaignSandbox.js';
 import { propagateRelationshipRipple } from '../../livingWorld/relationshipRippleService.js';
 import { coerceGender, normalizeGender } from '../../../../../shared/domain/npcGender.js';
 import { NPC_RACES } from '../../../../../shared/domain/npcRaces.js';
 import { generateNpcSheet, mergeSheetOverride } from '../../npcs/npcCharacterSheet.js';
+import {
+  appendCampaignNpcLocationMovement,
+  NPC_LOCATION_MOVE_SOURCE_SCENE,
+} from '../../livingWorld/campaignNpcLocationMovement.js';
 
 const log = childLogger({ module: 'sceneGenerator' });
 
@@ -129,6 +133,8 @@ export async function processNpcChanges(campaignId, npcs, { livingWorldEnabled =
 
         // Refresh lastLocationKind/Id so the location-graph inspector tracks
         // NPC movement. Skip when NPC is being killed/removed.
+        /** @type {{ kind: string, id: string } | null} */
+        let newLocRefForLog = null;
         if (npcChange.alive !== false) {
           let resolvedLocRef = null;
           if (npcChange.lastLocation) {
@@ -143,6 +149,7 @@ export async function processNpcChanges(campaignId, npcs, { livingWorldEnabled =
               (resolvedLocRef.kind !== existing.lastLocationKind || resolvedLocRef.id !== existing.lastLocationId)) {
             contentUpdate.lastLocationKind = resolvedLocRef.kind;
             contentUpdate.lastLocationId = resolvedLocRef.id;
+            newLocRefForLog = resolvedLocRef;
           }
         }
 
@@ -212,12 +219,34 @@ export async function processNpcChanges(campaignId, npcs, { livingWorldEnabled =
           if (merged.creatureKind && merged.creatureKind !== existing.creatureKind) contentUpdate.creatureKind = merged.creatureKind;
         }
 
+        // Synchronous WorldNPC kill — close the timing gap where another
+        // campaign could clone a dead NPC between scene-commit and async
+        // post-scene work. `killWorldNpc` is idempotent; `reputationHook`
+        // still runs the judge + attribution + event as a safety net.
+        if (npcChange.alive === false) {
+          const effectiveWorldNpcId = contentUpdate.worldNpcId || existing.worldNpcId;
+          if (effectiveWorldNpcId) {
+            await killWorldNpc(effectiveWorldNpcId);
+          }
+        }
+
         const hasContentUpdate = Object.keys(contentUpdate).length > 0 || Array.isArray(npcChange.relationships);
         const statsDelta = computeInteractionDelta(existing, sceneIndex);
         const updated = await prisma.campaignNPC.update({
           where: { id: existing.id },
           data: { ...statsDelta, ...contentUpdate },
         });
+        if (newLocRefForLog) {
+          await appendCampaignNpcLocationMovement(prisma, {
+            campaignNpcId: existing.id,
+            fromKind: existing.lastLocationKind,
+            fromId: existing.lastLocationId,
+            toKind: newLocRefForLog.kind,
+            toId: newLocRefForLog.id,
+            source: NPC_LOCATION_MOVE_SOURCE_SCENE,
+            sceneIndex,
+          });
+        }
         if (Array.isArray(npcChange.relationships)) {
           await replaceNpcRelationships(existing.id, npcChange.relationships);
         }
@@ -264,6 +293,10 @@ export async function processNpcChanges(campaignId, npcs, { livingWorldEnabled =
           if (canonicalMatch) {
             const cloned = await getOrCloneCampaignNpc(campaignId, canonicalMatch.id);
             if (cloned) {
+              const prevKind = cloned.lastLocationKind;
+              const prevId = cloned.lastLocationId;
+              const nextKind = locRef?.kind || cloned.lastLocationKind || null;
+              const nextId = locRef?.id || cloned.lastLocationId || null;
               created = await prisma.campaignNPC.update({
                 where: { id: cloned.id },
                 data: {
@@ -278,11 +311,22 @@ export async function processNpcChanges(campaignId, npcs, { livingWorldEnabled =
                   creatureKind: stats.creatureKind,
                   level: stats.level,
                   stats,
-                  lastLocationKind: locRef?.kind || cloned.lastLocationKind || null,
-                  lastLocationId: locRef?.id || cloned.lastLocationId || null,
+                  lastLocationKind: nextKind,
+                  lastLocationId: nextId,
                   ...initialInteractionFields(sceneIndex),
                 },
               });
+              if (nextKind && nextId && (prevKind !== nextKind || prevId !== nextId)) {
+                await appendCampaignNpcLocationMovement(prisma, {
+                  campaignNpcId: created.id,
+                  fromKind: prevKind,
+                  fromId: prevId,
+                  toKind: nextKind,
+                  toId: nextId,
+                  source: NPC_LOCATION_MOVE_SOURCE_SCENE,
+                  sceneIndex,
+                });
+              }
             }
           }
 
@@ -308,6 +352,17 @@ export async function processNpcChanges(campaignId, npcs, { livingWorldEnabled =
                 ...initialInteractionFields(sceneIndex),
               },
             });
+            if (created.lastLocationKind && created.lastLocationId) {
+              await appendCampaignNpcLocationMovement(prisma, {
+                campaignNpcId: created.id,
+                fromKind: null,
+                fromId: null,
+                toKind: created.lastLocationKind,
+                toId: created.lastLocationId,
+                source: NPC_LOCATION_MOVE_SOURCE_SCENE,
+                sceneIndex,
+              });
+            }
           }
 
           if (Array.isArray(npcChange.relationships) && npcChange.relationships.length > 0) {

@@ -1,6 +1,7 @@
 import { pickChatterLine } from '../../../../shared/domain/npcChatterPool.js';
 import { buildNarrativeContext } from '../locationGraph/graphContextBuilder.js';
 import { childLogger } from '../../lib/logger.js';
+import { sanitizeForPrompt } from '../../../../shared/domain/playerInputSanitizer.js';
 
 const log = childLogger({ module: 'contextSection' });
 
@@ -26,6 +27,18 @@ export function buildContextSection(contextBlocks) {
   // facts.
   if (contextBlocks.worldLore) {
     parts.push(`[WORLD LORE]\n${contextBlocks.worldLore}\n[/WORLD LORE]`);
+  }
+
+  // Death reveals — NPCs who died in another campaign since the last scene.
+  // Injected before NPC context so the AI knows these characters are gone.
+  if (Array.isArray(contextBlocks.deathReveals) && contextBlocks.deathReveals.length > 0) {
+    const names = contextBlocks.deathReveals.map((d) => d.name);
+    parts.push(
+      `[DEATH_REVEALS]\n` +
+      `Docierają wieści, że następujące postacie zginęły: ${names.join(', ')}.\n` +
+      `Narratuj to naturalnie — plotka, posłaniec, przeczucie. NIE wskrzeszaj tych postaci.\n` +
+      `[/DEATH_REVEALS]`,
+    );
   }
 
   // NPCs
@@ -84,7 +97,7 @@ export function buildContextSection(contextBlocks) {
   if (contextBlocks.travelFailure) {
     parts.push(
       `[TRAVEL_FAILURE]\n` +
-      `Gracz próbował odbyć daleką podróż, ale nie może — powód: "${contextBlocks.travelFailure.reason}"\n` +
+      `Gracz próbował odbyć daleką podróż, ale nie może — powód: "${sanitizeForPrompt(contextBlocks.travelFailure.reason, 200)}"\n` +
       `Opisz kolorową, zabawną porażkę podróży. Postać wyrusza ale coś ją powstrzymuje.\n` +
       `BEZWZGLĘDNE ZASADY:\n` +
       `- NIE emituj stateChanges.currentLocation (postać zostaje w miejscu)\n` +

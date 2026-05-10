@@ -65,6 +65,8 @@ export function useNarratorQueue({
   const [currentCharacter, setCurrentCharacter] = useState(null);
   const [loadingSegmentIndices, setLoadingSegmentIndices] = useState(new Set());
 
+  const [isStreamingState, setIsStreamingState] = useState(false);
+
   const queueRef = useRef([]);
   const abortRef = useRef(false);
   const generationRef = useRef(0);
@@ -470,6 +472,7 @@ export function useNarratorQueue({
     if (!defaultVoiceId || (!viewerMode && !hasApiKey(activeTtsProvider))) {
       reportNarratorError(`Narrator unavailable: configure a voice and ${activeTtsProvider} backend key in Settings.`);
       streamingRef.current = null;
+      setIsStreamingState(false);
       return;
     }
 
@@ -583,6 +586,7 @@ export function useNarratorQueue({
       }
       fullCleanup();
       streamingRef.current = null;
+      setIsStreamingState(false);
       setPlaybackState(STATES.IDLE);
       setCurrentMessageId(null);
       setCurrentSegmentIndex(-1);
@@ -593,6 +597,7 @@ export function useNarratorQueue({
     }
 
     streamingRef.current = null;
+    setIsStreamingState(false);
     if (generationRef.current === myGeneration) {
       fullCleanup();
       setPlaybackState(STATES.IDLE);
@@ -614,6 +619,7 @@ export function useNarratorQueue({
       streamingRef.current.finished = true;
       streamingRef.current.segments = [];
       streamingRef.current = null;
+      setIsStreamingState(false);
     }
     fullCleanup();
     remainingTextCharsRef.current = 0;
@@ -687,6 +693,7 @@ export function useNarratorQueue({
       sentCount: 0,
       finished: false,
     };
+    setIsStreamingState(true);
     abortRef.current = false;
     Promise.resolve().then(() => processStreamingQueueRef.current?.());
   }, [stop]);
@@ -751,7 +758,7 @@ export function useNarratorQueue({
     startStreaming,
     pushStreamingSegments,
     finishStreaming,
-    isStreaming: !!streamingRef.current,
+    isStreaming: isStreamingState,
     stop,
     stopNarratorPlayback,
     abortRef,

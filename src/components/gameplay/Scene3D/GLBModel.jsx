@@ -52,6 +52,21 @@ export default function GLBModel({ url, fallback = null, onError = null }) {
     return clone;
   }, [gltf]);
 
+  useEffect(() => {
+    if (!cloned) return undefined;
+    return () => {
+      cloned.traverse((child) => {
+        if (!child.isMesh) return;
+        child.geometry?.dispose();
+        if (Array.isArray(child.material)) {
+          child.material.forEach((m) => m.dispose());
+        } else {
+          child.material?.dispose();
+        }
+      });
+    };
+  }, [cloned]);
+
   if (failed) return fallback;
   if (!cloned) return fallback;
 

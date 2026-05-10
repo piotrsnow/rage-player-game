@@ -7,6 +7,7 @@ import {
   revokeRefreshToken,
 } from '../services/refreshTokenService.js';
 import { generateCsrfToken, CSRF_COOKIE } from '../plugins/csrf.js';
+import { issueWsTicket } from '../services/wsTicketService.js';
 
 // /v1/auth — cookie-based refresh token flow (formerly /v2/auth, collapsed
 // 2026-04-14 since there's no prod to maintain backward compat for).
@@ -298,5 +299,9 @@ export async function authRoutes(fastify) {
     }
 
     return resolved;
+  });
+
+  fastify.post('/ws-ticket', { onRequest: [fastify.authenticate] }, async (request) => {
+    return { ticket: issueWsTicket(request.user.id) };
   });
 }

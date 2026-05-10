@@ -119,15 +119,14 @@ export async function handlePostSceneWork({
       prevLoc, sceneIndex: scene.sceneIndex, currentRef,
     }));
   }
-  phase1Tasks.push(
-    compressSceneToSummary(campaignId, sceneTranscript, playerAction, provider, {
-      timeoutMs: llmNanoTimeoutMs,
-      sceneIndex: scene.sceneIndex,
-      wrapupText,
-      dialogueText: sceneDialogueOnly,
-      allowedLocationNames,
-    }),
-  );
+  const compressPromise = compressSceneToSummary(campaignId, sceneTranscript, playerAction, provider, {
+    timeoutMs: llmNanoTimeoutMs,
+    sceneIndex: scene.sceneIndex,
+    wrapupText,
+    dialogueText: sceneDialogueOnly,
+    allowedLocationNames,
+  });
+  phase1Tasks.push(compressPromise);
   if (newLoc && prevLoc && newLoc !== prevLoc) {
     phase1Tasks.push(
       generateLocationSummary(campaignId, newLoc, prevLoc, provider, { timeoutMs: llmNanoTimeoutMs }),
@@ -302,12 +301,16 @@ export async function handlePostSceneWork({
   // advancement happens exclusively via the admin panel "Manual Tick" button
   // (POST /v1/admin/livingWorld/npcs/:id/tick) until a redesign lands.
 
-  // Phase 2: process nano-extracted knowledge/codex from compressSceneToSummary
-  // The compress call is at index 1 (if stateChanges) or 1 (if no stateChanges) — find it
-  const compressIdx = stateChanges ? 2 : 1;
-  const compressResult = results[compressIdx];
-  if (compressResult?.status === 'fulfilled' && compressResult.value) {
-    const nanoState = compressResult.value;
+  // Phase 2: process nano-extracted knowledge/codex from compressSceneToSummary.
+  // compressPromise already settled inside Promise.allSettled above — re-await
+  // is free and avoids fragile array-index math.
+  let nanoState = null;
+  try {
+    nanoState = await compressPromise;
+  } catch {
+    // already logged via Promise.allSettled failure path below
+  }
+  if (nanoState) {
     const nanoChanges = {};
     if (nanoState.knowledgeUpdates) nanoChanges.knowledgeUpdates = nanoState.knowledgeUpdates;
     if (nanoState.codexUpdates?.length) nanoChanges.codexUpdates = nanoState.codexUpdates;
@@ -359,9 +362,8 @@ export async function handlePostSceneWork({
   const digestLocationName = newLoc || prevLoc;
   if (digestLocationName) {
     let digestText = playerAction || '';
-    if (compressResult?.status === 'fulfilled' && compressResult.value) {
-      const nano = compressResult.value;
-      const majorFact = nano._majorMemoryText;
+    if (nanoState) {
+      const majorFact = nanoState._majorMemoryText;
       if (majorFact) digestText = majorFact;
     }
     if (digestText) {

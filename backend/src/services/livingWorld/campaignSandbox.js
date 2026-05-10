@@ -11,13 +11,15 @@
 //       Lazy "clone on first encounter" — returns the CampaignNPC shadow,
 //       creating a snapshot from WorldNPC if the campaign hasn't met this
 //       NPC yet.
-//   - setCampaignNpcLocation(campaignId, worldNpcId, locationId)
-//       Write CampaignNPC.lastLocationId. Never touches WorldNPC.
-//   - listNpcsAtLocation(locationId, { campaignId, aliveOnly })
+//   - setCampaignNpcLocation(campaignId, worldNpcId, ref)
+//       Write CampaignNPC.lastLocation{Kind,Id}. Never touches WorldNPC.
+//   - listNpcsAtLocation(locationId, { campaignId, locationKind, aliveOnly })
 //       Campaign-aware enumerator: returns the union of CampaignNPC shadows
-//       whose lastLocationId=locationId AND canonical WorldNPCs currently
+//       whose lastLocation{Kind,Id} match AND canonical WorldNPCs currently
 //       at the same location (auto-cloning any not yet shadowed). Falls
 //       back to the canonical-only list if no campaignId is provided.
+//       When locationKind='campaign', skips canonical auto-clone (no
+//       WorldNPCs live at CampaignLocations).
 //
 // Back-compat note: `worldStateService.listNpcsAtLocation` still exists and
 // returns the raw canonical list. Scene-gen should migrate to the helper
@@ -26,6 +28,7 @@
 
 import { prisma } from '../../lib/prisma.js';
 import { childLogger } from '../../lib/logger.js';
+import { LOCATION_KIND_CAMPAIGN } from '../locationRefs.js';
 import { listNpcsAtLocation as listWorldNpcsAtLocation } from './worldStateService.js';
 import { categorize } from './questGoalAssigner.js';
 
@@ -55,6 +58,7 @@ export async function getOrCloneCampaignNpc(campaignId, worldNpcId) {
 
     const world = await prisma.worldNPC.findUnique({ where: { id: worldNpcId } });
     if (!world) return null;
+    if (world.alive === false) return null;
 
     const npcIdSlug = slugifyName(world.name) || world.canonicalId || world.id;
     const category = world.category || categorize(world.role);
@@ -239,7 +243,7 @@ function enrichedShape(shadow, world = null) {
  * `campaignId=null` falls back to the canonical-only view (used by admin
  * map + cross-campaign queries).
  */
-export async function listNpcsAtLocation(locationId, { campaignId = null, aliveOnly = true } = {}) {
+export async function listNpcsAtLocation(locationId, { campaignId = null, locationKind = null, aliveOnly = true } = {}) {
   if (!locationId) return [];
   if (!campaignId) {
     return listWorldNpcsAtLocation(locationId, { aliveOnly });
@@ -247,6 +251,7 @@ export async function listNpcsAtLocation(locationId, { campaignId = null, aliveO
 
   try {
     const shadowWhere = { campaignId, lastLocationId: locationId };
+    if (locationKind) shadowWhere.lastLocationKind = locationKind;
     if (aliveOnly) shadowWhere.alive = true;
     const shadows = await prisma.campaignNPC.findMany({ where: shadowWhere });
 
@@ -262,6 +267,9 @@ export async function listNpcsAtLocation(locationId, { campaignId = null, aliveO
       .filter(Boolean);
 
     // Canonical WorldNPCs currently here — clone any not yet shadowed.
+    // Skip when the target is a CampaignLocation — canonical NPCs are only
+    // positioned at WorldLocations so there's nothing to auto-clone.
+    if (locationKind === LOCATION_KIND_CAMPAIGN) return enrichedShadows;
     const canonicalHere = await listWorldNpcsAtLocation(locationId, { aliveOnly });
     const shadowedWorldIds = new Set(shadows.map((s) => s.worldNpcId).filter(Boolean));
     const toClone = canonicalHere.filter((w) => !shadowedWorldIds.has(w.id));

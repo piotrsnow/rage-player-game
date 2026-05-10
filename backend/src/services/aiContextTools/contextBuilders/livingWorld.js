@@ -1,7 +1,7 @@
 import { prisma } from '../../../lib/prisma.js';
 import { childLogger } from '../../../lib/logger.js';
 import { getCampaignCharacterIds } from '../../campaignSync.js';
-import { resolveWorldLocation } from '../../livingWorld/worldStateService.js';
+import { resolveLocationByName } from '../../livingWorld/worldStateService.js';
 import { listNpcsAtLocation } from '../../livingWorld/campaignSandbox.js';
 import { forLocation as worldEventsForLocation, parseEventPayload } from '../../livingWorld/worldEventLog.js';
 import { getCompanions } from '../../livingWorld/companionService.js';
@@ -9,7 +9,7 @@ import { getReputationProfile, maybeClearVendetta } from '../../livingWorld/repu
 import { suggestEncounterMode } from '../../livingWorld/encounterEscalator.js';
 import { readDmAgentState } from '../../livingWorld/dmMemoryService.js';
 import { normalizeLanguage } from '../../livingWorld/contentLocalizer.js';
-import { LOCATION_KIND_WORLD } from '../../locationRefs.js';
+import { LOCATION_KIND_WORLD, LOCATION_KIND_CAMPAIGN } from '../../locationRefs.js';
 
 import { buildSettlementBlock } from './settlement.js';
 import { buildSeededSettlementsBlock } from './seededSettlements.js';
@@ -64,8 +64,14 @@ export async function buildLivingWorldContext(campaignId, currentLocation, { tra
 
   const contentLanguage = normalizeLanguage(campaign.user?.contentLanguage);
 
-  const location = await resolveWorldLocation(currentLocation);
-  if (!location) return null;
+  const resolved = await resolveLocationByName(currentLocation, { campaignId });
+  if (!resolved) return null;
+  const locationKind = resolved.kind;
+  const location = resolved.row;
+  // CampaignLocation uses `name` instead of `canonicalName` — normalize for downstream consumers.
+  if (locationKind === LOCATION_KIND_CAMPAIGN && !location.canonicalName) {
+    location.canonicalName = location.name;
+  }
 
   const characterIds = await getCampaignCharacterIds(campaignId);
   const actorCharacterId = characterIds[0] || null;
@@ -75,7 +81,7 @@ export async function buildLivingWorldContext(campaignId, currentLocation, { tra
   // + recent world events + any companions travelling with the party
   // (Phase 2) + lazy vendetta clear + Phase 4 DM agent memory.
   const [npcs, events, companions, , dmState] = await Promise.all([
-    listNpcsAtLocation(location.id, { campaignId, aliveOnly: true }).catch(() => []),
+    listNpcsAtLocation(location.id, { campaignId, locationKind: LOCATION_KIND_WORLD, aliveOnly: true }).catch(() => []),
     worldEventsForLocation({
       locationId: location.id,
       campaignId,
@@ -153,7 +159,7 @@ export async function buildLivingWorldContext(campaignId, currentLocation, { tra
       campaignId,
       userId: campaign.userId,
       campaign,
-      startLocation: { ...location, kind: LOCATION_KIND_WORLD },
+      startLocation: { ...location, kind: locationKind },
       targetName: travelTarget,
       directionalMove,
     }).catch((err) => {

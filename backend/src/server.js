@@ -57,6 +57,7 @@ import {
 import { prisma } from './lib/prisma.js';
 import { logger } from './lib/logger.js';
 import { startPeriodicCleanup as startRefreshTokenCleanup, stopPeriodicCleanup as stopRefreshTokenCleanup } from './services/refreshTokenService.js';
+import { startWsTicketCleanup, stopWsTicketCleanup } from './services/wsTicketService.js';
 
 const __dirname = fileURLToPath(new URL('.', import.meta.url));
 const STATIC_ROOT = resolve(__dirname, '..', 'public', 'dist');
@@ -331,6 +332,7 @@ await fastify.register(async (app) => {
 
 startRoomCleanup();
 startRefreshTokenCleanup();
+startWsTicketCleanup();
 
 if (existsSync(STATIC_ROOT)) {
   await fastify.register(fastifyStatic, {
@@ -388,6 +390,7 @@ async function gracefulShutdown(signal) {
 
   stopRoomCleanup();
   stopRefreshTokenCleanup();
+  stopWsTicketCleanup();
 
   try {
     const savedCount = await saveAllActiveRooms();

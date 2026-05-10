@@ -246,11 +246,67 @@ export async function loadCharacter(id) {
   return characters.find((c) => c.localId === id || c.backendId === id) || null;
 }
 
-/**
- * Apply an AI/manual state-change delta directly to a Character record.
- * Backend-authoritative — returns the updated, deserialized Character snapshot.
- * Used for manual mutations (equip, advancement) that bypass the AI scene flow.
- */
+const CHARACTER_EXPORT_FIELDS = [
+  'name', 'age', 'gender', 'species',
+  'attributes', 'skills',
+  'wounds', 'maxWounds', 'movement',
+  'characterLevel', 'characterXp', 'attributePoints',
+  'mana', 'spells',
+  'inventory', 'materialBag', 'money', 'equipped',
+  'statuses', 'needs',
+  'backstory', 'customAttackPresets',
+  'portraitUrl', 'spriteUrl', 'voiceId', 'voiceName',
+  'skillBadges', 'titles', 'activeTitleId',
+];
+
+export function exportCharacter(character) {
+  const stripped = {};
+  for (const key of CHARACTER_EXPORT_FIELDS) {
+    if (character[key] !== undefined) stripped[key] = character[key];
+  }
+  const payload = {
+    _meta: {
+      app: 'nikczemny_krzemuch',
+      type: 'character',
+      version: 1,
+      exportedAt: new Date().toISOString(),
+    },
+    character: stripped,
+  };
+  const json = JSON.stringify(payload, null, 2);
+  const blob = new Blob([json], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  const safeName = (character.name || 'postac').replace(/[^a-zA-Z0-9ąćęłńóśźżĄĆĘŁŃÓŚŹŻ_-]/g, '_');
+  a.download = `${safeName}.json`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+export function parseCharacterFile(file) {
+  return file.text().then((text) => {
+    const data = JSON.parse(text);
+    if (!data._meta || data._meta.app !== 'nikczemny_krzemuch' || data._meta.type !== 'character') {
+      throw new Error('Invalid character file');
+    }
+    if (!data.character?.name) throw new Error('Missing character name');
+    const ch = {};
+    for (const key of CHARACTER_EXPORT_FIELDS) {
+      if (data.character[key] !== undefined) ch[key] = data.character[key];
+    }
+    ch.age = normalizeCharacterAge(ch.age);
+    return ch;
+  });
+}
+
+export async function importCharacterFromFile(file) {
+  const ch = await parseCharacterFile(file);
+  return saveCharacter(ch);
+}
+
 export async function patchCharacterStateChanges(characterId, changes) {
   if (!characterId || !apiClient.isConnected()) return null;
   try {

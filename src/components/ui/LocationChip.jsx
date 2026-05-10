@@ -9,7 +9,7 @@ function nameOf(loc) {
   return loc.name || null;
 }
 
-export default function LocationChip({ current, previous }) {
+export default function LocationChip({ current, previous, onClick }) {
   const { t } = useTranslation();
   const [stage, setStage] = useState('idle');
   const [glowing, setGlowing] = useState(false);
@@ -38,13 +38,17 @@ export default function LocationChip({ current, previous }) {
   const wandering = !curName && current?.kind === 'wandering';
   const hasLocation = !!curName;
 
+  const clickable = !!onClick && hasLocation;
   const pillBase = 'flex items-center gap-1.5 text-[11px] font-bold px-2.5 py-1 rounded-full transition-all duration-500';
+  const pillClick = clickable ? 'cursor-pointer hover:ring-1 hover:ring-primary/30' : '';
   const pillIdle = 'bg-surface-container-high/60 text-on-surface-variant';
   const pillGlow = 'bg-primary/15 text-primary ring-2 ring-primary/40 shadow-[0_0_12px_rgba(197,154,255,0.35)]';
 
+  const handleClick = clickable ? () => onClick(current) : undefined;
+
   if (stage === 'transitioning' && prevName && curName) {
     return (
-      <div className={`${pillBase} ${pillGlow} animate-fade-in`}>
+      <div className={`${pillBase} ${pillGlow} ${pillClick} animate-fade-in`} onClick={handleClick}>
         <span className="material-symbols-outlined text-sm text-primary">location_on</span>
         <span className="text-outline/60 line-through text-[10px]">{prevName}</span>
         <span className="material-symbols-outlined text-[10px] text-primary animate-pulse">arrow_forward</span>
@@ -54,7 +58,7 @@ export default function LocationChip({ current, previous }) {
   }
 
   return (
-    <div className={`${pillBase} ${glowing ? pillGlow : pillIdle}`}>
+    <div className={`${pillBase} ${glowing ? pillGlow : pillIdle} ${pillClick}`} onClick={handleClick}>
       <span className={`material-symbols-outlined text-sm ${glowing ? 'text-primary' : ''}`}>location_on</span>
       <span className={wandering ? 'opacity-60 italic' : hasLocation ? '' : 'opacity-40'}>
         {curName || t('locationChip.wandering', 'W drodze')}

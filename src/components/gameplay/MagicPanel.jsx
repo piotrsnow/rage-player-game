@@ -8,7 +8,7 @@ import {
   getSpellProgressionStatus,
   resolveKnownSpellDisplay,
 } from '../../services/magicEngine';
-import { SPELL_TREES } from '../../data/rpgMagic';
+import { SPELL_TREES, formatSpellDamageLabel, computeSpellDamage, computeSpellHeal } from '../../data/rpgMagic';
 
 function SectionToggle({ label, icon, open, onToggle, badge, children, desc }) {
   return (
@@ -226,6 +226,19 @@ export default function MagicPanel({ character, combat, onCastSpell }) {
                             </span>
                           </div>
                           <div className="text-[9px] text-on-surface-variant/90 leading-tight line-clamp-2">{s.description}</div>
+                          {(() => {
+                            const label = formatSpellDamageLabel(s);
+                            if (!label) return null;
+                            const int = character?.attributes?.inteligencja || 0;
+                            const dmgVal = computeSpellDamage(s.name, int);
+                            const healVal = computeSpellHeal(s.name, int);
+                            const preview = dmgVal > 0 ? ` (${dmgVal})` : healVal > 0 ? ` (${healVal})` : '';
+                            return (
+                              <div className="text-[8px] text-tertiary/80 leading-tight mt-0.5 font-label tabular-nums">
+                                {label}{preview && <span className="text-on-surface-variant/60">{preview}</span>}
+                              </div>
+                            );
+                          })()}
                         </button>
                       );
                     })}

@@ -221,9 +221,18 @@ export async function generateSceneStream(campaignId, playerAction, options = {}
     // 2d. Clone reconciliation — catch divergence from other campaigns
     // before assembleContext surfaces the NPC roster. Best-effort; any
     // failure drops through with legacy clone state (non-blocking).
+    // Collect death reveals so we can inject them into context for the AI.
+    const deathReveals = [];
     if (livingWorldEnabled) {
       try {
-        await reconcileCloneBatch({ campaignId });
+        await reconcileCloneBatch({
+          campaignId,
+          emitRevealEvent: ({ campaignNpc, verdict }) => {
+            if (verdict === 'announce_death' && campaignNpc?.name) {
+              deathReveals.push({ name: campaignNpc.name });
+            }
+          },
+        });
       } catch (err) {
         log.warn({ err, campaignId }, 'reconcileCloneBatch failed (non-fatal)');
       }
@@ -234,10 +243,13 @@ export async function generateSceneStream(campaignId, playerAction, options = {}
     const inlineKeys = getInlineEntityKeys(coreState);
     const contextBlocks = await assembleContext(
       campaignId, intentResult, currentLocation, inlineKeys,
-      { provider, timeoutMs: llmNanoTimeoutMs, playerAction },
+      { provider, timeoutMs: llmNanoTimeoutMs, playerAction, userId },
     );
     if (travelFailureReason) {
       contextBlocks.travelFailure = { reason: travelFailureReason };
+    }
+    if (deathReveals.length > 0) {
+      contextBlocks.deathReveals = deathReveals;
     }
     onEvent({ type: 'context_ready' });
 

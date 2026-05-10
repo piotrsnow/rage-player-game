@@ -48,10 +48,21 @@ function getResolved(item) {
   return item?.baseType ? gameData.resolveBaseType(item.baseType) : null;
 }
 
+function weaponFormulaLabel(combat, t) {
+  const bonus = combat.bonus ?? 0;
+  const bonusStr = bonus !== 0 ? ` + ${bonus}` : '';
+  switch (combat.damageType) {
+    case 'melee-1h':       return `${t('rpgAttributeShort.sila', 'SIŁ')}${bonusStr}`;
+    case 'melee-2h':       return `${t('rpgAttributeShort.sila', 'SIŁ')} ×2${bonusStr}`;
+    case 'ranged-dex':     return `${t('rpgAttributeShort.zrecznosc', 'ZRĘ')}${bonusStr}`;
+    case 'ranged-str-dex': return `${t('rpgAttributeShort.sila', 'SIŁ')} + ${t('rpgAttributeShort.zrecznosc', 'ZRĘ')}${bonusStr}`;
+    case 'ranged-fixed':   return `${combat.fixedDamage ?? 0}`;
+    default:               return `+${bonus}`;
+  }
+}
+
 function WeaponStats({ combat, compareCombat, t }) {
-  const damageLabel = combat.damageType === 'ranged-fixed'
-    ? `${combat.fixedDamage ?? 0}`
-    : `+${combat.bonus ?? 0}`;
+  const formula = weaponFormulaLabel(combat, t);
   const damageDelta = combat.damageType === 'ranged-fixed'
     ? (compareCombat?.damageType === 'ranged-fixed'
         ? (combat.fixedDamage ?? 0) - (compareCombat.fixedDamage ?? 0)
@@ -65,12 +76,17 @@ function WeaponStats({ combat, compareCombat, t }) {
         <span className="text-[10px] font-label uppercase tracking-wider text-on-surface-variant/60">
           {t('inventory.damage', 'Obrażenia')}
         </span>
-        <span className="font-headline text-sm text-error">{damageLabel}</span>
+        <span className="font-headline text-sm text-error">{formula}</span>
         <Delta value={damageDelta} t={t} />
         {combat.twoHanded && (
           <span className="ml-auto text-[9px] font-label text-on-surface-variant/60 uppercase tracking-wider">2H</span>
         )}
       </div>
+      {combat.damageType !== 'ranged-fixed' && (
+        <div className="text-[9px] text-on-surface-variant/50 font-label leading-tight">
+          {t('inventory.damageFormulaSuffix', '- WYT celu - Pancerz = finalne obrażenia')}
+        </div>
+      )}
       <div className="text-[10px] text-on-surface-variant/60 font-label">
         {damageTypeLabel(combat.damageType, t)}
         {combat.range && <span> · {t('inventory.range', 'Zasięg')} {combat.range}</span>}
@@ -100,6 +116,9 @@ function ArmourStats({ combat, compareCombat, t }) {
         </span>
         <span className="font-headline text-sm text-primary">{combat.damageReduction ?? 0}</span>
         <Delta value={drDelta} t={t} />
+      </div>
+      <div className="text-[9px] text-on-surface-variant/50 font-label leading-tight">
+        {t('inventory.armourAbsorbHint', { dr: combat.damageReduction ?? 0, defaultValue: `Pochłania ${combat.damageReduction ?? 0} obrażeń z każdego trafienia` })}
       </div>
       {(combat.dodgePenalty != null && combat.dodgePenalty !== 0) && (
         <div className="flex items-center gap-2 text-[10px] text-on-surface-variant/70 font-label">

@@ -23,7 +23,7 @@ export async function assembleContext(
   selectionResult,
   currentLocation,
   skipKeys = {},
-  { provider = 'openai', timeoutMs = 5000, playerAction = null } = {},
+  { provider = 'openai', timeoutMs = 5000, playerAction = null, userId = null } = {},
 ) {
   // Pre-fetch quests once so individual handleGetQuest calls skip re-querying.
   const needsQuests = (selectionResult.expand_quests || []).length > 0;
@@ -120,7 +120,7 @@ export async function assembleContext(
   // Fetched when the campaign has a resolved polymorphic location ref.
   if (selectionResult._currentRef?.kind && selectionResult._currentRef?.id) {
     fetches.push(
-      buildNarrativeContext(selectionResult._currentRef.id, selectionResult._currentRef.kind, campaignId)
+      buildNarrativeContext(selectionResult._currentRef.id, selectionResult._currentRef.kind, campaignId, { userId })
         .then((data) => ({ type: 'locationGraph', data }))
         .catch((err) => {
           log.warn({ err: err?.message, campaignId }, 'locationGraph context fetch failed');

@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import { useLocation } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { useUltrawideBonus } from '../../hooks/useUltrawideBonus';
@@ -98,6 +98,29 @@ Opisz bardzo konkretne konsekwencje tej decyzji dla fabuły: relacji, zasobów, 
     }
   };
 
+  const portraitRef = useRef(null);
+  const portraitRaf = useRef(null);
+
+  const handlePortraitPointerMove = useCallback((e) => {
+    const el = portraitRef.current;
+    if (!el) return;
+    if (portraitRaf.current) return;
+    portraitRaf.current = requestAnimationFrame(() => {
+      portraitRaf.current = null;
+      const rect = el.getBoundingClientRect();
+      const offsetX = e.clientX - (rect.left + rect.width / 2);
+      const offsetY = e.clientY - (rect.top + rect.height / 2);
+      const angle = Math.atan2(offsetY, offsetX) * (180 / Math.PI) + 180;
+      el.style.setProperty('--portrait-holo-angle', `${angle.toFixed(1)}deg`);
+    });
+  }, []);
+
+  const handlePortraitPointerLeave = useCallback(() => {
+    const el = portraitRef.current;
+    if (!el) return;
+    el.style.removeProperty('--portrait-holo-angle');
+  }, []);
+
   const isPlaying = location.pathname.startsWith('/play');
   if (!backendUser || !isPlaying || !character) return null;
 
@@ -107,16 +130,21 @@ Opisz bardzo konkretne konsekwencje tej decyzji dla fabuły: relacji, zasobów, 
       style={uwBonus.sidebar > 0 ? { width: 320 + uwBonus.sidebar } : undefined}
     >
       <div className="px-6 mb-8">
-        <div className="mt-[140px] mb-4 aspect-[3/4] overflow-hidden rounded-sm border border-outline-variant/20 bg-surface-container-high shadow-[0_10px_30px_rgba(0,0,0,0.25)]">
+        <div
+          ref={portraitRef}
+          className="mt-[140px] mb-4 aspect-[3/4] bg-surface-container-high sidebar-portrait-magic"
+          onPointerMove={handlePortraitPointerMove}
+          onPointerLeave={handlePortraitPointerLeave}
+        >
           {character.portraitUrl ? (
             <img
               src={apiClient.resolveMediaUrl(character.portraitUrl)}
               alt={character.name}
-              className="h-full w-full object-cover"
+              className="h-full w-full object-cover relative z-[1]"
               onError={(e) => { e.target.style.display = 'none'; }}
             />
           ) : (
-            <div className="h-full w-full flex items-center justify-center bg-surface-container">
+            <div className="h-full w-full flex items-center justify-center bg-surface-container relative z-[1]">
               <span className="material-symbols-outlined text-on-surface-variant/40 text-6xl">person</span>
             </div>
           )}

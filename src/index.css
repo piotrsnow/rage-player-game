@@ -1063,6 +1063,109 @@
   75% { opacity: 0.9; }
 }
 
+/* Sidebar player portrait: magic shimmer border + shine overlay */
+.sidebar-portrait-magic {
+  position: relative;
+  overflow: hidden;
+  border-radius: 0.125rem;
+  border: 1px solid rgba(197, 154, 255, 0.18);
+  box-shadow:
+    0 10px 30px rgba(0, 0, 0, 0.25),
+    0 0 12px rgba(197, 154, 255, 0.06),
+    inset 0 0 8px rgba(120, 220, 255, 0.04);
+  transition: box-shadow 0.4s ease;
+}
+
+.sidebar-portrait-magic:hover {
+  box-shadow:
+    0 10px 30px rgba(0, 0, 0, 0.25),
+    0 0 18px rgba(197, 154, 255, 0.12),
+    0 0 6px rgba(120, 220, 255, 0.08),
+    inset 0 0 10px rgba(197, 154, 255, 0.06);
+}
+
+.sidebar-portrait-magic::before {
+  content: '';
+  position: absolute;
+  inset: -2px;
+  border-radius: inherit;
+  padding: 2px;
+  background: conic-gradient(
+    from var(--portrait-holo-angle, 0deg),
+    rgba(120, 220, 255, 0.4) 0%,
+    transparent 14%,
+    transparent 28%,
+    rgba(197, 154, 255, 0.35) 36%,
+    transparent 48%,
+    transparent 62%,
+    rgba(120, 220, 255, 0.3) 70%,
+    transparent 82%,
+    rgba(197, 154, 255, 0.2) 100%
+  );
+  -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  animation: sidebarPortraitBorderSpin 6s linear infinite;
+  pointer-events: none;
+  z-index: 3;
+  opacity: 0.7;
+  transition: opacity 0.4s ease;
+}
+
+.sidebar-portrait-magic:hover::before {
+  opacity: 1;
+}
+
+.sidebar-portrait-magic::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  pointer-events: none;
+  background: linear-gradient(
+    calc(var(--portrait-holo-angle, 220deg) + 30deg),
+    transparent 0%,
+    transparent 35%,
+    rgba(255, 255, 255, 0.06) 42%,
+    rgba(197, 154, 255, 0.08) 50%,
+    rgba(120, 220, 255, 0.06) 58%,
+    transparent 65%,
+    transparent 100%
+  );
+  background-size: 200% 200%;
+  mix-blend-mode: soft-light;
+  animation: sidebarPortraitShine 5s ease-in-out infinite;
+  opacity: 0.6;
+  transition: opacity 0.4s ease;
+}
+
+.sidebar-portrait-magic:hover::after {
+  opacity: 1;
+}
+
+@keyframes sidebarPortraitBorderSpin {
+  to { --portrait-holo-angle: 360deg; }
+}
+
+@keyframes sidebarPortraitShine {
+  0%, 100% { background-position: 100% 0%; opacity: 0.4; }
+  50% { background-position: 0% 100%; opacity: 0.8; }
+}
+
+@property --portrait-holo-angle {
+  syntax: '<angle>';
+  inherits: false;
+  initial-value: 0deg;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sidebar-portrait-magic::before,
+  .sidebar-portrait-magic::after {
+    animation: none;
+  }
+}
+
 *:focus-visible {
   outline: 2px solid rgba(197, 154, 255, 0.5);
   outline-offset: 2px;

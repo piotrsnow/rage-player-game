@@ -8,11 +8,12 @@ export function useMpActions({ dispatch, pendingQuestVerifyRef }) {
   const connect = useCallback(() => {
     const baseUrl = apiClient.getBaseUrl();
     if (!baseUrl || !apiClient.getToken()) return Promise.resolve();
-    // Pass callbacks (not snapshots) so every open/reconnect reads the
-    // latest access token; refresh before each reconnect attempt.
     return wsService.connect(
       baseUrl,
-      () => apiClient.getToken(),
+      async () => {
+        const res = await apiClient.request('/auth/ws-ticket', { method: 'POST' });
+        return res.ticket;
+      },
       () => apiClient.refreshAccessToken(),
     );
   }, []);

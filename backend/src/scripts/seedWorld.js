@@ -1,28 +1,31 @@
-// World seed — canonical hand-authored starter world.
+// World seed — minimal canonical starter world.
 //
 // Idempotent DB seed that establishes the anchor for every campaign (classic
-// and Living World alike):
-//   • Capital **Yeralden** at (0,0) with 11 sublocations and 13 named NPCs
-//   • Village **Świetłogaj** (NE, drwale) with 2 sublocations and 2 NPCs
-//   • Village **Kamionka Stara** (SW, rolnicy) with 2 sublocations and 2 NPCs
-//   • Wilderness, ruins, dungeons, roadside POI scattered on the 10×10 grid
-//   • Bidirectional roads from each settlement to its nearest neighbour
+// and Living World alike). Intentionally sparse — the world grows organically
+// through campaigns and post-campaign promotion.
+//
+// Seeded content:
+//   • Capital **Yeralden** at (0,0) with 3 sublocations (temple, tavern, market)
+//   • 1 NPC — Kapłan Nieznanego Boga (tutorial priest in the temple)
+//   • Village **Kamionka Stara** (SW, rolnicy) with 1 sublocation, 0 NPCs
+//   • 1 dungeon, 1 wilderness, 1 ruin — minimal exploration anchors
+//   • 1 bidirectional road (Yeralden ↔ Kamionka Stara)
 //   • One starter `WorldLoreSection` (slug="main")
 //
 // F5b — every location seeded here is a canonical `WorldLocation` row. AI
 // mid-play creation lands in `CampaignLocation` (per-campaign sandbox) and
-// is promoted into canonical via the admin queue. `isCanonical` and
-// `createdByCampaignId` columns dropped — kind discriminated by which table
-// holds the row, not by a flag on WorldLocation.
+// is promoted into canonical via the admin queue.
 //
 // Pantheon (lore, no faction tags):
-//   Serneth  — bóg życia (good, worshipped in villages)
-//   Yeriala  — bogini słońca (good, worshipped in cities, capital temple)
-//   Ferathon — bóg śmierci (evil, hidden cult)
+//   Nieznany Bóg — najpotężniejsze bóstwo, nikt nie zna jego imienia ani natury;
+//                  Świątynia Nieznanego Boga jest najstarszym budynkiem w Yeralden
+//   Serneth      — bóg życia (good, worshipped in villages)
+//   Yeriala      — bogini słońca (good, worshipped in cities)
+//   Ferathon     — bóg śmierci (evil, hidden cult)
 //
 // Sub-grid coords (`subGridX/subGridY`) are authored for every sublocation so
 // the Round C drill-down map has deterministic slots. Capital sub-grid is
-// 10×10 (roomy for 11 entries); village sub-grid is 5×5.
+// 10×10; village sub-grid is 5×5.
 //
 // The seed uses upsert-by-canonicalName / canonicalId so re-running is safe.
 // It does NOT touch campaigns, user data, or existing WorldLocations/NPCs that
@@ -39,34 +42,28 @@ import { seedCanonicalEdges } from './seedWorldEdges.js';
 const log = childLogger({ module: 'seedWorld' });
 
 // Bump this whenever seed data changes (arrays, lore, edges, NPCs, etc.).
-const SEED_VERSION = '2026-05-08a';
+const SEED_VERSION = '2026-05-10a';
 
 const REGION = 'heartland';
 const CAPITAL_NAME = 'Yeralden';
 
 // ─────────────────────────────────────────────────────────────
-// Sublocation definitions — 11 children under Yeralden
+// Sublocation definitions — 3 children under Yeralden
 // Sub-grid: 10×10. Coords hand-picked so admin map reads clean.
 // ─────────────────────────────────────────────────────────────
 
 const SUBLOCATIONS = [
   {
-    key: 'palace',
-    name: 'Pałac Królewski w Yeralden',
-    slotType: 'palace',
-    slotKind: 'required',
-    description: 'Marmurowa rezydencja króla Yeraldenu. Sala tronowa lśni witrażami ku chwale Yerieli.',
-    category: 'palace',
-    subGridX: 5, subGridY: 8,
-  },
-  {
     key: 'grand_temple',
-    name: 'Świątynia Yerieli',
+    name: 'Świątynia Nieznanego Boga',
     slotType: 'grand_temple',
     slotKind: 'required',
-    description: 'Wielka świątynia bogini słońca Yerieli. Złocone kopuły górują nad dachami stolicy.',
+    description: 'Najstarszy budynek w Yeralden — starszy niż samo królestwo. Kamienna świątynia poświęcona bóstwu, którego imienia nikt nie zna. Wewnątrz panuje cisza tak głęboka, że słychać bicie własnego serca.',
     category: 'temple',
-    subGridX: 3, subGridY: 6,
+    subGridX: 5, subGridY: 7,
+    scale: 4,
+    atmosphere: 'Chłód pradawnego kamienia, cisza gęstsza niż powietrze, blade światło sączące się znikąd i zewsząd.',
+    tags: ['wiara', 'tajemnica', 'Nieznany Bóg', 'pradawny'],
   },
   {
     key: 'tavern',
@@ -76,6 +73,9 @@ const SUBLOCATIONS = [
     description: 'Najsłynniejsza karczma stolicy — punkt zborny kupców, podróżnych i szeptanych plotek.',
     category: 'tavern',
     subGridX: 6, subGridY: 4,
+    scale: 3,
+    atmosphere: 'Gwar rozmów, trzask ognia w kominku, zapach piwa i pieczonego mięsa.',
+    tags: ['plotki', 'odpoczynek', 'handel'],
   },
   {
     key: 'market',
@@ -85,311 +85,56 @@ const SUBLOCATIONS = [
     description: 'Rozległy plac targowy pełen straganów z towarami z całego królestwa.',
     category: 'market',
     subGridX: 4, subGridY: 3,
-  },
-  {
-    key: 'barracks',
-    name: 'Koszary Królewskie',
-    slotType: 'barracks',
-    slotKind: 'required',
-    description: 'Siedziba gwardii królewskiej. Twardy dryl, twarde ściany.',
-    category: 'barracks',
-    subGridX: 7, subGridY: 7,
-  },
-  {
-    key: 'arena',
-    name: 'Arena Chwały',
-    slotType: 'arena',
-    slotKind: 'optional',
-    description: 'Piaszczysty krąg pod otwartym niebem, gdzie adepci walki mierzą się z mistrzami.',
-    category: 'arena',
-    subGridX: 8, subGridY: 5,
-  },
-  {
-    key: 'academy',
-    name: 'Akademia Yerieli',
-    slotType: 'academy',
-    slotKind: 'optional',
-    description: 'Uczelnia prowadzona przez kapłanów Yerieli — tu studiuje się wiedzę, medycynę i alchemię.',
-    category: 'academy',
-    subGridX: 2, subGridY: 7,
-  },
-  {
-    key: 'library',
-    name: 'Wielka Biblioteka Yeralden',
-    slotType: 'library',
-    slotKind: 'optional',
-    description: 'Kolekcja zwojów i ksiąg zgromadzonych przez pokolenia uczonych.',
-    category: 'library',
-    subGridX: 1, subGridY: 8,
-  },
-  {
-    key: 'shadow_hall',
-    name: 'Bractwo Cieni',
-    slotType: null,
-    slotKind: 'custom',
-    description: 'Sekretna siedziba mistrzów skrytych sztuk — dostępna tylko dla wtajemniczonych.',
-    category: 'hideout',
-    subGridX: 9, subGridY: 2,
-  },
-  {
-    key: 'fortune_cottage',
-    name: 'Chatka Wróżbitki Korvii',
-    slotType: null,
-    slotKind: 'custom',
-    description: 'Zakrzywiona chatka na skraju stolicy, przesycona zapachem ziół i kadzidła.',
-    category: 'hut',
-    subGridX: 0, subGridY: 4,
-  },
-  {
-    key: 'hunter_camp',
-    name: 'Obóz Łowców',
-    slotType: null,
-    slotKind: 'custom',
-    description: 'Drewniane zabudowania za bramami miasta, gdzie zbierają się tropiciele i łowcy potworów.',
-    category: 'camp',
-    subGridX: 8, subGridY: 1,
+    scale: 4,
+    atmosphere: 'Zgiełk targowisk, pokrzykiwania handlarzy, zapach przypraw i świeżego pieczywa.',
+    tags: ['handel', 'plotki', 'tłum'],
   },
 ];
 
 // ─────────────────────────────────────────────────────────────
-// Named NPCs — 13 total (ruler, temple, captain, 8 trainers, innkeeper, merchant)
-// `category` is the broad bucket used by questgiver pickers (Round A).
-// All 5 starter categories are covered: guard, priest, adventurer, commoner, merchant.
+// Named NPCs — 1 total (tutorial priest in the temple)
 // ─────────────────────────────────────────────────────────────
 
 const NAMED_NPCS = [
   {
-    canonicalId: 'king_torvan_iv',
-    name: 'Król Torvan IV',
-    role: 'władca Yeraldenu',
-    personality: 'Stanowczy, ceni lojalność ponad talent. Nie lubi zaskoczeń.',
-    alignment: 'good',
-    location: 'palace',
-    category: 'guard', // władca, nominalnie "commoner" wg enuma, ale w dialogu zachowuje się jak dowódca; mapujemy do guard
-    baselineKnowledge: [
-      'Wie o napięciach z sąsiednimi lennami — baronia Varnhold jawnie wymaga więcej niezależności; król podejrzewa, że stoi za tym ktoś z jego własnego dworu.',
-      'Pamięta wojnę o Dolinę Cierni sprzed dwudziestu lat — stracił tam starszego brata; nie mówi o tym, ale temat odbiera osobiście.',
-      'Dyskretnie wspiera Akademię — uważa że wyszkolony uczony wart jest dwóch rycerzy, choć publicznie nigdy tego nie powie.',
-    ],
-  },
-  {
-    canonicalId: 'arcykaplanka_lyana',
-    name: 'Arcykapłanka Lyana',
-    role: 'arcykapłanka Yerieli',
-    personality: 'Łagodna, mądra, nie traci spokoju nawet w obliczu herezji.',
-    alignment: 'good',
+    canonicalId: 'kaplan_nieznanego',
+    name: 'Kapłan Nieznanego Boga',
+    role: 'strażnik Świątyni Nieznanego Boga, przewodnik dla poszukiwaczy',
+    personality: 'Cierpliwy, enigmatyczny, mówi zagadkami, ale nigdy nie odmawia pomocy. Wydaje się wiedzieć więcej niż powinien.',
+    alignment: 'neutral',
     location: 'grand_temple',
     category: 'priest',
+    race: 'Human',
+    level: 5,
+    appearance: 'Wysoki mężczyzna nieokreślonego wieku o gładkiej, bladej twarzy bez żadnych zmarszczek, długich siwych włosach opadających na ramiona i oczach tak ciemnych, że nie widać źrenic; nosi prostą szarą szatę bez żadnych symboli ani ozdób.',
+    dialect: 'Mówi spokojnie, z namysłem, każde zdanie brzmi jak cytat z księgi, której nikt nie czytał — robi pauzy, jakby nasłuchiwał odpowiedzi z ciszy świątyni.',
     baselineKnowledge: [
-      'Zna tekst zakazanego apokryfu Ferathona — kult boga śmierci działa w ukryciu od pokoleń; nikt poza nią i dwoma braćmi w świątyni tego nie wie.',
-      'Wierzy że Serneth (bóg życia) i Yeriala (bogini słońca) są w istocie dwoma aspektami jednej siły — to teza pisana przez nią w zaciszu, nigdy nie wygłaszana publicznie.',
-      'Pamięta dzień koronacji Torvana IV — błogosławiła go osobiście; uważa go za dobrego człowieka, ale niepewnego władcę.',
-    ],
-  },
-  {
-    canonicalId: 'kapitan_gerent',
-    name: 'Kapitan Gerent',
-    role: 'dowódca gwardii królewskiej',
-    personality: 'Szorstki, praktyczny, nie znosi dworskich intryg — woli prostą odpowiedź i dobrze naostrzony miecz.',
-    alignment: 'neutral',
-    location: 'barracks',
-    category: 'guard',
-    baselineKnowledge: [
-      'Prowadził trzy ekspedycje do dungeonów wokół Yeraldenu — wie dokładnie które z nich są śmiertelne, a które da się oczyścić z dwudziestoma ludźmi.',
-      'Zna sekretne przejście z koszar na dziedziniec pałacowy — otworzone tylko w razie zamachu; król o tym wie, Arcykapłanka nie.',
-      'Prywatnie gardzi magami bojowymi — raz widział jak jeden spalił własnego sojusznika; od tej pory wymaga strażników-ochroniarzy na każdym rytuale publicznym.',
-    ],
-  },
-  // 8 Skill Masters (Mistrzowie) → adventurer
-  {
-    canonicalId: 'mistrz_broni_darvok',
-    name: 'Mistrz Broni Darvok',
-    role: 'trener Walki wręcz, broni jedno- i dwuręcznej, Strzelectwa, Uników, Walki dwiema brońmi, Zastraszania',
-    personality: 'Cichy, obserwujący każdy ruch. Mówi tylko to, co konieczne — ale gdy mówi, słucha każdy adept.',
-    alignment: 'neutral',
-    location: 'arena',
-    category: 'adventurer',
-  },
-  {
-    canonicalId: 'mistrz_ciala_ilara',
-    name: 'Mistrzyni Ciała Ilara',
-    role: 'trenerka Atletyki, Akrobatyki, Jeździectwa',
-    personality: 'Energiczna, bezpośrednia, wyznaje zasadę że ciało nie kłamie.',
-    alignment: 'good',
-    location: 'arena',
-    category: 'adventurer',
-  },
-  {
-    canonicalId: 'mistrzyni_retoryki_venadra',
-    name: 'Mistrzyni Retoryki Venadra',
-    role: 'trenerka Perswazji, Blefu, Handlu, Przywództwa i Występów',
-    personality: 'Elokwentna, uśmiechnięta, nigdy nie odsłania więcej niż musi.',
-    alignment: 'neutral',
-    location: 'market',
-    category: 'adventurer',
-  },
-  {
-    canonicalId: 'mistrz_wiedzy_taelor',
-    name: 'Mistrz Wiedzy Taelor',
-    role: 'trener Wiedzy ogólnej, Wiedzy o potworach, Wiedzy o naturze, Rzemiosła',
-    personality: 'Pedantyczny uczony, skarbnica cytatów. Testuje adeptów zagadkami zamiast egzaminem.',
-    alignment: 'good',
-    location: 'academy',
-    category: 'adventurer',
-    baselineKnowledge: [
-      'Zna legendy o Runach Pierwszej Kowalni — zapomnianym języku magicznym pisanym przez przedludzki lud Iyr. Ruiny wokół Yeraldenu często kryją ich ślady.',
-      'Pamięta Wielką Zarazę sprzed osiemdziesięciu lat — jego pradziadek był jednym z trzech medyków, którzy przeżyli; lekcje z tamtego okresu wisi w Akademii w zapieczętowanym manuskrypcie.',
-      'Potrafi rozpoznać każde zioło rosnące w promieniu dwóch dni marszu od stolicy, w tym cztery gatunki toksyczne zakazane w aptekach.',
-    ],
-  },
-  {
-    canonicalId: 'mistrzyni_medyka_senya',
-    name: 'Mistrzyni Medyka Senya',
-    role: 'trenerka Medycyny i Alchemii',
-    personality: 'Spokojna, cierpliwa, bardziej oddana pacjentom niż polityce Akademii.',
-    alignment: 'good',
-    location: 'academy',
-    category: 'adventurer',
-  },
-  {
-    canonicalId: 'mistrz_cieni_ashen',
-    name: 'Mistrz Cieni Ashen',
-    role: 'trener Skradania, Otwierania zamków, Kradzieży kieszonkowej, Pułapek i mechanizmów, Spostrzegawczości',
-    personality: 'Niewidoczny aż do momentu gdy sam zdecyduje się ujawnić. Sprawdza uczniów, zanim ci go zauważą.',
-    alignment: 'neutral',
-    location: 'shadow_hall',
-    category: 'adventurer',
-  },
-  {
-    canonicalId: 'mistrz_przetrwania_karros',
-    name: 'Mistrz Przetrwania Karros',
-    role: 'trener Przetrwania, Tropienia, Odporności',
-    personality: 'Zgrubiały łowca, mówi krótko, ufa bardziej lasom niż ludziom.',
-    alignment: 'neutral',
-    location: 'hunter_camp',
-    category: 'adventurer',
-  },
-  {
-    canonicalId: 'wrozbitka_korvia',
-    name: 'Wróżbitka Korvia',
-    role: 'mistrzyni Fartu, Hazardu i Przeczucia',
-    personality: 'Stara, przenikliwa, wypowiada zdania tak, że brzmią jak wyrok losu.',
-    alignment: 'neutral',
-    location: 'fortune_cottage',
-    category: 'adventurer',
-  },
-  // Flavor NPC — innkeeper stays commoner per plan (merchant slot now filled by Dorgun)
-  {
-    canonicalId: 'karczmarz_tamar',
-    name: 'Karczmarz Tamar',
-    role: 'gospodarz Karczmy Pod Złotym Słońcem',
-    personality: 'Jowialny, pamięta każdą twarz, każdą plotkę i każdy dług.',
-    alignment: 'neutral',
-    location: 'tavern',
-    category: 'commoner',
-    baselineKnowledge: [
-      'Wie kto z dworzan pije samotnie — lista zmienia się co miesiąc, ale zawsze ktoś jej dotyczy; potrafi wskazać kto jest na krawędzi problemu.',
-      'Pamięta każdego najemnika, który przeszedł przez karczmę w ostatnich dwudziestu latach — twarze, imiona, długi, opowieści o wilkołakach w Kamionce i goblinach pod Świetłogajem.',
-      'Słyszał plotkę że pod starym kamieniem młyńskim na tyłach karczmy jest schowek kontrabandy z czasów dziadka — nigdy tego nie sprawdził, bo nie chce wiedzieć.',
-    ],
-  },
-  // Round A — fresh merchant. The market previously only housed Venadra
-  // (adventurer-bucket trainer); we now guarantee a pure merchant NPC so
-  // the 5-category coverage is real.
-  {
-    canonicalId: 'kupiec_dorgun',
-    name: 'Kupiec Dorgun',
-    role: 'handlarz dalekich karawan, stały bywalec Wielkiego Targu',
-    personality: 'Przebiegły, ale uczciwy w liczbach — lubi rozmawiać cenami i plotkami z trzech krain na raz.',
-    alignment: 'neutral',
-    location: 'market',
-    category: 'merchant',
-    baselineKnowledge: [
-      'Prowadzi trasy do trzech odległych krain — Varnhold (żelazo), Sołtystwo Mchu (wełna), Wybrzeże Słone (ryby i sól). Wie które trakty są bezpieczne o tej porze roku, a które kontrolują bandyci.',
-      'Zna dokładne ceny każdego towaru z tygodnia wstecz w stolicy i wioskach — umie wskazać gdzie gracz przepłaca, a gdzie trafia na okazję.',
-      'Ma kontakty w cechu złodziei — nie sam do niego należy, ale zna dwóch fence\'ów na rynku, którzy przyjmą "delikatne" przedmioty bez pytań, za 30% wartości.',
+      'Świątynia Nieznanego Boga stoi tu dłużej niż Yeralden — kamień fundamentu nie pasuje do żadnego znanego kamieniołomu. Nikt nie wie kto ją zbudował ani kiedy, ale każdy władca utrzymywał ją w stanie, jakby bał się konsekwencji zaniedbania.',
+      'Nieznany Bóg jest najpotężniejszym z bóstw — ale nie objawia się jak Yeriala, Serneth czy Ferathon. Kapłan uważa, że milczenie bóstwa jest celowe: kto szuka odpowiedzi, musi szukać sam.',
+      'Zna układ stolicy i wie o istnieniu okolicznych krain — Kamionki Starej, ruin i dziczy za murami. Chętnie wskaże kierunek poszukiwaczom, ale nigdy nie powie wprost co tam znajdą.',
     ],
   },
 ];
 
 // ─────────────────────────────────────────────────────────────
-// Villages around Yeralden — seeded top-level settlements.
+// Villages around Yeralden — 1 seeded top-level settlement.
 // Positions are 1 unit = 1 km from capital at (0,0).
-// Village sub-grid is 5×5.
+// Village sub-grid is 5×5. No seeded NPCs — they arrive via campaigns.
 // ─────────────────────────────────────────────────────────────
 
 const VILLAGES = [
-  {
-    key: 'swietlogaj',
-    canonicalName: 'Świetłogaj',
-    aliases: ['Leśna Osada', 'Świetlogaj'],
-    description:
-      'Osada drwali na północno-wschodnich obrzeżach puszczy, około trzech kilometrów od Yeralden. Dymy z ognisk tartaku widać z murów stolicy w zimowe poranki.',
-    regionX: 2.5,
-    regionY: 2.0,
-    sublocations: [
-      {
-        key: 'tavern',
-        name: 'Karczma Pod Złamanym Toporem',
-        slotType: 'tavern',
-        slotKind: 'required',
-        category: 'tavern',
-        description:
-          'Przysadzista karczma z belkowanym stropem, gdzie drwale piją jak gaszą ogień — szybko i głęboko. Nad paleniskiem wisi połamany topór, którego nikt nie tknął od trzech pokoleń.',
-        subGridX: 2, subGridY: 3,
-      },
-      {
-        key: 'sawmill',
-        name: 'Tartak Olbrami',
-        slotType: null,
-        slotKind: 'custom',
-        category: 'workshop',
-        description:
-          'Rodzinny tartak Olbramów: skrzypiące koło wodne, góry świeżo ciętych bali i zapach żywicy niesiony wiatrem aż do karczmy.',
-        subGridX: 3, subGridY: 1,
-      },
-    ],
-    npcs: [
-      {
-        canonicalId: 'soltys_wiltar_olbram',
-        name: 'Wiltar Olbram',
-        role: 'sołtys Świetłogaju i mistrz drwalski',
-        personality:
-          'Rozważny, opanowany, ufa tylko ludziom których sprawdził w robocie. Dba o każdą rodzinę w osadzie jak o własną.',
-        alignment: 'good',
-        location: 'sawmill',
-        category: 'commoner',
-        baselineKnowledge: [
-          'Pamięta wszystkie ataki stworów na osadę z ostatnich piętnastu lat — daty, ofiary, miejsca startu. Widzi wzorzec: coś budzi się w puszczy co 2-3 lata, każdy raz mocniejsze.',
-          'Wie że trzy rodziny we wsi wolałyby przenieść się bliżej Yeraldenu, ale nie powiedzą tego głośno — boją się że reszta wsi weźmie to za dezercję.',
-          'Ma cichą umowę z łowczynią Eleyą — ona patroluje granice puszczy, on informuje ją o każdym obcym, który pyta o las; żaden król o tym nie wie.',
-        ],
-      },
-      {
-        canonicalId: 'tropicielka_eleya',
-        name: 'Eleya Tropicielka',
-        role: 'łowczyni potworów ze Świetłogaju',
-        personality:
-          'Cicha, czyta tropy lepiej niż twarze. Nie lubi dworu w Yeralden — woli las, który przynajmniej nie kłamie.',
-        alignment: 'neutral',
-        location: 'tavern',
-        category: 'adventurer',
-        baselineKnowledge: [
-          'Zna mapę puszczy której nie ma w żadnym archiwum — w tym trzy jaskinie poza oficjalnymi traktami, dwie z widocznymi śladami kultu Ferathona.',
-          'Widziała raz istotę której nie potrafiła nazwać — szła na dwóch nogach, pozostawiała ślady podobne do psich, ale zbyt duże. Nie powiedziała nikomu; wraca do tego miejsca raz w roku sprawdzić czy wróciła.',
-          'Nie ufa Kapitanowi Gerentowi — uważa że jego ekspedycje wyczerpują teren; czuje że dungeony uzdrowiają się gdy ludzie trzymają się z daleka.',
-        ],
-      },
-    ],
-  },
   {
     key: 'kamionka_stara',
     canonicalName: 'Kamionka Stara',
     aliases: ['Kamionka', 'Stara Kamionka'],
     description:
-      'Rolnicza osada przy starym kamiennym moście na południowo-zachodnich traktach od Yeralden. Pola pszenicy sięgają aż do skraju traktu, a wieczorem słychać dzwony świątyni Sernetha.',
+      'Rolnicza osada przy starym kamiennym moście na południowo-zachodnich traktach od Yeralden. Pola pszenicy sięgają aż do skraju traktu.',
     regionX: -2.0,
     regionY: -2.5,
+    biome: 'plains',
+    scale: 7,
+    atmosphere: 'Szum pszenicy na wietrze, dzwony kościelne o zmierzchu i zapach świeżo upieczonego chleba.',
+    tags: ['rolnictwo', 'trakty'],
     sublocations: [
       {
         key: 'tavern',
@@ -400,54 +145,22 @@ const VILLAGES = [
         description:
           'Wiejska karczma pachnąca chlebem i kminkiem. Na ścianach wiszą snopy ostatnich żniw, a piec chlebowy pali się od świtu do zmierzchu.',
         subGridX: 2, subGridY: 2,
-      },
-      {
-        key: 'church',
-        name: 'Świątynia Sernetha w Kamionce',
-        slotType: 'church',
-        slotKind: 'optional',
-        category: 'temple',
-        description:
-          'Niska kamienna świątynia boga życia Sernetha. Ołtarz okryty kłosami pszenicy, a w niszy leży drewniany sierp — symbol żniw i ofiary.',
-        subGridX: 3, subGridY: 3,
+        scale: 2,
+        atmosphere: 'Zapach chleba i kminku, trzask pieca chlebowego i cicha rozmowa wieśniaków przy stole.',
+        tags: ['plotki', 'odpoczynek', 'jedzenie'],
       },
     ],
-    npcs: [
-      {
-        canonicalId: 'kaplan_bremys',
-        name: 'Bremys Pełnodłonny',
-        role: 'kapłan Sernetha w Kamionce Starej',
-        personality:
-          'Ciepły, uczynny, wierzy że każda dłoń znajdzie robotę u Sernetha. Nieufny wobec kultu Ferathona i szepczących o nim pielgrzymów.',
-        alignment: 'good',
-        location: 'church',
-        category: 'priest',
-      },
-      {
-        canonicalId: 'kupcowa_marola',
-        name: 'Marola Stąd',
-        role: 'kupcowa traktów z Kamionki Starej',
-        personality:
-          'Pragmatyczna, każdy interes ma swoją cenę i swój termin. Widzi więcej niż mówi — ale to, co mówi, warto kupić.',
-        alignment: 'neutral',
-        location: 'tavern',
-        category: 'merchant',
-      },
-    ],
+    npcs: [],
   },
 ];
 
 // ─────────────────────────────────────────────────────────────
-// Wilderness / ruins / dungeons / roadside POI — 17 new canonical
-// tiles scattered across the 10×10 heartland grid. Difficulty grows
-// with distance from the capital. `dangerLevel` is hand-authored;
-// edges to the parent travel hub inherit the matching difficulty.
-// Seed carries only the top-level locations — entering a dungeon
-// triggers the existing `dungeonSeedGenerator.js` for its rooms.
+// Wilderness / ruins / dungeons — 4 canonical tiles, one per category.
+// The rest of the world grows through campaigns and post-campaign
+// promotion. Entering a dungeon triggers `dungeonSeedGenerator.js`.
 // ─────────────────────────────────────────────────────────────
 
 const WILD_LOCATIONS = [
-  // ── Dungeons ─────────────────────────────────────────────────
   {
     key: 'ruined_watchtower',
     canonicalName: 'Zrujnowana Wieża Strażnicza',
@@ -458,43 +171,11 @@ const WILD_LOCATIONS = [
     regionX: 1.8,
     regionY: -1.2,
     dangerLevel: 'safe',
-    neighborFor: ['edge'],
+    biome: 'plains',
+    scale: 3,
+    atmosphere: 'Sypki kamień, pajęczyny w szczelinach i cichy szelest drobnych stworzeń w ciemnościach.',
+    tags: ['dungeon', 'ruiny', 'pająki'],
   },
-  {
-    key: 'abandoned_mineshaft',
-    canonicalName: 'Zapadły Szyb Starowiary',
-    description: 'Dawna kopalnia srebra przejęta przez gobliny. Głębiej w korytarzach tli się coś starszego niż goblińska brać.',
-    category: 'dungeon',
-    locationType: 'dungeon',
-    region: REGION,
-    regionX: -3.6,
-    regionY: 1.4,
-    dangerLevel: 'moderate',
-  },
-  {
-    key: 'crypt_of_ferathon',
-    canonicalName: 'Krypta Ferathonitów',
-    description: 'Zapieczętowana krypta zwolenników boga śmierci. Cisza wewnątrz ma swój rezonans, i ten rezonans pamięta imiona.',
-    category: 'dungeon',
-    locationType: 'dungeon',
-    region: REGION,
-    regionX: 3.4,
-    regionY: -4.2,
-    dangerLevel: 'dangerous',
-  },
-  {
-    key: 'dragon_hollow',
-    canonicalName: 'Smocze Zapadlisko',
-    description: 'Otwarta czeluść w górach heartlandu. Nikt, kto tam wszedł, nie wrócił w ostatnim pokoleniu — a stara pieśń woła tę bestię po imieniu.',
-    category: 'dungeon',
-    locationType: 'dungeon',
-    region: REGION,
-    regionX: -4.5,
-    regionY: -4.5,
-    dangerLevel: 'deadly',
-  },
-
-  // ── Wilderness tiles ─────────────────────────────────────────
   {
     key: 'blackwood_edge',
     canonicalName: 'Skraj Czarnoboru',
@@ -507,63 +188,6 @@ const WILD_LOCATIONS = [
     dangerLevel: 'moderate',
   },
   {
-    key: 'sunwheat_plains',
-    canonicalName: 'Słoneczne Łany',
-    description: 'Rozległe pola pszenicy i łąki ciągnące się od Kamionki ku zachodowi. Bezpieczne za dnia, ale nocą pojawiają się mgielne ogniki.',
-    category: 'wilderness',
-    locationType: 'wilderness',
-    region: REGION,
-    regionX: -3.0,
-    regionY: -0.8,
-    dangerLevel: 'safe',
-  },
-  {
-    key: 'stone_tooth_pass',
-    canonicalName: 'Przełęcz Kamiennego Zęba',
-    description: 'Wąski trakt między dwoma iglicami skalnymi. Wiatr tnie tu jak nóż, a echo niesie głosy, których nikt nie wypowiada.',
-    category: 'wilderness',
-    locationType: 'mountain',
-    region: REGION,
-    regionX: -3.8,
-    regionY: -3.0,
-    dangerLevel: 'dangerous',
-  },
-  {
-    key: 'silverflow_river',
-    canonicalName: 'Srebrny Nurt',
-    description: 'Szeroka rzeka opływająca wschodnią część heartlandu. Brody zmieniają się z sezonu na sezon, a stare mosty pamiętają jeszcze króla Torvana II.',
-    category: 'wilderness',
-    locationType: 'wilderness',
-    region: REGION,
-    regionX: 3.8,
-    regionY: 0.8,
-    dangerLevel: 'safe',
-  },
-  {
-    key: 'wolfhowl_heath',
-    canonicalName: 'Wilcze Pustkowia',
-    description: 'Kamieniste wrzosowiska, gdzie wataha przewodzi stadom. Podróżnicy jadą w grupach i nigdy po zmierzchu.',
-    category: 'wilderness',
-    locationType: 'wilderness',
-    region: REGION,
-    regionX: 0.5,
-    regionY: 4.3,
-    dangerLevel: 'moderate',
-  },
-  {
-    key: 'whispering_fens',
-    canonicalName: 'Szeptające Trzęsawiska',
-    description: 'Mokradła w dolinie nad Srebrnym Nurtem. Bulgoce w bagnach coś, co nie jest wodą, a stare historie mówią o kościach w mule.',
-    category: 'wilderness',
-    locationType: 'wilderness',
-    region: REGION,
-    regionX: 4.2,
-    regionY: -2.4,
-    dangerLevel: 'dangerous',
-  },
-
-  // ── Ruins ────────────────────────────────────────────────────
-  {
     key: 'old_watch_stones',
     canonicalName: 'Stare Kamienie Strażnicze',
     description: 'Krąg pionowych głazów pozostawiony przez poprzedników ludzi. Runy na nich bledną, ale w pełnię księżyca lśnią własnym światłem.',
@@ -574,81 +198,11 @@ const WILD_LOCATIONS = [
     regionY: 2.8,
     dangerLevel: 'moderate',
   },
-  {
-    key: 'broken_aqueduct',
-    canonicalName: 'Pęknięty Akwedukt',
-    description: 'Resztki kamiennego akweduktu sprzed królestwa. Woda od dawna nie płynie, ale w komorach u podstawy gnieżdżą się przemytnicy.',
-    category: 'ruins',
-    locationType: 'ruin',
-    region: REGION,
-    regionX: 2.6,
-    regionY: -3.0,
-    dangerLevel: 'moderate',
-  },
-  {
-    key: 'drowned_chapel',
-    canonicalName: 'Zatopiona Kaplica',
-    description: 'Ruiny kaplicy Sernetha zatopione w dolince po wiosennej powodzi. Dach wystaje nad wodę, a na nim siadają wrony, których nikt nie pamięta z młodości.',
-    category: 'ruins',
-    locationType: 'ruin',
-    region: REGION,
-    regionX: -2.8,
-    regionY: -1.6,
-    dangerLevel: 'safe',
-  },
-  {
-    key: 'dead_kings_barrow',
-    canonicalName: 'Kurhan Martwego Króla',
-    description: 'Rozległy kopiec usypany przed wiekami. Wejście zasypane lawiną, ale kopacze grobów wciąż próbują swojego szczęścia.',
-    category: 'ruins',
-    locationType: 'ruin',
-    region: REGION,
-    regionX: 4.0,
-    regionY: 2.5,
-    dangerLevel: 'dangerous',
-  },
-
-  // ── Roadside POI ─────────────────────────────────────────────
-  {
-    key: 'crossroads_shrine',
-    canonicalName: 'Kapliczka na Rozstajach',
-    description: 'Drewniana kapliczka Sernetha postawiona przez pielgrzymów. Ktoś zostawia tu świeże polne kwiaty co drugi dzień — nie wiadomo kto.',
-    category: 'shrine',
-    locationType: 'wilderness',
-    region: REGION,
-    regionX: -1.0,
-    regionY: -1.2,
-    dangerLevel: 'safe',
-  },
-  {
-    key: 'wayfarer_camp',
-    canonicalName: 'Obóz Wędrowców',
-    description: 'Utarta polana przy trakcie na wschód. Kupcy i pielgrzymi rozbijają tu namioty; gości zwykle można spotkać przy ognisku o zmierzchu.',
-    category: 'camp',
-    locationType: 'camp',
-    region: REGION,
-    regionX: 1.5,
-    regionY: 1.0,
-    dangerLevel: 'safe',
-  },
-  {
-    key: 'broken_bridge_watch',
-    canonicalName: 'Strażnica Przy Pękniętym Moście',
-    description: 'Mała drewniana strażnica w miejscu, gdzie stary most zawalił się w minionej zimie. Pełnią tu wartę zmienni strażnicy z Yeralden.',
-    category: 'camp',
-    locationType: 'camp',
-    region: REGION,
-    regionX: -0.8,
-    regionY: -3.5,
-    dangerLevel: 'safe',
-  },
 ];
 
 // ─────────────────────────────────────────────────────────────
-// Roads — auto-built from settlement positions (nearest-neighbour
-// between settlements) + an explicit fan-out from the capital to
-// every wilderness/dungeon/ruin/POI tile (difficulty = tile's
-// dangerLevel, so far tiles stay scary even if the road is short).
+// Roads — nearest-neighbour between settlements (capital ↔ Kamionka).
+// Wild tiles are reachable via fog-visible travel montage, not roads.
 // ─────────────────────────────────────────────────────────────
 
 const ROAD_DEFAULTS = {
@@ -740,7 +294,7 @@ async function upsertCapital() {
       canonicalName: CAPITAL_NAME,
       aliases: ['Stolica', 'Kapitol'],
       description:
-        'Słoneczna stolica ludzkiego królestwa. Siedziba tronu, wielkiej świątyni Yerieli i akademii. Z każdej bramy wybiega utwardzona droga w stronę serca kontynentu.',
+        'Stolica ludzkiego królestwa, zbudowana wokół pradawnej Świątyni Nieznanego Boga. Z każdej bramy wybiega utwardzona droga w stronę serca kontynentu.',
       category: 'capital',
       locationType: 'capital',
       region: REGION,
@@ -870,31 +424,25 @@ async function upsertWildLocation(loc) {
 }
 
 async function upsertNpc(npc, locationId) {
+  const shared = {
+    name: npc.name,
+    role: npc.role,
+    personality: npc.personality,
+    alignment: npc.alignment,
+    currentLocationId: locationId,
+    homeLocationId: locationId,
+    keyNpc: true,
+    alive: true,
+    category: npc.category || 'commoner',
+    ...(npc.race && { race: npc.race }),
+    ...(npc.level && { level: npc.level }),
+    ...(npc.appearance && { appearance: npc.appearance }),
+    ...(npc.dialect && { dialect: npc.dialect }),
+  };
   const row = await prisma.worldNPC.upsert({
     where: { canonicalId: npc.canonicalId },
-    update: {
-      name: npc.name,
-      role: npc.role,
-      personality: npc.personality,
-      alignment: npc.alignment,
-      currentLocationId: locationId,
-      homeLocationId: locationId,
-      keyNpc: true,
-      alive: true,
-      category: npc.category || 'commoner',
-    },
-    create: {
-      canonicalId: npc.canonicalId,
-      name: npc.name,
-      role: npc.role,
-      personality: npc.personality,
-      alignment: npc.alignment,
-      currentLocationId: locationId,
-      homeLocationId: locationId,
-      keyNpc: true,
-      alive: true,
-      category: npc.category || 'commoner',
-    },
+    update: shared,
+    create: { canonicalId: npc.canonicalId, ...shared },
   });
 
   // Stage 1 — hand-authored baseline knowledge seeded into WorldNpcKnowledge.
@@ -937,76 +485,18 @@ async function upsertMainLoreSection() {
 }
 
 // ─────────────────────────────────────────────────────────────
-// NPC explicit WorldNpcKnownLocation grants — Phase 2b. Key NPCs get
-// authorized knowledge beyond their implicit 1-hop radius.
-// Resolved after all locations exist so we can lookup by name.
+// NPC explicit WorldNpcKnownLocation grants — Phase 2b.
+// The priest knows about the wild locations so he can hint at them.
 // ─────────────────────────────────────────────────────────────
 
 const NPC_KNOWLEDGE_SEED = [
   {
-    canonicalId: 'kapitan_gerent',
+    canonicalId: 'kaplan_nieznanego',
     locations: [
-      'Koszary Królewskie',
+      'Kamionka Stara',
       'Zrujnowana Wieża Strażnicza',
-      'Zapadły Szyb Starowiary',
-      'Krypta Ferathonitów',
-      'Smocze Zapadlisko',
-      'Strażnica Przy Pękniętym Moście',
-      'Kurhan Martwego Króla',
-    ],
-  },
-  {
-    canonicalId: 'tropicielka_eleya',
-    locations: [
       'Skraj Czarnoboru',
-      'Słoneczne Łany',
-      'Przełęcz Kamiennego Zęba',
-      'Srebrny Nurt',
-      'Wilcze Pustkowia',
-      'Szeptające Trzęsawiska',
-      'Zapadły Szyb Starowiary',
-    ],
-  },
-  {
-    canonicalId: 'arcykaplanka_lyana',
-    locations: [
-      'Kapliczka na Rozstajach',
-      'Zatopiona Kaplica',
       'Stare Kamienie Strażnicze',
-      'Krypta Ferathonitów',
-    ],
-  },
-  {
-    canonicalId: 'king_torvan_iv',
-    locations: [
-      'Świetłogaj',
-      'Kamionka Stara',
-      'Zrujnowana Wieża Strażnicza',
-      'Zapadły Szyb Starowiary',
-      'Krypta Ferathonitów',
-      'Smocze Zapadlisko',
-      'Pęknięty Akwedukt',
-      'Kurhan Martwego Króla',
-      'Strażnica Przy Pękniętym Moście',
-    ],
-  },
-  {
-    canonicalId: 'soltys_wiltar_olbram',
-    locations: [
-      'Skraj Czarnoboru',
-      'Kamionka Stara',
-      'Obóz Wędrowców',
-      'Kapliczka na Rozstajach',
-    ],
-  },
-  {
-    canonicalId: 'karczmarz_tamar',
-    locations: [
-      'Świetłogaj',
-      'Kamionka Stara',
-      'Obóz Wędrowców',
-      'Kapliczka na Rozstajach',
-      'Strażnica Przy Pękniętym Moście',
     ],
   },
 ];
@@ -1093,6 +583,56 @@ async function backfillRagEmbeddings(locationByName) {
   }
 }
 
+// Canonical names that belong to the current seed. On version change,
+// anything NOT in this set is cleaned up so DB matches the new sparse seed.
+const SEED_CANONICAL_NAMES = new Set([
+  CAPITAL_NAME,
+  ...SUBLOCATIONS.map((s) => s.name),
+  ...VILLAGES.map((v) => v.canonicalName),
+  ...VILLAGES.flatMap((v) => v.sublocations.map((s) => s.name)),
+  ...WILD_LOCATIONS.map((l) => l.canonicalName),
+]);
+
+const SEED_NPC_IDS = new Set(NAMED_NPCS.map((n) => n.canonicalId));
+
+async function cleanupStaleSeedEntities() {
+  // Delete WorldNPCs that were part of a prior seed but not the current one.
+  // Only deletes keyNpc rows — campaign-promoted NPCs (keyNpc=false or no
+  // canonicalId match) are untouched.
+  const staleNpcs = await prisma.worldNPC.findMany({
+    where: { keyNpc: true, canonicalId: { notIn: [...SEED_NPC_IDS] } },
+    select: { id: true, canonicalId: true, name: true },
+  });
+  if (staleNpcs.length) {
+    const ids = staleNpcs.map((n) => n.id);
+    await prisma.worldNpcKnowledge.deleteMany({ where: { npcId: { in: ids } } });
+    await prisma.worldNpcKnownLocation.deleteMany({ where: { npcId: { in: ids } } });
+    await prisma.worldNPC.deleteMany({ where: { id: { in: ids } } });
+    log.info({ count: staleNpcs.length, names: staleNpcs.map((n) => n.name) }, 'Cleaned up stale seed NPCs');
+  }
+
+  // Delete WorldLocations that were part of a prior seed but not the current
+  // one. Children (sublocations) are deleted before parents. Only deletes
+  // locations whose canonicalName is NOT in the current seed set AND that have
+  // no campaign references (CampaignNPC.lastLocationId, etc.).
+  const allCanonical = await prisma.worldLocation.findMany({
+    where: { canonicalName: { notIn: [...SEED_CANONICAL_NAMES] } },
+    select: { id: true, canonicalName: true, parentLocationId: true },
+  });
+  // Delete children first, then parents.
+  const children = allCanonical.filter((l) => l.parentLocationId !== null);
+  const parents = allCanonical.filter((l) => l.parentLocationId === null);
+  for (const batch of [children, parents]) {
+    if (!batch.length) continue;
+    const ids = batch.map((l) => l.id);
+    await prisma.road.deleteMany({ where: { OR: [{ fromLocationId: { in: ids } }, { toLocationId: { in: ids } }] } });
+    await prisma.locationEdge.deleteMany({ where: { fromKind: 'world', fromId: { in: ids } } });
+    await prisma.locationEdge.deleteMany({ where: { toKind: 'world', toId: { in: ids } } });
+    await prisma.worldLocation.deleteMany({ where: { id: { in: ids } } });
+    log.info({ count: batch.length, names: batch.map((l) => l.canonicalName) }, 'Cleaned up stale seed locations');
+  }
+}
+
 export async function seedWorld() {
   if (String(process.env.SKIP_WORLD_SEED || '').toLowerCase() === 'true') {
     log.info('SKIP_WORLD_SEED=true — skipping world seed');
@@ -1106,6 +646,8 @@ export async function seedWorld() {
   }
 
   try {
+    await cleanupStaleSeedEntities();
+
     const capital = await upsertCapital();
 
     const subByKey = {};
@@ -1162,12 +704,7 @@ export async function seedWorld() {
     // Phase 2b — NPC explicit knowledge (requires all locations to exist).
     const npcKnowledgeUpdated = await seedNpcKnowledge(locationByName);
 
-    // Roads. Edge = stricte zbudowana droga (bezpieczne przejście). Tylko
-    // settlement-to-settlement nearest-neighbour — kapital i 2 najbliższe
-    // wioski (Świetłogaj NE, Kamionka Stara SW) dostają budowane drogi
-    // dwukierunkowe. Wilderness/ruiny/dungeony NIE są łączone z kapitałem
-    // edge'em — gracz dotrze tam przez fog-visible travel montage, nie
-    // przez Road graph. Edge nie jest źródłem wiedzy NPC ani gracza.
+    // Roads: single bidirectional Yeralden ↔ Kamionka Stara.
     const settlementRows = [capital, ...VILLAGES.map((v) => locationByName[v.canonicalName])].filter(Boolean);
     const roads = buildNearestNeighbourRoads(settlementRows);
     void wildRows; // wildRows still upserted above for location seeding

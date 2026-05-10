@@ -179,28 +179,42 @@ export async function processLocationMentions(campaignId, mentions) {
   const worldNpcById = new Map(worldNpcRows.map((n) => [n.id, n]));
 
   // 4. All edges touching any NPC's anchor location, in a single query.
-  const anchorLocationIds = new Set();
+  // Track { kind, id } per anchor so we can skip Road adjacency for
+  // CampaignLocation anchors (Roads only connect canonical WorldLocations).
+  const anchorByIdent = new Map();
+  const canonicalAnchorIds = new Set();
   for (const ident of uniqIdents) {
     const cNpc = campaignNpcByIdent.get(ident);
     const wNpc = cNpc?.worldNpcId
       ? worldNpcById.get(cNpc.worldNpcId)
       : worldNpcRows.find((n) => n.name && n.name.toLowerCase() === ident.toLowerCase());
-    const anchor = cNpc?.lastLocationId || wNpc?.currentLocationId || null;
-    if (anchor) anchorLocationIds.add(anchor);
+    let anchorKind = null;
+    let anchorId = null;
+    if (cNpc?.lastLocationId) {
+      anchorKind = cNpc.lastLocationKind || LOCATION_KIND_WORLD;
+      anchorId = cNpc.lastLocationId;
+    } else if (wNpc?.currentLocationId) {
+      anchorKind = LOCATION_KIND_WORLD;
+      anchorId = wNpc.currentLocationId;
+    }
+    if (anchorId) {
+      anchorByIdent.set(ident, { kind: anchorKind, id: anchorId });
+      if (anchorKind === LOCATION_KIND_WORLD) canonicalAnchorIds.add(anchorId);
+    }
   }
-  const edgeRows = anchorLocationIds.size > 0
+  const edgeRows = canonicalAnchorIds.size > 0
     ? await prisma.road.findMany({
       where: {
         OR: [
-          { fromLocationId: { in: [...anchorLocationIds] } },
-          { toLocationId: { in: [...anchorLocationIds] } },
+          { fromLocationId: { in: [...canonicalAnchorIds] } },
+          { toLocationId: { in: [...canonicalAnchorIds] } },
         ],
       },
       select: { fromLocationId: true, toLocationId: true },
     }).catch(() => [])
     : [];
   const adjacencyByAnchor = new Map();
-  for (const anchor of anchorLocationIds) adjacencyByAnchor.set(anchor, new Set([anchor]));
+  for (const anchor of canonicalAnchorIds) adjacencyByAnchor.set(anchor, new Set([anchor]));
   for (const e of edgeRows) {
     const fromSet = adjacencyByAnchor.get(e.fromLocationId);
     const toSet = adjacencyByAnchor.get(e.toLocationId);
@@ -221,8 +235,8 @@ export async function processLocationMentions(campaignId, mentions) {
     }
   }
 
-  // Resolve each ident → Set<knownLocationId>. Edge adjacency + explicit
-  // WorldNpcKnownLocation entries (seed + admin authored).
+  // Resolve each ident → Set<knownLocationId>. Edge adjacency (canonical
+  // anchors only) + explicit WorldNpcKnownLocation entries.
   const knownByIdent = new Map();
   for (const ident of uniqIdents) {
     const cNpc = campaignNpcByIdent.get(ident);
@@ -231,8 +245,17 @@ export async function processLocationMentions(campaignId, mentions) {
       : worldNpcRows.find((n) => n.name && n.name.toLowerCase() === ident.toLowerCase());
     if (!cNpc && !wNpc) continue;
 
-    const anchor = cNpc?.lastLocationId || wNpc?.currentLocationId || null;
-    const known = new Set(anchor ? adjacencyByAnchor.get(anchor) || [anchor] : []);
+    const anchor = anchorByIdent.get(ident) || null;
+    const known = new Set();
+    if (anchor) {
+      if (anchor.kind === LOCATION_KIND_WORLD) {
+        const adj = adjacencyByAnchor.get(anchor.id);
+        if (adj) for (const id of adj) known.add(id);
+        else known.add(anchor.id);
+      } else {
+        known.add(anchor.id);
+      }
+    }
     const explicit = wNpc?.id ? explicitKnownByNpcId.get(wNpc.id) : null;
     if (explicit) for (const id of explicit) known.add(id);
     knownByIdent.set(ident, known);

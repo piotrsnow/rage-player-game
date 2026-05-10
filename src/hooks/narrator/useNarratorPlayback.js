@@ -31,6 +31,7 @@ export function useNarratorPlayback({ settings, dispatch, viewerMode, coordinato
   const naturalPlaybackRateRef = useRef(1);
   const narrationFastForwardRateRef = useRef(1);
   const holdActiveRef = useRef(false);
+  const [isHoldActive, setIsHoldActive] = useState(false);
   const holdStartAtRef = useRef(0);
   const holdRafRef = useRef(null);
   const remainingTextCharsRef = useRef(0);
@@ -69,6 +70,7 @@ export function useNarratorPlayback({ settings, dispatch, viewerMode, coordinato
   const startNarrationFastForwardHold = useCallback(() => {
     if (holdActiveRef.current) return;
     holdActiveRef.current = true;
+    setIsHoldActive(true);
     holdStartAtRef.current = performance.now();
     narrationFastForwardRateRef.current = FAST_FORWARD_HOLD_START_MULTIPLIER;
     setNarrationFastForwardRate(FAST_FORWARD_HOLD_START_MULTIPLIER);
@@ -87,6 +89,7 @@ export function useNarratorPlayback({ settings, dispatch, viewerMode, coordinato
 
   const stopNarrationFastForwardHold = useCallback(() => {
     holdActiveRef.current = false;
+    setIsHoldActive(false);
     stopHoldLoop();
     narrationFastForwardRateRef.current = 1;
     setNarrationFastForwardRate(1);
@@ -199,6 +202,7 @@ export function useNarratorPlayback({ settings, dispatch, viewerMode, coordinato
     stopHighlightLoop();
     stopHoldLoop();
     holdActiveRef.current = false;
+    setIsHoldActive(false);
     if (audioRef.current) {
       const a = audioRef.current;
       audioRef.current = null;
@@ -262,7 +266,7 @@ export function useNarratorPlayback({ settings, dispatch, viewerMode, coordinato
     narrationSecondsRemaining,
     setNarrationSecondsRemaining,
     narrationFastForwardRate,
-    isNarrationFastForwardHolding: holdActiveRef.current,
+    isNarrationFastForwardHolding: isHoldActive,
     startHighlightLoop,
     stopHighlightLoop,
     applyPlaybackRate,

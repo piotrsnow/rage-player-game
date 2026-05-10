@@ -182,9 +182,12 @@ export default function InventSpellModal({ campaignId, character = null, dispatc
                     onClick={handleDiceClick}
                     onContextMenu={handleDiceContextMenu}
                     disabled={isSubmitting}
-                    className="shrink-0 flex items-center justify-center w-10 h-10 rounded-sm border border-outline-variant/25 bg-surface-container-high/50 hover:bg-surface-container-high hover:border-primary/30 text-on-surface-variant hover:text-primary transition-colors disabled:opacity-40 disabled:cursor-not-allowed select-none"
+                    className="shrink-0 flex items-center gap-1.5 h-10 px-2.5 rounded-sm border border-outline-variant/25 bg-surface-container-high/50 hover:bg-surface-container-high hover:border-primary/30 text-on-surface-variant hover:text-primary transition-colors disabled:opacity-40 disabled:cursor-not-allowed select-none"
                   >
                     <span className="material-symbols-outlined text-xl">casino</span>
+                    <span className={`text-xs font-mono font-label tabular-nums ${rollModifier === 0 ? 'opacity-50' : ''}`}>
+                      {formatModifier(rollModifier)}
+                    </span>
                   </button>
                   <span className="text-[10px] text-on-surface-variant/60 truncate">{intent.length}/500</span>
                 </div>

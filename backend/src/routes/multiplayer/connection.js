@@ -15,6 +15,7 @@ import {
   WS_SERVER_TYPES,
   WS_PAYLOAD_SCHEMAS,
 } from '../../../../shared/contracts/multiplayer.js';
+import { redeemWsTicket } from '../../services/wsTicketService.js';
 import * as lobby from './handlers/lobby.js';
 import * as roomState from './handlers/roomState.js';
 import * as gameplay from './handlers/gameplay.js';
@@ -83,22 +84,20 @@ export async function multiplayerWsRoute(fastify) {
     const session = { odId: null, roomCode: null };
 
     try {
-      const token = request.query?.token;
-      if (!token) {
-        sendWs(socket, WS_SERVER_TYPES.ERROR, { message: 'Missing auth token' });
+      const ticket = request.query?.ticket;
+      if (!ticket) {
+        sendWs(socket, WS_SERVER_TYPES.ERROR, { message: 'Missing auth ticket' });
         socket.close();
         return;
       }
-      let user;
-      try {
-        user = fastify.jwt.verify(token);
-      } catch {
-        sendWs(socket, WS_SERVER_TYPES.ERROR, { message: 'Invalid auth token' });
+      const redeemed = redeemWsTicket(ticket);
+      if (!redeemed) {
+        sendWs(socket, WS_SERVER_TYPES.ERROR, { message: 'Invalid or expired ticket' });
         socket.close();
         return;
       }
 
-      const userId = user.id;
+      const userId = redeemed.userId;
       const ctx = { fastify, ws: socket, uid: userId, sendWs, log };
 
       let isAlive = true;

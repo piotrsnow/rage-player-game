@@ -408,6 +408,7 @@ model CampaignScene {
   campaign    Campaign        @relation(fields: [campaignId], references: [id], onDelete: Cascade)
   favoritedBy FavoriteScene[]
 
+  @@unique([campaignId, sceneIndex])
   @@index([campaignId, sceneIndex])
 }
 
@@ -576,6 +577,7 @@ model CampaignNPC {
   worldNpc      WorldNPC?                 @relation(fields: [worldNpcId], references: [id], onDelete: SetNull)
   experiences   CampaignNpcExperience[]
   relationships CampaignNpcRelationship[]
+  locationMoves CampaignNpcLocationMovement[]
 
   @@unique([campaignId, npcId])
   @@index([campaignId])
@@ -603,6 +605,24 @@ model CampaignNpcRelationship {
 
   @@unique([campaignNpcId, targetType, targetRef])
   @@index([campaignNpcId])
+}
+
+/// Append-only log of CampaignNPC graph-node location changes for location-graph inspector.
+model CampaignNpcLocationMovement {
+  id              BigInt   @id @default(autoincrement())
+  campaignNpcId   String   @db.Uuid
+  fromKind        String?
+  fromId          String?  @db.Uuid
+  toKind          String
+  toId            String   @db.Uuid
+  /// scene_process | location_graph_manual
+  source          String
+  sceneIndex      Int?
+  movedAt         DateTime @default(now()) @db.Timestamptz
+
+  campaignNpc CampaignNPC @relation(fields: [campaignNpcId], references: [id], onDelete: Cascade)
+
+  @@index([campaignNpcId, movedAt(sort: Desc)])
 }
 
 model CampaignCodex {

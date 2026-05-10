@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import CharacterPanel from './CharacterPanel';
 import { getGenderLabel } from '../../utils/characterUtils';
@@ -81,7 +81,7 @@ function BrowsingView({ character, settings, onBack }) {
   );
 }
 
-function LibraryCard({ ch, deleteConfirmId, onSelect, onRequestDelete, onConfirmDelete, onCancelDelete }) {
+function LibraryCard({ ch, deleteConfirmId, onSelect, onRequestDelete, onConfirmDelete, onCancelDelete, onExport }) {
   const { t } = useTranslation();
   const charId = ch.backendId || ch.localId || ch.id;
 
@@ -132,13 +132,22 @@ function LibraryCard({ ch, deleteConfirmId, onSelect, onRequestDelete, onConfirm
           </div>
         </div>
       ) : (
-        <button
-          onClick={(e) => { e.stopPropagation(); onRequestDelete(charId); }}
-          className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 text-outline hover:text-error transition-all"
-          title={t('character.deleteCharacter')}
-        >
-          <span className="material-symbols-outlined text-base">delete</span>
-        </button>
+        <div className="absolute top-2 right-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-all">
+          <button
+            onClick={(e) => { e.stopPropagation(); onExport(ch); }}
+            className="text-outline hover:text-primary transition-colors"
+            title={t('character.export')}
+          >
+            <span className="material-symbols-outlined text-base">download</span>
+          </button>
+          <button
+            onClick={(e) => { e.stopPropagation(); onRequestDelete(charId); }}
+            className="text-outline hover:text-error transition-colors"
+            title={t('character.deleteCharacter')}
+          >
+            <span className="material-symbols-outlined text-base">delete</span>
+          </button>
+        </div>
       )}
     </div>
   );
@@ -156,8 +165,35 @@ export default function CharacterLibrary({
   onRequestDelete,
   onCancelDelete,
   onLeaveToLobby,
+  onCharacterImported,
 }) {
   const { t } = useTranslation();
+  const importRef = useRef(null);
+  const [importStatus, setImportStatus] = useState(null);
+
+  const handleExport = async (ch) => {
+    const charId = ch.backendId || ch.id;
+    let full = ch;
+    if (charId && apiClient.isConnected()) {
+      try { full = await storage.loadCharacter(charId) || ch; } catch { /* use summary */ }
+    }
+    storage.exportCharacter(full);
+  };
+
+  const handleImportFile = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    e.target.value = '';
+    try {
+      const saved = await storage.importCharacterFromFile(file);
+      setImportStatus('ok');
+      if (onCharacterImported) onCharacterImported(saved);
+    } catch (err) {
+      console.warn('[CharacterLibrary] import failed:', err.message);
+      setImportStatus('error');
+    }
+    setTimeout(() => setImportStatus(null), 3000);
+  };
 
   if (browsingCharacter) {
     return <BrowsingView character={browsingCharacter} settings={settings} onBack={onBackToList} />;
@@ -179,12 +215,26 @@ export default function CharacterLibrary({
         <div className="flex flex-col items-center justify-center py-12 animate-fade-in">
           <span className="material-symbols-outlined text-6xl text-outline/20 mb-4">person_off</span>
           <p className="text-on-surface-variant text-sm mb-8">{t('character.noSavedCharacters')}</p>
-          <button
-            onClick={onLeaveToLobby}
-            className="px-8 py-3 bg-surface-tint text-on-primary font-bold text-xs uppercase tracking-widest rounded-sm"
-          >
-            {t('character.goToLobby')}
-          </button>
+          <div className="flex items-center gap-4 flex-wrap justify-center">
+            <button
+              onClick={() => importRef.current?.click()}
+              className="px-8 py-3 bg-surface-container-high/40 text-on-surface-variant font-bold text-xs uppercase tracking-widest rounded-sm border border-outline-variant/15 hover:text-primary hover:border-primary/20 transition-all"
+            >
+              {t('character.import')}
+            </button>
+            <button
+              onClick={onLeaveToLobby}
+              className="px-8 py-3 bg-surface-tint text-on-primary font-bold text-xs uppercase tracking-widest rounded-sm"
+            >
+              {t('character.goToLobby')}
+            </button>
+          </div>
+          {importStatus && (
+            <p className={`text-center text-xs mt-3 ${importStatus === 'ok' ? 'text-primary' : 'text-error'}`}>
+              {importStatus === 'ok' ? t('character.importSuccess') : t('character.importError')}
+            </p>
+          )}
+          <input ref={importRef} type="file" accept=".json" className="hidden" onChange={handleImportFile} />
         </div>
       ) : (
         <div className="animate-fade-in">
@@ -198,10 +248,18 @@ export default function CharacterLibrary({
                 onRequestDelete={onRequestDelete}
                 onConfirmDelete={onConfirmDelete}
                 onCancelDelete={onCancelDelete}
+                onExport={handleExport}
               />
             ))}
           </div>
-          <div className="text-center">
+          <div className="flex items-center justify-center gap-4 flex-wrap">
+            <button
+              onClick={() => importRef.current?.click()}
+              className="inline-flex items-center gap-2 px-6 py-2.5 text-on-surface-variant text-xs font-label uppercase tracking-widest hover:text-primary transition-colors"
+            >
+              <span className="material-symbols-outlined text-sm">upload</span>
+              {t('character.import')}
+            </button>
             <button
               onClick={onLeaveToLobby}
               className="inline-flex items-center gap-2 px-6 py-2.5 text-on-surface-variant text-xs font-label uppercase tracking-widest hover:text-primary transition-colors"
@@ -210,6 +268,12 @@ export default function CharacterLibrary({
               {t('character.goToLobby')}
             </button>
           </div>
+          {importStatus && (
+            <p className={`text-center text-xs mt-3 ${importStatus === 'ok' ? 'text-primary' : 'text-error'}`}>
+              {importStatus === 'ok' ? t('character.importSuccess') : t('character.importError')}
+            </p>
+          )}
+          <input ref={importRef} type="file" accept=".json" className="hidden" onChange={handleImportFile} />
         </div>
       )}
     </div>

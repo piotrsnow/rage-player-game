@@ -28,7 +28,7 @@ async function buildParentChain(locationId) {
 
 /**
  * Load 1-hop Road neighbors of a top-level settlement. Returns an array
- * of `{ name, type, distance, direction }` for nearby canonical locations.
+ * of `{ id, name, type, distance, direction }` for nearby canonical locations.
  */
 async function loadRoadNeighbors(settlementId) {
   const roads = await prisma.road.findMany({
@@ -39,8 +39,8 @@ async function loadRoadNeighbors(settlementId) {
     select: {
       fromLocationId: true, toLocationId: true,
       distance: true, direction: true,
-      from: { select: { canonicalName: true, locationType: true } },
-      to: { select: { canonicalName: true, locationType: true } },
+      from: { select: { id: true, canonicalName: true, locationType: true } },
+      to: { select: { id: true, canonicalName: true, locationType: true } },
     },
     take: 8,
   });
@@ -48,6 +48,7 @@ async function loadRoadNeighbors(settlementId) {
     const isFrom = r.fromLocationId === settlementId;
     const neighbor = isFrom ? r.to : r.from;
     return {
+      id: neighbor.id,
       name: neighbor.canonicalName,
       type: neighbor.locationType,
       distance: r.distance,
@@ -57,14 +58,56 @@ async function loadRoadNeighbors(settlementId) {
 }
 
 /**
+ * Given a list of canonical WorldLocation IDs, return the subset that the
+ * player has discovered (state heard_about, visited, or mapped). Merges
+ * account-level `UserDiscoveredLocation` with per-campaign
+ * `CampaignDiscoveredLocation` (locationKind='world') plus `knownByDefault`
+ * locations (capital).
+ */
+async function loadDiscoveredNeighborIds(userId, campaignId, locationIds) {
+  if (!locationIds.length) return new Set();
+  const [userRows, campaignRows, defaultRows] = await Promise.all([
+    prisma.userDiscoveredLocation.findMany({
+      where: { userId, locationId: { in: locationIds } },
+      select: { locationId: true },
+    }),
+    campaignId
+      ? prisma.campaignDiscoveredLocation.findMany({
+          where: {
+            campaignId,
+            locationKind: LOCATION_KIND_WORLD,
+            locationId: { in: locationIds },
+          },
+          select: { locationId: true },
+        })
+      : Promise.resolve([]),
+    prisma.worldLocation.findMany({
+      where: {
+        id: { in: locationIds },
+        OR: [{ locationType: 'capital' }, { knownByDefault: true }],
+      },
+      select: { id: true },
+    }),
+  ]);
+  const ids = new Set();
+  for (const r of userRows) ids.add(r.locationId);
+  for (const r of campaignRows) ids.add(r.locationId);
+  for (const r of defaultRows) ids.add(r.id);
+  return ids;
+}
+
+/**
  * Build a lean ~400 token context block for the premium narrative model.
  * Gives the LLM spatial awareness (exits, NPCs, perception hints) without
  * the burden of graph update rules or taxonomy.
  *
  * @param {object} options
  * @param {boolean} options.gmMode  If true, show all edges regardless of discovery state.
+ * @param {string|null} options.userId  When provided, road neighbors are filtered
+ *   through fog-of-war — only locations the player has discovered (heard_about/visited)
+ *   are shown by name. Undiscovered neighbors appear as generic directional hints.
  */
-export async function buildNarrativeContext(locationId, locationKind, campaignId, { gmMode = false } = {}) {
+export async function buildNarrativeContext(locationId, locationKind, campaignId, { gmMode = false, userId = null } = {}) {
   try {
     const { nodes, edges } = await loadSubgraph(locationKind, locationId, { campaignId, hops: 1 });
     const currentNode = nodes.get(`${locationKind}:${locationId}`);
@@ -84,7 +127,17 @@ export async function buildNarrativeContext(locationId, locationKind, campaignId
       if (topLocation?.id) {
         const neighbors = await loadRoadNeighbors(topLocation.id);
         if (neighbors.length > 0) {
+          const discoveredIds = (!gmMode && userId)
+            ? await loadDiscoveredNeighborIds(userId, campaignId, neighbors.map((n) => n.id))
+            : null;
+
           const parts = neighbors.map((n) => {
+            if (discoveredIds && !discoveredIds.has(n.id)) {
+              const dir = n.direction || '';
+              return dir
+                ? `nieznana droga prowadzi na ${dir}`
+                : 'nieznana droga';
+            }
             const dist = n.distance ? `~${n.distance} km` : '';
             const dir = n.direction || '';
             const suffix = [dist, dir].filter(Boolean).join(' ');

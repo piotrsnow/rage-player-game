@@ -287,8 +287,9 @@ export async function runLocationPromotionPipeline({ campaignId, dryRun = false,
  *      P2002 and abort.
  *   3. RELINK every polymorphic FK that pointed at the source CampaignLocation
  *      (Campaign.currentLocation*, CampaignNPC.lastLocation*,
- *      CampaignDiscoveredLocation, CharacterClearedDungeon) to point at the
- *      new WorldLocation by flipping kind→'world' and id→new uuid.
+ *      CampaignDiscoveredLocation, CharacterClearedDungeon,
+ *      CampaignLocation.parentLocation, LocationEdge.from/to) to point at
+ *      the new WorldLocation by flipping kind→'world' and id→new uuid.
  *   4. DELETE the source CampaignLocation row.
  *   5. Reindex as canonical `entityType='location'` so future canonical
  *      lookups dedup against it.
@@ -342,6 +343,18 @@ export async function promoteCampaignLocationToCanonical(campaignLocationId) {
         tx.characterClearedDungeon.updateMany({
           where: { dungeonKind: LOCATION_KIND_CAMPAIGN, dungeonId: source.id },
           data: { dungeonKind: newRef.kind, dungeonId: newRef.id },
+        }),
+        tx.campaignLocation.updateMany({
+          where: { parentLocationKind: LOCATION_KIND_CAMPAIGN, parentLocationId: source.id },
+          data: { parentLocationKind: newRef.kind, parentLocationId: newRef.id },
+        }),
+        tx.locationEdge.updateMany({
+          where: { fromKind: LOCATION_KIND_CAMPAIGN, fromId: source.id },
+          data: { fromKind: newRef.kind, fromId: newRef.id },
+        }),
+        tx.locationEdge.updateMany({
+          where: { toKind: LOCATION_KIND_CAMPAIGN, toId: source.id },
+          data: { toKind: newRef.kind, toId: newRef.id },
         }),
       ]);
 

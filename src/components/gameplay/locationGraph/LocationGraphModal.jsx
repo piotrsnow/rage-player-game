@@ -15,6 +15,7 @@ import AddEdgeFlow from './AddEdgeFlow.jsx';
 import ModalNavBar from './ModalNavBar.jsx';
 import EntityBrowserPanel from './EntityBrowserPanel.jsx';
 import EntityInspector from './EntityInspector.jsx';
+import NpcDetailsModal from './NpcDetailsModal.jsx';
 import {
   getGeoProjectionParams,
   layoutPxToRegion,
@@ -50,6 +51,7 @@ export default function LocationGraphModal({ campaignId, onClose, openGeneration
   }, [graph.occupants, extraOccupantSprites]);
   const entityBrowser = useEntityBrowser(campaignId);
   const [activeTab, setActiveTab] = useState('graph');
+  const [selectedNpcId, setSelectedNpcId] = useState(null);
 
   const [addingNode, setAddingNode] = useState(false);
   const [addingEdge, setAddingEdge] = useState(false);
@@ -178,6 +180,10 @@ export default function LocationGraphModal({ campaignId, onClose, openGeneration
     onToggleAddEdge: () => activeTab === 'graph' && handleAddEdgeToggle(),
     onCycleFocus: () => {},
   });
+
+  const handleNpcClick = useCallback((occ) => {
+    if (occ?.id) setSelectedNpcId(occ.id);
+  }, []);
 
   const handleDoubleClickNode = useCallback((node) => {
     if (graph.mode !== 'gm') return;
@@ -340,6 +346,7 @@ export default function LocationGraphModal({ campaignId, onClose, openGeneration
                     onDeleteEdge={handleDeleteEdge}
                     mode={graph.mode}
                     campaignId={campaignId}
+                    onNpcClick={handleNpcClick}
                   />
                 </div>
               </div>
@@ -417,6 +424,14 @@ export default function LocationGraphModal({ campaignId, onClose, openGeneration
             </>
           )}
         </div>
+
+        {selectedNpcId && (
+          <NpcDetailsModal
+            npcId={selectedNpcId}
+            fetchNpcDetails={graph.fetchNpcDetails}
+            onClose={() => setSelectedNpcId(null)}
+          />
+        )}
       </div>
     </div>
   );

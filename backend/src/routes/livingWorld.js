@@ -42,8 +42,26 @@ import { createMediaStore } from '../services/mediaStore.js';
 import { config } from '../config.js';
 import { callAIJson } from '../services/aiJsonCall.js';
 import { ensureCharacterSpritesBatch, MAX_CHARACTER_SPRITE_BATCH } from '../services/characterSpriteService.js';
+import {
+  appendCampaignNpcLocationMovement,
+  NPC_LOCATION_MOVE_SOURCE_GRAPH,
+} from '../services/livingWorld/campaignNpcLocationMovement.js';
 
 const log = childLogger({ module: 'livingWorldRoutes' });
+
+/**
+ * Build a Prisma-ready patch for WorldLocation from the PUT body.
+ * WorldLocation only supports position + visual fields from the player endpoint.
+ */
+export function buildWorldLocationPatch(b) {
+  const data = {};
+  if (b.regionX !== undefined) data.regionX = b.regionX;
+  if (b.regionY !== undefined) data.regionY = b.regionY;
+  if (b.shape !== undefined) data.nodeShape = b.shape || null;
+  if (b.icon !== undefined) data.nodeIcon = b.icon || null;
+  if (b.nodeImageUrl !== undefined) data.nodeImageUrl = b.nodeImageUrl || null;
+  return data;
+}
 
 async function assertCampaignOwnership(request, reply, campaignId) {
   if (!campaignId || typeof campaignId !== 'string') {
@@ -312,6 +330,84 @@ export async function livingWorldRoutes(fastify) {
     }
 
     return reply.send({ digests });
+  });
+
+  // GET /campaigns/:id/location-detail?locationName=... — single-location summary + scene timeline
+  fastify.get('/campaigns/:id/location-detail', {
+    schema: {
+      params: {
+        type: 'object',
+        required: ['id'],
+        properties: { id: { type: 'string', minLength: 1 } },
+      },
+      querystring: {
+        type: 'object',
+        required: ['locationName'],
+        properties: { locationName: { type: 'string', minLength: 1, maxLength: 200 } },
+      },
+    },
+  }, async (request, reply) => {
+    const campaignId = request.params.id;
+    const campaign = await assertCampaignOwnership(request, reply, campaignId);
+    if (!campaign) return;
+
+    const { locationName } = request.query;
+
+    const summary = await prisma.campaignLocationSummary.findUnique({
+      where: { campaignId_locationName: { campaignId, locationName } },
+      select: {
+        locationName: true,
+        summary: true,
+        sceneDigests: true,
+        keyNpcs: true,
+        unresolvedHooks: true,
+        sceneCount: true,
+        lastVisitScene: true,
+      },
+    });
+
+    if (!summary) {
+      return reply.send({
+        locationName,
+        summary: '',
+        sceneDigests: [],
+        keyNpcs: [],
+        unresolvedHooks: [],
+        sceneCount: 0,
+        lastVisitScene: 0,
+        scenes: [],
+      });
+    }
+
+    const digests = Array.isArray(summary.sceneDigests) ? summary.sceneDigests : [];
+    const sceneIndices = digests.map((d) => d.sceneNum).filter((n) => typeof n === 'number');
+
+    let scenes = [];
+    if (sceneIndices.length > 0) {
+      const rows = await prisma.campaignScene.findMany({
+        where: { campaignId, sceneIndex: { in: sceneIndices } },
+        select: { sceneIndex: true, chosenAction: true, narrative: true, imageUrl: true, createdAt: true },
+        orderBy: { sceneIndex: 'asc' },
+      });
+      scenes = rows.map((r) => ({
+        sceneIndex: r.sceneIndex,
+        chosenAction: r.chosenAction || null,
+        narrativePreview: r.narrative ? r.narrative.slice(0, 150) : '',
+        imageUrl: r.imageUrl || null,
+        createdAt: r.createdAt,
+      }));
+    }
+
+    return reply.send({
+      locationName: summary.locationName,
+      summary: summary.summary || '',
+      sceneDigests: digests,
+      keyNpcs: Array.isArray(summary.keyNpcs) ? summary.keyNpcs : [],
+      unresolvedHooks: Array.isArray(summary.unresolvedHooks) ? summary.unresolvedHooks : [],
+      sceneCount: summary.sceneCount || 0,
+      lastVisitScene: summary.lastVisitScene || 0,
+      scenes,
+    });
   });
 
   // POST /campaigns/:id/travel-check — nano AI decides if distant travel is feasible
@@ -589,6 +685,131 @@ export async function livingWorldRoutes(fastify) {
     }
 
     return reply.send({ nodes: nodeList, edges: edgeList, factionOverlay, occupants });
+  });
+
+  // GET /campaigns/:id/location-graph/npcs/:npcId/details — inspector modal + movement history
+  fastify.get('/campaigns/:id/location-graph/npcs/:npcId/details', {
+    schema: {
+      params: {
+        type: 'object',
+        required: ['id', 'npcId'],
+        properties: {
+          id: { type: 'string', format: 'uuid' },
+          npcId: { type: 'string', format: 'uuid' },
+        },
+      },
+      querystring: {
+        type: 'object',
+        properties: {
+          limit: { type: 'integer', minimum: 1, maximum: 200, default: 100 },
+        },
+      },
+    },
+  }, async (request, reply) => {
+    const campaignId = request.params.id;
+    const npcId = request.params.npcId;
+    const campaign = await assertCampaignOwnership(request, reply, campaignId);
+    if (!campaign) return;
+    const limit = request.query.limit ?? 100;
+
+    const npcRow = await prisma.campaignNPC.findFirst({
+      where: { id: npcId, campaignId },
+      select: {
+        id: true, name: true, npcId: true,
+        gender: true, role: true, personality: true, attitude: true,
+        appearance: true, category: true, alive: true, level: true,
+        race: true, creatureKind: true, portraitUrl: true, spriteUrl: true,
+        stats: true, disposition: true,
+        lastLocation: true, lastLocationKind: true, lastLocationId: true,
+        lastInteractionAt: true, lastInteractionSceneIndex: true,
+      },
+    });
+    if (!npcRow) {
+      return reply.code(404).send({ error: 'NPC not found' });
+    }
+
+    const [movements, experienceRows] = await Promise.all([
+      prisma.campaignNpcLocationMovement.findMany({
+        where: { campaignNpcId: npcId },
+        orderBy: { movedAt: 'desc' },
+        take: limit,
+        select: {
+          id: true,
+          fromKind: true,
+          fromId: true,
+          toKind: true,
+          toId: true,
+          source: true,
+          sceneIndex: true,
+          movedAt: true,
+        },
+      }),
+      prisma.campaignNpcExperience.findMany({
+        where: { campaignNpcId: npcId },
+        orderBy: { addedAt: 'desc' },
+        take: limit,
+        select: {
+          id: true,
+          content: true,
+          importance: true,
+          sceneIndex: true,
+          addedAt: true,
+        },
+      }),
+    ]);
+
+    const worldIds = new Set();
+    const campaignLocIds = new Set();
+    for (const m of movements) {
+      if (m.fromKind === 'world' && m.fromId) worldIds.add(m.fromId);
+      if (m.toKind === 'world') worldIds.add(m.toId);
+      if (m.fromKind === 'campaign' && m.fromId) campaignLocIds.add(m.fromId);
+      if (m.toKind === 'campaign') campaignLocIds.add(m.toId);
+    }
+    const [worldRows, campRows] = await Promise.all([
+      worldIds.size > 0
+        ? prisma.worldLocation.findMany({
+          where: { id: { in: [...worldIds] } },
+          select: { id: true, canonicalName: true, displayName: true },
+        })
+        : [],
+      campaignLocIds.size > 0
+        ? prisma.campaignLocation.findMany({
+          where: { campaignId, id: { in: [...campaignLocIds] } },
+          select: { id: true, name: true },
+        })
+        : [],
+    ]);
+    const nameByKindId = new Map();
+    for (const w of worldRows) nameByKindId.set(`world:${w.id}`, w.displayName || w.canonicalName);
+    for (const c of campRows) nameByKindId.set(`campaign:${c.id}`, c.name);
+
+    function labelFor(kind, id) {
+      if (!kind || !id) return null;
+      return nameByKindId.get(`${kind}:${id}`) || id;
+    }
+
+    const movementsOut = movements.map((m) => ({
+      ...m,
+      movedAt: m.movedAt.toISOString(),
+      fromName: m.fromKind && m.fromId ? labelFor(m.fromKind, m.fromId) : null,
+      toName: labelFor(m.toKind, m.toId),
+    }));
+
+    const npc = {
+      ...npcRow,
+      lastInteractionAt: npcRow.lastInteractionAt ? npcRow.lastInteractionAt.toISOString() : null,
+    };
+
+    const interactions = experienceRows.map((e) => ({
+      id: String(e.id),
+      content: e.content,
+      importance: e.importance || 'minor',
+      sceneIndex: e.sceneIndex ?? null,
+      addedAt: e.addedAt.toISOString(),
+    }));
+
+    return reply.send({ npc, movements: movementsOut, interactions });
   });
 
   // POST /campaigns/:id/character-sprites/generate — PixelLab map tokens for graph occupants
@@ -870,9 +1091,7 @@ export async function livingWorldRoutes(fastify) {
         where: { id: nodeId },
       });
       if (worldLoc) {
-        const data = {};
-        if (b.regionX !== undefined) data.regionX = b.regionX;
-        if (b.regionY !== undefined) data.regionY = b.regionY;
+        const data = buildWorldLocationPatch(b);
         if (Object.keys(data).length > 0) {
           updated = await prisma.worldLocation.update({ where: { id: nodeId }, data });
         }
@@ -1217,12 +1436,32 @@ export async function livingWorldRoutes(fastify) {
       },
     },
   }, async (request, reply) => {
-    const campaign = await assertCampaignOwnership(request, reply, request.params.id);
+    const campaignId = request.params.id;
+    const campaign = await assertCampaignOwnership(request, reply, campaignId);
     if (!campaign) return;
     const { npcId, toKind, toId } = request.body;
+    const before = await prisma.campaignNPC.findFirst({
+      where: { id: npcId, campaignId },
+      select: { id: true, lastLocationKind: true, lastLocationId: true },
+    });
+    if (!before) {
+      return reply.code(404).send({ error: 'NPC not found' });
+    }
+    if (before.lastLocationKind === toKind && before.lastLocationId === toId) {
+      return reply.send({ ok: true });
+    }
     await prisma.campaignNPC.update({
       where: { id: npcId },
       data: { lastLocationKind: toKind, lastLocationId: toId },
+    });
+    await appendCampaignNpcLocationMovement(prisma, {
+      campaignNpcId: before.id,
+      fromKind: before.lastLocationKind,
+      fromId: before.lastLocationId,
+      toKind,
+      toId,
+      source: NPC_LOCATION_MOVE_SOURCE_GRAPH,
+      sceneIndex: null,
     });
     return reply.send({ ok: true });
   });
