@@ -1,6 +1,6 @@
-import { useState, useMemo, useCallback } from 'react';
+import { useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useGameCharacter, useGameDispatch, useGameAutoSave } from '../../stores/gameSelectors';
+import { useGameCharacter, useGameDispatch, useGameAutoSave, useGameCampaign } from '../../stores/gameSelectors';
 import { useModalA11y } from '../../hooks/useModalA11y';
 import {
   ATTRIBUTE_KEYS, SKILL_CAPS, ATTRIBUTE_SCALE,
@@ -8,8 +8,9 @@ import {
   xpForSkillLevel, cumulativeCharXpThreshold, CREATION_LIMITS,
 } from '../../data/rpgSystem';
 import { SPELL_TREES } from '../../data/rpgMagic';
-import { getSpellProgressionStatus } from '../../services/magicEngine';
+import { findSpell, getSpellProgressionStatus, resolveKnownSpellDisplay } from '../../services/magicEngine';
 import { translateSkill, translateAttribute } from '../../utils/rpgTranslate';
+import { apiClient } from '../../services/apiClient';
 import SkillGainHistory from './SkillGainHistory';
 
 const TABS = ['attributes', 'skills', 'spellTrees'];
@@ -169,13 +170,15 @@ function SkillsTab({ character }) {
   );
 }
 
-function SpellTreesTab({ character }) {
+function SpellTreesTab({ character, dispatch, campaignId }) {
   const { t } = useTranslation();
   const [expandedTree, setExpandedTree] = useState(null);
   const progression = useMemo(() => getSpellProgressionStatus(character), [character]);
   const known = new Set(character.spells?.known || []);
   const usageCounts = character.spells?.usageCounts || {};
   const mana = character.mana || { current: 0, max: 0 };
+  const [classifying, setClassifying] = useState(false);
+  const classifyAttemptedRef = useRef(false);
 
   const knownTreeIds = useMemo(() => {
     const ids = new Set();
@@ -186,6 +189,60 @@ function SpellTreesTab({ character }) {
     }
     return ids;
   }, [known]);
+
+  const customSpells = useMemo(() => {
+    const result = [];
+    for (const spellName of known) {
+      if (findSpell(spellName)) continue;
+      const display = resolveKnownSpellDisplay(spellName, character);
+      result.push(display);
+    }
+    return result;
+  }, [known, character]);
+
+  const customBySchool = useMemo(() => {
+    const groups = {};
+    for (const spell of customSpells) {
+      const key = spell.school || '_unclassified';
+      if (!groups[key]) groups[key] = [];
+      groups[key].push(spell);
+    }
+    return groups;
+  }, [customSpells]);
+
+  const unclassifiedNames = useMemo(
+    () => customSpells.filter((s) => !s.school).map((s) => s.name),
+    [customSpells],
+  );
+
+  const classifyUnschooled = useCallback(async () => {
+    if (!campaignId || unclassifiedNames.length === 0 || classifying) return;
+    setClassifying(true);
+    try {
+      const { results } = await apiClient.post('/ai/classify-spell-school', {
+        spellNames: unclassifiedNames,
+      });
+      if (results && dispatch) {
+        for (const [spellName, school] of Object.entries(results)) {
+          dispatch({
+            type: 'APPLY_STATE_CHANGES',
+            payload: { learnSpell: spellName, learnSpellSchool: school },
+          });
+        }
+      }
+    } catch {
+      // non-fatal
+    } finally {
+      setClassifying(false);
+    }
+  }, [campaignId, unclassifiedNames, classifying, dispatch]);
+
+  useEffect(() => {
+    if (unclassifiedNames.length > 0 && campaignId && !classifyAttemptedRef.current) {
+      classifyAttemptedRef.current = true;
+      classifyUnschooled();
+    }
+  }, [unclassifiedNames, campaignId, classifyUnschooled]);
 
   return (
     <div className="space-y-4">
@@ -318,6 +375,89 @@ function SpellTreesTab({ character }) {
           </div>
         );
       })}
+
+      {/* Custom / invented spells grouped by school */}
+      {customSpells.length > 0 && Object.entries(customBySchool).map(([schoolKey, spells]) => {
+        const isUnclassified = schoolKey === '_unclassified';
+        const canonicalTree = !isUnclassified ? SPELL_TREES[schoolKey] : null;
+        const groupName = isUnclassified
+          ? t('magic.unclassifiedSchool', { defaultValue: 'Nieskategoryzowane' })
+          : canonicalTree?.name || schoolKey;
+        const groupIcon = canonicalTree?.icon || 'auto_awesome';
+        const groupKey = `custom_${schoolKey}`;
+        const isExpanded = expandedTree === groupKey;
+
+        return (
+          <div
+            key={groupKey}
+            className="rounded-sm border overflow-hidden transition-all border-amber-400/20 bg-amber-500/5"
+          >
+            <button
+              type="button"
+              onClick={() => setExpandedTree(isExpanded ? null : groupKey)}
+              className="w-full flex items-center justify-between gap-2 px-3 py-2 hover:bg-amber-500/10 transition-colors"
+            >
+              <div className="flex items-center gap-2 min-w-0">
+                <span className="material-symbols-outlined text-sm text-amber-400">{groupIcon}</span>
+                <span className="text-xs font-bold uppercase tracking-wide text-amber-400">
+                  {groupName}
+                </span>
+                <span className="text-[8px] text-amber-400/70 uppercase font-bold">
+                  {spells.length} {t('magic.inventedBadge', { defaultValue: 'wymyslone' })}
+                </span>
+                {isUnclassified && classifying && (
+                  <span className="material-symbols-outlined text-[11px] text-amber-400/60 animate-spin">progress_activity</span>
+                )}
+              </div>
+              <span className={`material-symbols-outlined text-xs text-on-surface-variant transition-transform ${isExpanded ? 'rotate-180' : ''}`}>
+                expand_more
+              </span>
+            </button>
+
+            {isExpanded && (
+              <div className="px-3 pb-3 space-y-1.5 border-t border-amber-400/10">
+                {isUnclassified && !classifying && campaignId && (
+                  <button
+                    type="button"
+                    onClick={classifyUnschooled}
+                    className="mt-2 text-[9px] text-amber-400/80 hover:text-amber-300 underline underline-offset-2 transition-colors"
+                  >
+                    {t('magic.classifySpells', { defaultValue: 'Sklasyfikuj zaklecia (AI)' })}
+                  </button>
+                )}
+                {spells.map((spell) => {
+                  const uses = usageCounts[spell.name] || 0;
+                  return (
+                    <div
+                      key={spell.name}
+                      className="flex items-start gap-2 px-2 py-1.5 rounded-sm border text-[10px] bg-amber-500/10 border-amber-400/20"
+                    >
+                      <span className="material-symbols-outlined text-sm mt-0.5 shrink-0 text-amber-400">
+                        {spell.icon || 'auto_awesome'}
+                      </span>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="flex items-center gap-1.5 font-bold text-amber-300">
+                            {spell.name}
+                            <span className="material-symbols-outlined text-[11px] text-amber-400">check_circle</span>
+                            <span className="text-[8px] text-amber-400/60 uppercase font-label tracking-wider">{t('magic.inventedTag', { defaultValue: 'wymyslone' })}</span>
+                          </span>
+                          <span className="text-on-surface-variant tabular-nums shrink-0">
+                            {spell.manaCost} many
+                          </span>
+                        </div>
+                        <span className="text-[9px] text-amber-400/70">
+                          {t('magic.uses', { count: uses, defaultValue: `${uses} uzyc` })}
+                        </span>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        );
+      })}
     </div>
   );
 }
@@ -327,6 +467,7 @@ export default function AdvancementPanel({ onClose }) {
   const character = useGameCharacter();
   const dispatch = useGameDispatch();
   const autoSave = useGameAutoSave();
+  const campaign = useGameCampaign();
   const [activeTab, setActiveTab] = useState('attributes');
   const modalRef = useModalA11y(onClose);
 
@@ -401,7 +542,11 @@ export default function AdvancementPanel({ onClose }) {
             <SkillsTab character={character} />
           )}
           {activeTab === 'spellTrees' && (
-            <SpellTreesTab character={character} />
+            <SpellTreesTab
+              character={character}
+              dispatch={(action) => { dispatch(action); autoSave(); }}
+              campaignId={campaign?.backendId}
+            />
           )}
         </div>
       </div>

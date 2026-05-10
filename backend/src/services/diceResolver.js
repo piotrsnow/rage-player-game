@@ -63,6 +63,7 @@ const SKILLS = [
 ];
 
 export const SKILL_BY_NAME = Object.fromEntries(SKILLS.map(s => [s.name, s]));
+export const SKILL_NAMES = SKILLS.map(s => s.name);
 
 // Fuzzy lookup: strip diacritics + lowercase + collapse whitespace → canonical name.
 const SKILL_CANONICAL_MAP = new Map();

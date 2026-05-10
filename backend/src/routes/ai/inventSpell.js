@@ -327,6 +327,7 @@ export async function inventSpellRoutes(fastify) {
       const stateChanges = {
         learnSpell: chosenSpellName,
         ...(analyzed.spellIcon ? { learnSpellIcon: analyzed.spellIcon } : {}),
+        ...(spellCard?.school ? { learnSpellSchool: spellCard.school } : {}),
       };
       const updatedCharacter = applyCharacterStateChanges(activeCharacter, stateChanges);
 

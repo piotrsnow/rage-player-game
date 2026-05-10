@@ -5,6 +5,8 @@ import {
   SPELL_TREES, SCROLL_BASE_CHANCE, SPELL_EFFECTS,
   findSpell, isSpellUnlocked, getAvailableSpells as getAvailable,
 } from '../data/rpgMagic.js';
+
+export { findSpell };
 import { rollPercentage } from './gameState.js';
 import { rollLuckCheck } from '../../shared/domain/luck.js';
 import { normalizeSpellMaterialIcon } from '../../shared/domain/spellMaterialIcons.js';
@@ -60,6 +62,7 @@ export function resolveKnownSpellDisplay(spellName, character = null) {
     manaCost: CUSTOM_KNOWN_SPELL_MANA_COST,
     treeId: null,
     treeName: null,
+    school: character?.spells?.schools?.[spellName] || null,
     description: '',
     icon: overrideIcon || 'auto_awesome',
     level: null,

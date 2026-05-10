@@ -5,7 +5,7 @@
  * having to reference a separate skill→attribute table.
  */
 
-import { SKILL_BY_NAME } from '../../diceResolver.js';
+import { SKILL_BY_NAME, SKILL_NAMES } from '../../diceResolver.js';
 import { formatMoney } from '../labels.js';
 
 const ATTR_SHORT = {
@@ -38,6 +38,15 @@ export function buildCharacterBlock(character) {
         return `${name}:${level}→${short}:${attrVal}`;
       });
     if (skillEntries.length) lines.push(`Skills (skill:level→ATTR:value): ${skillEntries.join(', ')}`);
+  }
+
+  const unownedSkills = SKILL_NAMES.filter((name) => {
+    const v = character.skills?.[name];
+    const level = v == null ? 0 : (typeof v === 'object' ? v.level : v);
+    return level === 0;
+  });
+  if (unownedSkills.length) {
+    lines.push(`Unlearned skills (level 0 — valid for skillsUsed when the action fits): ${unownedSkills.join(', ')}`);
   }
 
   lines.push(

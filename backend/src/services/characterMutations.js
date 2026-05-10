@@ -282,6 +282,9 @@ export function applyCharacterStateChanges(character, changes) {
         spells.icons = { ...(spells.icons || {}), [changes.learnSpell]: icon };
       }
     }
+    if (changes.learnSpellSchool) {
+      spells.schools = { ...(spells.schools || {}), [changes.learnSpell]: changes.learnSpellSchool };
+    }
     next.spells = spells;
   }
   if (changes.consumeScroll) {

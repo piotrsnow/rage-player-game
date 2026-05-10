@@ -105,6 +105,7 @@ export default function InventSpellModal({ campaignId, character = null, dispatc
           payload: {
             learnSpell: spellName,
             ...(spellIcon ? { learnSpellIcon: spellIcon } : {}),
+            ...(data.spell?.school ? { learnSpellSchool: data.spell.school } : {}),
           },
         });
         dispatch({

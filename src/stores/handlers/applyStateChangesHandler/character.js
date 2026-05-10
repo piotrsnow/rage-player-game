@@ -113,6 +113,10 @@ function applySpellBook(draft, changes) {
         draft.character.spells.icons[changes.learnSpell] = icon;
       }
     }
+    if (changes.learnSpellSchool) {
+      if (!draft.character.spells.schools) draft.character.spells.schools = {};
+      draft.character.spells.schools[changes.learnSpell] = changes.learnSpellSchool;
+    }
   }
 
   if (changes.consumeScroll) {
