@@ -262,6 +262,39 @@ export const GENERATE_SCENE_SCHEMA = {
   },
 };
 
+export const QUICK_BEAT_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    playerAction: { type: 'string', minLength: 1, maxLength: 400 },
+    provider: PROVIDER_SCHEMA,
+    language: LANGUAGE_SCHEMA,
+    characterId: { type: ['string', 'null'], maxLength: 64 },
+    entityTags: {
+      type: ['array', 'null'],
+      maxItems: 5,
+      items: {
+        type: 'object',
+        required: ['kind', 'id', 'name'],
+        properties: {
+          kind: { type: 'string', enum: ['spell', 'item', 'npc', 'location'] },
+          id:   { type: 'string', maxLength: 200 },
+          name: { type: 'string', maxLength: 200 },
+          meta: { type: 'object', additionalProperties: true },
+        },
+      },
+    },
+    dmSettings: {
+      type: 'object',
+      additionalProperties: true,
+      properties: {
+        llmNanoTimeoutMs: { type: 'integer', minimum: 1000, maximum: 120000 },
+      },
+    },
+  },
+  required: ['playerAction'],
+};
+
 export const SCENE_BODY_SCHEMA = {
   type: 'object',
   additionalProperties: true,

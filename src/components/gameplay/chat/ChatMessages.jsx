@@ -109,6 +109,47 @@ function QuestWrapupEpilogue({ wrapup }) {
   );
 }
 
+/**
+ * Quick beat ("mała akcja") — compact, italicized line for both player and DM.
+ * Rendered as a single condensed entry rather than the full DmMessage / PlayerMessage
+ * blocks so 5 consecutive beats don't visually dominate the chat. NPC dialogue
+ * inside `dialogueSegments` is still surfaced inline via DialogueSegments.
+ */
+export const QuickBeatMessage = memo(function QuickBeatMessage({ message, narrator }) {
+  const { t } = useTranslation();
+  const isPlayer = message.role === 'player';
+  const segments = Array.isArray(message.dialogueSegments) ? message.dialogueSegments : [];
+  const hasDialogue = segments.some((seg) => seg?.type === 'dialogue');
+  return (
+    <div className="flex flex-col gap-1 animate-fade-in">
+      <div className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-widest text-amber-300/80">
+        <span className="material-symbols-outlined text-[12px] leading-none">flash_on</span>
+        <span className="truncate">
+          {isPlayer
+            ? t('chat.quickBeatPlayer', { defaultValue: 'Mała akcja' })
+            : t('chat.quickBeatDm', { defaultValue: 'Mała akcja · DM' })}
+          {' · '}{formatTimestamp(message.timestamp)}
+        </span>
+      </div>
+      <div className={`pl-3 border-l ${isPlayer ? 'border-tertiary/35' : 'border-amber-400/30'}`}>
+        <p className={`text-[11px] italic leading-snug ${isPlayer ? 'text-tertiary/85' : 'text-on-surface-variant/85'}`}>
+          {message.content}
+        </p>
+        {hasDialogue && (
+          <div className="mt-1.5">
+            <DialogueSegments
+              segments={segments}
+              narrator={narrator}
+              messageId={message.id}
+              scenePacing={message.scenePacing || 'exploration'}
+            />
+          </div>
+        )}
+      </div>
+    </div>
+  );
+});
+
 export function CombatCommentaryMessage({ message, narrator }) {
   const { t } = useTranslation();
 

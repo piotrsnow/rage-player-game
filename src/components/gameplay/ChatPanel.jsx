@@ -9,6 +9,7 @@ import {
   PlayerMessage,
   SystemMessage,
   TypingIndicator,
+  QuickBeatMessage,
 } from './chat/ChatMessages';
 import DiceRollCard from './DiceRollCard';
 
@@ -134,7 +135,8 @@ export default function ChatPanel({
         {visibleMessages.map((msg) => {
           let inner;
           let px = 'px-2';
-          if (msg.role === 'dm') inner = <DmMessage message={msg} narrator={narrator} />;
+          if (msg.subtype === 'quick_beat') inner = <QuickBeatMessage message={msg} narrator={narrator} />;
+          else if (msg.role === 'dm') inner = <DmMessage message={msg} narrator={narrator} />;
           else if (msg.subtype === 'combat_commentary') inner = <CombatCommentaryMessage message={msg} narrator={narrator} />;
           else if (msg.role === 'player') { const isMe = myOdId ? msg.odId === myOdId : true; inner = <PlayerMessage message={msg} isMe={isMe} />; }
           else if (msg.subtype === 'dice_roll') { inner = msg.diceData ? <DiceRollCard diceData={msg.diceData} /> : <SystemMessage message={msg} />; px = 'px-3'; }

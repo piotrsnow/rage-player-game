@@ -196,6 +196,10 @@ export const initialState = {
   quests: { active: [], completed: [] },
   scenes: [],
   chatHistory: [],
+  // Quick-beat counter — increments on each successful "mała akcja", resets to
+  // 0 on every full ADD_SCENE. FE caps at 5 in a row (quickBeatLocked) so the
+  // session always re-syncs through the full pipeline and memoryCompressor.
+  quickBeatStreak: 0,
   characterVoiceMap: {},
   narratorVoiceId: null,
   isLoading: false,

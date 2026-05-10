@@ -356,6 +356,7 @@ model Campaign {
   locationEdges               LocationEdge[]
   campaignEdges               CampaignEdge[]
   favoriteScenes              FavoriteScene[]
+  quickBeats                  CampaignQuickBeat[]
   incidents                   CampaignIncident[]
   snapshots                   CampaignSnapshot[]
 
@@ -405,6 +406,29 @@ model CampaignScene {
   favoritedBy FavoriteScene[]
 
   @@index([campaignId, sceneIndex])
+}
+
+// Lightweight RP-beat that does NOT bump sceneIndex or trigger postSceneWork.
+// Used by the "Mała akcja" quick-beat path: nano-generated narration (1-3
+// sentences) anchored to the most recent CampaignScene. No imagePrompt,
+// no embedding, no stateChanges (only optional timeAdvance applied to
+// Character via the standard mutation path). Persisted so the chat history
+// survives reload, but invisible to memoryCompressor / vectorSearchService.
+model CampaignQuickBeat {
+  id               String   @id @default(uuid(7)) @db.Uuid
+  campaignId       String   @db.Uuid
+  parentSceneIndex Int
+  characterId      String?  @db.Uuid
+  playerAction     String   @db.Text
+  narrationText    String   @db.Text
+  npcSpeaker       String?
+  npcReply         String?  @db.Text
+  timeAdvance      Float?
+  createdAt        DateTime @default(now()) @db.Timestamptz
+
+  campaign Campaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+
+  @@index([campaignId, createdAt])
 }
 
 // Per-character bookmarked scenes. Heart toggle in gameplay UI; surfaced as a

@@ -323,6 +323,97 @@ export const aiService = {
     }
   },
 
+  /**
+   * Quick beat ("mała akcja") — lightweight RP-beat via the backend nano path.
+   * Returns one of:
+   *   { kind: 'complete', data }    — beat saved, payload ready for ADD_QUICK_BEAT
+   *   { kind: 'escalate', reason }  — caller must fall back to full scene flow
+   *   { kind: 'error', message, code }
+   */
+  async quickBeatViaBackendStream(campaignId, playerAction, {
+    provider = 'openai',
+    language = 'pl',
+    characterId = null,
+    entityTags = null,
+    dmSettings = {},
+  } = {}) {
+    const baseUrl = apiClient.getBaseUrl();
+
+    const requestBody = {
+      playerAction,
+      provider,
+      language,
+      characterId,
+      entityTags,
+      dmSettings,
+    };
+
+    const logId = aiCallLog.start({
+      type: 'quick-beat',
+      label: shortLabel(playerAction),
+      provider,
+      request: { campaignId, ...requestBody },
+    });
+
+    try {
+      const response = await apiClient.fetchAuthed(`${baseUrl}/v1/ai/campaigns/${campaignId}/quick-beat-stream`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(requestBody),
+      });
+
+      if (!response.ok) {
+        const err = await response.json().catch(() => ({}));
+        const e = new Error(err.error || `Stream error: ${response.status}`);
+        e.code = err.code || 'HTTP_ERROR';
+        throw e;
+      }
+
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let outcome = null;
+      let buffer = '';
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop();
+
+        let stop = false;
+        for (const line of lines) {
+          if (!line.startsWith('data: ')) continue;
+          try {
+            const event = JSON.parse(line.slice(6));
+            if (event.type === 'complete') {
+              outcome = { kind: 'complete', data: event.data };
+              stop = true;
+            } else if (event.type === 'escalate') {
+              outcome = { kind: 'escalate', reason: event.reason || 'unknown' };
+              stop = true;
+            } else if (event.type === 'error') {
+              outcome = { kind: 'error', message: event.error || 'Quick beat failed', code: event.code || 'QUICK_BEAT_ERROR' };
+              stop = true;
+            }
+          } catch (e) {
+            if (e.message && !e.message.includes('JSON')) throw e;
+          }
+        }
+        if (stop) break;
+      }
+
+      if (!outcome) outcome = { kind: 'error', message: 'Stream ended without event', code: 'EMPTY_STREAM' };
+
+      aiCallLog.finish(logId, outcome);
+      return outcome;
+    } catch (e) {
+      aiCallLog.fail(logId, e);
+      throw e;
+    }
+  },
+
   async generateRecap(
     gameState,
     _dmSettings,

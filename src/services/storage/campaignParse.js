@@ -50,6 +50,53 @@ export function parseBackendCampaign(full) {
     });
   }
 
+  // Quick beats — chronologically interleaved into chatHistory using the
+  // server-side createdAt timestamps. The LOAD_CAMPAIGN reducer does a final
+  // sort by timestamp so beats land between their parent scene and the next.
+  // Streak is the count of trailing beats anchored to the last full scene —
+  // mirrors what FE would have computed live, so the lock UI is correct after
+  // a refresh in the middle of a beat run.
+  if (Array.isArray(full.quickBeats) && full.quickBeats.length > 0) {
+    const npcGenderByName = new Map();
+    for (const npc of state.world?.npcs || []) {
+      if (npc?.name) npcGenderByName.set(npc.name, npc.gender);
+    }
+    const beatChat = [];
+    full.quickBeats.forEach((qb) => {
+      const ts = new Date(qb.createdAt).getTime();
+      beatChat.push({
+        id: `qb_${qb.id}_player`,
+        role: 'player',
+        subtype: 'quick_beat',
+        content: qb.playerAction,
+        timestamp: ts,
+      });
+      const dmEntry = {
+        id: `qb_${qb.id}_dm`,
+        role: 'dm',
+        subtype: 'quick_beat',
+        content: qb.narrationText,
+        timestamp: ts + 1,
+      };
+      if (qb.npcSpeaker && qb.npcReply) {
+        const gender = npcGenderByName.get(qb.npcSpeaker) === 'female' ? 'female' : 'male';
+        dmEntry.dialogueSegments = [{
+          type: 'dialogue',
+          character: qb.npcSpeaker,
+          text: qb.npcReply,
+          gender,
+        }];
+      }
+      beatChat.push(dmEntry);
+    });
+    state.chatHistory = [...(state.chatHistory || []), ...beatChat];
+
+    const lastSceneIndex = Math.max(0, (state.scenes?.length || 0) - 1);
+    state.quickBeatStreak = full.quickBeats.filter(
+      (qb) => qb.parentSceneIndex === lastSceneIndex,
+    ).length;
+  }
+
   if (!state.campaign) state.campaign = {};
   state.campaign.backendId = full.id;
   if (full.userId) state.campaign.userId = full.userId;
