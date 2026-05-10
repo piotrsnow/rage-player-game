@@ -17,13 +17,12 @@ export default function QuestOffersPanel({ offers = [], onAccept, onDecline }) {
   const { t } = useTranslation();
   const [expandedId, setExpandedId] = useState(null);
 
-  // Side/personal/faction questy są wyłączone w tym buildzie — filter offer.type.
-  // Domyślny main zachowuje backward-compat dla offers bez type.
-  const filteredOffers = offers.filter((o) => (o.type || 'main') === 'main');
-  const pendingOffers = filteredOffers.filter((o) => o.status === 'pending');
-  const resolvedOffers = filteredOffers.filter((o) => o.status !== 'pending');
+  // Wszystkie typy ofert renderowane (main / side / personal / faction).
+  // TYPE_STYLES + TYPE_ICONS mają fallback na 'side' dla nieznanego type.
+  const pendingOffers = offers.filter((o) => o.status === 'pending');
+  const resolvedOffers = offers.filter((o) => o.status !== 'pending');
 
-  if (filteredOffers.length === 0) return null;
+  if (offers.length === 0) return null;
 
   return (
     <div className="space-y-3">
@@ -40,7 +39,7 @@ export default function QuestOffersPanel({ offers = [], onAccept, onDecline }) {
       </div>
 
       <div className="space-y-2.5">
-        {filteredOffers.map((offer) => {
+        {offers.map((offer) => {
           const isExpanded = expandedId === offer.id;
           const isAccepted = offer.status === 'accepted';
           const isDeclined = offer.status === 'declined';

@@ -113,23 +113,43 @@ Narrate crisis effects (weakness, funny walk, stench, drowsiness). Apply -10 to 
  *  - questGraphEnabled=true (oś 1+5): pełen graf z [nodeKey] markerami,
  *    statusami DISCOVERED/UNDISCOVERED, BRANCHES, [STALLED] dla osi 4.
  *
- * Filter: tylko main questy. Side/personal w wodlu osi 3 (emergence) ale
- * render w prompcie nadal trzymamy main-only — side questy wyciekają
- * uwagę modelu od głównej fabuły.
+ * Main questy renderowane pierwsze pod nagłówkiem "Active Quests". Side /
+ * personal / faction questy w osobnej sub-sekcji "--- Background Quests ---"
+ * z dyrektywą: emit questUpdates only when narrative resolves them, do NOT
+ * divert the main arc. Bez tego LLM nie widzi ich obiektywów i nie potrafi
+ * ich auto-odhaczyć (analogiczny fix jak w incidentAnalyzer.js w e703e1a).
+ *
+ * Limity osobne (token budget): main 5, background 3. Sort wewnątrz grup
+ * stabilny po q.id — createdAt nie jest surface'owane przez campaignLoader
+ * dla questów z DB.
  */
 export function buildActiveQuestsBlock(quests, { questGraphEnabled = false } = {}) {
-  const active = (quests.active || []).filter((q) => q.type === 'main');
-  if (active.length === 0) return null;
+  const all = quests.active || [];
+  if (all.length === 0) return null;
 
-  if (!questGraphEnabled) {
-    return buildLegacyActiveQuestsBlock(active);
+  const sortById = (a, b) => String(a.id ?? '').localeCompare(String(b.id ?? ''));
+  const main = all.filter((q) => q.type === 'main').sort(sortById).slice(0, 5);
+  const background = all.filter((q) => q.type !== 'main').sort(sortById).slice(0, 3);
+  if (main.length === 0 && background.length === 0) return null;
+
+  const renderer = questGraphEnabled ? buildGraphActiveQuestsBlock : buildLegacyActiveQuestsBlock;
+  const parts = [];
+  if (main.length > 0) {
+    parts.push(renderer(main, { heading: true }));
   }
-  return buildGraphActiveQuestsBlock(active);
+  if (background.length > 0) {
+    parts.push("--- Background Quests (side / personal / faction — emit questUpdates only when narrative actually resolves them; do NOT divert the main arc) ---");
+    parts.push(renderer(background, { heading: false }));
+  }
+  return parts.join('\n');
 }
 
-function buildLegacyActiveQuestsBlock(active) {
-  const lines = ['Active Quests (use id=... for completedQuests; for questUpdates.objectiveId pass the number shown before the objective):'];
-  for (const q of active.slice(0, 5)) {
+function buildLegacyActiveQuestsBlock(active, { heading = true } = {}) {
+  const lines = [];
+  if (heading) {
+    lines.push('Active Quests (use id=... for completedQuests; for questUpdates.objectiveId pass the number shown before the objective):');
+  }
+  for (const q of active) {
     let line = `- ${q.name} (id=${q.id}) [${q.type || 'side'}]: ${q.description || ''}`;
     if (q.completionCondition) line += ` | Goal: ${q.completionCondition}`;
     if (q.questGiverId) line += ` | Giver: ${q.questGiverId}`;
@@ -166,9 +186,12 @@ function statusLabel(status) {
   }
 }
 
-function buildGraphActiveQuestsBlock(active) {
-  const lines = ['Active Quests (graph-aware — emit questUpdates.nodeKey, branchChoice, objectiveReveals, branchGroupReveals):'];
-  for (const q of active.slice(0, 5)) {
+function buildGraphActiveQuestsBlock(active, { heading = true } = {}) {
+  const lines = [];
+  if (heading) {
+    lines.push('Active Quests (graph-aware — emit questUpdates.nodeKey, branchChoice, objectiveReveals, branchGroupReveals):');
+  }
+  for (const q of active) {
     let header = `- ${q.name} (id=${q.id}) [${q.type || 'side'}]`;
     if (q.status === 'stalled') header += ' [STALLED]';
     if (q.status === 'failed') header += ' [FAILED]';

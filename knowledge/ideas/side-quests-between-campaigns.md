@@ -10,19 +10,30 @@ Triggers:
 - Player reputation / faction standing mature enough to drive quest generation.
 - We have a canonical-NPC linkage stable enough to reuse as quest givers.
 
-## Current state (2026-04)
+## Current state (2026-05)
 
-Side quest infrastructure exists — Prisma schema, `processStateChanges`, FE renderers all support `type: 'side' | 'personal' | 'faction'` — but **disabled for scene generation**:
+Side quest **visibility** in scene generation + UI is enabled (auto-detection of side-quest objective completion was broken: LLM never saw side quest objectives in the prompt, so it couldn't emit `questUpdates` for them — analogous to the incident-judge fix in `e703e1a`). Side quests rendered in a dedicated "--- Background Quests ---" sub-section with a directive to not divert the main arc:
 
-- [backend/src/services/sceneGenerator/systemPrompt/worldBlock.js `buildActiveQuestsBlock`](../../backend/src/services/sceneGenerator/systemPrompt/worldBlock.js) filters `q.type === 'main'`.
-- [src/components/gameplay/world/QuestsTab.jsx](../../src/components/gameplay/world/QuestsTab.jsx) filters active + completed to main only.
-- [src/components/gameplay/QuestOffersPanel.jsx](../../src/components/gameplay/QuestOffersPanel.jsx) filters offers to main only.
-- [staticRules.js `playerInputPolicyBlock`](../../backend/src/services/sceneGenerator/systemPrompt/staticRules.js) tells the LLM *"Quest offers emitted this way MUST tie into the main quest line — side/faction/personal quest creation is disabled in this build."*
-- [conditionalRules.js "MAIN QUEST COMPLETED" block](../../backend/src/services/sceneGenerator/systemPrompt/conditionalRules.js) no longer mentions side quests as a fallback.
+- [backend/src/services/sceneGenerator/systemPrompt/worldBlock.js `buildActiveQuestsBlock`](../../backend/src/services/sceneGenerator/systemPrompt/worldBlock.js) — orchestrator splits main vs background, separate slice limits (5 / 3).
+- [src/components/gameplay/world/QuestsTab.jsx](../../src/components/gameplay/world/QuestsTab.jsx) — renders all types, main first, then by id.
+- [src/components/gameplay/QuestOffersPanel.jsx](../../src/components/gameplay/QuestOffersPanel.jsx) — no type filter, all offers visible.
+- [staticRules.js](../../backend/src/services/sceneGenerator/systemPrompt/staticRules.js) — has BACKGROUND QUESTS hint near questUpdates rules.
 
-## Decision rationale
+What is **still TODO** (the actual between-campaign feature):
 
-Observed: LLM was generating fluff side quests mid-main-arc that competed with main-quest attention, bloated the Active Quests prompt block (~600-1500 znaków per scena with 3-4 side quests), and muddied the narrative arc. `type: 'main'` filter is a cheap feature-gate.
+- Between-campaign "downtime" scene flow (similar to `finaleSceneGenerator`) that seeds side quests from `WorldReputation` + canonical-NPC pool.
+- Persistence across campaigns for the same character (via `Character` library, not `CampaignQuest`).
+- Reputation / faction unlock gating.
+
+## Decision rationale (historic context)
+
+Originally (pre-2026-05), side quests were filtered out of scene generation entirely. Observed problem: LLM generated fluff side quests mid-main-arc that competed with main-quest attention, bloated the Active Quests prompt block (~600-1500 znaków per scena with 3-4 side quests), and muddied the narrative arc.
+
+The `Background Quests` sub-section + slice limit (3) + explicit "don't divert main arc" directive replaces the blanket filter. Trade-offs:
+
+- Pro: side quests created via questOffers (graph mode) actually progress now; user sees them in UI; auto-detection works.
+- Con: extra ~200-500 token per scene when side quests active; small risk of LLM still drifting onto side beats. Mitigated by sub-section header + directive.
+- Cost note: side-quest auto-completion fans out to `auditQuestWorldImpact` (nano LLM call) per completed quest — fine for 1-2 in flight, watch if many concurrent side quests appear.
 
 ## Why between-campaigns (not mid-campaign)
 
@@ -36,12 +47,10 @@ A between-campaign side-quest hub would:
 
 ## Where to start (when the trigger hits)
 
-- **Prompt:** re-enable filter — allow `q.type === 'main' || q.type === 'side'` in `buildActiveQuestsBlock`, but add context hint `"side quest count: N — these are background activities, don't divert main arc"`.
-- **FE:** un-hide side filters in `QuestsTab` and `QuestOffersPanel`. Re-expose `TYPE_COLORS.side`/`TYPE_ICONS.side`.
-- **Generator:** add a dedicated between-campaign scene flow (similar to `finaleSceneGenerator`) that seeds side quests from `WorldReputation` + canonical-NPC pool. Do NOT let mid-main-arc scene generation emit `type: 'side'`.
-- **processStateChanges:** ensure side-quest completion does NOT auto-promote to `campaignComplete`. Only main-quest completion triggers global WorldEvent.
+- **Generator:** add a dedicated between-campaign scene flow (similar to `finaleSceneGenerator`) that seeds side quests from `WorldReputation` + canonical-NPC pool. Mid-main-arc emergent side quests through `processQuestOffers` already work — but the between-campaign hub is the bigger feature.
+- **processStateChanges:** ensure side-quest completion does NOT auto-promote to `campaignComplete`. Only main-quest completion triggers global WorldEvent. (Already in place — `processStateChanges/index.js:617-639` distinguishes main vs side for global WorldEvent.)
 
 ## Blockers
 
-- Between-campaign flow itself doesn't exist yet — that's the prereq.
-- Side quests as mid-campaign fluff should stay **disabled** until the between-campaign hub is designed and built. Partial adoption (e.g. re-enabling just the prompt filter) would regress the original problem.
+- Between-campaign flow itself doesn't exist yet — that's the prereq for the larger feature.
+- Mid-arc side quest visibility (this iteration) is intentionally limited (`slice(0, 3)` background quests, never overrides main arc). If the LLM starts derailing scenes onto side quests, tighten the directive in `worldBlock.js` Background Quests sub-section header or reduce the slice limit further.

@@ -8,13 +8,20 @@ const TYPE_COLORS = {
 };
 
 export default function QuestsTab({ quests, npcs, navigateTo, t }) {
-  // Side/personal/faction questy są wyłączone w tym buildzie — feature
-  // do wdrożenia jako system między-kampaniami. Patrz
-  // knowledge/ideas/side-quests-between-campaigns.md.
-  const rawActive = (quests?.active || []).filter((q) => q.type === 'main');
-  const rawCompleted = (quests?.completed || []).filter((q) => q.type === 'main');
-  const active = [...rawActive].sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
-  const completed = [...rawCompleted].sort((a, b) => (b.completedAt || 0) - (a.completedAt || 0));
+  // Sort: main first → potem po id (stabilnie). createdAt nie jest
+  // surface'owane przez campaignLoader dla questów z DB, więc dla aktywnych
+  // używamy id; completed mają completedAt z applyStateChangesHandler.
+  const typeRank = (q) => (q.type === 'main' ? 0 : 1);
+  const active = [...(quests?.active || [])].sort((a, b) => {
+    const t1 = typeRank(a) - typeRank(b);
+    if (t1 !== 0) return t1;
+    return String(a.id ?? '').localeCompare(String(b.id ?? ''));
+  });
+  const completed = [...(quests?.completed || [])].sort((a, b) => {
+    const t1 = typeRank(a) - typeRank(b);
+    if (t1 !== 0) return t1;
+    return (b.completedAt || 0) - (a.completedAt || 0);
+  });
   const [showCompleted, setShowCompleted] = useState(false);
 
   if (active.length === 0 && completed.length === 0) {
