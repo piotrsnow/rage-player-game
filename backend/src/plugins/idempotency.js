@@ -1,3 +1,7 @@
+// NOTE: This in-memory Map does not survive process restarts and is not
+// shared across instances. Cloud Run must run with max_instances=1.
+// See AGENTS.md "Known gaps" for migration path to Postgres-backed store.
+
 import fp from 'fastify-plugin';
 import { logger } from '../lib/logger.js';
 

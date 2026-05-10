@@ -70,6 +70,7 @@ export async function generateSceneStream(campaignId, playerAction, options = {}
     achievementState = null,
     travelFailureReason = null,
     userId = null,
+    requestId = null,
   } = options;
   let resolvedMechanics = resolvedMechanicsOpt;
   const creativityEligible = isCreativityEligible(playerAction, { isCustomAction, fromAutoPlayer });
@@ -374,44 +375,14 @@ export async function generateSceneStream(campaignId, playerAction, options = {}
       recentTrail: trail,
       intentResult,
     });
-    if (sanity.score >= 3) {
+    if (sanity.score >= 3 && sceneResult?.stateChanges) {
       log.warn(
         { campaignId, score: sanity.score, signals: sanity.signals, from: sanity.suspect.from, to: sanity.suspect.to },
-        'Location change suspected — retrying scene',
+        'Location sanity strip — suspicious teleport removed',
       );
-      onEvent({ type: 'retry', reason: 'location_sanity' });
-      const retryUserPrompt = userPrompt
-        + `\n\n[SYSTEM CHECK] Your previous response wanted to change currentLocation to "${sanity.suspect.to}". `
-        + `The player action does NOT contain explicit movement vocabulary, OR this would create an A→B→A flip with the recent trail. `
-        + `If the player did NOT clearly move, KEEP currentLocation = "${sanity.suspect.from}" (or simply omit the field). `
-        + `If they did move, narrate the movement explicitly in the narrative.`;
-      const retryController = new AbortController();
-      const retryTimeoutHandle = setTimeout(() => retryController.abort(), llmPremiumTimeoutMs);
-      retryTimeoutHandle.unref?.();
-      try {
-        sceneResult = await runTwoStagePipelineStreaming(
-          systemPromptParts, retryUserPrompt, contextBlocks,
-          { provider, model: effectiveModel, apiKey: providerApiKey, signal: retryController.signal },
-          null, // silent retry — FE clears its buffer on the 'retry' event above
-        );
-      } catch (err) {
-        log.warn({ err: err?.message, campaignId }, 'Location sanity retry failed — keeping first response');
-      } finally {
-        clearTimeout(retryTimeoutHandle);
-      }
-      const retrySanity = detectSuspiciousLocationChange({
-        playerAction,
-        sceneResult,
-        prevLocName: preResolveLocationName,
-        recentTrail: trail,
-        intentResult,
-      });
-      if (retrySanity.score >= 3 && sceneResult?.stateChanges) {
-        log.warn({ campaignId, signals: retrySanity.signals }, 'Retry still suspicious — stripping currentLocation');
-        delete sceneResult.stateChanges.currentLocation;
-        delete sceneResult.stateChanges.currentX;
-        delete sceneResult.stateChanges.currentY;
-      }
+      delete sceneResult.stateChanges.currentLocation;
+      delete sceneResult.stateChanges.currentX;
+      delete sceneResult.stateChanges.currentY;
     } else if (sanity.score >= 2) {
       log.warn(
         { campaignId, score: sanity.score, signals: sanity.signals, from: sanity.suspect.from, to: sanity.suspect.to },
@@ -679,6 +650,7 @@ export async function generateSceneStream(campaignId, playerAction, options = {}
       prevLoc: preResolveLocationName,
       wrapupText: sceneResult.dialogueIfQuestTargetCompleted?.text || null,
       llmNanoTimeoutMs,
+      requestId,
     }).catch((err) =>
       log.error({ err, sceneId: savedScene.id }, 'Failed to enqueue post-scene work')
     );

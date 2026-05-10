@@ -17,6 +17,7 @@
 import { prisma } from '../../lib/prisma.js';
 import { childLogger } from '../../lib/logger.js';
 import { callAIJson, parseJsonOrNull } from '../aiJsonCall.js';
+import { wrapPlayerInput } from '../../../../shared/domain/playerInputSanitizer.js';
 
 const log = childLogger({ module: 'yassatoCameo' });
 
@@ -204,7 +205,7 @@ function buildNanoPrompts({ playerAction, xpAmount, swagger }) {
   const system = `Jesteś scenarzystą krótkich, absurdalnych scenek komediowych do mrocznego RPG. Twoim zadaniem jest zbudować CAMEO postaci Yassato — ninja-agenta-mściciela-filantropa. Scenka ma być śmieszna, nie dramatyczna, Yassato ma się pojawić w sposób absurdalny, dać graczowi konkretną liczbę punktów doświadczenia i rzucić JEDNĄ ukąśliwą kwestię — o tonie zadanym przez "swagger level". Odpowiadasz WYŁĄCZNIE poprawnym JSON-em, bez żadnego dodatkowego tekstu.`;
 
   const user = `Kontekst: gracz właśnie wpisał akcję zawierającą imię Yassato:
-"${playerAction.slice(0, 300)}"
+${wrapPlayerInput(playerAction.slice(0, 300))}
 
 Yassato to ninja-agent-mściciel-filantrop. Pojawia się obok gracza w absurdalny sposób (przykłady inspiracji, NIE kopiuj dosłownie: zjeżdża z dachu głową w dół jak pająk, wyłazi z kanalizacji, wypada graczowi z rękawa, dziś pracuje jako latarnia, wyskakuje z worka ryżu, wychodzi z beczki z soloną rzepą, okazuje się że był drugą połową ławki, itp.). Wymyśl JEDNO świeże pojawienie się — albo wariację znanego, albo coś nowego. Potem Yassato podchodzi do gracza, wciska mu dokładnie ${xpAmount} punktów doświadczenia i rzuca JEDNĄ krótką, ukąśliwą kwestię. Następnie znika.
 

@@ -22,6 +22,7 @@ import { prisma } from '../../lib/prisma.js';
 import { childLogger } from '../../lib/logger.js';
 import { callAIJson, parseJsonOrNull } from '../aiJsonCall.js';
 import { detectCombatIntent } from '../../../../shared/domain/combatIntent.js';
+import { wrapPlayerInput } from '../../../../shared/domain/playerInputSanitizer.js';
 import { parseMovementIntent } from '../../../../shared/domain/movementIntent.js';
 import {
   detectTravelIntent,
@@ -143,7 +144,7 @@ Ostatnia pełna scena (kontekst, NIE kontynuuj jej dosłownie):
 Ostatnie quick-beats w tej scenie (chronologicznie):
 ${beatsList}
 
-Akcja gracza (mała akcja): "${playerAction}"`;
+Akcja gracza (mała akcja): ${wrapPlayerInput(playerAction)}`;
 
   return { system, user };
 }

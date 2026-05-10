@@ -109,7 +109,7 @@ export async function openaiProxyRoutes(fastify) {
         messages,
         temperature: temperature ?? 0.8,
         ...(response_format ? { response_format } : {}),
-        ...(max_completion_tokens ? { max_completion_tokens } : {}),
+        max_completion_tokens: Math.min(max_completion_tokens || 4096, 4096),
       }),
     });
 

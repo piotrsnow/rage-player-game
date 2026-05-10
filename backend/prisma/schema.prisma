@@ -93,12 +93,14 @@ model User {
 }
 
 model RefreshToken {
-  id         BigInt   @id @default(autoincrement())
-  tokenId    String   @unique
-  userId     String   @db.Uuid
-  deviceInfo String   @default("")
-  createdAt  DateTime @default(now()) @db.Timestamptz
-  expiresAt  DateTime @db.Timestamptz
+  id               BigInt    @id @default(autoincrement())
+  tokenId          String    @unique
+  userId           String    @db.Uuid
+  deviceInfo       String    @default("")
+  createdAt        DateTime  @default(now()) @db.Timestamptz
+  expiresAt        DateTime  @db.Timestamptz
+  replacedAt       DateTime? @db.Timestamptz
+  gracePeriodUntil DateTime? @db.Timestamptz
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
@@ -429,6 +431,7 @@ model CampaignQuickBeat {
   campaign Campaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
 
   @@index([campaignId, createdAt])
+  @@index([campaignId, parentSceneIndex])
 }
 
 // Per-character bookmarked scenes. Heart toggle in gameplay UI; surfaced as a

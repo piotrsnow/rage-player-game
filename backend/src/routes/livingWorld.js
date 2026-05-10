@@ -1315,6 +1315,49 @@ export async function livingWorldRoutes(fastify) {
     return reply.send({ valid: warnings.length === 0, warnings: warnings.slice(0, 50) });
   });
 
+  // GET /news — recent global world events for the "world news" panel
+  fastify.get('/news', {
+    schema: {
+      querystring: {
+        type: 'object',
+        properties: {
+          since: { type: 'string', format: 'date-time' },
+        },
+      },
+    },
+  }, async (request, reply) => {
+    const since = request.query.since
+      ? new Date(request.query.since)
+      : new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+
+    const rows = await prisma.worldEvent.findMany({
+      where: {
+        visibility: 'global',
+        createdAt: { gt: since },
+      },
+      orderBy: { createdAt: 'desc' },
+      take: 5,
+      select: {
+        id: true,
+        eventType: true,
+        payload: true,
+        createdAt: true,
+      },
+    });
+
+    const events = rows.map((row) => {
+      const p = (row.payload && typeof row.payload === 'object') ? row.payload : {};
+      return {
+        id: String(row.id),
+        title: p.title || p.summary || row.eventType,
+        description: p.description || p.summary || '',
+        createdAt: row.createdAt,
+      };
+    });
+
+    return reply.send({ events });
+  });
+
   // POST /npc-dialog/:worldNpcId — C2 1-on-1 dialog
   fastify.post('/npc-dialog/:worldNpcId', {
     schema: {

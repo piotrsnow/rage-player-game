@@ -1,3 +1,4 @@
+import crypto from 'node:crypto';
 import { existsSync } from 'fs';
 import { resolve } from 'path';
 import { fileURLToPath } from 'url';
@@ -92,6 +93,14 @@ await fastify.register(rateLimit, {
 // Idempotency-Key support on opt-in mutating routes. Plugin installs
 // preHandler + onSend hooks; routes enable it via `config: { idempotency: true }`.
 await fastify.register(idempotencyPlugin);
+
+// Correlation ID — every request gets a unique requestId for tracing across
+// services (including Cloud Tasks callbacks).
+fastify.addHook('onRequest', (request, reply, done) => {
+  request.requestId = crypto.randomUUID();
+  request.log = request.log.child({ requestId: request.requestId });
+  done();
+});
 
 fastify.get('/health', async (request, reply) => {
   let dbOk = false;

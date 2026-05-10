@@ -13,6 +13,7 @@ import {
   createWsMessage,
   normalizeClientWsType,
   WS_SERVER_TYPES,
+  WS_PAYLOAD_SCHEMAS,
 } from '../../../../shared/contracts/multiplayer.js';
 import * as lobby from './handlers/lobby.js';
 import * as roomState from './handlers/roomState.js';
@@ -215,5 +216,22 @@ async function dispatchMessage(ctx, session, msg) {
     ctx.sendWs(ctx.ws, WS_SERVER_TYPES.ERROR, { message: 'Unknown message type' });
     return;
   }
+
+  const schema = WS_PAYLOAD_SCHEMAS[msg.type];
+  if (schema) {
+    const result = schema.safeParse(msg);
+    if (!result.success) {
+      const firstIssue = result.error.issues?.[0];
+      const detail = firstIssue
+        ? `${firstIssue.path.join('.')}: ${firstIssue.message}`
+        : 'invalid payload';
+      ctx.sendWs(ctx.ws, WS_SERVER_TYPES.ERROR, {
+        message: `Invalid ${msg.type} payload — ${detail}`,
+        code: 'VALIDATION_ERROR',
+      });
+      return;
+    }
+  }
+
   await handler(ctx, session, msg);
 }

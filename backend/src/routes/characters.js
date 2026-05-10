@@ -232,12 +232,24 @@ async function scrubOrphanedLocks(userId, characters) {
   }
   if (lockedIds.size === 0) return;
 
-  const liveCampaigns = await prisma.campaign.findMany({
-    where: { id: { in: Array.from(lockedIds) } },
-    select: { id: true },
-  });
-  const liveIds = new Set(liveCampaigns.map((c) => c.id));
-  const orphanedIds = Array.from(lockedIds).filter((id) => !liveIds.has(id));
+  const allIds = Array.from(lockedIds);
+  // Check both Campaign records and active MultiplayerSessions (guest lock
+  // writes roomCode as the lockedCampaignId — see handleJoinRoom).
+  const [liveCampaigns, liveSessions] = await Promise.all([
+    prisma.campaign.findMany({
+      where: { id: { in: allIds } },
+      select: { id: true },
+    }),
+    prisma.multiplayerSession.findMany({
+      where: { roomCode: { in: allIds } },
+      select: { roomCode: true },
+    }),
+  ]);
+  const liveIds = new Set([
+    ...liveCampaigns.map((c) => c.id),
+    ...liveSessions.map((s) => s.roomCode),
+  ]);
+  const orphanedIds = allIds.filter((id) => !liveIds.has(id));
   if (orphanedIds.length === 0) return;
 
   await prisma.character.updateMany({

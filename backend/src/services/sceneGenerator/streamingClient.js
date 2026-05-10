@@ -204,7 +204,7 @@ async function callAnthropicStreaming(messages, { model, temperature = 0.8, maxT
  * Run the 2-stage pipeline with streaming. Returns parsed scene via callback events.
  */
 export async function runTwoStagePipelineStreaming(systemPromptParts, userPrompt, contextBlocks, { provider = 'openai', model, apiKey, signal } = {}, onChunk) {
-  const contextSection = buildContextSection(contextBlocks);
+  const { text: contextSection, estTokens } = buildContextSection(contextBlocks);
   const dynamicFull = (systemPromptParts.dynamicSuffix || '') + (contextSection || '');
 
   const usedModel = model || (provider === 'openai' ? config.aiModels.premium.openai : config.aiModels.premium.anthropic);
@@ -233,6 +233,9 @@ export async function runTwoStagePipelineStreaming(systemPromptParts, userPrompt
     }
     await logLlmCallFinish(logId, { durationMs: Date.now() - t0, response: { text: fullText } });
   } catch (err) {
+    if (err.name === 'AbortError') {
+      log.warn({ event: 'llm_timeout', provider, model: usedModel }, 'LLM call timed out');
+    }
     await logLlmCallFail(logId, err);
     throw err;
   }

@@ -196,6 +196,10 @@ export async function authRoutes(fastify) {
 
     user = await maybePromoteEnvAdmin(user);
 
+    if (verified.rotatedToken) {
+      setRefreshCookie(reply, verified.rotatedToken.cookieValue);
+    }
+
     const accessToken = signAccessToken(fastify, user);
     const csrfToken = generateCsrfToken();
     setCsrfCookie(reply, csrfToken);

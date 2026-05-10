@@ -3,6 +3,7 @@ import { buildExtractionContext } from './graphContextBuilder.js';
 import { GraphUpdateSchema } from '../../../../shared/domain/locationGraph.js';
 import { config } from '../../config.js';
 import { childLogger } from '../../lib/logger.js';
+import { wrapPlayerInput } from '../../../../shared/domain/playerInputSanitizer.js';
 
 const log = childLogger({ module: 'graphExtractor' });
 
@@ -69,7 +70,7 @@ export async function extractGraphUpdate({
   const userPrompt = `${graphContext}
 
 ## SCENE DATA
-Player action: ${playerAction || 'N/A'}
+Player action: ${wrapPlayerInput(playerAction || 'N/A')}
 
 Scene narrative:
 ${sceneText || 'N/A'}

@@ -12,6 +12,7 @@ import { config } from '../config.js';
 import { childLogger } from '../lib/logger.js';
 import { resolveModelForTask } from './serverConfig.js';
 import { logLlmCallStart, logLlmCallFinish, logLlmCallFail, getLlmCallUserId } from './llmCallLogger.js';
+import { wrapPlayerInput } from '../../../shared/domain/playerInputSanitizer.js';
 
 const log = childLogger({ module: 'memoryCompressor' });
 
@@ -338,7 +339,7 @@ export async function compressSceneToSummary(campaignId, narrative, playerAction
       ? `\n\nAllowed locations (mentionedLocations must be picked verbatim from this list — names not here are skipped):\n${allowedLocationNames.map((n) => `- ${n}`).join('\n')}`
       : '';
 
-    const userPrompt = `Player action: "${playerAction || 'N/A'}"
+    const userPrompt = `Player action: ${wrapPlayerInput(playerAction || 'N/A')}
 
 Narrative:
 ${narrativeBlock}
@@ -521,14 +522,23 @@ function normalizeLocationName(name) {
 // Find an existing location record whose name fuzzy-matches the given one.
 // Prefers exact normalized match; falls back to substring containment so
 // "Studnia w dolnym rynku" and "Studnia w dolnym rynku w Vey" collapse.
-async function findExistingLocationRecord(campaignId, locationName) {
+//
+// `locationCache` (optional Map) avoids repeated findMany calls within a
+// single request — assembleContext creates one and threads it through.
+async function findExistingLocationRecord(campaignId, locationName, locationCache) {
   const norm = normalizeLocationName(locationName);
   if (!norm) return null;
 
-  const all = await prisma.campaignLocationSummary.findMany({
-    where: { campaignId },
-    select: { id: true, locationName: true, summary: true, keyNpcs: true, unresolvedHooks: true, sceneDigests: true, sceneCount: true, lastVisitScene: true },
-  });
+  let all;
+  if (locationCache && locationCache.has(campaignId)) {
+    all = locationCache.get(campaignId);
+  } else {
+    all = await prisma.campaignLocationSummary.findMany({
+      where: { campaignId },
+      select: { id: true, locationName: true, summary: true, keyNpcs: true, unresolvedHooks: true, sceneDigests: true, sceneCount: true, lastVisitScene: true },
+    });
+    if (locationCache) locationCache.set(campaignId, all);
+  }
 
   let partialMatch = null;
   for (const rec of all) {
@@ -636,10 +646,10 @@ ${scenesAtLocation.join('\n\n')}`;
  * same fuzzy lookup as the writer so a drifted name on read still hits the
  * canonical record.
  */
-export async function getLocationSummary(campaignId, locationName) {
+export async function getLocationSummary(campaignId, locationName, { locationCache } = {}) {
   if (!locationName) return null;
 
-  const summary = await findExistingLocationRecord(campaignId, locationName);
+  const summary = await findExistingLocationRecord(campaignId, locationName, locationCache);
 
   if (!summary) return null;
 
@@ -700,142 +710,11 @@ export async function appendSceneDigest(campaignId, locationName, sceneIndex, di
  * Fetch the scene digest ring buffer for a location. Returns an array of
  * `{ sceneNum, text }` entries (most recent last), or null if none.
  */
-export async function getLocationDigests(campaignId, locationName) {
+export async function getLocationDigests(campaignId, locationName, { locationCache } = {}) {
   if (!locationName) return null;
-  const rec = await findExistingLocationRecord(campaignId, locationName);
+  const rec = await findExistingLocationRecord(campaignId, locationName, locationCache);
   if (!rec) return null;
   const digests = Array.isArray(rec.sceneDigests) ? rec.sceneDigests : [];
   return digests.length > 0 ? digests : null;
 }
 
-// ── QUEST OBJECTIVE PROGRESS CHECK ──
-
-const QUEST_CHECK_SYSTEM = `You track quest objective progress in an RPG scene.
-Given the narrative and unchecked objectives (with their current progress), return JSON:
-{
-  "updates": [
-    {"questId": "id", "objectiveId": "id", "addProgress": "what was accomplished in this scene", "completed": true/false}
-  ]
-}
-Strict rules:
-- An objective progresses ONLY if its SPECIFIC target is explicitly mentioned in the narrative:
-  * NPC by proper name (e.g. "Borin" — not generic "karczmarz" or "bandyta")
-  * Location by proper name (e.g. "Grobowiec Zapomnianych" — not generic "grobowiec")
-  * Specific item/object named in the objective text
-- Random combat, unrelated NPCs, travel, or scenery changes do NOT count as progress — even if they vaguely match a keyword.
-- If the narrative only shares a topic with the objective (e.g. objective mentions "walka z bandytami" and player fights unrelated bandits), return NO update.
-- When unsure, return {"updates": []}. Err on the side of silence.
-- "addProgress": short sentence describing what was accomplished in THIS scene. Write in the same language as the narrative.
-- "completed": true ONLY if the ENTIRE objective description is fully satisfied (all parts done, not just some). Check against both the description AND accumulated progress.
-- If the objective has multiple parts (e.g. "find X and deliver to Y"), it is completed only when ALL parts are done.
-- If nothing relevant happened, return {"updates": []}.`;
-
-// Presfilter: return true only when the narrative contains at least one
-// strong textual marker for any active quest (quest title, proper-noun token
-// from the description, or a listed NPC name). If no marker hits, we skip
-// the nano call entirely — cheaper AND prevents unrelated-combat false
-// positives where the model was eagerly marking progress.
-function narrativeMentionsAnyQuest(narrative, activeQuests) {
-  if (!narrative || !activeQuests?.length) return false;
-  const text = narrative.toLowerCase();
-
-  for (const quest of activeQuests) {
-    if (quest.name && text.includes(quest.name.toLowerCase())) return true;
-    if (quest.title && text.includes(quest.title.toLowerCase())) return true;
-    if (quest.questGiverId && text.includes(String(quest.questGiverId).toLowerCase())) return true;
-    if (quest.turnInNpcId && text.includes(String(quest.turnInNpcId).toLowerCase())) return true;
-
-    for (const obj of quest.objectives || []) {
-      const desc = (obj.description || '').toLowerCase();
-      // Pick proper-noun-ish tokens (length >= 4, starts with letter) from the
-      // objective description. Heuristic but good enough to beat pure keyword
-      // overlap from generic verbs like "walka"/"znajdz".
-      const tokens = desc.split(/\s+/).filter((t) => t.length >= 4 && /^[a-ząćęłńóśźż]/.test(t));
-      for (const tok of tokens) {
-        if (text.includes(tok)) return true;
-      }
-    }
-  }
-  return false;
-}
-
-/**
- * Check quest objectives against scene narrative.
- * Returns additional questUpdates that the large model may have missed.
- * Called semi-blocking before the complete event (awaited, ~200-500ms).
- *
- * @param {string} narrative - Scene narrative text
- * @param {string} playerAction - Player's action text
- * @param {Array} activeQuests - Active quests with objectives
- * @param {Array} existingQuestUpdates - questUpdates already produced by the large model
- * @returns {Array} Additional quest updates [{questId, objectiveId, addProgress, completed}]
- */
-export async function checkQuestObjectives(narrative, playerAction, activeQuests, existingQuestUpdates = [], provider, { timeoutMs } = {}) {
-  if (!narrative || !activeQuests?.length) return [];
-
-  // Presfilter: bail out entirely if no quest marker appears in the narrative.
-  // Prevents nano from eagerly progressing quests off random tavern brawls.
-  if (!narrativeMentionsAnyQuest(narrative, activeQuests)) return [];
-
-  // Build set of objectives already marked completed by the large model
-  const alreadyCompleted = new Set(
-    existingQuestUpdates
-      .filter(u => u.completed)
-      .map(u => `${u.questId}/${u.objectiveId}`)
-  );
-
-  // Collect unchecked objectives across all active quests
-  const unchecked = [];
-  for (const quest of activeQuests) {
-    if (!quest.objectives?.length) continue;
-    for (const obj of quest.objectives) {
-      if (obj.completed) continue;
-      if (alreadyCompleted.has(`${quest.id}/${obj.id}`)) continue;
-      unchecked.push({
-        questId: quest.id,
-        objectiveId: obj.id,
-        description: obj.description,
-        progress: obj.progress || '',
-      });
-    }
-  }
-
-  // Short-circuit: no unchecked objectives → no API call
-  if (unchecked.length === 0) return [];
-
-  const objectiveLines = unchecked.map(o => {
-    const progressLine = o.progress ? `\n  Progress so far: "${o.progress}"` : '\n  Progress so far: (none)';
-    return `- [${o.questId}/${o.objectiveId}] "${o.description}"${progressLine}`;
-  }).join('\n');
-
-  const userPrompt = `Player action: "${playerAction || 'N/A'}"
-
-Narrative:
-${(narrative || '').slice(0, 800)}
-
-Unchecked objectives:
-${objectiveLines}`;
-
-  try {
-    // Fast nano tier — quest check is semi-blocking (200-500ms budget before
-    // final SSE event). Classification-shaped task; non-reasoner is the right
-    // trade-off. Pre-filter (narrativeMentionsAnyQuest) guards against false positives.
-    const result = await callNano(QUEST_CHECK_SYSTEM, userPrompt, provider, { timeoutMs, maxTokens: 300, reasoning: false, taskType: 'quest-check', taskLabel: 'Quest objective check' });
-    if (!result?.updates?.length) return [];
-
-    // Validate and normalize updates — only return valid ones matching known objectives
-    const knownIds = new Set(unchecked.map(o => `${o.questId}/${o.objectiveId}`));
-    return result.updates
-      .filter(u => u.questId && u.objectiveId && knownIds.has(`${u.questId}/${u.objectiveId}`))
-      .map(u => ({
-        questId: u.questId,
-        objectiveId: u.objectiveId,
-        addProgress: typeof u.addProgress === 'string' ? u.addProgress.slice(0, 200) : '',
-        completed: !!u.completed,
-        source: 'nano',
-      }));
-  } catch (err) {
-    log.error({ err }, 'Quest objective check failed');
-    return [];
-  }
-}

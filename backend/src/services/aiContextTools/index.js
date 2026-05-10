@@ -3,7 +3,7 @@ import { getLocationSummary, getLocationDigests } from '../memoryCompressor.js';
 
 import { handleSearchMemory } from './handlers/searchMemory.js';
 import { handleGetNPC } from './handlers/npc.js';
-import { handleGetQuest } from './handlers/quest.js';
+import { handleGetQuest, prefetchCampaignQuests } from './handlers/quest.js';
 import { handleGetLocation } from './handlers/location.js';
 import { handleGetCodex } from './handlers/codex.js';
 import { buildWorldLorePreamble } from './worldLore.js';
@@ -25,6 +25,15 @@ export async function assembleContext(
   skipKeys = {},
   { provider = 'openai', timeoutMs = 5000, playerAction = null } = {},
 ) {
+  // Pre-fetch quests once so individual handleGetQuest calls skip re-querying.
+  const needsQuests = (selectionResult.expand_quests || []).length > 0;
+  const prefetchedQuests = needsQuests ? await prefetchCampaignQuests(campaignId) : [];
+
+  // Per-request cache for CampaignLocationSummary rows — avoids repeated
+  // findMany inside getLocationSummary / getLocationDigests / appendSceneDigest
+  // when they all resolve the same campaignId within a single assembleContext call.
+  const locationCache = new Map();
+
   const fetches = [];
 
   // Round A (Phase 0a) — World Lore preamble. Always fetched (cheap —
@@ -68,11 +77,11 @@ export async function assembleContext(
     );
   }
 
-  // Expand selected quests
+  // Expand selected quests (using pre-fetched rows to avoid N+1 queries)
   for (const name of selectionResult.expand_quests || []) {
     if (skipQuests.has(name.toLowerCase())) continue;
     fetches.push(
-      handleGetQuest(campaignId, name).then((r) => ({ type: 'quest', key: name, data: r })),
+      handleGetQuest(campaignId, name, { prefetchedQuests }).then((r) => ({ type: 'quest', key: name, data: r })),
     );
   }
 
@@ -81,7 +90,7 @@ export async function assembleContext(
     fetches.push(
       Promise.all([
         handleGetLocation(campaignId, currentLocation),
-        getLocationSummary(campaignId, currentLocation),
+        getLocationSummary(campaignId, currentLocation, { locationCache }),
       ]).then(([locationData, summary]) => ({
         type: 'location',
         data: summary ? `${locationData}\n\n${summary}` : locationData,
@@ -93,7 +102,7 @@ export async function assembleContext(
   // context. Fetched whenever a current location is known (cheap DB read).
   if (currentLocation) {
     fetches.push(
-      getLocationDigests(campaignId, currentLocation)
+      getLocationDigests(campaignId, currentLocation, { locationCache })
         .then((data) => ({ type: 'locationDigests', data }))
         .catch(() => ({ type: 'locationDigests', data: null })),
     );

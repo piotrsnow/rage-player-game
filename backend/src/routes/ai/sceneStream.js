@@ -91,6 +91,7 @@ export async function sceneStreamRoutes(fastify) {
       achievementState,
       travelFailureReason,
       userId: request.user.id,
+      requestId: request.requestId,
     };
 
     const writeEvent = (event) => {

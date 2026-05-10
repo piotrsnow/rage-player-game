@@ -5,6 +5,7 @@ import { requireServerApiKey } from '../apiKeyService.js';
 import { resolveModelForTask } from '../serverConfig.js';
 import { selectBestiaryEncounter } from '../../data/equipment/index.js';
 import { logLlmCallStart, logLlmCallFinish, logLlmCallFail } from '../llmCallLogger.js';
+import { wrapPlayerInput } from '../../../../shared/domain/playerInputSanitizer.js';
 
 const log = childLogger({ module: 'sceneGenerator' });
 
@@ -47,7 +48,7 @@ async function generateShortNarrative(instruction, playerAction, provider = 'ope
         body: JSON.stringify({
           model: usedModel,
           max_tokens: 200,
-          messages: [{ role: 'user', content: `${instruction}\n\nAkcja gracza: "${playerAction}"\n\nOdpowiedz TYLKO narracją, bez JSON.` }],
+          messages: [{ role: 'user', content: `${instruction}\n\nAkcja gracza: ${wrapPlayerInput(playerAction)}\n\nOdpowiedz TYLKO narracją, bez JSON.` }],
         }),
       });
       if (resp.ok) {
@@ -62,7 +63,7 @@ async function generateShortNarrative(instruction, playerAction, provider = 'ope
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
         body: JSON.stringify({
           model: usedModel,
-          messages: [{ role: 'user', content: `${instruction}\n\nAkcja gracza: "${playerAction}"\n\nOdpowiedz TYLKO narracją, bez JSON.` }],
+          messages: [{ role: 'user', content: `${instruction}\n\nAkcja gracza: ${wrapPlayerInput(playerAction)}\n\nOdpowiedz TYLKO narracją, bez JSON.` }],
           max_tokens: 200,
           temperature: 0.8,
         }),

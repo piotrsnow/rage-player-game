@@ -18,6 +18,7 @@ import {
   buildArrivalNarrative,
 } from '../../../services/multiplayerSceneFlow.js';
 import { WS_SERVER_TYPES } from '../../../../../shared/contracts/multiplayer.js';
+import { prisma } from '../../../lib/prisma.js';
 
 export async function handleCreateRoom(ctx, session) {
   const result = createRoom(ctx.uid, ctx.ws);
@@ -63,6 +64,19 @@ export async function handleJoinRoom(ctx, session, msg) {
   if (!selectedCharacter) {
     throw new Error('Character not found or not owned by user');
   }
+
+  // Guest campaign lock — mirrors what POST /v1/campaigns does for the host.
+  // Uses roomCode as the lock key; scrubOrphanedLocks checks both Campaign
+  // and MultiplayerSession tables so the lock stays valid while the room exists.
+  await prisma.character.update({
+    where: { id: msg.characterId },
+    data: {
+      lockedCampaignId: session.roomCode,
+      lockedCampaignName: result.room.settings?.name || '[Multiplayer]',
+      lockedLocation: null,
+    },
+  });
+
   if (player) {
     player.characterId = msg.characterId;
     player.name = selectedCharacter.name;

@@ -1,5 +1,6 @@
 import { BESTIARY_RACES, BESTIARY_LOCATIONS } from '../../data/equipment/index.js';
 import { detectCombatIntent } from '../../../../shared/domain/combatIntent.js';
+import { wrapPlayerInput } from '../../../../shared/domain/playerInputSanitizer.js';
 
 const BESTIARY_RACES_STR = BESTIARY_RACES.join(', ');
 const BESTIARY_LOCATIONS_STR = BESTIARY_LOCATIONS.join(', ');
@@ -84,7 +85,7 @@ Do NOT re-emit the same questUpdates / npcs / location changes — they're alrea
   } else if (isContinue) {
     parts.push(`PLAYER CONTINUES — advance the plot without specific player action. Push the scene forward, introduce next beat.`);
   } else if (isPostCombat) {
-    parts.push(`${playerAction}\n\nPOST-COMBAT: Narrate aftermath. Do NOT include combatUpdate. Describe battlefield, wounds, loot. No new combat this scene.`);
+    parts.push(`${wrapPlayerInput(playerAction)}\n\nPOST-COMBAT: Narrate aftermath. Do NOT include combatUpdate. Describe battlefield, wounds, loot. No new combat this scene.`);
     if (isPostCombatDefeat) {
       parts.push(`DEFEAT: Player LOST. Narrate consequences — capture, rescue, item loss, humiliation. Never frame as victory.`);
     }
@@ -101,10 +102,10 @@ Do NOT re-emit the same questUpdates / npcs / location changes — they're alrea
     if (speechMatch) {
       const speechText = speechMatch[1];
       const actionText = playerAction.replace(speechMatch[0], '').trim();
-      parts.push(`Player input (the character's intent — GM decides outcomes): ${actionText || playerAction}`);
+      parts.push(`Player input (the character's intent — GM decides outcomes): ${wrapPlayerInput(actionText || playerAction)}`);
       parts.push(`Player SPEECH (include as dialogue segment with PC name): "${speechText}"`);
     } else {
-      parts.push(`Player input (the character's intent — GM decides outcomes): ${playerAction}`);
+      parts.push(`Player input (the character's intent — GM decides outcomes): ${wrapPlayerInput(playerAction)}`);
     }
   }
 

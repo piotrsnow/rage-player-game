@@ -228,6 +228,25 @@ const BranchGroupRevealSchema = z.object({
 
 export const BranchGroupRevealsSchema = z.array(BranchGroupRevealSchema).max(10);
 
+// ── Numeric stateChanges caps ─────────────────────────────────────────
+// xp, woundsChange, and moneyChange are passed through to the FE unvalidated
+// today. Adding backend caps prevents a prompt-injected LLM from granting
+// absurd values that slip past the FE schema's `z.number().optional()`.
+
+export const XpSchema = z.number().max(50);
+
+export const WoundsChangeSchema = z.number().min(-20).max(20);
+
+export const MoneyChangeSchema = z.object({
+  gold: z.number().min(-500).max(500).optional().default(0),
+  silver: z.number().min(-5000).max(5000).optional().default(0),
+  copper: z.number().min(-50000).max(50000).optional().default(0),
+}).passthrough().nullable();
+
+export const parseXp = (input) => safeParse(XpSchema, input);
+export const parseWoundsChange = (input) => safeParse(WoundsChangeSchema, input);
+export const parseMoneyChange = (input) => safeParse(MoneyChangeSchema, input);
+
 /**
  * Safe parse helpers. Each returns `{ ok, data, error }`. Handlers use these
  * instead of raw `.parse()` so a schema violation downgrades to a logged

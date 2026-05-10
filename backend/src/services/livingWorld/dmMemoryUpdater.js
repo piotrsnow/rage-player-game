@@ -11,6 +11,7 @@
 import { callNano } from '../memoryCompressor.js';
 import { childLogger } from '../../lib/logger.js';
 import { readDmAgentState, updateDmAgent } from './dmMemoryService.js';
+import { wrapPlayerInput } from '../../../../shared/domain/playerInputSanitizer.js';
 
 const log = childLogger({ module: 'dmMemoryUpdater' });
 
@@ -63,7 +64,7 @@ export async function updateDmMemoryFromScene({
     .join('\n');
 
   const userPrompt = [
-    playerAction ? `Player action: ${playerAction.slice(0, 300)}` : null,
+    playerAction ? `Player action: ${wrapPlayerInput(playerAction.slice(0, 300))}` : null,
     `Scene narrative:\n${narrative.slice(0, 2500)}`,
     memoryDigest ? `\nExisting DM memory (most recent):\n${memoryDigest}` : null,
     hookDigest ? `\nPending hooks:\n${hookDigest}` : null,

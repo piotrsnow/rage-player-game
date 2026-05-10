@@ -1,12 +1,21 @@
 import { pickChatterLine } from '../../../../shared/domain/npcChatterPool.js';
 import { buildNarrativeContext } from '../locationGraph/graphContextBuilder.js';
+import { childLogger } from '../../lib/logger.js';
+
+const log = childLogger({ module: 'contextSection' });
+
+const TOKEN_WARN_THRESHOLD = 10_000;
+const TOKEN_HARD_CAP = 12_000;
 
 /**
  * Format pre-fetched context blocks (from assembleContext) into a prompt
  * section that gets appended to the dynamic suffix of the system prompt.
+ *
+ * Returns `{ text, estTokens }` — callers that only need the string can
+ * destructure or fall back to the `.text` property.
  */
 export function buildContextSection(contextBlocks) {
-  if (!contextBlocks) return '';
+  if (!contextBlocks) return { text: '', estTokens: 0 };
 
   const parts = [];
 
@@ -572,6 +581,36 @@ export function buildContextSection(contextBlocks) {
     }
   }
 
-  if (parts.length === 0) return '';
-  return `\n── EXPANDED CONTEXT (use in your response) ──\n${parts.join('\n\n')}`;
+  if (parts.length === 0) return { text: '', estTokens: 0 };
+
+  let assembled = `\n── EXPANDED CONTEXT (use in your response) ──\n${parts.join('\n\n')}`;
+
+  const totalChars = assembled.length;
+  let estTokens = Math.ceil(totalChars / 4);
+
+  if (estTokens > TOKEN_HARD_CAP) {
+    const npcMemoryRe = /## \[NPC_MEMORY\][^\n]*\n(?:.*\n)*?(?=## |\[\/Living World\]|\[Living World\]$|$)/m;
+    const match = assembled.match(npcMemoryRe);
+    if (match) {
+      const block = match[0];
+      const lines = block.split('\n');
+      const header = lines.slice(0, 2).join('\n');
+      const entryLines = lines.slice(2);
+      const excessChars = (estTokens - TOKEN_HARD_CAP) * 4;
+      let trimmedChars = 0;
+      let cutIndex = 0;
+      for (cutIndex = 0; cutIndex < entryLines.length && trimmedChars < excessChars; cutIndex++) {
+        trimmedChars += entryLines[cutIndex].length + 1;
+      }
+      const kept = entryLines.slice(cutIndex);
+      const trimmed = [header, `(${cutIndex} oldest entries trimmed for token budget)`, ...kept].join('\n');
+      assembled = assembled.replace(block, trimmed);
+      estTokens = Math.ceil(assembled.length / 4);
+    }
+    log.warn({ estTokens, totalChars: assembled.length }, 'Context section exceeded 12k token cap — NPC memory trimmed');
+  } else if (estTokens > TOKEN_WARN_THRESHOLD) {
+    log.warn({ estTokens, totalChars }, 'Context section approaching token budget');
+  }
+
+  return { text: assembled, estTokens };
 }

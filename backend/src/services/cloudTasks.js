@@ -35,19 +35,25 @@ export async function enqueuePostSceneWork(payload) {
     'post-scene-work',
   );
 
+  const headers = { 'Content-Type': 'application/json' };
+  if (payload.requestId) {
+    headers['X-Request-Id'] = payload.requestId;
+  }
+
   const task = {
     httpRequest: {
       httpMethod: 'POST',
       url: `${config.selfUrl}/v1/internal/post-scene-work`,
       body: Buffer.from(JSON.stringify(payload)).toString('base64'),
-      headers: { 'Content-Type': 'application/json' },
+      headers,
       oidcToken: {
         serviceAccountEmail: config.runtimeServiceAccount,
         audience: config.selfUrl,
       },
     },
+    dispatchDeadline: { seconds: 1800 },
   };
 
   await tasksClient.createTask({ parent, task });
-  log.debug({ sceneId: payload.sceneId }, 'Enqueued post-scene-work task');
+  log.debug({ sceneId: payload.sceneId, requestId: payload.requestId }, 'Enqueued post-scene-work task');
 }

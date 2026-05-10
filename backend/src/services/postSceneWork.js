@@ -33,8 +33,9 @@ export async function handlePostSceneWork({
   prevLoc,
   wrapupText = null,
   llmNanoTimeoutMs,
+  requestId,
 }) {
-  log.info({ sceneId, campaignId, newLoc, prevLoc }, 'Post-scene work START');
+  log.info({ sceneId, campaignId, newLoc, prevLoc, requestId }, 'Post-scene work START');
   const [scene, campaign] = await Promise.all([
     prisma.campaignScene.findUnique({ where: { id: sceneId } }),
     prisma.campaign.findUnique({ where: { id: campaignId } }),

@@ -11,6 +11,7 @@ import { config } from '../../config.js';
 import { childLogger } from '../../lib/logger.js';
 import { resolveModelForTask } from '../serverConfig.js';
 import { NANO_SYSTEM_PROMPT } from './nanoPrompt.js';
+import { wrapPlayerInput } from '../../../../shared/domain/playerInputSanitizer.js';
 
 const log = childLogger({ module: 'intentClassifier' });
 
@@ -93,7 +94,7 @@ export function buildAvailableSummary(coreState, { dbNpcs = [], dbQuests = [], d
  * Call nano model to select which context to expand for a freeform player action.
  */
 export async function selectContextWithNano(playerAction, availableSummary, { provider = 'openai', timeoutMs } = {}) {
-  const userPrompt = `Player action: "${playerAction}"\n\nAvailable data:\n${availableSummary}`;
+  const userPrompt = `Player action: ${wrapPlayerInput(playerAction)}\n\nAvailable data:\n${availableSummary}`;
 
   const controller = timeoutMs ? new AbortController() : null;
   const timeoutHandle = controller ? setTimeout(() => controller.abort(), timeoutMs) : null;

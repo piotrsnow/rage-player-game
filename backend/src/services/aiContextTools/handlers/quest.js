@@ -1,10 +1,26 @@
 import { prisma } from '../../../lib/prisma.js';
 
-export async function handleGetQuest(campaignId, questName) {
+/**
+ * Pre-fetch all CampaignQuest rows (with objectives) for a campaign.
+ * Called once in assembleContext so individual handleGetQuest calls
+ * don't each hit the DB.
+ */
+export async function prefetchCampaignQuests(campaignId) {
+  return prisma.campaignQuest.findMany({
+    where: { campaignId },
+    include: { objectives: { orderBy: { displayOrder: 'asc' } } },
+  });
+}
+
+/**
+ * @param {string} campaignId
+ * @param {string} questName
+ * @param {{ prefetchedQuests?: Array }} opts - optional pre-fetched quest rows
+ */
+export async function handleGetQuest(campaignId, questName, { prefetchedQuests } = {}) {
   const query = questName.toLowerCase();
 
-  // Try normalized CampaignQuest first
-  const dbQuests = await prisma.campaignQuest.findMany({
+  const dbQuests = prefetchedQuests ?? await prisma.campaignQuest.findMany({
     where: { campaignId },
     include: { objectives: { orderBy: { displayOrder: 'asc' } } },
   });

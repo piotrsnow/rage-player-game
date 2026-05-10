@@ -52,7 +52,7 @@ export async function anthropicProxyRoutes(fastify) {
       },
       body: JSON.stringify({
         model: model || config.aiModels.premium.anthropic,
-        max_tokens: max_tokens || 4096,
+        max_tokens: Math.min(max_tokens || 4096, 4096),
         messages,
         ...(system ? { system } : {}),
         temperature: temperature ?? 0.8,

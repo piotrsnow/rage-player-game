@@ -15,6 +15,7 @@ import { logger } from '../lib/logger.js';
 
 const REFRESH_TTL_SEC = 30 * 24 * 60 * 60;
 const CLEANUP_INTERVAL_MS = 10 * 60 * 1000;
+const GRACE_PERIOD_MS = 30_000;
 
 function parseCookieValue(cookieValue) {
   if (!cookieValue || typeof cookieValue !== 'string') return null;
@@ -60,13 +61,49 @@ export async function verifyRefreshToken(cookieValue) {
     });
     if (!record) return null;
     if (record.expiresAt < new Date()) {
-      // TTL index reaps every ~60s; catch eagerly here
       await prisma.refreshToken.delete({ where: { tokenId: parsed.tokenId } }).catch(() => {});
       return null;
     }
-    // Sanity: cookie userId must match stored userId
     if (record.userId !== parsed.userId) return null;
-    return { userId: parsed.userId, tokenId: parsed.tokenId, record };
+
+    // Already-rotated token — allow only during grace period
+    if (record.replacedAt) {
+      if (record.gracePeriodUntil && record.gracePeriodUntil > new Date()) {
+        return { userId: parsed.userId, tokenId: parsed.tokenId, record, rotatedToken: null };
+      }
+      return null;
+    }
+
+    // Fresh token → rotate atomically: mark old, create new
+    const newTokenId = crypto.randomUUID();
+    const now = new Date();
+    const newExpiresAt = new Date(now.getTime() + REFRESH_TTL_SEC * 1000);
+
+    const [, created] = await prisma.$transaction([
+      prisma.refreshToken.update({
+        where: { tokenId: parsed.tokenId },
+        data: {
+          replacedAt: now,
+          gracePeriodUntil: new Date(now.getTime() + GRACE_PERIOD_MS),
+        },
+      }),
+      prisma.refreshToken.create({
+        data: {
+          tokenId: newTokenId,
+          userId: record.userId,
+          deviceInfo: record.deviceInfo,
+          expiresAt: newExpiresAt,
+        },
+      }),
+    ]);
+
+    const newCookieValue = `${record.userId}.${created.tokenId}`;
+    return {
+      userId: parsed.userId,
+      tokenId: created.tokenId,
+      record: created,
+      rotatedToken: { cookieValue: newCookieValue, expiresAt: newExpiresAt.getTime() },
+    };
   } catch (err) {
     logger.warn({ err }, '[refreshToken] verify failed');
     return null;
@@ -102,8 +139,14 @@ export async function revokeAllUserRefreshTokens(userId) {
 
 export async function reapExpiredRefreshTokens() {
   try {
+    const now = new Date();
     const result = await prisma.refreshToken.deleteMany({
-      where: { expiresAt: { lt: new Date() } },
+      where: {
+        OR: [
+          { expiresAt: { lt: now } },
+          { gracePeriodUntil: { lt: now } },
+        ],
+      },
     });
     if (result.count > 0) {
       logger.info({ deleted: result.count }, '[refreshToken] reaped expired tokens');
@@ -135,4 +178,5 @@ export const __testInternals = {
   parseCookieValue,
   REFRESH_TTL_SEC,
   CLEANUP_INTERVAL_MS,
+  GRACE_PERIOD_MS,
 };
