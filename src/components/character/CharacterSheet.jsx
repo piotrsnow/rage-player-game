@@ -34,7 +34,7 @@ export default function CharacterSheet({ onClose }) {
   const characterVoiceMap = useGameSlice((s) => s.characterVoiceMap);
   const { settings, voicePools } = useSettings();
   const mp = useMultiplayer();
-  const { ensureMissingInventoryImages } = useAI();
+  const { ensureMissingInventoryImages, ensureMissingSpellImages } = useAI();
   const { playerActionHandlerRef } = useModals();
 
   const isMultiplayer = mp.state.isMultiplayer && mp.state.phase === 'playing';
@@ -52,6 +52,10 @@ export default function CharacterSheet({ onClose }) {
     if (isMultiplayer) return;
     void ensureMissingInventoryImages(myCharacter?.inventory || [], { emitWarning: false });
   }, [isMultiplayer, myCharacter?.inventory, ensureMissingInventoryImages]);
+  useEffect(() => {
+    if (isMultiplayer) return;
+    void ensureMissingSpellImages(myCharacter?.spells?.known || [], { emitWarning: false });
+  }, [isMultiplayer, myCharacter?.spells?.known, ensureMissingSpellImages]);
   const [showAdvancement, setShowAdvancement] = useState(false);
   const [saveStatus, setSaveStatus] = useState(null);
   const [libraryChars, setLibraryChars] = useState([]);

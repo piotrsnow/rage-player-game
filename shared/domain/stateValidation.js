@@ -205,6 +205,19 @@ export function sanitizeInventoryItems(items, corrections, prefix = '') {
   });
 }
 
+// ── Spell Image Sanitization ──
+
+export function sanitizeSpellImages(images) {
+  if (!images || typeof images !== 'object') return images;
+  const cleaned = {};
+  for (const [spellName, url] of Object.entries(images)) {
+    if (typeof url === 'string' && isAllowedItemImageUrl(url.trim())) {
+      cleaned[spellName] = url.trim();
+    }
+  }
+  return cleaned;
+}
+
 // ── Codex Normalization ──
 
 export function toSafeCodexId(value) {

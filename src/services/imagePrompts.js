@@ -513,11 +513,64 @@ export function buildItemImagePrompt(item, { genre = 'Fantasy', tone = 'Epic', p
   const itemName = sanitizeForImageGen(item?.name || 'Unknown item', provider);
   const itemType = sanitizeForImageGen(item?.type || 'misc', provider);
   const itemRarity = sanitizeForImageGen(item?.rarity || 'common', provider);
-  const itemDescription = sanitizeForImageGen(item?.description || `${itemName}, ${itemType}`, provider);
-  const worldContext = sanitizeForImageGen(genre || 'Fantasy', provider);
+
+  const rarityTraits = {
+    common: '',
+    uncommon: 'well-crafted, slightly ornate',
+    rare: 'ornate, faintly glowing, masterwork',
+    legendary: 'radiant glow, intricate engravings, legendary craftsmanship',
+  };
+  const rarityVisual = rarityTraits[itemRarity] || '';
+
+  // Extract only visual adjectives from the description — strip narrative
+  // context (where found, who made it, story references) that would confuse
+  // image generators into producing scenes instead of a single object.
+  const rawDesc = sanitizeForImageGen(item?.description || '', provider);
+  const visualTraits = rawDesc
+    .replace(/[.!?]+/g, ',')
+    .split(',')
+    .map((s) => s.trim())
+    .filter((s) => s.length > 0 && s.length <= 40)
+    .slice(0, 4)
+    .join(', ');
+
+  const traitParts = [rarityVisual, visualTraits].filter(Boolean).join(', ');
 
   if (isSdWebui) {
-    const sdSubject = `single isolated ${itemType} on plain background, ${itemName} (${itemRarity}), ${itemDescription}, ${worldContext}, inventory icon, centered object, no person, no hands, no character`;
+    const sdSubject = `single ${itemType} on solid black background, ${itemName}${traitParts ? `, ${traitParts}` : ''}, centered object, inventory icon, no person, no hands, no character, no scene, no environment`;
+    return buildSdPrompt({
+      subject: sdSubject,
+      tone,
+      darkPalette,
+      seriousness,
+      age: null,
+      gender: null,
+      hasPortraitRef: false,
+      imageStyle,
+    });
+  }
+
+  const styleDirective = getImageStyleDirective(imageStyle, 'prompt');
+  const darkDirective = darkPalette ? ' Dark moody palette.' : '';
+  const seriousnessDirective = seriousness != null ? ` ${getSeriousnessDirective(seriousness)}.` : '';
+  const traitsClause = traitParts ? ` Visual traits: ${traitParts}.` : '';
+
+  if (isGemini) {
+    return `Generate an image in this EXACT art style: ${styleDirective}.${darkDirective}${seriousnessDirective} A single "${itemName}" (${itemType}) on a solid BLACK background.${traitsClause} One object only, centered, clean silhouette, no characters, no hands, no scene, no text, no UI, no watermark.`;
+  }
+
+  return `ART STYLE: ${styleDirective}.${darkDirective}${seriousnessDirective} A single "${itemName}" (${itemType}) on a solid BLACK background.${traitsClause} One object only, centered, clean silhouette, no characters, no hands, no scene, no text, no UI, no watermark.`;
+}
+
+export function buildSpellImagePrompt(spell, { genre = 'Fantasy', tone = 'Epic', provider = 'dalle', imageStyle = 'painting', darkPalette = false, seriousness = null, sdModel = null } = {}) {
+  const isGemini = provider === 'gemini';
+  const isSdWebui = provider === 'sd-webui';
+  const spellName = sanitizeForImageGen(spell?.name || 'Unknown spell', provider);
+  const spellSchool = sanitizeForImageGen(spell?.school || spell?.treeName || 'arcane', provider);
+  const spellDescription = sanitizeForImageGen(spell?.description || `${spellName}, magical energy`, provider);
+
+  if (isSdWebui) {
+    const sdSubject = `single magical spell effect on solid black background, ${spellName} (${spellSchool} magic), ${spellDescription}, glowing arcane energy, centered composition, no person, no hands, no character, no items, no weapons`;
     return buildSdPrompt({
       subject: sdSubject,
       tone,
@@ -536,10 +589,10 @@ export function buildItemImagePrompt(item, { genre = 'Fantasy', tone = 'Epic', p
   const seriousnessDirective = seriousness != null ? ` Mood/tone: ${getSeriousnessDirective(seriousness)}.` : '';
 
   if (isGemini) {
-    return `Generate an image in this EXACT art style: ${styleDirective}. Mood: ${mood}.${darkDirective}${seriousnessDirective} Subject: a fantasy inventory icon-style artwork of "${itemName}" (${itemType}, rarity: ${itemRarity}) in a ${worldContext} world. Visual details: ${itemDescription}. Single item in focus, centered composition, clean readable silhouette, no characters, no text, no UI elements, no watermark, high detail.`;
+    return `Generate an image in this EXACT art style: ${styleDirective}. Mood: ${mood}.${darkDirective}${seriousnessDirective} Subject: a magical spell visualization of "${spellName}" (${spellSchool} magic) on a solid BLACK background. Visual: ${spellDescription}. Glowing magical energy, centered composition, dramatic lighting, no characters, no items, no text, no UI elements, no watermark, high detail.`;
   }
 
-  return `ART STYLE: ${styleDirective}. ${mood}.${darkDirective}${seriousnessDirective} Subject: a fantasy inventory artwork of "${itemName}" (${itemType}, rarity: ${itemRarity}) from a ${worldContext} setting. Visual details: ${itemDescription}. Single item in focus, centered composition, clean readable silhouette, no characters, no text, no UI elements, no watermark, high detail.`;
+  return `ART STYLE: ${styleDirective}. ${mood}.${darkDirective}${seriousnessDirective} Subject: a magical spell effect "${spellName}" (${spellSchool} magic) on a solid BLACK background. Visual: ${spellDescription}. Centered glowing arcane energy, dramatic lighting, no characters, no items, no text, no UI elements, no watermark, high detail.`;
 }
 
 // Humanoid species recognised by the portrait pipeline. Anything else routes

@@ -1,4 +1,4 @@
-import { buildImagePrompt, buildItemImagePrompt, buildPortraitPrompt, getModelPreset, getImageStyleSdNegative, REFERENCE_PHOTO_NEGATIVE } from './imagePrompts';
+import { buildImagePrompt, buildItemImagePrompt, buildSpellImagePrompt, buildPortraitPrompt, getModelPreset, getImageStyleSdNegative, REFERENCE_PHOTO_NEGATIVE } from './imagePrompts';
 import { apiClient, toCanonicalStoragePath } from './apiClient';
 import { ensureEnglish } from './translateImagePrompt';
 
@@ -379,10 +379,27 @@ const _imageServiceImpl = {
     let itemNegative = null;
     if (provider === 'sd-webui') {
       const styleNeg = getImageStyleSdNegative(imageStyle);
-      const baseItemNeg = 'person, human, character, hand, hands, fingers, holding, wielding, figure, body, face, portrait, full body, half body';
+      const baseItemNeg = 'person, human, character, hand, hands, fingers, holding, wielding, figure, body, face, portrait, full body, half body, scene, environment, landscape, room, table, multiple items';
       itemNegative = styleNeg ? `${baseItemNeg}, ${styleNeg}` : baseItemNeg;
     }
     const url = await generateSceneViaProxy(prompt, provider, campaignId, { sdModel, sdSeed, forceNew, shape: 'square', negativePrompt: itemNegative, resolutionMultiplier });
+    return { url, prompt };
+  },
+
+  async generateSpellImage(spell, { genre, tone, provider = 'dalle', imageStyle = 'painting', darkPalette = false, seriousness = null, campaignId = null, sdModel = null, sdSeed = null, forceNew = false, resolutionMultiplier = 1 } = {}) {
+    const [enName, enDescription] = await Promise.all([
+      ensureEnglish(spell?.name),
+      ensureEnglish(spell?.description || spell?.name),
+    ]);
+    const translatedSpell = spell ? { ...spell, name: enName, description: enDescription } : spell;
+    const prompt = buildSpellImagePrompt(translatedSpell, { genre, tone, provider, imageStyle, darkPalette, seriousness, sdModel });
+    let spellNegative = null;
+    if (provider === 'sd-webui') {
+      const styleNeg = getImageStyleSdNegative(imageStyle);
+      const baseSpellNeg = 'person, human, character, hand, hands, fingers, holding, wielding, figure, body, face, portrait, full body, half body, item, weapon, inventory icon, text, UI';
+      spellNegative = styleNeg ? `${baseSpellNeg}, ${styleNeg}` : baseSpellNeg;
+    }
+    const url = await generateSceneViaProxy(prompt, provider, campaignId, { sdModel, sdSeed, forceNew, shape: 'square', negativePrompt: spellNegative, resolutionMultiplier });
     return { url, prompt };
   },
 };
@@ -399,5 +416,8 @@ export const imageService = {
   },
   generateItemImage(...args) {
     return enqueueImageRequest(() => _imageServiceImpl.generateItemImage(...args));
+  },
+  generateSpellImage(...args) {
+    return enqueueImageRequest(() => _imageServiceImpl.generateSpellImage(...args));
   },
 };

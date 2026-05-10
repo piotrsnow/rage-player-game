@@ -1,3 +1,5 @@
+import { z } from 'zod';
+
 export const WS_CLIENT_TYPES = Object.freeze({
   CREATE_ROOM: 'CREATE_ROOM',
   CONVERT_TO_MULTIPLAYER: 'CONVERT_TO_MULTIPLAYER',
@@ -117,3 +119,99 @@ export function normalizeMultiplayerStateChanges(stateChanges) {
 export function createWsMessage(type, payload = {}) {
   return { type, ...payload };
 }
+
+// ---------------------------------------------------------------------------
+// WS payload schemas — keyed by WS_CLIENT_TYPES value.
+// Handlers may read additional fields via passthrough; these schemas enforce
+// the minimum shape required to avoid runtime crashes in the handler layer.
+// ---------------------------------------------------------------------------
+
+const str = z.string().max(2000);
+const shortStr = z.string().max(200);
+
+export const WS_PAYLOAD_SCHEMAS = Object.freeze({
+  // --- lobby ---
+  JOIN_ROOM: z.object({
+    roomCode: shortStr,
+    characterId: str,
+    language: shortStr.optional(),
+  }).passthrough(),
+
+  REJOIN_ROOM: z.object({
+    roomCode: shortStr,
+    odId: str,
+  }).passthrough(),
+
+  CONVERT_TO_MULTIPLAYER: z.object({
+    gameState: z.record(z.unknown()),
+  }).passthrough(),
+
+  KICK_PLAYER: z.object({
+    targetOdId: str,
+  }).passthrough(),
+
+  // --- room state ---
+  UPDATE_SETTINGS: z.object({
+    settings: z.record(z.unknown()),
+  }).passthrough(),
+
+  UPDATE_SCENE_IMAGE: z.object({
+    sceneId: str,
+  }).passthrough(),
+
+  TYPING: z.object({
+    isTyping: z.boolean().optional(),
+    draft: z.string().max(TYPING_DRAFT_MAX_LENGTH + 50).optional(),
+  }).passthrough(),
+
+  // --- gameplay ---
+  START_GAME: z.object({
+    language: shortStr.optional(),
+  }).passthrough(),
+
+  SUBMIT_ACTION: z.object({
+    text: z.string().min(1).max(5000),
+  }).passthrough(),
+
+  SOLO_ACTION: z.object({
+    text: z.string().min(1).max(5000),
+  }).passthrough(),
+
+  APPROVE_ACTIONS: z.object({
+    language: shortStr.optional(),
+  }).passthrough(),
+
+  // --- quests ---
+  ACCEPT_QUEST_OFFER: z.object({
+    sceneId: str,
+    questOffer: z.object({ id: str }).passthrough(),
+  }).passthrough(),
+
+  DECLINE_QUEST_OFFER: z.object({
+    sceneId: str,
+    offerId: str,
+  }).passthrough(),
+
+  VERIFY_QUEST_OBJECTIVE: z.object({
+    requestId: str,
+    questId: str,
+    objectiveId: str,
+  }).passthrough(),
+
+  // --- combat ---
+  COMBAT_SYNC: z.object({
+    combat: z.record(z.unknown()),
+  }).passthrough(),
+
+  COMBAT_MANOEUVRE: z.object({
+    manoeuvre: shortStr,
+  }).passthrough(),
+
+  COMBAT_ENDED: z.object({}).passthrough(),
+
+  // --- webrtc ---
+  WEBRTC_OFFER: z.object({ targetOdId: str, offer: z.unknown() }).passthrough(),
+  WEBRTC_ANSWER: z.object({ targetOdId: str, answer: z.unknown() }).passthrough(),
+  WEBRTC_ICE: z.object({ targetOdId: str, candidate: z.unknown() }).passthrough(),
+  WEBRTC_TRACK_STATE: z.object({ targetOdId: str }).passthrough(),
+});

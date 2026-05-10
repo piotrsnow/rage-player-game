@@ -9,6 +9,8 @@ let _combatData = null;
 let _bestiaryData = null;
 let _equipmentData = null;
 let _loading = null;
+let _customSpells = null;
+let _spellImages = null;
 
 export const gameData = {
   /** Fetch combat data (weapons, armour, manoeuvres, hitLocations, constants) */
@@ -43,9 +45,52 @@ export const gameData = {
     return data;
   },
 
+  /** Fetch global custom spells catalog */
+  async loadCustomSpells() {
+    const data = await apiClient.get('/game-data/custom-spells');
+    _customSpells = Array.isArray(data) ? data : [];
+    return _customSpells;
+  },
+
+  /** Fetch global spell images map { [name]: imageUrl } */
+  async loadSpellImages() {
+    const data = await apiClient.get('/game-data/spell-images');
+    _spellImages = data && typeof data === 'object' ? data : {};
+    return _spellImages;
+  },
+
+  /** Refresh spell images (call after generating a new one) */
+  async refreshSpellImages() {
+    _spellImages = null;
+    return this.loadSpellImages();
+  },
+
+  /** Refresh custom spells (call after inventing a new one) */
+  async refreshCustomSpells() {
+    _customSpells = null;
+    return this.loadCustomSpells();
+  },
+
+  /** Register a spell image globally via backend */
+  async registerSpellImage(name, imageUrl, imagePrompt) {
+    const result = await apiClient.post('/game-data/spell-image', {
+      name,
+      imageUrl,
+      ...(imagePrompt ? { imagePrompt } : {}),
+    });
+    if (_spellImages) _spellImages[name] = result.imageUrl;
+    return result;
+  },
+
   /** Load all game data at once */
   async loadAll() {
-    await Promise.all([this.loadCombat(), this.loadBestiary(), this.loadEquipment()]);
+    await Promise.all([
+      this.loadCombat(),
+      this.loadBestiary(),
+      this.loadEquipment(),
+      this.loadCustomSpells().catch(() => {}),
+      this.loadSpellImages().catch(() => {}),
+    ]);
   },
 
   // ── Synchronous accessors (return cached data, throw if not loaded) ──
@@ -132,6 +177,14 @@ export const gameData = {
 
   get isLoaded() {
     return !!_combatData;
+  },
+
+  get customSpells() {
+    return _customSpells || [];
+  },
+
+  get spellImages() {
+    return _spellImages || {};
   },
 
   // ── Helper functions (same interface as old wfrpCombat.js) ──

@@ -37,10 +37,12 @@ export function useMpActions({ dispatch, pendingQuestVerifyRef }) {
 
   const joinRoom = useCallback(async (code, options = {}) => {
     await ensureConnected();
+    const char = options.characterData || null;
     wsService.send(WS_CLIENT_TYPES.JOIN_ROOM, {
       roomCode: code.toUpperCase(),
       language: options.language,
-      characterData: options.characterData || null,
+      characterId: char?.backendId || char?.id || null,
+      characterData: char,
     });
   }, [ensureConnected]);
 

@@ -161,7 +161,7 @@ export function applyNeedsAndRest(result, resolved, needsSystemEnabled) {
 
 export function applySceneStateChanges({
   result, state, dispatch,
-  authoritativeCharacterSnapshot, ensureMissingInventoryImages, ensureMissingNpcPortraits, t,
+  authoritativeCharacterSnapshot, ensureMissingInventoryImages, ensureMissingSpellImages, ensureMissingNpcPortraits, t,
   newlyUnlockedAchievements = [], updatedAchievementState = null,
   campaignId = null, sceneIndex = null,
 }) {
@@ -193,6 +193,9 @@ export function applySceneStateChanges({
   }
   if (Array.isArray(validated.newItems) && validated.newItems.length > 0) {
     void ensureMissingInventoryImages(validated.newItems, { emitWarning: false });
+  }
+  if (validated.learnSpell && typeof ensureMissingSpellImages === 'function') {
+    void ensureMissingSpellImages([validated.learnSpell], { emitWarning: false });
   }
   if (updatedNpcNames.size > 0 && typeof ensureMissingNpcPortraits === 'function') {
     setTimeout(() => {

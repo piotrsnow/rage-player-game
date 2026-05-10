@@ -15,6 +15,7 @@ import CustomSelect from '../ui/CustomSelect';
 import { translateSkill, translateAttribute } from '../../utils/rpgTranslate';
 import { SKILLS, DIFFICULTY_THRESHOLDS, SKILL_CAPS, xpForSkillLevel } from '../../data/rpgSystem';
 import { resolveKnownSpellDisplay } from '../../services/magicEngine';
+import { gameData } from '../../services/gameDataService';
 import SkillGainHistory from './SkillGainHistory';
 import FavoriteScenesList from './FavoriteScenesList';
 import BadgesSection from './BadgesSection';
@@ -298,16 +299,31 @@ const NEEDS_META = [
   { key: 'rest', icon: 'bedtime' },
 ];
 
-function SpellDetailPanel({ spell, uses, currentMana, t, onClose }) {
+function SpellDetailPanel({ spell, uses, currentMana, imageUrl, onRegenerateImage, isRegenerating, t, onClose }) {
   const hasEnoughMana = currentMana >= spell.manaCost;
+  const resolvedImageUrl = imageUrl ? apiClient.resolveMediaUrl(imageUrl) : null;
 
   return (
     <div className="bg-surface-container-low p-6 border border-tertiary/15 rounded-sm animate-fade-in">
       <div className="flex items-start justify-between gap-3 mb-4">
         <div className="flex items-start gap-4 min-w-0">
-          <span className="material-symbols-outlined text-tertiary text-3xl mt-0.5">
-            {spell.icon}
-          </span>
+          {resolvedImageUrl ? (
+            <div className="w-16 h-16 flex-shrink-0 rounded-sm overflow-hidden border border-outline-variant/15 relative">
+              <img
+                src={resolvedImageUrl}
+                alt={spell.name}
+                className="w-full h-full object-cover"
+                onError={(e) => { e.target.style.display = 'none'; e.target.nextSibling.style.display = 'flex'; }}
+              />
+              <div className="absolute inset-0 items-center justify-center hidden">
+                <span className="material-symbols-outlined text-tertiary text-3xl">{spell.icon}</span>
+              </div>
+            </div>
+          ) : (
+            <span className="material-symbols-outlined text-tertiary text-3xl mt-0.5">
+              {spell.icon}
+            </span>
+          )}
           <div className="min-w-0">
             <h4 className="text-tertiary font-headline text-xl leading-tight">{spell.name}</h4>
             <p className="text-on-surface-variant/70 text-sm mt-1">
@@ -354,11 +370,27 @@ function SpellDetailPanel({ spell, uses, currentMana, t, onClose }) {
           {t('magic.notEnoughMana', { defaultValue: 'Za malo many na rzucenie tego zaklecia.' })}
         </p>
       )}
+
+      {onRegenerateImage && (
+        <button
+          type="button"
+          onClick={onRegenerateImage}
+          disabled={isRegenerating}
+          className="mt-4 flex items-center gap-1.5 text-xs font-label text-on-surface-variant/70 hover:text-tertiary transition-colors disabled:opacity-50"
+        >
+          <span className={`material-symbols-outlined text-sm ${isRegenerating ? 'animate-spin' : ''}`}>
+            {isRegenerating ? 'progress_activity' : 'refresh'}
+          </span>
+          {isRegenerating
+            ? t('magic.regeneratingImage', { defaultValue: 'Generowanie...' })
+            : t('magic.regenerateImage', { defaultValue: 'Regeneruj obraz' })}
+        </button>
+      )}
     </div>
   );
 }
 
-function SpellsGrid({ spells, selectedSpellName, onSelectSpell, t }) {
+function SpellsGrid({ spells, selectedSpellName, onSelectSpell, spellImages, t }) {
   if (spells.length === 0) return null;
 
   return (
@@ -370,22 +402,41 @@ function SpellsGrid({ spells, selectedSpellName, onSelectSpell, t }) {
       <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
         {spells.map((spell) => {
           const isSelected = selectedSpellName === spell.name;
+          const imageUrl = spellImages?.[spell.name];
           return (
             <button
               key={spell.name}
               type="button"
               onClick={() => onSelectSpell(isSelected ? null : spell.name)}
-              className={`bg-surface-container-high/60 backdrop-blur-md p-3 border-b-2 flex flex-col items-center text-center transition-all hover:bg-surface-container-highest/80 ${
+              className={`bg-surface-container-high/60 backdrop-blur-md border-b-2 flex flex-col items-center text-center transition-all hover:bg-surface-container-highest/80 overflow-hidden ${
                 isSelected ? 'border-tertiary bg-tertiary/10' : 'border-tertiary/20'
               }`}
             >
-              <span className="material-symbols-outlined text-tertiary mb-1 text-3xl">{spell.icon}</span>
-              <span className="text-on-surface-variant font-label text-[9px] uppercase tracking-[0.1em] leading-tight">
-                {spell.name}
-              </span>
-              <span className="text-[10px] text-outline mt-1">
-                {spell.manaCost} {t('magic.manaShort', 'many')}
-              </span>
+              {imageUrl ? (
+                <div className="w-full aspect-square relative">
+                  <img
+                    src={apiClient.resolveMediaUrl(imageUrl)}
+                    alt={spell.name}
+                    className="w-full h-full object-cover"
+                    onError={(e) => { e.target.style.display = 'none'; e.target.nextSibling.style.display = 'flex'; }}
+                  />
+                  <div className="absolute inset-0 items-center justify-center hidden">
+                    <span className="material-symbols-outlined text-tertiary text-3xl">{spell.icon}</span>
+                  </div>
+                </div>
+              ) : (
+                <div className="w-full aspect-square flex items-center justify-center">
+                  <span className="material-symbols-outlined text-tertiary text-3xl">{spell.icon}</span>
+                </div>
+              )}
+              <div className="p-2 w-full">
+                <span className="text-on-surface-variant font-label text-[9px] uppercase tracking-[0.1em] leading-tight block">
+                  {spell.name}
+                </span>
+                <span className="text-[10px] text-outline mt-0.5 block">
+                  {spell.manaCost} {t('magic.manaShort', 'many')}
+                </span>
+              </div>
             </button>
           );
         })}
@@ -449,8 +500,10 @@ export default function CharacterPanel({
     ? knownSpells.find((spell) => spell.name === selectedSpellName) || null
     : null;
 
-  const { generateItemImageForInventoryItem } = useAI();
+  const { generateItemImageForInventoryItem, generateSpellImageForSpell } = useAI();
   const canRegenerateItemImage = !isMultiplayer && settings.itemImagesEnabled !== false;
+  const canRegenerateSpellImage = !isMultiplayer && settings.itemImagesEnabled !== false;
+  const [regeneratingSpellName, setRegeneratingSpellName] = useState(null);
 
   useEffect(() => {
     if (selectedItemId && !inventoryItems.some((i) => i.id === selectedItemId)) {
@@ -484,6 +537,15 @@ export default function CharacterPanel({
       await generateItemImageForInventoryItem(target, { forceNew: true });
     } finally {
       setRegeneratingItemId(null);
+    }
+  };
+  const handleRegenerateSpellImage = async (spellName) => {
+    if (!spellName || regeneratingSpellName) return;
+    setRegeneratingSpellName(spellName);
+    try {
+      await generateSpellImageForSpell(spellName, { forceNew: true });
+    } finally {
+      setRegeneratingSpellName(null);
     }
   };
 
@@ -686,6 +748,7 @@ export default function CharacterPanel({
             spells={knownSpells}
             selectedSpellName={selectedSpellName}
             onSelectSpell={setSelectedSpellName}
+            spellImages={gameData.spellImages}
             t={t}
           />
 
@@ -694,6 +757,9 @@ export default function CharacterPanel({
               spell={selectedSpell}
               uses={selectedSpell.uses}
               currentMana={character.mana?.current || 0}
+              imageUrl={gameData.spellImages[selectedSpell.name]}
+              onRegenerateImage={canRegenerateSpellImage ? () => handleRegenerateSpellImage(selectedSpell.name) : null}
+              isRegenerating={regeneratingSpellName === selectedSpell.name}
               t={t}
               onClose={() => setSelectedSpellName(null)}
             />

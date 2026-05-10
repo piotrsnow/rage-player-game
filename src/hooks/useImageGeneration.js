@@ -3,12 +3,15 @@ import { useGame } from '../contexts/GameContext';
 import { useSettings } from '../contexts/SettingsContext';
 import { imageService } from '../services/imageGen';
 import { generateNpcPortrait } from '../services/npcPortraitGen';
+import { resolveKnownSpellDisplay } from '../services/magicEngine';
 import { calculateCost } from '../services/costTracker';
+import { gameData } from '../services/gameDataService';
 import { storage } from '../services/storage';
 import { shortId } from '../utils/ids';
 import { devLog } from '../stores/devEventLogStore';
 
 const ITEM_IMAGE_RETRY_COOLDOWN_MS = 60000;
+const SPELL_IMAGE_RETRY_COOLDOWN_MS = 60000;
 
 const KNOWN_IMAGE_PROVIDERS = ['dalle', 'gpt-image', 'stability', 'gemini', 'sd-webui'];
 
@@ -26,6 +29,8 @@ export function useImageGeneration() {
 
   const itemImageGenerationLocksRef = useRef(new Set());
   const itemImageFailureTimestampsRef = useRef(new Map());
+  const spellImageGenerationLocksRef = useRef(new Set());
+  const spellImageFailureTimestampsRef = useRef(new Map());
 
   // Derive image provider from sceneImageTier (user's SceneCost pick).
   // Falls back to legacy imageProvider for old settings.
@@ -230,6 +235,96 @@ export function useImageGeneration() {
     [generateItemImageForInventoryItem, autoSave]
   );
 
+  const generateSpellImageForSpell = useCallback(
+    async (spellName, options = {}) => {
+      if (!spellName || typeof spellName !== 'string') return null;
+      if (!itemImageGenEnabled) return null;
+      const forceNew = options.forceNew === true;
+      const existingUrl = gameData.spellImages[spellName];
+      if (!forceNew && existingUrl) return existingUrl;
+
+      const locks = spellImageGenerationLocksRef.current;
+      if (!forceNew) {
+        const failedAt = spellImageFailureTimestampsRef.current.get(spellName);
+        if (failedAt && (Date.now() - failedAt) < SPELL_IMAGE_RETRY_COOLDOWN_MS) return null;
+      }
+      if (locks.has(spellName)) return null;
+      locks.add(spellName);
+
+      try {
+        const spellDisplay = resolveKnownSpellDisplay(spellName, state.character);
+        devLog.emit({ category: 'image', type: 'spell_image_start', label: `Spell image: ${spellName}`, data: { spellName, provider: imageProvider } });
+        const result = await imageService.generateSpellImage(spellDisplay, {
+          genre: options.genre ?? state.campaign?.genre,
+          tone: options.tone ?? state.campaign?.tone,
+          provider: imageProvider,
+          imageStyle,
+          darkPalette,
+          seriousness: imageSeriousness,
+          campaignId: state.campaign?.backendId,
+          sdModel: sdWebuiModel,
+          sdSeed: Number.isInteger(sdWebuiSeed) ? sdWebuiSeed : null,
+          forceNew,
+          resolutionMultiplier: imageResolutionMultiplier,
+        });
+        if (!result?.url) return null;
+
+        try {
+          await gameData.registerSpellImage(spellName, result.url, result.prompt);
+        } catch (regErr) {
+          console.warn('Failed to register spell image globally:', regErr?.message);
+        }
+        spellImageFailureTimestampsRef.current.delete(spellName);
+        dispatch({ type: 'ADD_AI_COST', payload: calculateCost('image', { provider: imageProvider }) });
+        return result.url;
+      } catch (err) {
+        const message = err?.message || 'Spell image generation failed';
+        spellImageFailureTimestampsRef.current.set(spellName, Date.now());
+        console.warn('Spell image generation failed:', message);
+        if (options.emitWarning !== false) {
+          dispatch({
+            type: 'ADD_CHAT_MESSAGE',
+            payload: {
+              id: `msg_${Date.now()}_spell_image_warn_${shortId(4)}`,
+              role: 'system',
+              subtype: 'validation_warning',
+              content: `⚠ ${message}`,
+              timestamp: Date.now(),
+            },
+          });
+        }
+        return null;
+      } finally {
+        locks.delete(spellName);
+      }
+    },
+    [state.character, state.campaign?.genre, state.campaign?.tone, state.campaign?.backendId, imageProvider, imageStyle, darkPalette, imageSeriousness, itemImageGenEnabled, sdWebuiModel, sdWebuiSeed, imageResolutionMultiplier, dispatch]
+  );
+
+  const ensureMissingSpellImages = useCallback(
+    async (spellNames = [], options = {}) => {
+      const images = gameData.spellImages;
+      const candidates = (Array.isArray(spellNames) ? spellNames : []).filter(
+        (name) => name && typeof name === 'string' && !images[name]
+      );
+      if (candidates.length === 0) return { generated: 0, failed: 0 };
+
+      let generated = 0;
+      let failed = 0;
+      for (const name of candidates) {
+        const url = await generateSpellImageForSpell(name, {
+          ...options,
+          skipAutoSave: true,
+        });
+        if (url) generated += 1;
+        else failed += 1;
+      }
+
+      return { generated, failed };
+    },
+    [generateSpellImageForSpell]
+  );
+
   const generateImageForScene = useCallback(
     async (sceneId, narrative, imagePrompt, campaignOverride, options = {}) => {
       const hasImgKey = imageApiKey || hasApiKey(imgKeyProvider);
@@ -282,6 +377,8 @@ export function useImageGeneration() {
     generateImageForScene,
     generateItemImageForInventoryItem,
     ensureMissingInventoryImages,
+    generateSpellImageForSpell,
+    ensureMissingSpellImages,
     ensureMissingNpcPortraits,
     regenerateNpcPortrait,
     imageGenEnabled,

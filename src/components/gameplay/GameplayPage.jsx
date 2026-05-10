@@ -74,6 +74,7 @@ import { useFavoriteScenes } from '../../hooks/useFavoriteScenes';
 import MainQuestCompleteModal from './MainQuestCompleteModal';
 import { ActionTagProvider } from '../../contexts/ActionTagContext';
 import { claimExclusiveReadAloud } from '../../utils/readAloudExclusive';
+import WorldNewsPanel from './WorldNewsPanel';
 
 function hashCode(str) {
   let h = 0;
@@ -143,6 +144,7 @@ export default function GameplayPage({ readOnly = false, shareToken = null, onRe
     earlyDiceRoll, clearEarlyDiceRoll,
     streamingNarrative, streamingSegments,
     streamComplete,
+    streamError, retryAfterStreamError, dismissStreamError,
   } = useAI();
 
   // Resolve "which source of truth" for every slice — single branch point
@@ -726,6 +728,12 @@ export default function GameplayPage({ readOnly = false, shareToken = null, onRe
         )}
         </div>
 
+        {!readOnly && !isMultiplayer && (
+          <div className="shrink-0 px-4 md:px-6 pb-2">
+            <WorldNewsPanel campaignId={sCampaign?.backendId || urlCampaignId} />
+          </div>
+        )}
+
         {!(combat?.active && combatExpandedLayout) && (
         <div className="shrink-0 px-4 md:px-6 pb-2">
         {/* Scene Panel */}
@@ -1079,6 +1087,9 @@ export default function GameplayPage({ readOnly = false, shareToken = null, onRe
           messages={chatHistory}
           streamingNarrative={streamingNarrative}
           streamingSegments={streamingSegments}
+          streamError={streamError}
+          onRetryStream={retryAfterStreamError}
+          onDismissStreamError={dismissStreamError}
           narrator={settings.narratorEnabled ? narrator : null}
           // Do not gate on `overlayText`: the player-action typewriter often lacks
           // fastFinish (streamComplete is cleared in clearStreamingOutput before paint),

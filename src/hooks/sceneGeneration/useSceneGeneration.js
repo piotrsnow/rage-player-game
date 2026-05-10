@@ -19,6 +19,8 @@ import { processSceneDialogue } from './processSceneDialogue';
 import { injectCombatFallback, fillBestiaryStats, applyNeedsAndRest, applySceneStateChanges } from './applySceneStateChanges';
 import { devLog } from '../../stores/devEventLogStore';
 
+const RETRYABLE_CODES = new Set(['LLM_TIMEOUT', 'LLM_ERROR', 'OVERLOADED']);
+
 // Master kill-switch for the speculative "early image" path below. When false,
 // we skip guessing the image from previous-scene + player-action and instead
 // wait for the AI's own narrative + imagePrompt to drive image generation
@@ -26,7 +28,7 @@ import { devLog } from '../../stores/devEventLogStore';
 // want the latency win back.
 const SPECULATIVE_EARLY_IMAGE_ENABLED = false;
 
-export function useSceneGeneration({ ensureMissingInventoryImages, ensureMissingNpcPortraits, imageGenEnabled, imageApiKey, imageProvider, imageStyle, darkPalette, imageSeriousness, imgKeyProvider }) {
+export function useSceneGeneration({ ensureMissingInventoryImages, ensureMissingSpellImages, ensureMissingNpcPortraits, imageGenEnabled, imageApiKey, imageProvider, imageStyle, darkPalette, imageSeriousness, imgKeyProvider }) {
   const { t } = useTranslation();
   const { state, dispatch, autoSave } = useGame();
   const { settings, hasApiKey, voicePools, sceneModelConfig } = useSettings();
@@ -34,6 +36,7 @@ export function useSceneGeneration({ ensureMissingInventoryImages, ensureMissing
   const degradeStatsRef = useRef({ total: 0, truncated: 0, schema: 0, lastWarnAt: 0 });
   const sceneGenStartRef = useRef(null);
   const sceneGenDurationHistoryRef = useRef(null);
+  const lastFailedActionRef = useRef(null);
 
   const [lastSceneGenMs, setLastSceneGenMs] = useState(() => {
     const history = loadSceneGenDurationHistory();
@@ -296,7 +299,7 @@ export function useSceneGeneration({ ensureMissingInventoryImages, ensureMissing
         devLog.emit({ category: 'state', type: 'apply_state_changes', label: `State changes: ${scBuckets.join(', ') || 'none'}`, data: { buckets: scBuckets, hasCharacterSnapshot: !!authoritativeCharacterSnapshot } });
         applySceneStateChanges({
           result, state, dispatch,
-          authoritativeCharacterSnapshot, ensureMissingInventoryImages, ensureMissingNpcPortraits, t,
+          authoritativeCharacterSnapshot, ensureMissingInventoryImages, ensureMissingSpellImages, ensureMissingNpcPortraits, t,
           newlyUnlockedAchievements, updatedAchievementState,
           campaignId: backendCampaignId || null,
           sceneIndex: serverSceneIndex,
@@ -369,16 +372,43 @@ export function useSceneGeneration({ ensureMissingInventoryImages, ensureMissing
           earlyImagePromise.finally(() => dispatch({ type: 'SET_GENERATING_IMAGE', payload: false }));
         }
         recordCompletedSceneGenTiming();
-        const errorMsg = err.message === 'insufficient_credits'
-          ? t('credits.insufficient')
-          : err.message;
-        dispatch({ type: 'SET_ERROR', payload: errorMsg });
-        dispatch({ type: 'SET_GENERATING_SCENE', payload: false });
-        stream.clearStreamingOutput();
+
+        const hasPartialNarrative = stream.hasPartialNarrative();
+        const canRetry = RETRYABLE_CODES.has(err.code) || !err.code;
+
+        if (hasPartialNarrative && canRetry) {
+          lastFailedActionRef.current = { playerAction, isFirstScene, isCustomAction, fromAutoPlayer, sceneOptions };
+          stream.setStreamError({
+            message: err.message,
+            code: err.code || null,
+            canRetry: true,
+          });
+          dispatch({ type: 'SET_GENERATING_SCENE', payload: false });
+        } else {
+          const errorMsg = err.message === 'insufficient_credits'
+            ? t('credits.insufficient')
+            : err.message;
+          dispatch({ type: 'SET_ERROR', payload: errorMsg });
+          dispatch({ type: 'SET_GENERATING_SCENE', payload: false });
+          stream.clearStreamingOutput();
+        }
         throw err;
       }
     }
   );
+
+  const retryAfterStreamError = useCallback(() => {
+    const saved = lastFailedActionRef.current;
+    if (!saved) return;
+    lastFailedActionRef.current = null;
+    stream.clearStreamingOutput();
+    generateScene(saved.playerAction, saved.isFirstScene, saved.isCustomAction, saved.fromAutoPlayer, saved.sceneOptions).catch(() => {});
+  }, [generateScene, stream.clearStreamingOutput]);
+
+  const dismissStreamError = useCallback(() => {
+    lastFailedActionRef.current = null;
+    stream.clearStreamingOutput();
+  }, [stream.clearStreamingOutput]);
 
   const acceptQuestOffer = useCallback(
     (sceneId, questOffer) => {
@@ -414,5 +444,8 @@ export function useSceneGeneration({ ensureMissingInventoryImages, ensureMissing
     streamingNarrative: stream.streamingNarrative,
     streamingSegments: stream.streamingSegments,
     streamComplete: stream.streamComplete,
+    streamError: stream.streamError,
+    retryAfterStreamError,
+    dismissStreamError,
   };
 }

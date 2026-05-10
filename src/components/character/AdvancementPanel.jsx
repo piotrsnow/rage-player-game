@@ -9,6 +9,7 @@ import {
 } from '../../data/rpgSystem';
 import { SPELL_TREES } from '../../data/rpgMagic';
 import { findSpell, getSpellProgressionStatus, resolveKnownSpellDisplay } from '../../services/magicEngine';
+import { gameData } from '../../services/gameDataService';
 import { translateSkill, translateAttribute } from '../../utils/rpgTranslate';
 import { apiClient } from '../../services/apiClient';
 import SkillGainHistory from './SkillGainHistory';
@@ -192,11 +193,30 @@ function SpellTreesTab({ character, dispatch, campaignId }) {
 
   const customSpells = useMemo(() => {
     const result = [];
+    const addedNames = new Set();
+
     for (const spellName of known) {
       if (findSpell(spellName)) continue;
       const display = resolveKnownSpellDisplay(spellName, character);
-      result.push(display);
+      result.push({ ...display, _known: true });
+      addedNames.add(spellName);
     }
+
+    for (const entry of gameData.customSpells) {
+      if (!entry?.name || addedNames.has(entry.name)) continue;
+      if (findSpell(entry.name)) continue;
+      result.push({
+        name: entry.name,
+        school: entry.school || null,
+        manaCost: entry.manaCost ?? 2,
+        icon: entry.icon || 'auto_awesome',
+        description: entry.description || '',
+        isCustom: true,
+        _known: false,
+      });
+      addedNames.add(entry.name);
+    }
+
     return result;
   }, [known, character]);
 
@@ -386,6 +406,7 @@ function SpellTreesTab({ character, dispatch, campaignId }) {
         const groupIcon = canonicalTree?.icon || 'auto_awesome';
         const groupKey = `custom_${schoolKey}`;
         const isExpanded = expandedTree === groupKey;
+        const knownCount = spells.filter((s) => s._known).length;
 
         return (
           <div
@@ -403,7 +424,7 @@ function SpellTreesTab({ character, dispatch, campaignId }) {
                   {groupName}
                 </span>
                 <span className="text-[8px] text-amber-400/70 uppercase font-bold">
-                  {spells.length} {t('magic.inventedBadge', { defaultValue: 'wymyslone' })}
+                  {knownCount}/{spells.length} {t('magic.inventedBadge', { defaultValue: 'wymyslone' })}
                 </span>
                 {isUnclassified && classifying && (
                   <span className="material-symbols-outlined text-[11px] text-amber-400/60 animate-spin">progress_activity</span>
@@ -426,29 +447,45 @@ function SpellTreesTab({ character, dispatch, campaignId }) {
                   </button>
                 )}
                 {spells.map((spell) => {
+                  const isKnown = spell._known;
                   const uses = usageCounts[spell.name] || 0;
                   return (
                     <div
                       key={spell.name}
-                      className="flex items-start gap-2 px-2 py-1.5 rounded-sm border text-[10px] bg-amber-500/10 border-amber-400/20"
+                      className={`flex items-start gap-2 px-2 py-1.5 rounded-sm border text-[10px] ${
+                        isKnown
+                          ? 'bg-amber-500/10 border-amber-400/20'
+                          : 'bg-surface-container-high/20 border-outline-variant/10 opacity-60'
+                      }`}
                     >
-                      <span className="material-symbols-outlined text-sm mt-0.5 shrink-0 text-amber-400">
+                      <span className={`material-symbols-outlined text-sm mt-0.5 shrink-0 ${isKnown ? 'text-amber-400' : 'text-outline/40'}`}>
                         {spell.icon || 'auto_awesome'}
                       </span>
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center justify-between gap-2">
-                          <span className="flex items-center gap-1.5 font-bold text-amber-300">
+                          <span className={`flex items-center gap-1.5 font-bold ${isKnown ? 'text-amber-300' : 'text-on-surface-variant/60'}`}>
                             {spell.name}
-                            <span className="material-symbols-outlined text-[11px] text-amber-400">check_circle</span>
-                            <span className="text-[8px] text-amber-400/60 uppercase font-label tracking-wider">{t('magic.inventedTag', { defaultValue: 'wymyslone' })}</span>
+                            {isKnown ? (
+                              <>
+                                <span className="material-symbols-outlined text-[11px] text-amber-400">check_circle</span>
+                                <span className="text-[8px] text-amber-400/60 uppercase font-label tracking-wider">{t('magic.inventedTag', { defaultValue: 'wymyslone' })}</span>
+                              </>
+                            ) : (
+                              <span className="text-[8px] text-outline/50 uppercase font-label tracking-wider">{t('magic.unknownTag', { defaultValue: 'nieznane' })}</span>
+                            )}
                           </span>
                           <span className="text-on-surface-variant tabular-nums shrink-0">
                             {spell.manaCost} many
                           </span>
                         </div>
-                        <span className="text-[9px] text-amber-400/70">
-                          {t('magic.uses', { count: uses, defaultValue: `${uses} uzyc` })}
-                        </span>
+                        {isKnown && (
+                          <span className="text-[9px] text-amber-400/70">
+                            {t('magic.uses', { count: uses, defaultValue: `${uses} uzyc` })}
+                          </span>
+                        )}
+                        {!isKnown && spell.description && (
+                          <p className="text-on-surface-variant/50 leading-tight">{spell.description}</p>
+                        )}
                       </div>
                     </div>
                   );

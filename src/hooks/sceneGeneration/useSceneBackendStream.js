@@ -20,6 +20,8 @@ export function useSceneBackendStream() {
   const [streamingNarrative, setStreamingNarrative] = useState(null);
   const [streamingSegments, setStreamingSegments] = useState(null);
   const [streamComplete, setStreamComplete] = useState(false);
+  const [streamError, setStreamError] = useState(null);
+  const streamingNarrativeRef = useRef(null);
 
   const resetStreamState = useCallback(() => {
     setEarlyDiceRoll(null);
@@ -28,14 +30,19 @@ export function useSceneBackendStream() {
     streamedNpcsIntroducedCountRef.current = 0;
     dispatchedRollSkillsRef.current = new Set();
     rollMessageCounterRef.current = 0;
+    setStreamingNarrative(null);
+    streamingNarrativeRef.current = null;
     setStreamingSegments(null);
     setStreamComplete(false);
+    setStreamError(null);
   }, []);
 
   const clearStreamingOutput = useCallback(() => {
     setStreamingNarrative(null);
+    streamingNarrativeRef.current = null;
     setStreamingSegments(null);
     setStreamComplete(false);
+    setStreamError(null);
   }, []);
 
   const clearEarlyDiceRoll = useCallback(() => setEarlyDiceRoll(null), []);
@@ -106,6 +113,7 @@ export function useSceneBackendStream() {
           streamedDiceRollCountRef.current = 0;
           streamedNpcsIntroducedCountRef.current = 0;
           setStreamingNarrative(null);
+          streamingNarrativeRef.current = null;
           setStreamingSegments(null);
           setStreamComplete(false);
         } else if (event.type === 'dice_early' && event.data?.diceRoll) {
@@ -171,9 +179,11 @@ export function useSceneBackendStream() {
               .join(' ');
             if (derived.length > 0) {
               setStreamingNarrative(derived);
+              streamingNarrativeRef.current = derived;
             }
           } else if (typeof parsed.narrative === 'string' && parsed.narrative.length > 0) {
             setStreamingNarrative(parsed.narrative);
+            streamingNarrativeRef.current = parsed.narrative;
           }
         }
       },
@@ -204,6 +214,8 @@ export function useSceneBackendStream() {
     return { serverDiceRolls, effectiveDiceRolls };
   }, [dispatchDiceRollMessage]);
 
+  const hasPartialNarrative = useCallback(() => streamingNarrativeRef.current !== null, []);
+
   return {
     callStream,
     processServerDiceRolls,
@@ -214,5 +226,8 @@ export function useSceneBackendStream() {
     streamingNarrative,
     streamingSegments,
     streamComplete,
+    streamError,
+    setStreamError,
+    hasPartialNarrative,
   };
 }

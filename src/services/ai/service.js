@@ -279,7 +279,9 @@ export const aiService = {
               result = event.data;
               gotComplete = true;
             } else if (event.type === 'error') {
-              throw new Error(event.error || 'Stream generation failed');
+              const sseErr = new Error(event.error || 'Stream generation failed');
+              sseErr.code = event.code || undefined;
+              throw sseErr;
             }
           } catch (e) {
             if (e.message && !e.message.includes('JSON')) throw e;
