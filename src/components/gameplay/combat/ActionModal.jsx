@@ -914,6 +914,7 @@ export default function ActionModal({
             placeholder={t('combat.useItemPlaceholder', 'Opisz jak używasz tego przedmiotu w walce...')}
             className="w-full px-2 py-1.5 rounded-md border border-outline-variant/15 bg-surface-container/40 text-xs text-on-surface placeholder:text-outline-variant/60 focus:outline-none focus:border-tertiary/30 resize-none"
           />
+          <span className="text-[10px] text-on-surface-variant/40">Shift+Enter — wyślij</span>
           <button
             onClick={handleAiSubmit}
             disabled={!aiDescription.trim()}
@@ -953,6 +954,7 @@ export default function ActionModal({
             placeholder={t('combat.customActionPlaceholder', 'Opisz co robisz w tej turze...')}
             className="w-full px-2 py-1.5 rounded-md border border-outline-variant/15 bg-surface-container/40 text-xs text-on-surface placeholder:text-outline-variant/60 focus:outline-none focus:border-amber-500/30 resize-none"
           />
+          <span className="text-[10px] text-on-surface-variant/40">Shift+Enter — wyślij</span>
           <button
             onClick={handleAiSubmit}
             disabled={!aiDescription.trim()}

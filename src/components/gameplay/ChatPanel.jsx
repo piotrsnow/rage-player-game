@@ -2,7 +2,6 @@ import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useChatScrollSync } from '../../hooks/useChatScrollSync';
 import { useChatAutoNarration } from '../../hooks/useChatAutoNarration';
-import { StreamingContent } from './chat/ChatMessageParts';
 import {
   DmMessage,
   CombatCommentaryMessage,
@@ -24,7 +23,6 @@ function formatDuration(totalSeconds) {
 export default function ChatPanel({
   messages = [],
   streamingNarrative = null,
-  streamingSegments = null,
   streamError = null,
   onRetryStream = null,
   onDismissStreamError = null,
@@ -146,53 +144,42 @@ export default function ChatPanel({
           else inner = <SystemMessage message={msg} />;
           return <div key={msg.id} data-testid="chat-message" data-message-id={msg.id} className={px}>{inner}</div>;
         })}
-        {/* Streaming narrative — shown while AI generates (suppressed while
-            a typewriter overlay is up so the chat stays quiet until it closes).
-            Also kept visible when streamError is set so the partial text isn't lost. */}
-        {!chatGate && (streamingNarrative || streamError) && (
+        {/* Stream error — retry/dismiss UI (no partial narrative preview;
+            the final DM message appears via chatHistory after complete). */}
+        {!chatGate && streamError && (
           <div className="px-2 animate-fade-in">
             <div className="flex flex-col gap-2">
-              <span className="text-[10px] font-bold text-primary uppercase tracking-widest">
-                {t('chat.dmAi', 'DM (AI)')} {streamError ? '' : '· ...'}
-              </span>
-              {streamingNarrative && (
-                <div className="glass-panel p-3 border-l-2 border-primary-dim/60 rounded-r-lg space-y-2">
-                  <StreamingContent narrative={streamingNarrative} segments={streamingSegments} />
+              <div className="rounded-lg border border-amber-500/30 bg-black/70 backdrop-blur-md px-4 py-3 animate-fade-in" role="alert">
+                <div className="flex items-start gap-2">
+                  <span className="material-symbols-outlined text-amber-400 text-base mt-0.5 shrink-0">warning</span>
+                  <p className="text-amber-200 text-xs leading-snug min-w-0 break-words">
+                    {streamError.code === 'LLM_TIMEOUT'
+                      ? t('gameplay.streamErrorTimeout', 'Generowanie sceny przekroczyło limit czasu.')
+                      : t('gameplay.streamErrorGeneric', 'Wystąpił błąd podczas generowania sceny.')}
+                  </p>
                 </div>
-              )}
-              {streamError && (
-                <div className="rounded-lg border border-amber-500/30 bg-black/70 backdrop-blur-md px-4 py-3 animate-fade-in" role="alert">
-                  <div className="flex items-start gap-2">
-                    <span className="material-symbols-outlined text-amber-400 text-base mt-0.5 shrink-0">warning</span>
-                    <p className="text-amber-200 text-xs leading-snug min-w-0 break-words">
-                      {streamError.code === 'LLM_TIMEOUT'
-                        ? t('gameplay.streamErrorTimeout', 'Generowanie sceny przekroczyło limit czasu.')
-                        : t('gameplay.streamErrorGeneric', 'Wystąpił błąd podczas generowania sceny.')}
-                    </p>
-                  </div>
-                  <div className="flex items-center gap-2 mt-2.5">
-                    {streamError.canRetry && onRetryStream && (
-                      <button
-                        type="button"
-                        onClick={onRetryStream}
-                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-amber-500/15 border border-amber-500/40 text-amber-200 text-xs font-medium hover:bg-amber-500/25 hover:border-amber-400/60 transition-all"
-                      >
-                        <span className="material-symbols-outlined text-sm">refresh</span>
-                        {t('gameplay.retryGeneration', 'Spróbuj ponownie')}
-                      </button>
-                    )}
-                    {onDismissStreamError && (
-                      <button
-                        type="button"
-                        onClick={onDismissStreamError}
-                        className="text-amber-400/60 hover:text-amber-300 text-xs transition-colors"
-                      >
-                        {t('common.dismiss', 'Odrzuć')}
-                      </button>
-                    )}
-                  </div>
+                <div className="flex items-center gap-2 mt-2.5">
+                  {streamError.canRetry && onRetryStream && (
+                    <button
+                      type="button"
+                      onClick={onRetryStream}
+                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-amber-500/15 border border-amber-500/40 text-amber-200 text-xs font-medium hover:bg-amber-500/25 hover:border-amber-400/60 transition-all"
+                    >
+                      <span className="material-symbols-outlined text-sm">refresh</span>
+                      {t('gameplay.retryGeneration', 'Spróbuj ponownie')}
+                    </button>
+                  )}
+                  {onDismissStreamError && (
+                    <button
+                      type="button"
+                      onClick={onDismissStreamError}
+                      className="text-amber-400/60 hover:text-amber-300 text-xs transition-colors"
+                    >
+                      {t('common.dismiss', 'Odrzuć')}
+                    </button>
+                  )}
                 </div>
-              )}
+              </div>
             </div>
           </div>
         )}

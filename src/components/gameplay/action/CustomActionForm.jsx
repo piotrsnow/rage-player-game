@@ -187,6 +187,7 @@ export default function CustomActionForm({
           value={displayValue}
           onChange={handleInputChange}
           onSubmit={handleEditorSubmit}
+          onQuickBeatSubmit={quickBeatAvailable && !isQuickBeatLocked ? handleQuickBeatClick : null}
           onFocus={() => setInputFocused(true)}
           onBlur={() => setInputFocused(false)}
           disabled={disabled && !isAutoTyping}
@@ -226,7 +227,7 @@ export default function CustomActionForm({
             disabled={!customAction.trim() || disabled || isQuickBeatLocked}
             title={isQuickBeatLocked
               ? t('gameplay.quickBeatLocked', { defaultValue: 'Limit małych akcji osiągnięty — wyślij pełną akcję' })
-              : t('gameplay.quickBeatTooltip', { defaultValue: 'Mała akcja (drobny RP-beat, bez nowej sceny). Pozostało: {{remaining}}/{{limit}}', remaining: quickBeatRemaining, limit: quickBeatLimit })}
+              : t('gameplay.quickBeatTooltip', { defaultValue: 'Mała akcja · Shift+Enter (drobny RP-beat, bez nowej sceny). Pozostało: {{remaining}}/{{limit}}', remaining: quickBeatRemaining, limit: quickBeatLimit })}
             className={`shrink-0 flex items-center justify-center w-9 h-9 rounded-sm transition-all duration-300 disabled:opacity-30 disabled:cursor-not-allowed ${
               quickBeatHinted
                 ? 'text-amber-200 bg-amber-400/15 border border-amber-400/30 shadow-[0_0_8px_rgba(251,191,36,0.15)]'
@@ -249,7 +250,7 @@ export default function CustomActionForm({
       </div>
       {quickBeatAvailable && quickBeatHinted && !isQuickBeatLocked && (
         <span className="text-[10px] font-label uppercase tracking-widest text-amber-200/80 mt-1 block">
-          {t('gameplay.quickBeatHint', { defaultValue: 'Wygląda na małą akcję — kliknij ⚡ żeby wysłać bez nowej sceny' })}
+          {t('gameplay.quickBeatHint', { defaultValue: 'Wygląda na małą akcję — kliknij ⚡ lub Shift+Enter' })}
         </span>
       )}
       {quickBeatAvailable && isQuickBeatLocked && (

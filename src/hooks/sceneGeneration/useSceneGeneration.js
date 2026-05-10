@@ -18,6 +18,7 @@ import { useSceneBackendStream } from './useSceneBackendStream';
 import { processSceneDialogue } from './processSceneDialogue';
 import { injectCombatFallback, fillBestiaryStats, applyNeedsAndRest, applySceneStateChanges } from './applySceneStateChanges';
 import { devLog } from '../../stores/devEventLogStore';
+import { stopAllDialogAudio } from '../../utils/readAloudExclusive';
 
 const RETRYABLE_CODES = new Set(['LLM_TIMEOUT', 'LLM_ERROR', 'OVERLOADED']);
 
@@ -251,6 +252,7 @@ export function useSceneGeneration({ ensureMissingInventoryImages, ensureMissing
 
         // Build and dispatch scene
         const sceneId = serverSceneId || createSceneId();
+        stopAllDialogAudio();
         const questOffers = (result.questOffers || []).map((offer) => ({
           ...offer, objectives: (offer.objectives || []).map((obj) => ({ ...obj, completed: false })), status: 'pending',
         }));

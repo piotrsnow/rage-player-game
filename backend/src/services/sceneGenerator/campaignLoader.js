@@ -72,6 +72,16 @@ export async function loadCampaignState(campaignId) {
     if (!coreState.world.currentLocation) coreState.world.currentLocation = campaign.currentLocationName;
   }
 
+  if (campaign.currentLocationKind && campaign.currentLocationId) {
+    if (!coreState.world) coreState.world = {};
+    if (!coreState.world.currentLocationRef) {
+      coreState.world.currentLocationRef = {
+        kind: campaign.currentLocationKind,
+        id: campaign.currentLocationId,
+      };
+    }
+  }
+
   // Load `currentLocationType` so the conditional prompt rules can decide
   // whether to surface the sublocation-creation slot (in a settlement /
   // canonical sublocation) or the dungeon-room navigation slot
@@ -110,6 +120,9 @@ export async function loadCampaignState(campaignId) {
       name: n.name, gender: n.gender, role: n.role,
       personality: n.personality, attitude: n.attitude, disposition: n.disposition,
       alive: n.alive, lastLocation: n.lastLocation,
+      locationRef: (n.lastLocationKind && n.lastLocationId)
+        ? { kind: n.lastLocationKind, id: n.lastLocationId }
+        : null,
       notes: n.notes,
       race: n.race,
       creatureKind: n.creatureKind,

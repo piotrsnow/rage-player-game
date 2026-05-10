@@ -3,6 +3,7 @@ import {
   forceDirectedLayout,
   geoProjectLayout,
   directedGraphLayout,
+  resolveCollisions,
   GRAPH_LAYOUT_W,
   GRAPH_LAYOUT_H,
   GRAPH_LAYOUT_PAD,
@@ -67,11 +68,12 @@ export default function GraphCanvas({
     const merged = new Map(basePositions);
     if (positionOverrides) {
       for (const [id, pos] of Object.entries(positionOverrides)) {
-        if (merged.has(id)) merged.set(id, pos);
+        if (merged.has(id)) merged.set(id, { ...pos });
       }
+      resolveCollisions(merged, nodes);
     }
     return merged;
-  }, [basePositions, positionOverrides]);
+  }, [basePositions, positionOverrides, nodes]);
 
   const clientToLayout = useCallback((clientX, clientY) => {
     const rect = svgRef.current.getBoundingClientRect();

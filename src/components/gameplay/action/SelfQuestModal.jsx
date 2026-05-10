@@ -72,6 +72,13 @@ export default function SelfQuestModal({ campaignId, onClose, onQuestAccepted })
               <textarea
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && e.shiftKey && !e.ctrlKey) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    handleSubmit();
+                  }
+                }}
                 placeholder={t('gameplay.selfQuestPlaceholder')}
                 disabled={submitting}
                 rows={4}
@@ -79,9 +86,10 @@ export default function SelfQuestModal({ campaignId, onClose, onQuestAccepted })
                 className="w-full bg-surface-container/60 border border-outline-variant/20 rounded-sm px-3 py-2.5 text-sm text-on-surface placeholder:text-on-surface-variant/50 focus:outline-none focus:border-primary/40 resize-none disabled:opacity-50"
               />
               <div className="flex items-center justify-between">
-                <span className="text-[10px] text-on-surface-variant/60">
-                  {description.length}/500
-                </span>
+                <div className="flex items-center gap-3">
+                  <span className="text-[10px] text-on-surface-variant/40">Shift+Enter — wyślij</span>
+                  <span className="text-[10px] text-on-surface-variant/60">{description.length}/500</span>
+                </div>
                 <div className="flex gap-2">
                   <button
                     onClick={onClose}

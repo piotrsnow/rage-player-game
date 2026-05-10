@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef, useMemo } from 'react';
+import { lazy, Suspense, useState, useCallback, useRef, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useModalA11y } from '../../../hooks/useModalA11y.js';
 import { useLocationGraph } from '../../../hooks/useLocationGraph.js';
@@ -8,6 +8,7 @@ import { apiClient } from '../../../services/apiClient.js';
 import { useGraphShortcuts } from '../../../hooks/useGraphShortcuts.js';
 import { useEntityBrowser } from '../../../hooks/useEntityBrowser.js';
 import { useWorldGraphSpriteJob } from '../../../hooks/useWorldGraphSpriteJob.js';
+import { useSettings } from '../../../contexts/SettingsContext.jsx';
 import GraphCanvas from './GraphCanvas.jsx';
 import HierarchyTree from './HierarchyTree.jsx';
 import InspectorPanel from './InspectorPanel.jsx';
@@ -18,6 +19,28 @@ import ModalNavBar from './ModalNavBar.jsx';
 import EntityBrowserPanel from './EntityBrowserPanel.jsx';
 import EntityInspector from './EntityInspector.jsx';
 import NpcDetailsModal from './NpcDetailsModal.jsx';
+
+const AdminNpcListTab = lazy(() => import('../../admin/adminLivingWorld/tabs/NpcListTab'));
+const AdminLocationListTab = lazy(() => import('../../admin/adminLivingWorld/tabs/LocationListTab'));
+const AdminEventTimelineTab = lazy(() => import('../../admin/adminLivingWorld/tabs/EventTimelineTab'));
+const AdminReputationListTab = lazy(() => import('../../admin/adminLivingWorld/tabs/ReputationListTab'));
+const AdminWorldLoreTab = lazy(() => import('../../admin/AdminWorldLoreTab'));
+const AdminPromotionsTab = lazy(() => import('../../admin/adminLivingWorld/tabs/PromotionsTab'));
+const AdminCanonGraphTab = lazy(() => import('../../admin/adminLivingWorld/tabs/CanonGraphTab'));
+const AdminEntityRegistryTab = lazy(() => import('../../admin/adminLivingWorld/tabs/EntityRegistryTab'));
+const AdminFontConfigTab = lazy(() => import('../../admin/adminLivingWorld/tabs/FontConfigTab'));
+
+const ADMIN_TAB_COMPONENTS = {
+  'admin-npcs': AdminNpcListTab,
+  'admin-locations': AdminLocationListTab,
+  'admin-events': AdminEventTimelineTab,
+  'admin-reputation': AdminReputationListTab,
+  'admin-lore': AdminWorldLoreTab,
+  'admin-promotions': AdminPromotionsTab,
+  'admin-canon': AdminCanonGraphTab,
+  'admin-registry': AdminEntityRegistryTab,
+  'admin-fonts': AdminFontConfigTab,
+};
 import {
   getGeoProjectionParams,
   layoutPxToRegion,
@@ -35,13 +58,17 @@ const LAYOUT_WORLD_KEY = '__world_admin__';
 export default function LocationGraphModal({ campaignId = null, onClose, openGeneration = 0, worldMode = false }) {
   const { t } = useTranslation();
   const modalRef = useModalA11y(onClose);
+  const { backendUser } = useSettings();
+  const isAdmin = !!backendUser?.isAdmin;
   const layoutStorageKey = worldMode ? LAYOUT_WORLD_KEY : campaignId;
+
+  const [showOrphans, setShowOrphans] = useState(false);
 
   const campaignGraph = useLocationGraph(worldMode ? null : campaignId, {
     openGeneration,
     paused: worldMode,
   });
-  const worldGraphHook = useWorldGraph({ openGeneration, paused: !worldMode });
+  const worldGraphHook = useWorldGraph({ openGeneration, paused: !worldMode, showOrphans });
 
   const graph = worldMode ? worldGraphHook : campaignGraph;
 
@@ -267,7 +294,7 @@ export default function LocationGraphModal({ campaignId = null, onClose, openGen
         </div>
 
         <div className="flex-1 flex min-h-0">
-          <ModalNavBar activeTab={activeTab} onTabChange={setActiveTab} />
+          <ModalNavBar activeTab={activeTab} onTabChange={setActiveTab} isAdmin={isAdmin} />
 
           {activeTab === 'graph' ? (
             <>
@@ -363,6 +390,8 @@ export default function LocationGraphModal({ campaignId = null, onClose, openGen
                   onToggleSnap={handleToggleSnap}
                   onResetLayout={handleResetLayout}
                   spriteJob={worldMode ? { ...spriteJob, nodes: graph.allNodes } : undefined}
+                  showOrphans={showOrphans}
+                  onToggleOrphans={worldMode ? () => setShowOrphans((v) => !v) : undefined}
                 />
               </div>
 
@@ -389,7 +418,7 @@ export default function LocationGraphModal({ campaignId = null, onClose, openGen
                 </div>
               </div>
             </>
-          ) : (
+          ) : activeTab === 'entities' ? (
             <>
               <div className="w-48 border-r border-outline-variant/15 flex-shrink-0 overflow-hidden flex flex-col">
                 <div className="px-4 py-2 border-b border-outline-variant/15">
@@ -459,7 +488,16 @@ export default function LocationGraphModal({ campaignId = null, onClose, openGen
                 </div>
               </div>
             </>
-          )}
+          ) : ADMIN_TAB_COMPONENTS[activeTab] ? (() => {
+            const AdminTab = ADMIN_TAB_COMPONENTS[activeTab];
+            return (
+              <Suspense fallback={<div className="flex-1 flex items-center justify-center text-on-surface-variant text-sm">Loading…</div>}>
+                <div className="flex-1 overflow-y-auto custom-scrollbar p-4">
+                  <AdminTab />
+                </div>
+              </Suspense>
+            );
+          })() : null}
         </div>
 
         {selectedNpcId && graph.fetchNpcDetails && (

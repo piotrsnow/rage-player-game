@@ -71,9 +71,10 @@ import { useGameplayActions } from '../../hooks/useGameplayActions';
 import { useUltrawideBonus } from '../../hooks/useUltrawideBonus';
 import { useMomentumMinigame } from '../../hooks/useMomentumMinigame';
 import { useFavoriteScenes } from '../../hooks/useFavoriteScenes';
+import { filterNpcsHere } from '../../utils/npcLocation';
 import MainQuestCompleteModal from './MainQuestCompleteModal';
 import { ActionTagProvider } from '../../contexts/ActionTagContext';
-import { claimExclusiveReadAloud } from '../../utils/readAloudExclusive';
+import { claimExclusiveReadAloud, stopAllDialogAudio } from '../../utils/readAloudExclusive';
 import WorldNewsPanel from './WorldNewsPanel';
 import { useCreatureEncounter } from '../../hooks/useCreatureEncounter';
 import CreatureEncounterModal from './CreatureEncounterModal';
@@ -143,7 +144,7 @@ export default function GameplayPage({ readOnly = false, shareToken = null, onRe
     acceptQuestOffer, declineQuestOffer,
     sceneGenStartTime, lastSceneGenMs,
     earlyDiceRoll, clearEarlyDiceRoll,
-    streamingNarrative, streamingSegments,
+    streamingNarrative,
     streamComplete,
     streamError, retryAfterStreamError, dismissStreamError,
   } = useAI();
@@ -163,6 +164,7 @@ export default function GameplayPage({ readOnly = false, shareToken = null, onRe
   } = derived;
 
   const favoriteScenesHook = useFavoriteScenes(readOnly ? null : character?.backendId);
+  const lastAudioStoppedSceneIdRef = useRef(null);
 
   useDocumentTitle(campaign?.name);
 
@@ -172,6 +174,21 @@ export default function GameplayPage({ readOnly = false, shareToken = null, onRe
     document.documentElement.scrollTop = 0;
     document.body.scrollTop = 0;
   }, [urlCampaignId, readOnly, location.pathname, location.key]);
+
+  const newestSceneId = scenes[scenes.length - 1]?.id || null;
+  useLayoutEffect(() => {
+    if (!newestSceneId) {
+      lastAudioStoppedSceneIdRef.current = null;
+      return;
+    }
+    if (lastAudioStoppedSceneIdRef.current === null) {
+      lastAudioStoppedSceneIdRef.current = newestSceneId;
+      return;
+    }
+    if (lastAudioStoppedSceneIdRef.current === newestSceneId) return;
+    lastAudioStoppedSceneIdRef.current = newestSceneId;
+    stopAllDialogAudio();
+  }, [newestSceneId]);
 
   // Feed the dictation classifier with live game state so the auto-mode can
   // bias toward action during combat and dialogue when an NPC is mid-scene.
@@ -849,6 +866,7 @@ export default function GameplayPage({ readOnly = false, shareToken = null, onRe
                   isRolling={idleTimer.isRolling}
                   fastMode={idleTimer.fastMode}
                   onToggleFastMode={idleTimer.toggleFastMode}
+                  onManualCheck={idleTimer.triggerManualCheck}
                 />
               )}
             </div>
@@ -862,19 +880,11 @@ export default function GameplayPage({ readOnly = false, shareToken = null, onRe
               isQuickBeatLocked={quickBeat.isQuickBeatLocked}
               disabled={isGeneratingScene}
               autoPlayerTypingText={autoPlayer.typingText}
-              npcs={(() => {
-                const npcsList = (isMultiplayer ? mpGameState?.world?.npcs : sWorld?.npcs) || [];
-                const currentRef = isMultiplayer ? mpGameState?.world?.currentLocationRef : sWorld?.currentLocationRef;
-                const currentName = isMultiplayer ? mpGameState?.world?.currentLocation : sWorld?.currentLocation;
-                return npcsList.filter((npc) => {
-                  if (npc.alive === false) return false;
-                  // Faza 3b — preferuj composite ref match. Fallback: legacy string.
-                  if (currentRef && npc.locationRef) {
-                    return npc.locationRef.kind === currentRef.kind && npc.locationRef.id === currentRef.id;
-                  }
-                  return npc.lastLocation === currentName;
-                });
-              })()}
+              npcs={filterNpcsHere(
+                (isMultiplayer ? mpGameState?.world?.npcs : sWorld?.npcs) || [],
+                isMultiplayer ? mpGameState?.world?.currentLocationRef : sWorld?.currentLocationRef,
+                isMultiplayer ? mpGameState?.world?.currentLocation : sWorld?.currentLocation,
+              )}
               character={character}
               dilemma={currentScene.dilemma}
               lastChosenAction={lastChosenAction}
@@ -1093,7 +1103,6 @@ export default function GameplayPage({ readOnly = false, shareToken = null, onRe
         <ChatPanel
           messages={chatHistory}
           streamingNarrative={streamingNarrative}
-          streamingSegments={streamingSegments}
           streamError={streamError}
           onRetryStream={retryAfterStreamError}
           onDismissStreamError={dismissStreamError}
@@ -1127,6 +1136,8 @@ export default function GameplayPage({ readOnly = false, shareToken = null, onRe
           onRespond={(action) => creatureEncounter.respondToCreature(action)}
           onFlee={() => creatureEncounter.fleeFromCreature(character)}
           onDismiss={() => creatureEncounter.dismiss()}
+          narrator={narrator}
+          autoPlay={!readOnly && settings.narratorEnabled && settings.narratorAutoPlay}
         />
 
       <GameplayModals

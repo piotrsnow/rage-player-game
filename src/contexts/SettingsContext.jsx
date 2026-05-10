@@ -326,6 +326,20 @@ export function SettingsProvider({ children }) {
     return result;
   }, []);
 
+  const updatePerVoiceVolume = useCallback(async (voiceId, volume) => {
+    const clamped = Math.max(0, Math.min(100, Math.round(volume)));
+    setGlobalVoiceConfig((prev) => ({
+      ...prev,
+      perVoiceVolumes: { ...(prev.perVoiceVolumes || {}), [voiceId]: clamped === 100 ? undefined : clamped },
+    }));
+    try {
+      const result = await apiClient.put('/voice-settings/per-voice-volume', { voiceId, volume: clamped });
+      setGlobalVoiceConfig(result || {});
+    } catch (err) {
+      console.warn('[settings] Failed to save per-voice volume:', err.message);
+    }
+  }, []);
+
   const fetchSceneModelConfig = useCallback(async () => {
     if (!apiClient.isConnected()) {
       setSceneModelConfig({});
@@ -606,10 +620,13 @@ export function SettingsProvider({ children }) {
     maleVoices: activeVoices.maleVoices || [],
     femaleVoices: activeVoices.femaleVoices || [],
   };
+  const perVoiceVolumes = globalVoiceConfig.perVoiceVolumes || {};
 
   const value = {
     settings,
     voicePools,
+    perVoiceVolumes,
+    updatePerVoiceVolume,
     updateSettings,
     updateDMSettings,
     updateAutoPlayerSettings,

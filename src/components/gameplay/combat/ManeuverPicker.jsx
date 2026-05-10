@@ -144,12 +144,20 @@ export default function ManeuverPicker({
           <textarea
             value={customDescription}
             onChange={(event) => onCustomDescriptionChange(event.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && e.shiftKey && !e.ctrlKey) {
+                e.preventDefault();
+                e.stopPropagation();
+                onExecute();
+              }
+            }}
             rows={3}
             placeholder={t('combat.customAttackPlaceholder', 'Describe how you strike to earn creativity bonus to the attack roll.')}
             className="w-full px-3 py-2 rounded-sm border border-outline-variant/15 bg-surface-container/40 text-[12px] text-on-surface placeholder:text-outline-variant/70 focus:outline-none focus:border-primary/30 resize-y min-h-[88px]"
           />
-          <div className="text-[10px] text-outline-variant">
-            {t('combat.customAttackHint', 'A richer, more tactical description can grant extra creativity to the attack roll.')}
+          <div className="flex items-center justify-between text-[10px] text-outline-variant">
+            <span>{t('combat.customAttackHint', 'A richer, more tactical description can grant extra creativity to the attack roll.')}</span>
+            <span className="text-on-surface-variant/40 shrink-0 ml-2">Shift+Enter</span>
           </div>
         </div>
       )}

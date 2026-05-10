@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { buildActiveQuestsBlock } from './worldBlock.js';
+import { buildActiveQuestsBlock, buildWorldStateBlock, buildNpcRelationshipsBlock } from './worldBlock.js';
 
 function quest({ id, name = 'Q', type = 'main', objectives = [] }) {
   return { id, name, type, objectives };
@@ -111,5 +111,73 @@ describe('buildActiveQuestsBlock', () => {
     expect(out).toContain('--- Background Quests');
     expect(out).toContain('[meet_baron]');
     expect(out).toContain('[find_herbs]');
+  });
+});
+
+describe('buildWorldStateBlock — NPC ref-aware filtering', () => {
+  const worldRef = { kind: 'world', id: 'loc-1' };
+  const otherRef = { kind: 'campaign', id: 'loc-2' };
+
+  it('includes NPC matched by composite ref', () => {
+    const world = {
+      currentLocation: 'Yeralden',
+      currentLocationRef: worldRef,
+      npcs: [
+        { name: 'Gareth', alive: true, locationRef: worldRef, lastLocation: 'Yeralden', role: 'guard', attitude: 'friendly', disposition: 5 },
+      ],
+    };
+    const block = buildWorldStateBlock(world);
+    expect(block).toContain('Gareth');
+  });
+
+  it('excludes NPC at a different ref even if legacy string matches', () => {
+    const world = {
+      currentLocation: 'Yeralden',
+      currentLocationRef: worldRef,
+      npcs: [
+        { name: 'Moved', alive: true, locationRef: otherRef, lastLocation: 'Yeralden', role: 'thief', attitude: 'hostile', disposition: -10 },
+      ],
+    };
+    const block = buildWorldStateBlock(world);
+    expect(block || '').not.toContain('Moved');
+  });
+
+  it('falls back to string match when NPC has no locationRef', () => {
+    const world = {
+      currentLocation: 'Yeralden',
+      currentLocationRef: worldRef,
+      npcs: [
+        { name: 'Legacy', alive: true, locationRef: null, lastLocation: 'Yeralden', role: 'bard', attitude: 'neutral', disposition: 0 },
+      ],
+    };
+    const block = buildWorldStateBlock(world);
+    expect(block).toContain('Legacy');
+  });
+
+  it('excludes dead NPC', () => {
+    const world = {
+      currentLocation: 'Yeralden',
+      currentLocationRef: worldRef,
+      npcs: [
+        { name: 'Dead', alive: false, locationRef: worldRef, lastLocation: 'Yeralden', role: 'ghost', attitude: 'neutral', disposition: 0 },
+      ],
+    };
+    const block = buildWorldStateBlock(world);
+    expect(block || '').not.toContain('Dead');
+  });
+});
+
+describe('buildNpcRelationshipsBlock — ref-aware filtering', () => {
+  const ref = { kind: 'world', id: 'loc-1' };
+
+  it('returns null when no NPCs match current ref', () => {
+    const world = {
+      currentLocation: 'Yeralden',
+      currentLocationRef: ref,
+      npcs: [
+        { name: 'Far', alive: true, locationRef: { kind: 'campaign', id: 'loc-2' }, lastLocation: 'Kamionka', role: 'x', attitude: 'x', disposition: 0, relationships: [] },
+      ],
+    };
+    expect(buildNpcRelationshipsBlock(world)).toBe(null);
   });
 });

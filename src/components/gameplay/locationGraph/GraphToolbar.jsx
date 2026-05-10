@@ -16,6 +16,7 @@ export default function GraphToolbar({
   searchInputRef,
   snapToGrid, onToggleSnap, onResetLayout,
   spriteJob,
+  showOrphans = false, onToggleOrphans,
 }) {
   const { t } = useTranslation();
 
@@ -145,6 +146,21 @@ export default function GraphToolbar({
           >
             <span className="material-symbols-outlined text-sm">verified</span>
           </button>
+        </>
+      )}
+
+      {onToggleOrphans && (
+        <>
+          <div className="w-px h-5 bg-outline-variant/20" />
+          <label className="flex items-center gap-1.5 px-2 py-1 rounded-sm hover:bg-white/5 text-on-surface-variant cursor-pointer select-none uppercase tracking-widest">
+            <input
+              type="checkbox"
+              checked={showOrphans}
+              onChange={onToggleOrphans}
+              className="accent-primary w-3 h-3"
+            />
+            {t('locationGraph.toolbar.showOrphans', { defaultValue: 'orphans' })}
+          </label>
         </>
       )}
 

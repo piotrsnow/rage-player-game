@@ -4,9 +4,8 @@ import {
   resolveManoeuvre,
   advanceTurn,
 } from '../services/combatEngine';
+import { getCombatMoveDurationMs } from '../services/combatAnimationTiming';
 import { SPELL_VFX_COUNT } from '../components/gameplay/combat/combatCanvasDraw';
-
-const CHARGE_SLIDE_MS = 500;
 
 function normalizePos(p) {
   if (p && typeof p === 'object' && 'x' in p) return p;
@@ -20,16 +19,20 @@ function snapshotPositions(combatants) {
   return map;
 }
 
-function diffPositionAnims(combatants, positionsBefore, durationMs) {
+function diffPositionAnims(combatants, positionsBefore) {
   const anims = {};
+  let maxDurationMs = 0;
   for (const c of combatants) {
     const after = normalizePos(c.position);
     const before = positionsBefore[c.id];
     if (before && (before.x !== after.x || before.y !== after.y)) {
+      const distance = Math.max(Math.abs(after.x - before.x), Math.abs(after.y - before.y));
+      const durationMs = getCombatMoveDurationMs(distance);
       anims[c.id] = { durationMs };
+      maxDurationMs = Math.max(maxDurationMs, durationMs);
     }
   }
-  return anims;
+  return { anims, maxDurationMs };
 }
 
 function isCustomAttackManoeuvre(key) {
@@ -71,6 +74,8 @@ export function buildManoeuvreExecutor({
     } else {
       dispatch({ type: 'UPDATE_COMBAT', payload: finalCombat });
     }
+
+    return result;
   }
 
   async function executeManoeuvre(manoeuvreKey, targetId, customDesc, extraOpts = {}) {
@@ -82,7 +87,7 @@ export function buildManoeuvreExecutor({
 
     if (isMultiplayer && !isHost) {
       onSendManoeuvre?.(manoeuvreKey, targetId, customDesc, extraOpts);
-      return;
+      return null;
     }
 
     const actorId = isMultiplayer ? myPlayerId : 'player';
@@ -102,16 +107,15 @@ export function buildManoeuvreExecutor({
         }),
       };
 
-      const anims = diffPositionAnims(updatedCombat.combatants, positionsBefore, CHARGE_SLIDE_MS);
+      const { anims, maxDurationMs } = diffPositionAnims(updatedCombat.combatants, positionsBefore);
       if (Object.keys(anims).length) scheduleTokenAnim(anims);
 
       dispatch({ type: 'UPDATE_COMBAT', payload: slideState });
-      await new Promise((r) => setTimeout(r, CHARGE_SLIDE_MS + 50));
+      await new Promise((r) => setTimeout(r, maxDurationMs + 50));
 
       await triggerActionAnim(actorId, targetId || null);
       setActionAnim(null);
-      finalizeResult(updatedCombat, result);
-      return;
+      return finalizeResult(updatedCombat, result);
     }
 
     const isRanged = gameData.manoeuvres[manoeuvreKey]?.range === 'ranged';
@@ -127,10 +131,9 @@ export function buildManoeuvreExecutor({
       if (result && spellVfxVariant != null) result.spellVfxVariant = spellVfxVariant;
       await triggerProjectileAnim(actorId, targetId, hit, { spellVfxVariant });
 
-      const anims = diffPositionAnims(updatedCombat.combatants, positionsBefore, 1000);
+      const { anims } = diffPositionAnims(updatedCombat.combatants, positionsBefore);
       if (Object.keys(anims).length) scheduleTokenAnim(anims);
-      finalizeResult(updatedCombat, result);
-      return;
+      return finalizeResult(updatedCombat, result);
     }
 
     const isShove = gameData.manoeuvres[manoeuvreKey]?.modifiers?.shove;
@@ -141,9 +144,9 @@ export function buildManoeuvreExecutor({
       combat, actorId, manoeuvreKey, targetId, { customDescription: customDesc, ...extraOpts },
     );
 
-    const anims = diffPositionAnims(updatedCombat.combatants, positionsBefore, 1000);
+    const { anims } = diffPositionAnims(updatedCombat.combatants, positionsBefore);
     if (Object.keys(anims).length) scheduleTokenAnim(anims);
-    finalizeResult(updatedCombat, result);
+    return finalizeResult(updatedCombat, result);
   }
 
   return { executeManoeuvre };
@@ -171,7 +174,7 @@ export function useCombatExecution({
       persistCustomAttack, triggerActionAnim, triggerProjectileAnim,
       scheduleTokenAnim, flushRoundEffectEvents, setActionAnim,
     });
-    await executor.executeManoeuvre(manoeuvreKey, targetId, customDesc, extraOpts);
+    return await executor.executeManoeuvre(manoeuvreKey, targetId, customDesc, extraOpts);
   }, [
     isMyTurn, actionAnim, projectileAnim,
     combat, isMultiplayer, isHost, myPlayerId,

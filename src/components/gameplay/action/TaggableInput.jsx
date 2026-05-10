@@ -29,6 +29,7 @@ const TaggableInput = forwardRef(function TaggableInput(
     value = '',
     onChange,
     onSubmit,
+    onQuickBeatSubmit,
     onFocus: onFocusProp,
     onBlur: onBlurProp,
     disabled = false,
@@ -180,6 +181,12 @@ const TaggableInput = forwardRef(function TaggableInput(
         return; // Let autocomplete handle Enter for selection
       }
 
+      if (e.key === 'Enter' && e.shiftKey && !e.ctrlKey) {
+        e.preventDefault();
+        onQuickBeatSubmit?.();
+        return;
+      }
+
       if (e.key === 'Enter' && !e.shiftKey) {
         e.preventDefault();
         onSubmit?.();
@@ -217,7 +224,7 @@ const TaggableInput = forwardRef(function TaggableInput(
         }
       }
     },
-    [onSubmit, handleInput, autocomplete, autocompleteUiOpen],
+    [onSubmit, onQuickBeatSubmit, handleInput, autocomplete, autocompleteUiOpen],
   );
 
   // ----- prevent rich-paste -----

@@ -129,9 +129,16 @@ export function silencePeerDialogAudio() {
   _bumpPeerSessionAndSilence();
 }
 
-export function claimExclusiveReadAloud() {
+export function stopAllDialogAudio() {
   try { _stopMainNarrator?.(); } catch { /* ignore */ }
   _bumpPeerSessionAndSilence();
+  if (_snapshot.sessionId != null) {
+    endDialogSession(_snapshot.sessionId);
+  }
+}
+
+export function claimExclusiveReadAloud() {
+  stopAllDialogAudio();
   return _legacySessionId;
 }
 

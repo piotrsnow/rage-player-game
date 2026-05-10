@@ -5,6 +5,10 @@ import { getGenderLabel } from '../../utils/characterUtils';
 import { apiClient } from '../../services/apiClient';
 import { storage } from '../../services/storage';
 
+function getCharacterXp(character) {
+  return character?.characterXp ?? character?.xp ?? 0;
+}
+
 function BrowsingView({ character, settings, onBack }) {
   const { t } = useTranslation();
   const [fullCharacter, setFullCharacter] = useState(character);
@@ -57,7 +61,7 @@ function BrowsingView({ character, settings, onBack }) {
           <span className="w-1 h-1 bg-primary rounded-full" />
           <span>{t('character.age')}: {fullCharacter.age ?? 23}</span>
           <span className="w-1 h-1 bg-primary rounded-full" />
-          <span>{fullCharacter.characterXp || 0} {t('common.xp')}</span>
+          <span>{getCharacterXp(fullCharacter)} {t('common.xp')}</span>
         </div>
       </div>
 
@@ -87,11 +91,11 @@ function LibraryCard({ ch, deleteConfirmId, onSelect, onRequestDelete, onConfirm
 
   return (
     <div
-      className="group relative p-4 rounded-sm border bg-surface-container-high/40 border-outline-variant/10 hover:border-primary/20 hover:bg-surface-container-high/60 transition-all cursor-pointer"
+      className="group relative min-h-[8.5rem] p-5 rounded-sm border bg-surface-container-high/40 border-outline-variant/10 hover:border-primary/25 hover:bg-surface-container-high/70 transition-all cursor-pointer"
       onClick={() => onSelect(ch)}
     >
-      <div className="flex items-start gap-3">
-        <div className="w-10 h-10 bg-surface-container-lowest rounded-sm flex items-center justify-center shrink-0 overflow-hidden">
+      <div className="flex items-start gap-4">
+        <div className="w-16 h-16 bg-surface-container-lowest rounded-sm flex items-center justify-center shrink-0 overflow-hidden border border-outline-variant/10">
           {ch.portraitUrl ? (
             <img
               src={apiClient.resolveMediaUrl(ch.portraitUrl)}
@@ -100,16 +104,16 @@ function LibraryCard({ ch, deleteConfirmId, onSelect, onRequestDelete, onConfirm
               onError={(e) => { e.target.style.display = 'none'; }}
             />
           ) : (
-            <span className="material-symbols-outlined text-xl text-outline/40">person</span>
+            <span className="material-symbols-outlined text-3xl text-outline/40">person</span>
           )}
         </div>
         <div className="min-w-0 flex-1">
-          <p className="font-headline text-sm truncate text-tertiary">{ch.name}</p>
-          <p className="text-[10px] text-on-surface-variant truncate">
+          <p className="font-headline text-lg leading-tight truncate text-tertiary pr-14">{ch.name}</p>
+          <p className="text-xs text-on-surface-variant truncate mt-1">
             {t(`species.${ch.species}`, { defaultValue: ch.species })}
           </p>
-          <div className="flex items-center gap-2 mt-1 text-[9px] text-outline">
-            <span>{ch.xp || 0} {t('characterPicker.xpLabel')}</span>
+          <div className="flex items-center gap-2 mt-3 text-[11px] text-outline font-label uppercase tracking-wider">
+            <span>{getCharacterXp(ch)} {t('characterPicker.xpLabel')}</span>
           </div>
         </div>
       </div>
@@ -201,10 +205,14 @@ export default function CharacterLibrary({
 
   return (
     <div className="px-4 md:px-10 py-8">
-      <div className="text-center mb-10 animate-fade-in">
-        <span className="material-symbols-outlined text-5xl text-primary/30 mb-3">groups</span>
-        <h2 className="font-headline text-2xl text-tertiary mb-2">{t('character.library')}</h2>
-        <p className="text-on-surface-variant text-sm">{t('character.libraryDescription')}</p>
+      <div className="mb-6 animate-fade-in rounded-sm border border-outline-variant/10 bg-surface-container-low/50 px-5 py-4">
+        <div className="flex items-start gap-3">
+          <span className="material-symbols-outlined text-2xl text-primary/45 mt-0.5">groups</span>
+          <div>
+            <h2 className="font-headline text-2xl text-tertiary">{t('character.library')}</h2>
+            <p className="text-on-surface-variant text-sm mt-1">{t('character.libraryDescription')}</p>
+          </div>
+        </div>
       </div>
 
       {!libraryLoaded ? (
@@ -238,7 +246,7 @@ export default function CharacterLibrary({
         </div>
       ) : (
         <div className="animate-fade-in">
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3 mb-8">
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 mb-8">
             {libraryChars.map((ch) => (
               <LibraryCard
                 key={ch.backendId || ch.localId || ch.id}

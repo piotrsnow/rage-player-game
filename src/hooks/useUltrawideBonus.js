@@ -7,9 +7,9 @@ const LG_BREAKPOINT = 1024;
 /** Co ile delta aspect-ratio liczymy jeden "step" dla chatu. */
 const RATIO_STEP = 0.1;
 /** Sidebar: px bonusu za każdą jednostkę delta powyżej 16:9. */
-const SIDEBAR_PX_PER_DELTA = 120;
+const SIDEBAR_PX_PER_DELTA = 40;
 /** Twardy cap bonusu sidebara — nawet na 32:9 nie rośnie powyżej bazy + tego. */
-const MAX_SIDEBAR_BONUS = 180;
+const MAX_SIDEBAR_BONUS = 120;
 /** Chat: px bonusu za każdy step (delta / RATIO_STEP). */
 const CHAT_PX_PER_STEP = 12;
 

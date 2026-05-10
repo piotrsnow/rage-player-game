@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSettings } from '../../contexts/SettingsContext';
 import { storage } from '../../services/storage';
@@ -21,6 +21,19 @@ function OrnamentalDivider() {
 }
 
 const BADGE_SESSION_KEY = 'rpgon_badge_fetched';
+const BADGE_CLICKS_KEY = 'rpgon_badge_clicks_';
+const NO_ROLL_MOTTOS = [
+  'Eskapista Fatum',
+  'Uciekinier Losu',
+  'Tkacz Przypadku',
+  'Wędrowiec Splotu',
+  'Zaklinacz Szansy',
+  'Rozbójnik Fortuny',
+  'Buntownik Przepowiedni',
+  'Pielgrzym Przeznaczeń',
+  'Łowca Ostatniej Szansy',
+  'Kronikarz Ryzyka',
+];
 
 function characterIdsMatch(a, b) {
   const ia = a?.backendId ?? a?.id;
@@ -162,6 +175,7 @@ function LoggedInBanner({ user }) {
   const draggedWhilePrimaryRef = useRef(false);
   const suppressNextClickRef = useRef(false);
   const audioRef = useRef(null);
+  const diceVideoRef = useRef(null);
 
   const [charCount, setCharCount] = useState(0);
   const [lastLobbyDiceRoll, setLastLobbyDiceRoll] = useState(null);
@@ -219,14 +233,13 @@ function LoggedInBanner({ user }) {
     return () => window.removeEventListener('focus', onFocus);
   }, [refreshLastLobbyDice]);
 
-  const fetchBadge = useCallback(async (charId, force = false, canRetryFallback = true) => {
+  const fetchBadge = useCallback(async (charId, force = false, canRetryFallback = true, irritationLevel = 0) => {
     if (!charId || !apiClient.isConnected()) return;
     setBadgeLoading(true);
     try {
-      const res = await apiClient.post(`/characters/${charId}/badge`, {
-        force,
-        language: i18n.language || 'pl',
-      });
+      const body = { force, language: i18n.language || 'pl' };
+      if (irritationLevel > 0) body.irritationLevel = irritationLevel;
+      const res = await apiClient.post(`/characters/${charId}/badge`, body);
       if (res?.legend) setBadgeLegend(res.legend);
       if (res?.snark) setBadgeSnark(res.snark);
       if (res?.diceStats) setDiceStats(res.diceStats);
@@ -279,7 +292,11 @@ function LoggedInBanner({ user }) {
   const handleRefresh = (e) => {
     e.stopPropagation();
     if (!topChar || badgeLoading) return;
-    fetchBadge(getCharacterId(topChar), true);
+    const charId = getCharacterId(topChar);
+    const key = BADGE_CLICKS_KEY + charId;
+    const clicks = (parseInt(sessionStorage.getItem(key), 10) || 0) + 1;
+    sessionStorage.setItem(key, String(clicks));
+    fetchBadge(charId, true, true, clicks);
   };
 
   const stopSnarkAudio = useCallback(() => {
@@ -339,6 +356,11 @@ function LoggedInBanner({ user }) {
   }, [badgeSnark, ttsState, stopSnarkAudio, voicePools, hasApiKey]);
 
   useEffect(() => () => stopSnarkAudio(), [stopSnarkAudio]);
+
+  useEffect(() => {
+    const v = diceVideoRef.current;
+    if (v) v.playbackRate = badgeLoading ? 3 : 1;
+  }, [badgeLoading]);
 
   const applyTilt = useCallback(() => {
     const el = cardRef.current;
@@ -523,6 +545,10 @@ function LoggedInBanner({ user }) {
           : `${skill} ${ndLastLobby.roll} ${mark}`;
       })()
     : null;
+  const fallbackMotto = useMemo(() => {
+    if (lastRollSummary) return null;
+    return NO_ROLL_MOTTOS[Math.floor(Math.random() * NO_ROLL_MOTTOS.length)];
+  }, [lastRollSummary, topChar?.backendId, topChar?.id, topChar?.name]);
   const successRate = diceStats?.totalRolls > 0 ? diceStats.successes / diceStats.totalRolls : 0;
   const avgRoll = Number(diceStats?.avgRoll) || 0;
   const diceChips = diceStats && diceStats.totalRolls > 0
@@ -685,41 +711,54 @@ function LoggedInBanner({ user }) {
           {badgeLoading && !badgeLegend && (
             <div className="flex-1 flex items-center justify-center gap-2.5 text-outline/30 text-base">
               <span className="material-symbols-outlined text-lg animate-spin">sync</span>
-              {t('common.loading')}
             </div>
           )}
 
           {/* Footer (awers) */}
           <div className="flex items-center gap-2 sm:gap-3 mt-auto pt-2 sm:pt-3 lg:pt-4 border-t border-outline-variant/8">
          
-            {lastRollSummary && (
+            {(lastRollSummary || fallbackMotto) && (
               <span
-                className="min-w-0 flex-1 inline-flex items-center gap-1.5 text-xs text-on-surface-variant/70"
-                title={lastRollSummary}
+                className="min-w-0 flex-1 inline-flex items-center gap-1.5 text-xs text-on-surface-variant/70 relative -translate-y-2"
+                title={lastRollSummary || fallbackMotto}
               >
                 <span className="material-symbols-outlined text-sm text-primary/40 shrink-0">casino</span>
                 <span className="truncate">
-                  <span className="text-on-surface-variant/50">{t('lobby.lastRollShort', 'Ostatni rzut:')}</span>
+                  <span className="text-on-surface-variant/50">
+                    {lastRollSummary ? t('lobby.lastRollShort', 'Ostatni rzut:') : t('lobby.mottoShort', 'Przydomek:')}
+                  </span>
                   {' '}
-                  <span className="font-headline text-on-surface-variant/85">{lastRollSummary}</span>
+                  <span className="font-headline text-on-surface-variant/85">{lastRollSummary || fallbackMotto}</span>
                 </span>
               </span>
             )}
             <div className="ml-auto flex items-center gap-2 shrink-0">
               <button
+                type="button"
                 onClick={handleRefresh}
                 title={t('lobby.refreshBadge', 'Refresh')}
-                className="text-outline/30 hover:text-primary transition-colors"
+                className={[
+                  'group relative inline-flex h-14 w-14 -translate-y-3 items-center justify-center text-outline/40',
+                  'transition-all duration-200 ease-out hover:scale-110 hover:text-primary active:scale-95',
+                  'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/45 focus-visible:ring-offset-1 focus-visible:ring-offset-surface rounded-full',
+                ].join(' ')}
               >
-                <span className={`material-symbols-outlined text-lg ${badgeLoading ? 'animate-spin' : ''}`}>refresh</span>
+                <video
+                  ref={diceVideoRef}
+                  src="/video/dice.webm"
+                  className={[
+                    'h-12 w-12 object-contain pointer-events-none',
+                    'transition-transform duration-200 ease-out group-hover:rotate-6',
+                    badgeLoading ? 'opacity-65' : 'opacity-95',
+                  ].join(' ')}
+                  autoPlay
+                  loop
+                  muted
+                  playsInline
+                  aria-hidden="true"
+                />
               </button>
             </div>
-          </div>
-
-          {/* Flip hint */}
-          <div className="absolute bottom-3 left-1/2 -translate-x-1/2 text-[10px] text-outline/20 font-label uppercase tracking-widest flex items-center gap-1.5 pointer-events-none">
-            <span className="material-symbols-outlined text-sm">360</span>
-            {t('lobby.flipHint', 'Click to flip')}
           </div>
         </div>
 
@@ -757,7 +796,6 @@ function LoggedInBanner({ user }) {
             ) : badgeLoading ? (
               <div className="flex items-center justify-center gap-2.5 text-outline/30 text-base py-4">
                 <span className="material-symbols-outlined text-lg animate-spin">sync</span>
-                {t('common.loading')}
               </div>
             ) : (
               <div className="text-on-surface-variant/40 py-4">
@@ -808,16 +846,11 @@ function LoggedInBanner({ user }) {
 }
 
 function SessionCheckBanner() {
-  const { t } = useTranslation();
-
   return (
     <div className="text-center py-6">
       <span className="material-symbols-outlined text-primary/50 text-4xl mb-3 block animate-spin">
         progress_activity
       </span>
-      <h3 className="font-headline text-tertiary text-lg tracking-wide">
-        {t('common.loading')}
-      </h3>
     </div>
   );
 }

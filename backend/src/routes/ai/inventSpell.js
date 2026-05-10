@@ -230,7 +230,9 @@ export async function inventSpellRoutes(fastify) {
         return {
           outcome: analyzed.outcome,
           threshold: analyzed.threshold,
+          sum: analyzed.sum,
           favorability: analyzed.favorability,
+          intelligence: analyzed.intelligence,
           hasTeacher: analyzed.hasTeacher,
           successRoll,
           powerRoll,
@@ -308,7 +310,9 @@ export async function inventSpellRoutes(fastify) {
         return reply.code(409).send({
           outcome: 'fail_circumstances',
           threshold: analyzed.threshold,
+          sum: analyzed.sum,
           favorability: analyzed.favorability,
+          intelligence: analyzed.intelligence,
           hasTeacher: analyzed.hasTeacher,
           successRoll,
           powerRoll,
@@ -394,7 +398,9 @@ export async function inventSpellRoutes(fastify) {
       return {
         outcome: analyzed.outcome,
         threshold: analyzed.threshold,
+        sum: analyzed.sum,
         favorability: analyzed.favorability,
+        intelligence: analyzed.intelligence,
         hasTeacher: analyzed.hasTeacher,
         successRoll,
         powerRoll,

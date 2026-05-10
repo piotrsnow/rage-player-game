@@ -270,6 +270,18 @@ export function applyCharacterStateChanges(character, changes) {
     if (changes.learnSpellSchool) {
       spells.schools = { ...(spells.schools || {}), [changes.learnSpell]: changes.learnSpellSchool };
     }
+    if (changes.learnSpellDescription || changes.learnSpellLevel || changes.learnSpellManaCost) {
+      const prev = spells.details?.[changes.learnSpell] || {};
+      spells.details = {
+        ...(spells.details || {}),
+        [changes.learnSpell]: {
+          ...prev,
+          ...(changes.learnSpellDescription ? { description: changes.learnSpellDescription } : {}),
+          ...(changes.learnSpellLevel ? { level: changes.learnSpellLevel } : {}),
+          ...(changes.learnSpellManaCost ? { manaCost: changes.learnSpellManaCost } : {}),
+        },
+      };
+    }
     next.spells = spells;
   }
   if (changes.consumeScroll) {

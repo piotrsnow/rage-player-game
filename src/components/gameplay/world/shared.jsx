@@ -26,14 +26,12 @@ export function findQuestsForLocation(locName, quests) {
  */
 export function findNpcsAtLocation(locName, npcs, locRef = null) {
   const list = npcs || [];
-  if (locRef && locRef.kind && locRef.id) {
-    // Try composite ref match first.
-    const byRef = list.filter(
-      (n) => n.locationRef && n.locationRef.kind === locRef.kind && n.locationRef.id === locRef.id,
-    );
-    if (byRef.length > 0) return byRef;
-  }
-  return list.filter((n) => matchName(n.lastLocation, locName));
+  return list.filter((n) => {
+    if (locRef && locRef.kind && locRef.id && n.locationRef) {
+      return n.locationRef.kind === locRef.kind && n.locationRef.id === locRef.id;
+    }
+    return matchName(n.lastLocation, locName);
+  });
 }
 
 export function findNpcByRef(ref, npcs) {

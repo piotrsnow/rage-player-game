@@ -101,15 +101,16 @@ export function resolveKnownSpellDisplay(spellName, character = null) {
       customSpellId: custom.id,
     };
   }
+  const details = character?.spells?.details?.[spellName] || {};
   return {
     name: spellName,
-    manaCost: CUSTOM_KNOWN_SPELL_MANA_COST,
+    manaCost: details.manaCost || CUSTOM_KNOWN_SPELL_MANA_COST,
     treeId: null,
     treeName: null,
     school: character?.spells?.schools?.[spellName] || null,
-    description: '',
+    description: details.description || '',
     icon: overrideIcon || 'auto_awesome',
-    level: null,
+    level: details.level || null,
     isCustom: true,
   };
 }

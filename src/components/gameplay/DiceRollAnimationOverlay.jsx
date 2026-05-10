@@ -103,18 +103,26 @@ export default function DiceRollAnimationOverlay({ diceRoll, onDismiss, holdOpen
     modTags.push({ label: t('gameplay.creativityBonus', { bonus: '' }).trim(), value: nd.creativityBonus, cls: 'text-amber-300/80' });
   }
 
+  const totalModifiers = (nd.attributeValue ?? 0)
+    + (nd.skillLevel ?? 0)
+    + (nd.creativityBonus ?? 0)
+    + (nd.thresholdBreakdown?.modifiers ?? []).reduce((sum, m) => sum + m.value, 0);
+  const effectiveTarget = target != null ? Math.max(1, target - totalModifiers) : null;
+
   const isImage = mode === 'image';
+  const diceStageClass = isImage ? 'w-[330px] h-[250px] -mt-10' : 'w-[260px] h-[200px] -mt-16';
+  const diceSizeMultiplier = isImage ? 2.55 : 2;
 
   return (
     <div
       className={`${isImage ? 'absolute' : 'fixed'} inset-0 ${isImage ? 'z-[12]' : 'z-[80]'} pointer-events-none flex flex-col items-center justify-center transition-opacity duration-500 ${
         phase === 'fading' ? 'opacity-0' : 'opacity-100'
       }`}
-      style={{ paddingTop: isImage ? '270px' : '430px' }}
+      style={{ paddingTop: isImage ? '360px' : '430px' }}
     >
       {/* 3D Dice roller area — fades out once roll completes, slightly before result card appears */}
       <div
-        className={`relative w-[260px] h-[200px] -mt-16 animate-dice-fly-in transition-all ease-out ${
+        className={`relative ${diceStageClass} animate-dice-fly-in transition-all ease-out ${
           phase === 'rolling'
             ? 'opacity-100 scale-100 duration-0'
             : 'opacity-0 scale-90 -translate-y-3 duration-[400ms]'
@@ -125,7 +133,7 @@ export default function DiceRollAnimationOverlay({ diceRoll, onDismiss, holdOpen
           diceRoll={dr}
           onComplete={handleRollComplete}
           showOverlayResult={false}
-          sizeMultiplier={2}
+          sizeMultiplier={diceSizeMultiplier}
           durationMultiplier={1.25}
           variant="overlay"
           preRollRevealMs={DICE_OVERLAY_THROW_DELAY_MS}
@@ -182,15 +190,20 @@ export default function DiceRollAnimationOverlay({ diceRoll, onDismiss, holdOpen
             {/* Divider */}
             <div className="w-px h-10 bg-outline-variant/20" />
 
-            {/* Target */}
+            {/* Target — show effective roll needed (threshold minus modifiers) */}
             {target != null && (
               <div className="flex flex-col items-center">
                 <span className="text-[9px] font-bold uppercase tracking-widest text-on-surface-variant/70">
                   {t('common.target', 'Cel')}
                 </span>
                 <span className="font-mono text-3xl font-black leading-none text-on-surface/80">
-                  {target}
+                  {effectiveTarget}
                 </span>
+                {effectiveTarget !== target && (
+                  <span className="text-[9px] font-medium text-on-surface-variant/50 mt-0.5">
+                    ({target})
+                  </span>
+                )}
               </div>
             )}
 

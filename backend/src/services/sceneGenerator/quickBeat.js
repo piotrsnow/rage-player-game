@@ -122,14 +122,16 @@ function buildQuickBeatPrompt({
 3. NIE wprowadzaj nowych lokacji, NIE rozpoczynaj walki/handlu/podróży, NIE oferuj questów, NIE zmieniaj stanu fabuły.
 4. ŻADNYCH rzutów kostką — to jest mała akcja, nie test umiejętności.
 5. timeAdvance: 0 (akcja niemal natychmiastowa) albo 0.05-0.25 (krótkie czynności typu wypicie kufla, rozglądnięcie się).
-6. Output: TYLKO valid JSON o schemacie poniżej. Bez prefiksów, bez markdown.
+6. newItems: jeśli gracz przeszukuje ciała, otwiera skrzynię, podnosi przedmiot lub lootuje — możesz dodać 1-3 drobne przedmioty. Nie dawaj potężnych ani magicznych przedmiotów. Null jeśli nic nie znajduje.
+7. Output: TYLKO valid JSON o schemacie poniżej. Bez prefiksów, bez markdown.
 
 SCHEMA:
 {
   "narration": "string (1-3 zdania)",
   "npcSpeaker": "string|null (imię z listy poniżej lub null jeśli żaden NPC nie reaguje)",
   "npcReply": "string|null (jedno zdanie jeśli npcSpeaker jest podany, inaczej null)",
-  "timeAdvance": 0 | 0.05 | 0.1 | 0.15 | 0.2 | 0.25
+  "timeAdvance": 0 | 0.05 | 0.1 | 0.15 | 0.2 | 0.25,
+  "newItems": [{"name": "string", "type": "weapon|armor|shield|accessory|consumable|material|misc", "quantity": 1}] | null
 }`;
 
   const user = `Obecna lokacja: ${currentLocation || '(nieznana)'}
@@ -150,17 +152,20 @@ Akcja gracza (mała akcja): ${wrapPlayerInput(playerAction)}`;
 }
 
 /**
- * Pick top-N NPCs likely present in the current scene. We look at the
- * dbNpcs roster (campaign sandbox) for those whose `lastLocation` matches
- * the current location. Cap at 8 so the prompt stays short.
+ * Pick top-N NPCs likely present in the current scene.
+ * Prefers FK-based match (lastLocationKind + lastLocationId) from the
+ * campaign row; falls back to legacy string `lastLocation` for old data.
  */
-function pickPresentNpcs(dbNpcs, currentLocation) {
+function pickPresentNpcs(dbNpcs, currentLocation, currentLocationKind, currentLocationId) {
   if (!Array.isArray(dbNpcs) || dbNpcs.length === 0) return [];
-  const here = (currentLocation || '').toLowerCase().trim();
-  const present = dbNpcs.filter((n) =>
-    n.alive !== false
-    && (!here || (n.lastLocation || '').toLowerCase().trim() === here),
-  );
+  const present = dbNpcs.filter((n) => {
+    if (n.alive === false) return false;
+    if (currentLocationKind && currentLocationId && n.lastLocationKind && n.lastLocationId) {
+      return n.lastLocationKind === currentLocationKind && n.lastLocationId === currentLocationId;
+    }
+    const here = (currentLocation || '').toLowerCase().trim();
+    return !here || (n.lastLocation || '').toLowerCase().trim() === here;
+  });
   return present.slice(0, 8).map((n) => ({
     name: n.name,
     role: n.role || null,
@@ -201,10 +206,16 @@ export async function runQuickBeat(campaignId, playerAction, options = {}, onEve
       coreState,
       activeCharacterId,
       dbNpcs,
+      currentRef,
     } = await loadCampaignState(campaignId);
 
     const currentLocation = coreState.world?.currentLocation || '';
-    const presentNpcs = pickPresentNpcs(dbNpcs, currentLocation);
+    const presentNpcs = pickPresentNpcs(
+      dbNpcs,
+      currentLocation,
+      currentRef?.kind || null,
+      currentRef?.id || null,
+    );
     const characterName = coreState.character?.name || null;
 
     // Pull last full scene + last 3 beats since it for context.
@@ -256,7 +267,7 @@ export async function runQuickBeat(campaignId, playerAction, options = {}, onEve
           modelTier: 'nano',
           systemPrompt: system,
           userPrompt,
-          maxTokens: 220,
+          maxTokens: 300,
           temperature: 0.8,
           userApiKeys,
           taskType: 'quick-beat',
@@ -308,6 +319,21 @@ export async function runQuickBeat(campaignId, playerAction, options = {}, onEve
       ? Math.round(rawTime * 100) / 100
       : 0;
 
+    // Sanitize newItems — cap at 3, require name + type.
+    let newItems = null;
+    if (Array.isArray(parsed.newItems) && parsed.newItems.length > 0) {
+      const VALID_TYPES = new Set(['weapon', 'armor', 'shield', 'accessory', 'consumable', 'material', 'misc']);
+      newItems = parsed.newItems
+        .filter((it) => it && typeof it.name === 'string' && it.name.trim())
+        .slice(0, 3)
+        .map((it) => ({
+          name: it.name.trim().slice(0, 80),
+          type: VALID_TYPES.has(it.type) ? it.type : 'misc',
+          quantity: Math.max(1, Math.min(10, Number(it.quantity) || 1)),
+        }));
+      if (newItems.length === 0) newItems = null;
+    }
+
     // timeAdvance is applied client-side via the existing reducer
     // (applyStateChangesHandler/timeAndNeeds.js writes draft.world.timeState).
     // We just persist + return it; FE dispatches { timeAdvance: { hoursElapsed } }
@@ -335,6 +361,7 @@ export async function runQuickBeat(campaignId, playerAction, options = {}, onEve
         npcSpeakerGender,
         npcReply,
         timeAdvance,
+        newItems,
         parentSceneIndex,
         createdAt: saved.createdAt,
         characterId: saved.characterId,

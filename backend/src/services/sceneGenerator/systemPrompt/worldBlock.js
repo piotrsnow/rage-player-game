@@ -6,6 +6,15 @@
  * drops nulls before joining.
  */
 
+function isNpcHere(npc, currentLocationRef, currentLocationName) {
+  if (npc.alive === false) return false;
+  if (currentLocationRef && npc.locationRef) {
+    return npc.locationRef.kind === currentLocationRef.kind && npc.locationRef.id === currentLocationRef.id;
+  }
+  if (!currentLocationName || !npc.lastLocation) return false;
+  return npc.lastLocation.toLowerCase() === currentLocationName.toLowerCase();
+}
+
 export function buildWorldStateBlock(world, { sceneCount = 0, expectedScenes = 0 } = {}) {
   const lines = [];
   if (world.currentLocation) lines.push(`Location: ${world.currentLocation}`);
@@ -29,10 +38,9 @@ export function buildWorldStateBlock(world, { sceneCount = 0, expectedScenes = 0
   }
 
   const npcs = world.npcs || [];
+  const currentRef = world.currentLocationRef || null;
   const currentLoc = world.currentLocation || '';
-  const npcsHere = npcs.filter(
-    (n) => n.alive !== false && n.lastLocation && currentLoc && n.lastLocation.toLowerCase() === currentLoc.toLowerCase(),
-  );
+  const npcsHere = npcs.filter((n) => isNpcHere(n, currentRef, currentLoc));
   if (npcsHere.length > 0) {
     lines.push(
       `NPCs here: ${npcsHere.map((n) => `${n.name} (${n.role || '?'}, ${n.attitude || 'neutral'}, dsp:${n.disposition || 0})`).join(', ')}`,
@@ -277,12 +285,11 @@ function buildGraphActiveQuestsBlock(active, { heading = true } = {}) {
  */
 export function buildNpcRelationshipsBlock(world) {
   const npcs = world.npcs || [];
+  const currentRef = world.currentLocationRef || null;
   const currentLoc = world.currentLocation || '';
-  if (npcs.length === 0 || !currentLoc) return null;
+  if (npcs.length === 0 || (!currentLoc && !currentRef)) return null;
 
-  const npcsHere = npcs.filter(
-    (n) => n.alive !== false && n.lastLocation && currentLoc && n.lastLocation.toLowerCase() === currentLoc.toLowerCase(),
-  );
+  const npcsHere = npcs.filter((n) => isNpcHere(n, currentRef, currentLoc));
   if (npcsHere.length === 0) return null;
 
   const here = new Set(npcsHere.map((n) => (n.name || '').toLowerCase()));

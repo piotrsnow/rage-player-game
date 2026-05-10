@@ -340,7 +340,14 @@ export function applyMultiplayerSceneStateChanges(gameState, sceneResult, option
       const key = currentLoc.toLowerCase();
       const existing = kbLocs[key] || { visitCount: 0, knownFacts: [], npcsEncountered: [] };
       const npcsHere = (updatedWorld.npcs || [])
-        .filter((n) => n.alive !== false && n.lastLocation?.toLowerCase() === currentLoc.toLowerCase())
+        .filter((n) => {
+          if (n.alive === false) return false;
+          const curRef = stateChanges.currentLocationRef || updatedWorld.currentLocationRef;
+          if (curRef && n.locationRef) {
+            return n.locationRef.kind === curRef.kind && n.locationRef.id === curRef.id;
+          }
+          return n.lastLocation?.toLowerCase() === currentLoc.toLowerCase();
+        })
         .map((n) => n.name);
       kbLocs[key] = {
         name: currentLoc,

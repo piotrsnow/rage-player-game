@@ -550,16 +550,35 @@ export async function characterRoutes(fastify) {
 
     const language = request.body?.language || 'pl';
     const provider = request.body?.provider || 'openai';
+    const irritationLevel = Math.min(Math.max(parseInt(request.body?.irritationLevel, 10) || 0, 0), 10);
 
     let userApiKeys = null;
     try { userApiKeys = await loadUserApiKeys(prisma, request.user.id); } catch {}
 
     const isPolish = language === 'pl';
+
+    const IRRITATION_TIERS = [
+      '', // 0 — neutral (first auto-load)
+      isPolish
+        ? 'Gracz właśnie kliknął PONOWNIE żądając nowej odznaki. Jesteś lekko zniecierpliwiony. W "legend" dodaj subtelną nutę poirytowania wobec gracza (nie postaci). W "snark" wpleć uwagę, że gracz nie może się zdecydować.'
+        : 'The player just clicked AGAIN demanding a new badge. You are slightly annoyed. In "legend" add a subtle note of irritation toward the player (not the character). In "snark" weave in a remark about the player being indecisive.',
+      isPolish
+        ? 'Gracz klika TRZECI RAZ. Jesteś wyraźnie poirytowany. "legend" powinna być sarkastyczna wobec gracza, który ciągle klika. "snark" powinien głównie dotyczyć obsesji gracza na punkcie klikania.'
+        : 'The player clicked a THIRD TIME. You are clearly irritated. "legend" should be sarcastic about the player who keeps clicking. "snark" should mostly address the player\'s clicking obsession.',
+      isPolish
+        ? 'CZWARTY RAZ. Jesteś wkurzony. Zarówno "legend" jak i "snark" to atak na gracza — pytaj retorycznie czemu ciągle klika, sugeruj, że ma problem, wyśmiewaj desperacką potrzebę uwagi.'
+        : 'FOURTH TIME. You are angry. Both "legend" and "snark" are attacks on the player — ask rhetorically why they keep clicking, suggest they have a problem, mock their desperate need for attention.',
+      isPolish
+        ? 'Gracz kliknął PIĄTY RAZ LUB WIĘCEJ. Jesteś WŚCIEKŁY. Krzycz wielkimi literami. "legend" i "snark" to czysta furia — groź że odmówisz współpracy, że narrator odchodzi na emeryturę, wyolbrzymiaj cierpienie narratora zmuszanego do pracy.'
+        : 'The player clicked FIVE OR MORE TIMES. You are FURIOUS. Shout in CAPS. Both "legend" and "snark" are pure rage — threaten to quit, say the narrator is retiring, exaggerate the narrator\'s suffering from being forced to work.',
+    ];
+    const irritationInstruction = IRRITATION_TIERS[Math.min(irritationLevel, IRRITATION_TIERS.length - 1)];
+
     const systemPrompt = `You are a fantasy RPG narrator. Generate a player badge card for the character described below.
 Return JSON with exactly three fields, all written in ${isPolish ? 'Polish' : 'English'}:
 - "legend": ONE epic, reverent, hero-chronicle line. HARD LIMIT: maximum 30 words. Make every word count. Grounded in attributes / level / backstory. Poetic, evocative, worthy of a chronicle.
 - "snark": A SHARP, mocking, tongue-in-cheek roast of this character's exploits and choices — Pratchett-style tavern shame. 3 to 5 short sentences. Be cutting but witty. Lean into pathetic attributes, stupid decisions, embarrassing scenes. If the character is heroic, mock their pretensions instead. NEVER kind, NEVER neutral.
-- "summary": An array of exactly 5 strings, each a one-sentence summary of a recent scene/event. If fewer scenes are available, invent plausible ones fitting the character's backstory.`;
+- "summary": An array of exactly 5 strings, each a one-sentence summary of a recent scene/event. If fewer scenes are available, invent plausible ones fitting the character's backstory.${irritationInstruction ? `\n\nIMPORTANT TONE OVERRIDE (click #${irritationLevel}):\n${irritationInstruction}` : ''}`;
 
     const userPrompt = `CHARACTER:\n${charContext}\n\nRECENT SCENES:\n${sceneTexts || 'No scenes yet — invent brief backstory events.'}`;
 
@@ -571,7 +590,7 @@ Return JSON with exactly three fields, all written in ${isPolish ? 'Polish' : 'E
         systemPrompt,
         userPrompt,
         maxTokens: 1000,
-        temperature: 0.9,
+        temperature: Math.min(0.9 + irritationLevel * 0.02, 1.2),
         userApiKeys,
         taskType: 'character-badge',
         taskLabel: 'Character badge generation',

@@ -300,12 +300,16 @@ function buildFallbackSuggestedActions({
 
 function pickContextualNpcs(gameState = null, stateChanges = null) {
   const currentLocation = stateChanges?.currentLocation || gameState?.world?.currentLocation || '';
+  const currentRef = stateChanges?.currentLocationRef || gameState?.world?.currentLocationRef || null;
   const npcsInWorld = Array.isArray(gameState?.world?.npcs) ? gameState.world.npcs : [];
   const npcsChanged = Array.isArray(stateChanges?.npcs) ? stateChanges.npcs : [];
   const merged = [...npcsChanged, ...npcsInWorld].filter(Boolean);
-  if (!currentLocation) return merged;
+  if (!currentLocation && !currentRef) return merged;
   const normalizedCurrent = String(currentLocation).trim().toLowerCase();
   const atCurrentLocation = merged.filter((npc) => {
+    if (currentRef && npc?.locationRef) {
+      return npc.locationRef.kind === currentRef.kind && npc.locationRef.id === currentRef.id;
+    }
     const lastLoc = npc?.lastLocation;
     if (!lastLoc || typeof lastLoc !== 'string') return false;
     return lastLoc.trim().toLowerCase() === normalizedCurrent;

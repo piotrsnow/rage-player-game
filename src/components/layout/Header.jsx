@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useLayoutEffect, useCallback, useMemo } from 'react';
+import { useState, useRef, useEffect, useLayoutEffect, useCallback, useMemo, Children } from 'react';
 import { createPortal } from 'react-dom';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
@@ -17,6 +17,67 @@ import Tooltip from '../ui/Tooltip';
 import FullCallLogModal from './FullCallLogModal';
 import AiCallLogModal from './AiCallLogModal';
 import { APP_VERSION } from '../../version';
+
+const MOMENTUM_FRICTION = 0.96;
+const MOMENTUM_GAIN_X = 0.007;
+const MOMENTUM_GAIN_Y = 0.74;
+const DICE_ROTATION_FACTOR = 0.8;
+const DICE_MIN_PLAYBACK = 0.4;
+const DICE_MAX_PLAYBACK = 4.0;
+const DICE_SPEED_FOR_MAX = 18;
+
+function HeaderDice({ className, ariaLabel }) {
+  const ref = useRef(null);
+  const momentum = useRef({ spin: 0, play: 0, rotation: 0, prevX: null, prevY: null });
+  const raf = useRef(null);
+
+  useEffect(() => {
+    const m = momentum.current;
+    const onMove = (e) => {
+      if (m.prevX !== null) {
+        m.spin += Math.abs(e.clientX - m.prevX) * MOMENTUM_GAIN_X;
+        m.play += Math.abs(e.clientY - m.prevY) * MOMENTUM_GAIN_Y;
+      }
+      m.prevX = e.clientX;
+      m.prevY = e.clientY;
+    };
+
+    const tick = () => {
+      m.spin *= MOMENTUM_FRICTION;
+      m.play *= MOMENTUM_FRICTION;
+      m.rotation += m.spin * DICE_ROTATION_FACTOR;
+
+      const el = ref.current;
+      if (el) {
+        el.style.transformOrigin = 'calc(49%) calc(48%)';
+        el.style.transform = `rotate(${m.rotation}deg)`;
+        const t = Math.min(m.play / DICE_SPEED_FOR_MAX, 1);
+        el.playbackRate = DICE_MIN_PLAYBACK + t * (DICE_MAX_PLAYBACK - DICE_MIN_PLAYBACK);
+      }
+      raf.current = requestAnimationFrame(tick);
+    };
+
+    window.addEventListener('pointermove', onMove);
+    raf.current = requestAnimationFrame(tick);
+    return () => {
+      window.removeEventListener('pointermove', onMove);
+      if (raf.current) cancelAnimationFrame(raf.current);
+    };
+  }, []);
+
+  return (
+    <video
+      ref={ref}
+      src="/video/dice.webm"
+      className={className}
+      autoPlay
+      loop
+      muted
+      playsInline
+      aria-label={ariaLabel}
+    />
+  );
+}
 
 function HeaderVersionPopover({ wrapperClassName = '', wrapperStyle }) {
   const { t } = useTranslation();
@@ -79,28 +140,107 @@ const HEADER_CHROME_STYLE = {
   boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.04), 0 8px 32px rgba(0,0,0,0.5)',
 };
 
-function DevEventLogButton() {
+const GROUP_OPEN_DELAY = 100;
+const GROUP_CLOSE_DELAY = 180;
+
+function GroupItem({ icon, label, onClick, to, active, badge, ...rest }) {
+  const cls = `flex items-center gap-2.5 px-3 py-2 rounded-sm text-xs font-label transition-colors duration-150 whitespace-nowrap ${
+    active ? 'text-primary bg-primary/10' : 'text-on-surface-variant hover:text-tertiary hover:bg-surface-container-high/40'
+  }`;
+  const content = (
+    <>
+      <span className={`material-symbols-outlined text-base shrink-0 ${active ? 'text-primary' : ''}`}>{icon}</span>
+      <span className="truncate">{label}</span>
+      {badge}
+    </>
+  );
+  if (to) return <Link to={to} className={cls} role="menuitem" {...rest}>{content}</Link>;
+  return <button type="button" onClick={onClick} className={cls} role="menuitem" {...rest}>{content}</button>;
+}
+
+function HeaderActionGroup({ id, icon, label, isOpen, onOpen, onClose, children }) {
+  const openRef = useRef(null);
+  const closeRef = useRef(null);
+
+  const scheduleOpen = useCallback(() => {
+    clearTimeout(closeRef.current);
+    clearTimeout(openRef.current);
+    openRef.current = setTimeout(() => onOpen(id), GROUP_OPEN_DELAY);
+  }, [id, onOpen]);
+
+  const scheduleClose = useCallback(() => {
+    clearTimeout(openRef.current);
+    clearTimeout(closeRef.current);
+    closeRef.current = setTimeout(() => onClose(id), GROUP_CLOSE_DELAY);
+  }, [id, onClose]);
+
+  useEffect(() => () => { clearTimeout(openRef.current); clearTimeout(closeRef.current); }, []);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    const h = (e) => { if (e.key === 'Escape') onClose(id); };
+    document.addEventListener('keydown', h);
+    return () => document.removeEventListener('keydown', h);
+  }, [isOpen, id, onClose]);
+
+  if (!Children.toArray(children).length) return null;
+
+  return (
+    <div
+      className="relative"
+      onMouseEnter={scheduleOpen}
+      onMouseLeave={scheduleClose}
+      onFocus={() => { clearTimeout(closeRef.current); clearTimeout(openRef.current); onOpen(id); }}
+      onBlur={(e) => { if (!e.currentTarget.contains(e.relatedTarget)) scheduleClose(); }}
+    >
+      <Tooltip content={label} placement="bottom" variant="compact" disabled={isOpen} asChild>
+        <button
+          type="button"
+          onClick={() => {
+            clearTimeout(openRef.current);
+            clearTimeout(closeRef.current);
+            if (isOpen) onClose(id); else onOpen(id);
+          }}
+          aria-expanded={isOpen}
+          aria-haspopup="menu"
+          aria-controls={isOpen ? `hdr-group-${id}` : undefined}
+          className={`material-symbols-outlined transition-all active:scale-95 duration-200 cursor-pointer w-9 h-9 flex items-center justify-center rounded-full hover:bg-surface-container-high/40 ${
+            isOpen ? 'text-primary bg-surface-container-high/30' : 'text-on-surface-variant hover:text-tertiary'
+          }`}
+        >
+          {icon}
+        </button>
+      </Tooltip>
+      {isOpen && (
+        <div
+          id={`hdr-group-${id}`}
+          role="menu"
+          onClick={() => onClose(id)}
+          className="absolute right-0 top-full mt-1 min-w-[180px] z-[60] bg-surface-container/95 backdrop-blur-xl border border-outline-variant/15 rounded-sm shadow-xl p-1 animate-scale-in"
+        >
+          {children}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function DevEventLogGroupItem() {
   const isOpen = useDevEventLogStore((s) => s.isOpen);
   const evCount = useDevEventLogStore((s) => s.events.length);
   const toggleOpen = useDevEventLogStore((s) => s.toggleOpen);
   return (
-    <Tooltip content="Dev Event Log" placement="bottom" variant="compact" asChild>
-      <button
-        type="button"
-        onClick={toggleOpen}
-        aria-label="Dev Event Log"
-        className={`relative material-symbols-outlined transition-all active:scale-95 duration-200 cursor-pointer w-9 h-9 flex items-center justify-center rounded-full hover:bg-surface-container-high/40 ${
-          isOpen ? 'text-primary' : 'text-on-surface-variant hover:text-tertiary'
-        }`}
-      >
-        monitoring
-        {evCount > 0 && (
-          <span className="absolute top-1 right-1 min-w-[10px] h-[10px] rounded-full bg-tertiary/80 text-[7px] text-white flex items-center justify-center px-0.5 leading-none">
-            {evCount > 99 ? '99+' : evCount}
-          </span>
-        )}
-      </button>
-    </Tooltip>
+    <GroupItem
+      icon="monitoring"
+      label="Dev Event Log"
+      onClick={toggleOpen}
+      active={isOpen}
+      badge={evCount > 0 ? (
+        <span className="ml-auto min-w-[18px] h-[18px] rounded-full bg-tertiary/80 text-[9px] text-white flex items-center justify-center px-1 leading-none">
+          {evCount > 99 ? '99+' : evCount}
+        </span>
+      ) : null}
+    />
   );
 }
 
@@ -183,6 +323,9 @@ export default function Header() {
   const aiPendingCount = useMemo(() => aiLogs.filter((l) => l.status === 'pending').length, [aiLogs]);
   const [aiDetailId, setAiDetailId] = useState(null);
   const aiDetailEntry = useMemo(() => aiMergedLogs.find((l) => l.id === aiDetailId) || null, [aiMergedLogs, aiDetailId]);
+  const [activeGroupId, setActiveGroupId] = useState(null);
+  const handleOpenGroup = useCallback((id) => setActiveGroupId(id), []);
+  const handleCloseGroup = useCallback((id) => setActiveGroupId((prev) => prev === id ? null : prev), []);
 
   const handleSaveCampaign = useCallback(async () => {
     const snapshot = getGameState();
@@ -284,36 +427,34 @@ export default function Header() {
       style={HEADER_CHROME_STYLE}
     >
       {isPlayRoute && (
-        <Tooltip content={t('nav.lobby')} placement="bottom" variant="compact" asChild>
-          <Link
-            ref={playLogoLinkRef}
-            to="/"
-            onMouseEnter={updatePlayLogoVignette}
-            onMouseLeave={clearPlayLogoVignette}
-            onFocus={updatePlayLogoVignette}
-            onBlur={clearPlayLogoVignette}
-            className="absolute left-6 bottom-0 z-[51] block leading-none translate-x-[10px] translate-y-[138px] transition-opacity duration-300"
-          >
-            <span className="relative inline-block origin-top leading-none motion-reduce:animate-none animate-campaign-logo-float will-change-transform">
-              <img
-                src={campaignLogoSrc}
-                alt={t('common.appName')}
-                onLoad={updateCampaignLogoCenter}
-                className="relative z-0 block h-[16.2rem] w-auto max-w-[min(83.7vw,59.4rem)] object-contain object-bottom select-none pointer-events-auto brightness-[0.9] contrast-[1.22]"
-              />
-              <span
-                aria-hidden
-                className="pointer-events-none absolute inset-0 z-[1] motion-reduce:animate-none animate-campaign-logo-holo bg-[length:400%_400%] opacity-[0.92] mix-blend-color"
-                style={{
-                  ...campaignLogoMaskStyle,
-                  willChange: 'filter, background-position',
-                  backgroundImage:
-                    'linear-gradient(128deg, #12081f 0%, #2a0a28 10%, #1a0f3d 22%, #351848 34%, #0f2438 46%, #2a1548 58%, #3a1030 70%, #1a1530 82%, #22102a 100%)',
-                }}
-              />
-            </span>
-          </Link>
-        </Tooltip>
+        <Link
+          ref={playLogoLinkRef}
+          to="/"
+          onMouseEnter={updatePlayLogoVignette}
+          onMouseLeave={clearPlayLogoVignette}
+          onFocus={updatePlayLogoVignette}
+          onBlur={clearPlayLogoVignette}
+          className="absolute left-6 bottom-0 z-[51] block leading-none translate-x-[10px] translate-y-[138px] transition-opacity duration-300"
+        >
+          <span className="relative inline-block origin-top leading-none motion-reduce:animate-none animate-campaign-logo-float will-change-transform">
+            <img
+              src={campaignLogoSrc}
+              alt={t('common.appName')}
+              onLoad={updateCampaignLogoCenter}
+              className="relative z-0 block h-[16.2rem] w-auto max-w-[min(83.7vw,59.4rem)] object-contain object-bottom select-none pointer-events-auto brightness-[0.9] contrast-[1.22]"
+            />
+            <span
+              aria-hidden
+              className="pointer-events-none absolute inset-0 z-[1] motion-reduce:animate-none animate-campaign-logo-holo bg-[length:400%_400%] opacity-[0.92] mix-blend-color"
+              style={{
+                ...campaignLogoMaskStyle,
+                willChange: 'filter, background-position',
+                backgroundImage:
+                  'linear-gradient(128deg, #12081f 0%, #2a0a28 10%, #1a0f3d 22%, #351848 34%, #0f2438 46%, #2a1548 58%, #3a1030 70%, #1a1530 82%, #22102a 100%)',
+              }}
+            />
+          </span>
+        </Link>
       )}
       {logoHoverVignette &&
         typeof document !== 'undefined' &&
@@ -345,18 +486,12 @@ export default function Header() {
         }`}
       >
         {!isPlayRoute && (
-          <Tooltip content={t('nav.lobby')} placement="bottom" variant="compact" asChild>
-            <Link
-              to="/"
-              className="flex items-center gap-2 transition-all duration-300 hover:drop-shadow-[0_0_12px_rgba(197,154,255,0.5)]"
-            >
-              <img
-                src={t('common.logoPath', '/nikczemnu_logo.png')}
-                alt={t('common.appName')}
-                className="h-10 w-auto"
-              />
-            </Link>
-          </Tooltip>
+          <Link
+            to="/"
+            className="flex items-center gap-2 transition-all duration-300 hover:drop-shadow-[0_0_12px_rgba(197,154,255,0.5)]"
+          >
+            <HeaderDice className="h-[3.75rem] w-auto" ariaLabel={t('common.appName')} />
+          </Link>
         )}
         {!isPlayRoute && <HeaderVersionPopover />}
         {!backendUser && (
@@ -516,19 +651,56 @@ export default function Header() {
                 {mpStatusLabel}
               </span>
             )}
-            {dictation?.supported && (
-              <Tooltip content={t(dictation.enabled ? 'gameplay.dictationDisable' : 'gameplay.dictationEnable')} placement="bottom" variant="compact" asChild>
-                <button
-                  type="button"
+            <HeaderActionGroup id="game" icon="sports_esports" label="Gra" isOpen={activeGroupId === 'game'} onOpen={handleOpenGroup} onClose={handleCloseGroup}>
+              {dictation?.supported && (
+                <GroupItem
+                  icon={dictation.enabled ? 'mic' : 'mic_off'}
+                  label={t(dictation.enabled ? 'gameplay.dictationDisable' : 'gameplay.dictationEnable')}
                   onClick={dictation.toggleEnabled}
-                  aria-label={t(dictation.enabled ? 'gameplay.dictationDisable' : 'gameplay.dictationEnable')}
-                  className={`material-symbols-outlined transition-all active:scale-95 duration-200 cursor-pointer w-9 h-9 flex items-center justify-center rounded-full hover:bg-surface-container-high/40 ${
-                    dictation.enabled ? 'text-primary hover:text-tertiary' : 'text-on-surface-variant hover:text-tertiary'
-                  }`}
-                >
-                  {dictation.enabled ? 'mic' : 'mic_off'}
-                </button>
-              </Tooltip>
+                  active={dictation.enabled}
+                />
+              )}
+              {hasActiveGame && (
+                <GroupItem icon="hub" label={t('nav.locationGraph')} onClick={openLocationGraph} />
+              )}
+              {hasActiveGame && (
+                <GroupItem icon="auto_awesome" label={t('nav.grimoire')} to={playPath} />
+              )}
+              <GroupItem icon="photo_library" label={t('nav.gallery')} to="/gallery" />
+            </HeaderActionGroup>
+            <HeaderActionGroup id="media" icon="tune" label="AI / Media" isOpen={activeGroupId === 'media'} onOpen={handleOpenGroup} onClose={handleCloseGroup}>
+              <GroupItem
+                icon="terminal"
+                label="LLM Calls"
+                onClick={openAiFullLog}
+                onContextMenu={(e) => { e.preventDefault(); toggleAiSidebar(); }}
+                active={aiLogSidebarVisible}
+                badge={aiPendingCount > 0 ? (
+                  <span className="ml-auto w-2 h-2 rounded-full bg-tertiary animate-pulse shrink-0" />
+                ) : null}
+              />
+              <GroupItem icon="brush" label={t('nav.imageConfig')} onClick={openImageConfig} />
+              <GroupItem icon="graphic_eq" label={t('nav.audioConfig')} onClick={openAudioConfig} />
+              <GroupItem icon="vpn_key" label={t('nav.keys')} onClick={openKeys} />
+            </HeaderActionGroup>
+            <HeaderActionGroup id="system" icon="settings" label="System" isOpen={activeGroupId === 'system'} onOpen={handleOpenGroup} onClose={handleCloseGroup}>
+              <GroupItem icon="settings" label={t('nav.settings')} onClick={openSettings} />
+              <GroupItem icon="privacy_tip" label={t('privacy.linkLabel')} onClick={openPrivacy} />
+              <GroupItem
+                icon="search"
+                label={t('nav.appZoomTooltip', { percent: appZoom })}
+                onClick={handleAppZoomClick}
+                onContextMenu={handleAppZoomContextMenu}
+              />
+            </HeaderActionGroup>
+            {backendUser?.isAdmin && (
+              <HeaderActionGroup id="admin" icon="shield_person" label="Admin" isOpen={activeGroupId === 'admin'} onOpen={handleOpenGroup} onClose={handleCloseGroup}>
+                <GroupItem icon="public" label={t('nav.worldLocationGraph', { defaultValue: 'Graf lokacji świata' })} onClick={openWorldLocationGraph} />
+                <GroupItem icon="auto_stories" label={t('admin.livingWorld')} onClick={openGmModal} />
+                <GroupItem icon="admin_panel_settings" label={t('admin.userManagement')} onClick={openAdminUsers} />
+                <GroupItem icon="edit_note" label="Edytor kampanii" onClick={() => navigate('/admin')} />
+                <DevEventLogGroupItem />
+              </HeaderActionGroup>
             )}
             {hasActiveGame && !isMultiplayer && (
               <Tooltip content={saveStatus === 'saved' ? t('nav.campaignSaved') : t('nav.saveCampaign')} placement="bottom" variant="compact" asChild>
@@ -549,162 +721,6 @@ export default function Header() {
                 </button>
               </Tooltip>
             )}
-            {hasActiveGame && (
-              <Tooltip content={t('nav.locationGraph')} placement="bottom" variant="compact" asChild>
-                <button
-                  type="button"
-                  onClick={openLocationGraph}
-                  aria-label={t('nav.locationGraph')}
-                  className="material-symbols-outlined text-on-surface-variant hover:text-tertiary transition-all active:scale-95 duration-200 cursor-pointer w-9 h-9 flex items-center justify-center rounded-full hover:bg-surface-container-high/40"
-                >
-                  hub
-                </button>
-              </Tooltip>
-            )}
-            {backendUser?.isAdmin && (
-              <Tooltip content={t('nav.worldLocationGraph', { defaultValue: 'Graf lokacji świata' })} placement="bottom" variant="compact" asChild>
-                <button
-                  type="button"
-                  onClick={openWorldLocationGraph}
-                  aria-label={t('nav.worldLocationGraph', { defaultValue: 'Graf lokacji świata' })}
-                  className="material-symbols-outlined text-on-surface-variant hover:text-tertiary transition-all active:scale-95 duration-200 cursor-pointer w-9 h-9 flex items-center justify-center rounded-full hover:bg-surface-container-high/40"
-                >
-                  public
-                </button>
-              </Tooltip>
-            )}
-            {hasActiveGame && (
-              <Tooltip content={t('nav.grimoire')} placement="bottom" variant="compact" asChild>
-                <Link
-                  to={playPath}
-                  aria-label={t('nav.play')}
-                  className="material-symbols-outlined text-on-surface-variant hover:text-tertiary transition-all active:scale-95 duration-200 cursor-pointer w-9 h-9 flex items-center justify-center rounded-full hover:bg-surface-container-high/40"
-                >
-                  auto_awesome
-                </Link>
-              </Tooltip>
-            )}
-            <Tooltip content={t('nav.gallery')} placement="bottom" variant="compact" asChild>
-              <Link
-                to="/gallery"
-                aria-label={t('nav.gallery')}
-                className="material-symbols-outlined text-on-surface-variant hover:text-tertiary transition-all active:scale-95 duration-200 cursor-pointer w-9 h-9 flex items-center justify-center rounded-full hover:bg-surface-container-high/40"
-              >
-                photo_library
-              </Link>
-            </Tooltip>
-            <Tooltip content={t('nav.imageConfig')} placement="bottom" variant="compact" asChild>
-              <button
-                type="button"
-                onClick={openImageConfig}
-                aria-label={t('nav.imageConfig')}
-                className="material-symbols-outlined text-on-surface-variant hover:text-tertiary transition-all active:scale-95 duration-200 cursor-pointer w-9 h-9 flex items-center justify-center rounded-full hover:bg-surface-container-high/40"
-              >
-                brush
-              </button>
-            </Tooltip>
-            <Tooltip content={t('nav.audioConfig')} placement="bottom" variant="compact" asChild>
-              <button
-                type="button"
-                onClick={openAudioConfig}
-                aria-label={t('nav.audioConfig')}
-                className="material-symbols-outlined text-on-surface-variant hover:text-tertiary transition-all active:scale-95 duration-200 cursor-pointer w-9 h-9 flex items-center justify-center rounded-full hover:bg-surface-container-high/40"
-              >
-                graphic_eq
-              </button>
-            </Tooltip>
-            <Tooltip content={t('nav.keys')} placement="bottom" variant="compact" asChild>
-              <button
-                type="button"
-                onClick={openKeys}
-                aria-label={t('nav.keys')}
-                className="material-symbols-outlined text-on-surface-variant hover:text-tertiary transition-all active:scale-95 duration-200 cursor-pointer w-9 h-9 flex items-center justify-center rounded-full hover:bg-surface-container-high/40"
-              >
-                vpn_key
-              </button>
-            </Tooltip>
-            {backendUser?.isAdmin && (
-              <>
-                <Tooltip content={t('admin.livingWorld')} placement="bottom" variant="compact" asChild>
-                  <button
-                    type="button"
-                    onClick={openGmModal}
-                    aria-label={t('admin.livingWorld')}
-                    className="material-symbols-outlined text-on-surface-variant hover:text-tertiary transition-all active:scale-95 duration-200 cursor-pointer w-9 h-9 flex items-center justify-center rounded-full hover:bg-surface-container-high/40"
-                  >
-                    auto_stories
-                  </button>
-                </Tooltip>
-                <Tooltip content={t('admin.userManagement')} placement="bottom" variant="compact" asChild>
-                  <button
-                    type="button"
-                    onClick={openAdminUsers}
-                    aria-label={t('admin.userManagement')}
-                    className="material-symbols-outlined text-on-surface-variant hover:text-tertiary transition-all active:scale-95 duration-200 cursor-pointer w-9 h-9 flex items-center justify-center rounded-full hover:bg-surface-container-high/40"
-                  >
-                    admin_panel_settings
-                  </button>
-                </Tooltip>
-                <Tooltip content="Edytor kampanii" placement="bottom" variant="compact" asChild>
-                  <button
-                    type="button"
-                    onClick={() => navigate('/admin')}
-                    aria-label="Edytor kampanii"
-                    className="material-symbols-outlined text-on-surface-variant hover:text-tertiary transition-all active:scale-95 duration-200 cursor-pointer w-9 h-9 flex items-center justify-center rounded-full hover:bg-surface-container-high/40"
-                  >
-                    edit_note
-                  </button>
-                </Tooltip>
-                <DevEventLogButton />
-              </>
-            )}
-            <Tooltip content="LLM Calls" placement="bottom" variant="compact" asChild>
-              <button
-                type="button"
-                onClick={openAiFullLog}
-                onContextMenu={(e) => { e.preventDefault(); toggleAiSidebar(); }}
-                aria-label="LLM Calls"
-                className={`relative material-symbols-outlined transition-all active:scale-95 duration-200 cursor-pointer w-9 h-9 flex items-center justify-center rounded-full hover:bg-surface-container-high/40 ${
-                  aiLogSidebarVisible ? 'text-primary' : 'text-on-surface-variant hover:text-tertiary'
-                }`}
-              >
-                terminal
-                {aiPendingCount > 0 && (
-                  <span className="absolute top-1 right-1 w-2 h-2 rounded-full bg-tertiary animate-pulse" />
-                )}
-              </button>
-            </Tooltip>
-            <Tooltip content={t('nav.appZoomTooltip', { percent: appZoom })} placement="bottom" variant="compact" asChild>
-              <button
-                type="button"
-                onClick={handleAppZoomClick}
-                onContextMenu={handleAppZoomContextMenu}
-                aria-label={t('nav.appZoomAria', { percent: appZoom })}
-                className="material-symbols-outlined text-on-surface-variant hover:text-tertiary transition-all active:scale-95 duration-200 cursor-pointer w-9 h-9 flex items-center justify-center rounded-full hover:bg-surface-container-high/40"
-              >
-                search
-              </button>
-            </Tooltip>
-            <Tooltip content={t('nav.settings')} placement="bottom" variant="compact" asChild>
-              <button
-                type="button"
-                onClick={openSettings}
-                aria-label={t('nav.settings')}
-                className="material-symbols-outlined text-on-surface-variant hover:text-tertiary transition-all active:scale-95 duration-200 cursor-pointer w-9 h-9 flex items-center justify-center rounded-full hover:bg-surface-container-high/40"
-              >
-                settings
-              </button>
-            </Tooltip>
-            <Tooltip content={t('privacy.linkLabel')} placement="bottom" variant="compact" asChild>
-              <button
-                type="button"
-                onClick={openPrivacy}
-                aria-label={t('privacy.linkLabel')}
-                className="material-symbols-outlined text-on-surface-variant hover:text-tertiary transition-all active:scale-95 duration-200 cursor-pointer w-9 h-9 flex items-center justify-center rounded-full hover:bg-surface-container-high/40"
-              >
-                privacy_tip
-              </button>
-            </Tooltip>
             <Tooltip content={(backendUser.credits ?? 0) < 0 ? t('credits.negativeBalance') : t('credits.title', 'Credits')} placement="bottom" variant="compact" asChild>
               <button
                 type="button"

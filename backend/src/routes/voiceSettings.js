@@ -71,4 +71,33 @@ export async function voiceSettingsRoutes(fastify) {
 
     return updated;
   });
+
+  fastify.put('/per-voice-volume', {
+    preHandler: [fastify.requireAdmin],
+    schema: {
+      body: {
+        type: 'object',
+        required: ['voiceId', 'volume'],
+        properties: {
+          voiceId: { type: 'string', minLength: 1 },
+          volume: { type: 'integer', minimum: 0, maximum: 100 },
+        },
+        additionalProperties: false,
+      },
+    },
+  }, async (request) => {
+    const { voiceId, volume } = request.body;
+    const current = await getVoiceConfig();
+    const perVoiceVolumes = { ...(current.perVoiceVolumes || {}), [voiceId]: volume };
+    if (volume === 100) delete perVoiceVolumes[voiceId];
+    const updated = { ...current, perVoiceVolumes };
+
+    await prisma.serverSettings.upsert({
+      where: { id: SINGLETON_ID },
+      create: { id: SINGLETON_ID, voiceConfig: updated },
+      update: { voiceConfig: updated },
+    });
+
+    return updated;
+  });
 }

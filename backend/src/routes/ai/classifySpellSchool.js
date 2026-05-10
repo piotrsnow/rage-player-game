@@ -7,7 +7,7 @@ const log = childLogger({ module: 'classifySpellSchool' });
 
 const VALID_SCHOOLS = [
   'ogien', 'blyskawice', 'ochrona', 'niewidzialnosc',
-  'lod', 'leczenie', 'przestrzen', 'umysl', 'wiatr_percepcja', 'ogolna',
+  'lod', 'leczenie', 'przestrzen', 'umysl', 'wiatr_percepcja', 'magia_zakazana',
 ];
 
 const SCHOOL_LABELS = {
@@ -20,7 +20,7 @@ const SCHOOL_LABELS = {
   przestrzen: 'Przestrzeń — telekineza, teleportacja, manipulacja przestrzenią',
   umysl: 'Umysł — strach, sen, iluzje mentalne, kontrola umysłu',
   wiatr_percepcja: 'Wiatr i percepcja — wykrywanie magii, ochrona wiatrem, rozpraszanie czarów',
-  ogolna: 'Ogólna — zaklęcia nie pasujące do żadnej konkretnej szkoły',
+  magia_zakazana: 'Magia zakazana — zaklęcia niepasujące do bezpiecznych, standardowych szkół albo wyraźnie mroczne/nielegalne',
 };
 
 const BODY_SCHEMA = {
@@ -36,6 +36,12 @@ const BODY_SCHEMA = {
     },
   },
 };
+
+function clampInt(value, min, max, fallback) {
+  const n = Number.parseInt(value, 10);
+  if (!Number.isFinite(n)) return fallback;
+  return Math.max(min, Math.min(max, n));
+}
 
 export async function classifySpellSchoolRoutes(fastify) {
   fastify.post(
@@ -56,9 +62,13 @@ export async function classifySpellSchoolRoutes(fastify) {
 Szkoły:
 ${schoolList}
 
-Dla każdego zaklęcia wybierz JEDNĄ szkołę (klucz). Jeśli zaklęcie nie pasuje do żadnej — użyj "ogolna".
+Dla każdego zaklęcia:
+- wybierz JEDNĄ szkołę (klucz). Najpierw spróbuj dopasować zaklęcie do istniejącej standardowej szkoły. Jeśli naprawdę nie pasuje do żadnej standardowej szkoły — użyj "magia_zakazana".
+- nadaj poziom 1-5 zgodny z potęgą i złożonością efektu,
+- nadaj koszt many 1-5 zgodny z poziomem,
+- napisz krótki, konkretny opis efektu w języku polskim.
 Zwróć WYŁĄCZNIE poprawny JSON bez dodatkowego tekstu, w kształcie:
-{ "results": { "<nazwa zaklęcia>": "<klucz szkoły>", ... } }`;
+{ "results": { "<nazwa zaklęcia>": { "school": "<klucz szkoły>", "level": 1, "manaCost": 1, "description": "..." }, ... } }`;
 
       const userPrompt = `Zaklęcia do sklasyfikowania:\n${spellNames.map((n, i) => `${i + 1}. ${n}`).join('\n')}`;
 
@@ -68,7 +78,7 @@ Zwróć WYŁĄCZNIE poprawny JSON bez dodatkowego tekstu, w kształcie:
           modelTier: 'nano',
           systemPrompt,
           userPrompt,
-          maxTokens: 400,
+        maxTokens: 900,
           temperature: 0.1,
           userApiKeys,
           userId,
@@ -81,12 +91,21 @@ Zwróć WYŁĄCZNIE poprawny JSON bez dodatkowego tekstu, w kształcie:
       }
 
       const results = {};
+      const details = {};
       for (const name of spellNames) {
         const raw = parsed?.results?.[name];
-        results[name] = (typeof raw === 'string' && VALID_SCHOOLS.includes(raw)) ? raw : 'ogolna';
+        const rawSchool = typeof raw === 'string' ? raw : raw?.school;
+        const school = (typeof rawSchool === 'string' && VALID_SCHOOLS.includes(rawSchool)) ? rawSchool : 'magia_zakazana';
+        const level = clampInt(raw?.level, 1, 5, 1);
+        const manaCost = clampInt(raw?.manaCost, 1, 5, Math.max(1, level));
+        const description = typeof raw?.description === 'string' && raw.description.trim()
+          ? raw.description.trim().slice(0, 280)
+          : 'Zaklęcie wymyślone podczas gry; jego dokładny efekt ustala narracja sceny.';
+        results[name] = school;
+        details[name] = { school, level, manaCost, description };
       }
 
-      return { results };
+      return { results, details };
     },
   );
 }

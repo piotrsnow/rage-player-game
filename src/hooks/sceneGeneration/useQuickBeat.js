@@ -84,6 +84,7 @@ export function useQuickBeat({ generateScene, onEscalate, onError } = {}) {
         npcSpeakerGender: data.npcSpeakerGender || null,
         npcReply: data.npcReply || null,
         timeAdvance: data.timeAdvance || 0,
+        newItems: data.newItems || null,
         consecutiveCount: data.consecutiveCount || quickBeatStreak + 1,
         timestamp: Date.now(),
       },

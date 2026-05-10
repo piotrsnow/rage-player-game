@@ -1,6 +1,8 @@
 # Quick Beats — "mała akcja"
 
-A lightweight RP-beat path that bypasses the full scene-generation pipeline. Use it when the player wants to do something in-character that doesn't move the plot — sip ale, glance around the tavern, ask an NPC trivia, narratively check gear. The output lands in chat history (with an `flash_on` icon and italicized text), advances world-time by a tiny amount, and never creates a new `CampaignScene`.
+A lightweight RP-beat path that bypasses the full scene-generation pipeline. Use it when the player wants to do something in-character that doesn't move the plot — sip ale, glance around the tavern, ask an NPC trivia, loot a fallen enemy, pick up a visible item. The output lands in chat history (same size as normal DM messages, with a subtle amber background tint), advances world-time by a tiny amount, optionally grants items (up to 3), and never creates a new `CampaignScene`.
+
+**Keyboard shortcut: Shift+Enter** (when input is focused and quick beat is available).
 
 If you're touching anything in `backend/src/services/sceneGenerator/quickBeat.js`, the SSE route, the FE button, or the chat rendering — read this first.
 
@@ -34,7 +36,7 @@ Post-scene async work is intentionally **NOT** triggered by quick beats:
 - No Living World ticks (`runNpcTick`, `runWorldTick`).
 - No image / TTS / SFX generation (no async media pipeline).
 
-Quick beats are flavor, not policy. They never write to `CampaignNPC.experienceLog`, `WorldNpcKnowledge`, `Codex`, `Quest`, or any structured state. The only durable side effect is the `CampaignQuickBeat` row + the `timeAdvance` consumed by the FE reducer (and the FE `world.timeState` is persisted via the normal save queue on the next full scene anyway).
+Quick beats are flavor, not policy. They never write to `CampaignNPC.experienceLog`, `WorldNpcKnowledge`, `Codex`, `Quest`, or any structured state. The only durable side effects are the `CampaignQuickBeat` row, the `timeAdvance` consumed by the FE reducer, and optional `newItems` (up to 3 mundane items — looting, picking up visible objects). Items are applied client-side via `applyCharacterMutations` inside `ADD_QUICK_BEAT` and generate `item_gained` system messages in chat.
 
 ---
 
@@ -134,6 +136,14 @@ Capped at 8 entries (FE caps at 5, so this is just a defensive ceiling). Premium
 
 - **Player-facing manual escalation.** The button is binary (send beat). If the player wants a full scene, they use the regular submit. We considered an "escalate this beat to a scene" button — rejected as redundant.
 
+## V1.1 additions
+
+- **Keyboard shortcut (Shift+Enter).** When the TaggableInput is focused, Shift+Enter sends as quick beat. Enter (no modifier) sends as full scene. Tooltip on the ⚡ button mentions the shortcut.
+
+- **Item acquisition (`newItems`).** The nano prompt schema now includes an optional `newItems` array (max 3, mundane only). Nano returns items when the player is looting, searching, or picking up something visible. Items are sanitized server-side (valid type, quantity 1-10, name ≤80 chars) and applied client-side via `applyCharacterMutations`. Each item triggers an `item_gained` system message in chat.
+
+- **Full-size chat rendering.** Quick beat DM messages now render at the same size and structure as normal DmMessage (text-xs, HighlightedText, ReadAloudButton, DialogueSegments), distinguished only by a subtle amber background tint (`bg-amber-400/[0.06]`) and amber left border.
+
 ---
 
 ## Critical-path files
@@ -156,9 +166,9 @@ Capped at 8 entries (FE caps at 5, so this is just a defensive ceiling). Premium
 
 ## When to add a quick-beat-related state change
 
-**Don't.** That's the whole point. If you find yourself wanting to write to `experienceLog`, drop XP, change disposition, etc. inside `runQuickBeat` — the player's action is too big for a beat. Either:
+**Almost never.** Quick beats support only `timeAdvance` and `newItems` (looting). If you find yourself wanting to write to `experienceLog`, drop XP, change disposition, modify quests, etc. — the player's action is too big for a beat. Either:
 
 1. Tighten the escalation heuristic so it routes to `generateScene`, or
-2. Handle it client-side without a server round-trip (e.g. picking up a coin you already have visible in inventory).
+2. Handle it client-side without a server round-trip.
 
-The line is: **a quick beat is something the camera could capture without the player rolling dice, gaining items, meeting new NPCs, or moving more than across a room.**
+The line is: **a quick beat is something the camera could capture without the player rolling dice, meeting new NPCs, or moving more than across a room.** Looting a body or picking up a visible object is fine.

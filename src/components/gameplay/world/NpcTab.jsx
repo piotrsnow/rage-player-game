@@ -1,11 +1,46 @@
-import { useState } from 'react';
+import { useState, useRef, useCallback } from 'react';
 import CustomSelect from '../../ui/CustomSelect';
 import { GenderIcon } from '../../../utils/genderIcon';
 import { CrossLinkChip, EmptyState, findQuestsForNpc } from './shared';
 import NpcStatCard from './NpcStatCard';
 import { useActionTag } from '../../../contexts/ActionTagContext';
+import { useSettings } from '../../../contexts/SettingsContext';
 
-function NpcRow({ npc, quests, characterVoiceMap, taggedVoices, hasVoicePool, handleVoiceChange, navigateTo, onMentionNpc, t }) {
+function VoiceVolumeSlider({ voiceId, perVoiceVolumes, onVolumeChange, t }) {
+  const serverValue = perVoiceVolumes[voiceId] ?? 100;
+  const [local, setLocal] = useState(serverValue);
+  const timerRef = useRef(null);
+  const prevVoiceIdRef = useRef(voiceId);
+
+  if (prevVoiceIdRef.current !== voiceId) {
+    prevVoiceIdRef.current = voiceId;
+    setLocal(perVoiceVolumes[voiceId] ?? 100);
+  }
+
+  const handleChange = useCallback((e) => {
+    const v = Number(e.target.value);
+    setLocal(v);
+    if (timerRef.current) clearTimeout(timerRef.current);
+    timerRef.current = setTimeout(() => onVolumeChange(voiceId, v), 500);
+  }, [voiceId, onVolumeChange]);
+
+  return (
+    <div className="flex items-center gap-1.5 shrink-0" title={t('worldState.voiceVolume', 'Głośność głosu')}>
+      <span className="material-symbols-outlined text-sm text-outline">volume_up</span>
+      <input
+        type="range"
+        min={0}
+        max={100}
+        value={local}
+        onChange={handleChange}
+        className="w-16 h-1 accent-primary cursor-pointer"
+      />
+      <span className="text-xs text-outline tabular-nums w-7 text-right">{local}%</span>
+    </div>
+  );
+}
+
+function NpcRow({ npc, quests, characterVoiceMap, taggedVoices, hasVoicePool, handleVoiceChange, perVoiceVolumes, onVolumeChange, navigateTo, onMentionNpc, t }) {
   const [showCard, setShowCard] = useState(false);
   const mapping = characterVoiceMap?.[npc.name];
   const currentVoiceId = mapping?.voiceId;
@@ -134,6 +169,14 @@ function NpcRow({ npc, quests, characterVoiceMap, taggedVoices, hasVoicePool, ha
             className="flex-1 min-w-0"
             buttonClassName="text-sm py-1 px-2 border-outline-variant/15"
           />
+          {currentVoiceId && (
+            <VoiceVolumeSlider
+              voiceId={currentVoiceId}
+              perVoiceVolumes={perVoiceVolumes}
+              onVolumeChange={onVolumeChange}
+              t={t}
+            />
+          )}
         </div>
       )}
     </div>
@@ -142,6 +185,7 @@ function NpcRow({ npc, quests, characterVoiceMap, taggedVoices, hasVoicePool, ha
 
 export default function NpcTab({ npcs, quests, characterVoiceMap, maleVoices, femaleVoices, ttsProvider, dispatch, autoSave, navigateTo, t }) {
   const actionTagCtx = useActionTag();
+  const { perVoiceVolumes, updatePerVoiceVolume } = useSettings();
 
   const handleMentionNpc = actionTagCtx ? (npc) => {
     actionTagCtx.insertTag({
@@ -192,6 +236,8 @@ export default function NpcTab({ npcs, quests, characterVoiceMap, maleVoices, fe
           taggedVoices={taggedVoices}
           hasVoicePool={hasVoicePool}
           handleVoiceChange={handleVoiceChange}
+          perVoiceVolumes={perVoiceVolumes}
+          onVolumeChange={updatePerVoiceVolume}
           navigateTo={navigateTo}
           onMentionNpc={handleMentionNpc}
           t={t}

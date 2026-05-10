@@ -110,41 +110,56 @@ function QuestWrapupEpilogue({ wrapup }) {
 }
 
 /**
- * Quick beat ("mała akcja") — compact, italicized line for both player and DM.
- * Rendered as a single condensed entry rather than the full DmMessage / PlayerMessage
- * blocks so 5 consecutive beats don't visually dominate the chat. NPC dialogue
- * inside `dialogueSegments` is still surfaced inline via DialogueSegments.
+ * Quick beat ("mała akcja") — rendered like a normal DM message but with a
+ * subtle warm background tint so the player can tell it apart at a glance.
  */
 export const QuickBeatMessage = memo(function QuickBeatMessage({ message, narrator }) {
   const { t } = useTranslation();
   const isPlayer = message.role === 'player';
   const segments = Array.isArray(message.dialogueSegments) ? message.dialogueSegments : [];
   const hasDialogue = segments.some((seg) => seg?.type === 'dialogue');
+
+  if (isPlayer) {
+    return (
+      <div className="flex flex-col gap-2 animate-fade-in items-end">
+        <div className="text-[10px] font-bold uppercase tracking-widest text-tertiary flex items-center gap-1.5">
+          <span className="material-symbols-outlined text-[11px] leading-none text-amber-300/70">flash_on</span>
+          <span className="truncate">
+            {t('chat.quickBeatPlayer', { defaultValue: 'Mała akcja' })}
+            {' · '}{formatTimestamp(message.timestamp)}
+          </span>
+        </div>
+        <div className="glass-panel p-3 max-w-[90%] rounded-l-lg rounded-tr-lg border-r-2 border-tertiary/60 bg-amber-400/[0.04] hover:border-tertiary transition-colors duration-300">
+          <p className="text-xs text-on-surface leading-snug">{message.content}</p>
+        </div>
+      </div>
+    );
+  }
+
   return (
-    <div className="flex flex-col gap-1 animate-fade-in">
-      <div className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-widest text-amber-300/80">
-        <span className="material-symbols-outlined text-[12px] leading-none">flash_on</span>
+    <div className="flex flex-col gap-2 animate-fade-in">
+      <div className="text-[10px] font-bold text-primary uppercase tracking-widest flex items-center gap-1.5">
+        <span className="material-symbols-outlined text-[11px] leading-none text-amber-300/70">flash_on</span>
         <span className="truncate">
-          {isPlayer
-            ? t('chat.quickBeatPlayer', { defaultValue: 'Mała akcja' })
-            : t('chat.quickBeatDm', { defaultValue: 'Mała akcja · DM' })}
+          {t('chat.quickBeatDm', { defaultValue: 'Mała akcja · DM' })}
           {' · '}{formatTimestamp(message.timestamp)}
         </span>
       </div>
-      <div className={`pl-3 border-l ${isPlayer ? 'border-tertiary/35' : 'border-amber-400/30'}`}>
-        <p className={`text-[11px] italic leading-snug ${isPlayer ? 'text-tertiary/85' : 'text-on-surface-variant/85'}`}>
-          {message.content}
-        </p>
-        {hasDialogue && (
-          <div className="mt-1.5">
-            <DialogueSegments
-              segments={segments}
-              narrator={narrator}
-              messageId={message.id}
-              scenePacing={message.scenePacing || 'exploration'}
-            />
-          </div>
-        )}
+      <div className="glass-panel p-3 border-l-2 border-amber-400/40 rounded-r-lg space-y-3 bg-amber-400/[0.06] hover:border-amber-400/60 transition-colors duration-300">
+        <div className="min-w-0 flex-1">
+          {hasDialogue ? (
+            <DialogueSegments segments={segments} narrator={narrator} messageId={message.id} scenePacing={message.scenePacing || 'exploration'} />
+          ) : (
+            <NarrativeWithLoading narrator={narrator} messageId={message.id} segmentIndex={0}>
+              <div className="group/seg flex items-start gap-0.5">
+                <p className="text-xs text-on-surface-variant leading-snug italic flex-1">
+                  <HighlightedText text={message.content} highlightInfo={narrator?.highlightInfo} segmentIndex={0} messageId={message.id} />
+                </p>
+                <ReadAloudButton text={message.content} scenePacing={message.scenePacing || 'exploration'} />
+              </div>
+            </NarrativeWithLoading>
+          )}
+        </div>
       </div>
     </div>
   );

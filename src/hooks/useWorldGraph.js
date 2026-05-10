@@ -11,7 +11,7 @@ const WORLD_GRAPH_URL = '/admin/livingWorld/world-graph';
  * @param {{ openGeneration?: number, paused?: boolean }} [options]
  */
 export function useWorldGraph(options = {}) {
-  const { openGeneration, paused = false } = options;
+  const { openGeneration, paused = false, showOrphans = false } = options;
   const [nodes, setNodes] = useState([]);
   const [edges, setEdges] = useState([]);
   const [occupants, setOccupants] = useState([]);
@@ -41,7 +41,8 @@ export function useWorldGraph(options = {}) {
     setLoading(true);
     setError(null);
     try {
-      const data = await apiClient.get(WORLD_GRAPH_URL);
+      const url = showOrphans ? `${WORLD_GRAPH_URL}?showOrphans=true` : WORLD_GRAPH_URL;
+      const data = await apiClient.get(url);
       setNodes(data.nodes || []);
       setEdges(data.edges || []);
       setOccupants(data.occupants || []);
@@ -50,7 +51,7 @@ export function useWorldGraph(options = {}) {
     } finally {
       setLoading(false);
     }
-  }, [paused]);
+  }, [paused, showOrphans]);
 
   useEffect(() => {
     if (paused) return;

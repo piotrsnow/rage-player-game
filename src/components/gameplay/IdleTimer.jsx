@@ -6,23 +6,34 @@ function formatTime(seconds) {
   return `${m}:${s.toString().padStart(2, '0')}`;
 }
 
-export default function IdleTimer({ idleSeconds, timerActive, lastRoll, isRolling, fastMode, onToggleFastMode }) {
+export default function IdleTimer({
+  idleSeconds,
+  timerActive,
+  lastRoll,
+  isRolling,
+  fastMode,
+  onToggleFastMode,
+  onManualCheck,
+}) {
   const { t } = useTranslation();
 
   if (!timerActive && !lastRoll) return null;
 
-  const showTimer = timerActive && idleSeconds > 0;
   const pulseIntensity = Math.min(idleSeconds / 120, 1);
 
   return (
     <div className="flex items-center gap-3 text-[10px] text-on-surface-variant">
-      {showTimer && (
+      {timerActive && (
         <button
           type="button"
-          onClick={onToggleFastMode}
+          onClick={onManualCheck}
+          onContextMenu={(e) => {
+            e.preventDefault();
+            onToggleFastMode?.();
+          }}
           className={`flex items-center gap-1.5 transition-all duration-500 cursor-pointer hover:text-primary ${fastMode ? 'text-primary' : ''}`}
           style={{ opacity: 0.4 + pulseIntensity * 0.6 }}
-          title={fastMode ? t('idle.normalSpeed', 'Normal speed') : t('idle.fastForward', 'Fast forward x5')}
+          title={t('idle.manualCheckHint', 'Lewy klik: sprawdź teraz • Prawy klik: x5')}
         >
           <span
             className="material-symbols-outlined text-xs"

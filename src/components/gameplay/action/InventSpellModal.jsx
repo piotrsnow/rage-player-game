@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { useModalA11y } from '../../../hooks/useModalA11y';
 import { apiClient } from '../../../services/apiClient';
 import { ReadAloudButton } from '../chat/ChatMessageParts';
+import DiceRoller from '../../../effects/DiceRoller';
 
 function randomD50() {
   return Math.floor(Math.random() * 50) + 1;
@@ -39,10 +40,13 @@ function titleByOutcome(outcome, t) {
   return t('gameplay.inventSpellFailRoll');
 }
 
+const PREROLL_HOLD_MS = 1800;
+const RESULT_REVEAL_DELAY_MS = 600;
+
 export default function InventSpellModal({ campaignId, character = null, dispatch, onClose, onCorrectionsApplied }) {
   const { t } = useTranslation();
   const modalRef = useModalA11y(onClose);
-  const [view, setView] = useState('form'); // form | analyzing | result
+  const [view, setView] = useState('form'); // form | analyzing | preroll | rolling | result
   const [intent, setIntent] = useState('');
   const [error, setError] = useState(null);
   const [result, setResult] = useState(null);
@@ -63,6 +67,16 @@ export default function InventSpellModal({ campaignId, character = null, dispatc
     if (typeof onCorrectionsApplied === 'function') onCorrectionsApplied();
     setRefetchTriggered(true);
   }, [result, success, refetchTriggered, onCorrectionsApplied]);
+
+  useEffect(() => {
+    if (view !== 'preroll') return;
+    const timer = setTimeout(() => setView('rolling'), PREROLL_HOLD_MS);
+    return () => clearTimeout(timer);
+  }, [view]);
+
+  const handleDiceRollComplete = useCallback(() => {
+    setTimeout(() => setView('result'), RESULT_REVEAL_DELAY_MS);
+  }, []);
 
   const resetToForm = useCallback(() => {
     setView('form');
@@ -121,7 +135,7 @@ export default function InventSpellModal({ campaignId, character = null, dispatc
       }
 
       setResult(data);
-      setView('result');
+      setView('preroll');
     } catch (err) {
       setError(err.message || t('gameplay.inventSpellFailCircumstances'));
       setView('form');
@@ -167,6 +181,13 @@ export default function InventSpellModal({ campaignId, character = null, dispatc
               <textarea
                 value={intent}
                 onChange={(e) => setIntent(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && e.shiftKey && !e.ctrlKey) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    handleSubmit();
+                  }
+                }}
                 placeholder={t('gameplay.inventSpellPlaceholder')}
                 disabled={isSubmitting}
                 rows={5}
@@ -175,6 +196,7 @@ export default function InventSpellModal({ campaignId, character = null, dispatc
               />
               <div className="flex items-center justify-between gap-3">
                 <div className="flex items-center gap-2 min-w-0">
+                  <span className="text-[10px] text-on-surface-variant/40">Shift+Enter — wyślij</span>
                   <button
                     type="button"
                     title={diceTooltip}
@@ -219,8 +241,76 @@ export default function InventSpellModal({ campaignId, character = null, dispatc
             </div>
           )}
 
+          {/* Preroll: show modifiers & threshold before dice fly */}
+          {view === 'preroll' && result && (
+            <div className="py-6 space-y-4 animate-fade-in">
+              <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-on-surface-variant/70 text-center">
+                {t('gameplay.inventSpellCheckTitle', 'Test wymyślania zaklęcia')}
+              </p>
+              <div className="flex items-center justify-center gap-4">
+                <div className="flex flex-col items-center">
+                  <span className="text-[9px] font-bold uppercase tracking-widest text-on-surface-variant/60">{t('gameplay.inventSpellThresholdLabel')}</span>
+                  <span className="font-mono text-2xl font-black text-on-surface/80">{result.threshold}</span>
+                </div>
+                <div className="w-px h-8 bg-outline-variant/20" />
+                <div className="flex flex-col items-center gap-1">
+                  <span className="text-[9px] font-bold uppercase tracking-widest text-on-surface-variant/60">{t('gameplay.inventSpellModifiers', 'Modyfikatory')}</span>
+                  <div className="flex items-center gap-2 text-xs">
+                    {result.intelligence != null && (
+                      <span className="text-purple-300/80 font-label">{t('attributes.inteligencja', 'Int')} +{result.intelligence}</span>
+                    )}
+                    {result.favorability != null && result.favorability !== 0 && (
+                      <span className="text-orange-300/80 font-label">{result.favorability > 0 ? '+' : ''}{result.favorability} {t('gameplay.inventSpellCircumstances', 'okol.')}</span>
+                    )}
+                  </div>
+                </div>
+              </div>
+              <p className="text-[10px] text-on-surface-variant/50 text-center animate-pulse">
+                {t('gameplay.inventSpellRolling', 'Rzucam kośćmi...')}
+              </p>
+            </div>
+          )}
+
+          {/* Rolling: 3D dice animation */}
+          {view === 'rolling' && result && (
+            <div className="py-4 space-y-3 animate-fade-in">
+              <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-on-surface-variant/70 text-center">
+                {t('gameplay.inventSpellCheckTitle', 'Test wymyślania zaklęcia')}
+              </p>
+              <div className="flex items-center justify-center gap-4 mb-2">
+                <div className="flex flex-col items-center">
+                  <span className="text-[9px] font-bold uppercase tracking-widest text-on-surface-variant/60">{t('gameplay.inventSpellThresholdLabel')}</span>
+                  <span className="font-mono text-2xl font-black text-on-surface/80">{result.threshold}</span>
+                </div>
+                <div className="w-px h-8 bg-outline-variant/20" />
+                <div className="flex flex-col items-center gap-1">
+                  <span className="text-[9px] font-bold uppercase tracking-widest text-on-surface-variant/60">{t('gameplay.inventSpellModifiers', 'Modyfikatory')}</span>
+                  <div className="flex items-center gap-2 text-xs">
+                    {result.intelligence != null && (
+                      <span className="text-purple-300/80 font-label">{t('attributes.inteligencja', 'Int')} +{result.intelligence}</span>
+                    )}
+                    {result.favorability != null && result.favorability !== 0 && (
+                      <span className="text-orange-300/80 font-label">{result.favorability > 0 ? '+' : ''}{result.favorability} {t('gameplay.inventSpellCircumstances', 'okol.')}</span>
+                    )}
+                  </div>
+                </div>
+              </div>
+              <div className="relative w-[280px] h-[200px] mx-auto">
+                <DiceRoller
+                  diceRoll={{ roll: result.successRoll }}
+                  onComplete={handleDiceRollComplete}
+                  showOverlayResult={false}
+                  sizeMultiplier={2.2}
+                  durationMultiplier={1.1}
+                  variant="overlay"
+                  isVisible
+                />
+              </div>
+            </div>
+          )}
+
           {view === 'result' && result && (
-            <div className="space-y-4">
+            <div className="space-y-4 animate-fade-in">
               <div className={`flex items-center gap-2 px-3 py-2.5 rounded-sm border ${
                 success
                   ? 'bg-green-500/10 border-green-400/25 text-green-300'
@@ -232,6 +322,8 @@ export default function InventSpellModal({ campaignId, character = null, dispatc
 
               <div className="grid grid-cols-2 gap-2 text-xs">
                 <div className="border border-outline-variant/15 rounded-sm px-3 py-2 text-on-surface/80">
+                  {t('gameplay.inventSpellSumLabel', 'Suma')}: <span className={`font-mono font-label ${success ? 'text-sky-300' : 'text-rose-400'}`}>{result.sum}</span>
+                  <span className="text-on-surface-variant/60 mx-1">vs</span>
                   {t('gameplay.inventSpellThresholdLabel')}: <span className="text-on-surface font-label">{result.threshold}</span>
                 </div>
                 <div className={`border rounded-sm px-3 py-2 ${toneByTier(powerTier)}`}>
@@ -240,13 +332,16 @@ export default function InventSpellModal({ campaignId, character = null, dispatc
               </div>
 
               {result.successRoll != null && (
-                <div className="text-[11px] text-on-surface-variant/80 border border-outline-variant/10 rounded-sm px-3 py-1.5">
-                  k50: <span className="font-mono font-label text-on-surface/90">{result.successRoll}</span>
+                <div className="text-[11px] text-on-surface-variant/80 border border-outline-variant/10 rounded-sm px-3 py-1.5 space-x-2">
+                  <span>k50: <span className="font-mono font-label text-on-surface/90">{result.successRoll}</span></span>
+                  {result.intelligence != null && (
+                    <span>+ {t('attributes.inteligencja', 'Int')}: <span className="font-mono font-label text-purple-300/80">{result.intelligence}</span></span>
+                  )}
+                  {result.favorability != null && result.favorability !== 0 && (
+                    <span>{result.favorability > 0 ? '+' : ''}<span className="font-mono font-label text-orange-300/80">{result.favorability}</span> {t('gameplay.inventSpellCircumstances', 'okol.')}</span>
+                  )}
                   {result.powerRoll != null && (
-                    <>
-                      {' · '}
-                      {t('gameplay.inventSpellPowerRollHint', { roll: result.powerRoll })}
-                    </>
+                    <span className="text-on-surface-variant/60">· {t('gameplay.inventSpellPowerRollHint', { roll: result.powerRoll })}</span>
                   )}
                 </div>
               )}
@@ -257,9 +352,9 @@ export default function InventSpellModal({ campaignId, character = null, dispatc
                 </p>
               )}
 
-              {!success && result.outcome === 'fail_roll' && result.successRoll != null && result.threshold != null && (
+              {!success && result.outcome === 'fail_roll' && result.sum != null && result.threshold != null && (
                 <p className="text-xs text-on-surface-variant/90 bg-surface-container/50 border border-outline-variant/15 rounded-sm px-3 py-2 leading-snug">
-                  {t('gameplay.inventSpellRollUnderFail', { threshold: result.threshold, roll: result.successRoll })}
+                  {t('gameplay.inventSpellRollFail', { threshold: result.threshold, sum: result.sum })}
                 </p>
               )}
 

@@ -9,6 +9,7 @@ import { normalizeCharacterAge } from '../services/characterAge';
 import { SPECIES, createStartingSkills } from '../data/rpgSystem';
 import { gameData } from '../services/gameDataService';
 import { shortId } from '../utils/ids';
+import { stopAllDialogAudio } from '../utils/readAloudExclusive';
 
 // Merge the deterministic starter kit with up to 2 AI-suggested flavor items.
 // Starter kit baseTypes always present — AI can only ADD on top.
@@ -151,6 +152,7 @@ export function useGameState() {
         diceRoll: null,
         timestamp: Date.now(),
       };
+      stopAllDialogAudio();
 
       const chatHistory = [
         {

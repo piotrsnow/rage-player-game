@@ -21,6 +21,7 @@ import CharacterPanel from './CharacterPanel';
 import CharacterLibrary from './CharacterLibrary';
 import { getActiveTitle, getTopTitles } from '../../data/achievements';
 import { getGenderLabel } from '../../utils/characterUtils';
+import { filterNpcsHere } from '../../utils/npcLocation';
 
 export default function CharacterSheet({ onClose }) {
   const navigate = useNavigate();
@@ -125,9 +126,10 @@ export default function CharacterSheet({ onClose }) {
   const attrPoints = displayCharacter?.attributePoints || 0;
 
   const activeWorld = isMultiplayer ? mpGameState?.world : soloWorld;
-  const currentLocation = activeWorld?.currentLocation;
-  const npcsInScene = (activeWorld?.npcs || []).filter(
-    (n) => n.alive !== false && n.lastLocation === currentLocation
+  const npcsInScene = filterNpcsHere(
+    activeWorld?.npcs || [],
+    activeWorld?.currentLocationRef,
+    activeWorld?.currentLocation,
   );
 
   const isViewingOwnCharacter = !isMultiplayer || (displayCharacter && displayCharacter.odId === mp.state.myOdId);

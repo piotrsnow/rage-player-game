@@ -11,8 +11,12 @@ import { ATTRIBUTE_KEYS, ATTRIBUTE_SHORT } from '../../../data/rpgSystem';
  * Renders nothing when the NPC has no stats yet (legacy rows pre-migration);
  * the caller should decide whether to hide itself entirely or show a
  * placeholder.
+ *
+ * `compact` — opt-in mode used by NpcSheetModal where the host already shows
+ * race / level / appearance in its own header. Skips the redundant intro row
+ * and the appearance line so the card jumps straight into ATTRIBUTES.
  */
-export default function NpcStatCard({ npc }) {
+export default function NpcStatCard({ npc, compact = false }) {
   const { t } = useTranslation();
   const stats = npc?.stats;
   if (!stats || typeof stats !== 'object' || !stats.attributes) return null;
@@ -30,22 +34,26 @@ export default function NpcStatCard({ npc }) {
     : npc.creatureKind || t('worldState.races.none');
 
   return (
-    <div className="mt-2 pt-2 border-t border-outline-variant/10 space-y-2">
-      <div className="flex items-center justify-between text-base">
-        <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-          <span className="text-outline">{t('worldState.race')}:</span>
-          <span className="font-medium text-on-surface">{raceLabel}</span>
-        </div>
-        <div className="flex items-center gap-2 shrink-0">
-          <span className="text-outline">{t('worldState.level')}:</span>
-          <span className="font-bold text-primary text-lg tabular-nums">{stats.level ?? npc.level ?? 1}</span>
-        </div>
-      </div>
+    <div className={`${compact ? '' : 'mt-2 pt-2 border-t border-outline-variant/10'} space-y-2`}>
+      {!compact && (
+        <>
+          <div className="flex items-center justify-between text-base">
+            <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+              <span className="text-outline">{t('worldState.race')}:</span>
+              <span className="font-medium text-on-surface">{raceLabel}</span>
+            </div>
+            <div className="flex items-center gap-2 shrink-0">
+              <span className="text-outline">{t('worldState.level')}:</span>
+              <span className="font-bold text-primary text-lg tabular-nums">{stats.level ?? npc.level ?? 1}</span>
+            </div>
+          </div>
 
-      {npc.appearance && (
-        <div className="text-[11px] text-on-surface-variant">
-          <span className="text-outline">{t('worldState.appearance')}:</span> {npc.appearance}
-        </div>
+          {npc.appearance && (
+            <div className="text-[11px] text-on-surface-variant">
+              <span className="text-outline">{t('worldState.appearance')}:</span> {npc.appearance}
+            </div>
+          )}
+        </>
       )}
 
       <div>

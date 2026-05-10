@@ -513,6 +513,126 @@
   font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
 }
 
+/* --- Scene frame: ornate fantasy border --- */
+.scene-frame {
+  position: relative;
+  padding: 3px;
+  border-radius: 0.625rem;
+  background:
+    linear-gradient(
+      160deg,
+      rgba(192, 155, 80, 0.55) 0%,
+      rgba(120, 90, 45, 0.2) 20%,
+      rgba(192, 155, 80, 0.45) 40%,
+      rgba(100, 75, 35, 0.15) 60%,
+      rgba(192, 155, 80, 0.5) 80%,
+      rgba(140, 110, 55, 0.3) 100%
+    );
+  box-shadow:
+    0 0 50px rgba(0, 0, 0, 0.85),
+    0 0 12px rgba(180, 140, 70, 0.12),
+    inset 0 0 6px rgba(180, 140, 70, 0.08);
+}
+
+.scene-frame::before {
+  content: '';
+  position: absolute;
+  inset: 1px;
+  border-radius: 0.55rem;
+  border: 1px solid rgba(192, 155, 80, 0.18);
+  pointer-events: none;
+  z-index: 20;
+}
+
+.scene-frame-corner {
+  position: absolute;
+  z-index: 20;
+  pointer-events: none;
+}
+
+.scene-frame-corner::before,
+.scene-frame-corner::after {
+  content: '';
+  position: absolute;
+  background: linear-gradient(135deg, rgba(212, 175, 100, 0.7), rgba(160, 120, 55, 0.4));
+  border-radius: 1px;
+}
+
+.scene-frame-corner::before {
+  width: 22px;
+  height: 2px;
+}
+
+.scene-frame-corner::after {
+  width: 2px;
+  height: 22px;
+}
+
+.scene-frame-corner--tl { top: 0; left: 0; }
+.scene-frame-corner--tl::before { top: 0; left: 0; }
+.scene-frame-corner--tl::after { top: 0; left: 0; }
+
+.scene-frame-corner--tr { top: 0; right: 0; }
+.scene-frame-corner--tr::before { top: 0; right: 0; }
+.scene-frame-corner--tr::after { top: 0; right: 0; }
+
+.scene-frame-corner--bl { bottom: 0; left: 0; }
+.scene-frame-corner--bl::before { bottom: 0; left: 0; }
+.scene-frame-corner--bl::after { bottom: 0; left: 0; }
+
+.scene-frame-corner--br { bottom: 0; right: 0; }
+.scene-frame-corner--br::before { bottom: 0; right: 0; }
+.scene-frame-corner--br::after { bottom: 0; right: 0; }
+
+.scene-frame-corner-diamond {
+  position: absolute;
+  width: 8px;
+  height: 8px;
+  background: linear-gradient(135deg, rgba(220, 185, 110, 0.8), rgba(170, 130, 60, 0.5));
+  transform: rotate(45deg);
+  z-index: 21;
+  pointer-events: none;
+  box-shadow: 0 0 6px rgba(200, 165, 90, 0.3);
+}
+
+.scene-frame-shine {
+  position: absolute;
+  inset: 0;
+  border-radius: 0.625rem;
+  z-index: 19;
+  pointer-events: none;
+  overflow: hidden;
+}
+
+.scene-frame-shine::after {
+  content: '';
+  position: absolute;
+  top: -50%;
+  left: -50%;
+  width: 200%;
+  height: 200%;
+  background: conic-gradient(
+    from var(--frame-shine-angle, 0deg),
+    transparent 0deg,
+    rgba(220, 185, 110, 0.08) 40deg,
+    transparent 80deg,
+    transparent 180deg,
+    rgba(220, 185, 110, 0.06) 220deg,
+    transparent 260deg
+  );
+  animation: frameShineRotate 12s linear infinite;
+}
+
+@keyframes frameShineRotate {
+  to { --frame-shine-angle: 360deg; }
+}
+
+@property --frame-shine-angle {
+  syntax: '<angle>';
+  initial-value: 0deg;
+  inherits: false;
+}
+
 @keyframes shimmer {
   0% { opacity: 0.5; }
   50% { opacity: 1; }
@@ -527,6 +647,19 @@
 @keyframes slideInRight {
   from { opacity: 0; transform: translateX(16px); }
   to { opacity: 1; transform: translateX(0); }
+}
+
+@keyframes expandLeft {
+  from {
+    opacity: 0.7;
+    clip-path: inset(0 0 0 56%);
+    transform: translateX(12px);
+  }
+  to {
+    opacity: 1;
+    clip-path: inset(0 0 0 0);
+    transform: translateX(0);
+  }
 }
 
 @keyframes slideUp {
@@ -868,6 +1001,11 @@
   animation: slideInRight 0.3s ease-out both;
 }
 
+.animate-expand-left {
+  transform-origin: right center;
+  animation: expandLeft 0.36s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
 .animate-slide-up {
   animation: slideUp 0.6s cubic-bezier(0.16, 1, 0.3, 1) both;
 }
@@ -987,6 +1125,24 @@
   animation-fill-mode: both;
 }
 
+.dice-overlay-float {
+  position: fixed;
+  top: 0;
+  left: 0;
+  z-index: 9999;
+  pointer-events: none;
+  object-fit: contain;
+  will-change: transform, opacity;
+  filter: drop-shadow(0 0 6px rgba(197, 154, 255, 0.25));
+  transition: filter 0.4s ease-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dice-overlay-float {
+    display: none;
+  }
+}
+
 @keyframes micPulse {
   0%, 100% { box-shadow: 0 0 0 0 rgba(255, 82, 82, 0.4); }
   50% { box-shadow: 0 0 0 8px rgba(255, 82, 82, 0); }
@@ -1063,44 +1219,51 @@
   75% { opacity: 0.9; }
 }
 
-/* Sidebar player portrait: magic shimmer border + shine overlay */
+/* Sidebar player portrait: ornamental arcane frame + magic shimmer */
 .sidebar-portrait-magic {
   position: relative;
   overflow: hidden;
-  border-radius: 0.125rem;
-  border: 1px solid rgba(197, 154, 255, 0.18);
+  border-radius: 0.25rem;
+  border: 2px solid rgba(197, 154, 255, 0.25);
+  outline: 1px solid rgba(120, 220, 255, 0.08);
+  outline-offset: 3px;
   box-shadow:
-    0 10px 30px rgba(0, 0, 0, 0.25),
-    0 0 12px rgba(197, 154, 255, 0.06),
-    inset 0 0 8px rgba(120, 220, 255, 0.04);
-  transition: box-shadow 0.4s ease;
+    0 10px 30px rgba(0, 0, 0, 0.35),
+    0 0 18px rgba(197, 154, 255, 0.10),
+    0 0 6px rgba(120, 220, 255, 0.06),
+    inset 0 0 12px rgba(0, 0, 0, 0.4),
+    inset 0 0 6px rgba(197, 154, 255, 0.05);
+  transition: box-shadow 0.4s ease, border-color 0.4s ease, outline-color 0.4s ease;
 }
 
 .sidebar-portrait-magic:hover {
+  border-color: rgba(197, 154, 255, 0.38);
+  outline-color: rgba(120, 220, 255, 0.15);
   box-shadow:
-    0 10px 30px rgba(0, 0, 0, 0.25),
-    0 0 18px rgba(197, 154, 255, 0.12),
-    0 0 6px rgba(120, 220, 255, 0.08),
-    inset 0 0 10px rgba(197, 154, 255, 0.06);
+    0 10px 30px rgba(0, 0, 0, 0.35),
+    0 0 24px rgba(197, 154, 255, 0.18),
+    0 0 10px rgba(120, 220, 255, 0.10),
+    inset 0 0 14px rgba(0, 0, 0, 0.35),
+    inset 0 0 8px rgba(197, 154, 255, 0.08);
 }
 
 .sidebar-portrait-magic::before {
   content: '';
   position: absolute;
-  inset: -2px;
+  inset: -3px;
   border-radius: inherit;
-  padding: 2px;
+  padding: 3px;
   background: conic-gradient(
     from var(--portrait-holo-angle, 0deg),
-    rgba(120, 220, 255, 0.4) 0%,
+    rgba(120, 220, 255, 0.45) 0%,
     transparent 14%,
     transparent 28%,
-    rgba(197, 154, 255, 0.35) 36%,
+    rgba(197, 154, 255, 0.4) 36%,
     transparent 48%,
     transparent 62%,
-    rgba(120, 220, 255, 0.3) 70%,
+    rgba(120, 220, 255, 0.35) 70%,
     transparent 82%,
-    rgba(197, 154, 255, 0.2) 100%
+    rgba(197, 154, 255, 0.25) 100%
   );
   -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
   mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);

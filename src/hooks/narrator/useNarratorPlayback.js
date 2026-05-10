@@ -17,7 +17,7 @@ const HIGHLIGHT_LEAD_SECONDS = 0.06;
 const HIGHLIGHT_SCALE_MIN = 0.85;
 const HIGHLIGHT_SCALE_MAX = 1.2;
 
-export function useNarratorPlayback({ settings, dispatch, viewerMode, coordinatorSessionRef }) {
+export function useNarratorPlayback({ settings, perVoiceVolumes, dispatch, viewerMode, coordinatorSessionRef }) {
   const [playbackState, setPlaybackStateRaw] = useState(STATES.IDLE);
   const [highlightInfo, setHighlightInfo] = useState(null);
   const [currentChunk, setCurrentChunk] = useState(null);
@@ -252,9 +252,12 @@ export function useNarratorPlayback({ settings, dispatch, viewerMode, coordinato
 
   useEffect(() => {
     if (audioRef.current) {
-      audioRef.current.volume = (settings.dialogueVolume ?? 80) / 100;
+      const base = (settings.dialogueVolume ?? 80) / 100;
+      const vid = audioRef.current._voiceId;
+      const voiceMul = vid ? ((perVoiceVolumes?.[vid] ?? 100) / 100) : 1;
+      audioRef.current.volume = base * voiceMul;
     }
-  }, [settings.dialogueVolume]);
+  }, [settings.dialogueVolume, perVoiceVolumes]);
 
   return {
     playbackState,

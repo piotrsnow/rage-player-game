@@ -180,4 +180,25 @@ describe('resolveEnemyTurnStep — returns afterEnemies for onAfterSlide', () =>
     expect(ret.afterEnemies).not.toBe(originalCombat);
     expect(ret.afterEnemies.combatants[0].position.x).not.toBe(originalCombat.combatants[0].position.x);
   });
+
+  it('animates enemy movement at 500ms per grid cell', () => {
+    const originalCombat = buildCombatState();
+    const afterEnemies = {
+      ...buildCombatState(),
+      combatants: originalCombat.combatants.map((c) => (
+        c.id === 'enemy_guard'
+          ? { ...c, position: { x: c.position.x - 2, y: c.position.y } }
+          : c
+      )),
+    };
+    vi.mocked(resolveEnemyTurns).mockReturnValue({ combat: afterEnemies, results: [] });
+
+    const deps = makeStepDeps({ scheduleTokenAnim: vi.fn() });
+    const ret = resolveEnemyTurnStep({ combat: originalCombat, isMultiplayer: false, ...deps });
+
+    expect(deps.scheduleTokenAnim).toHaveBeenCalledWith({
+      enemy_guard: { durationMs: 1000 },
+    });
+    expect(ret.maxSlideDuration).toBe(1000);
+  });
 });

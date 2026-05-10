@@ -9,7 +9,7 @@ import { getReputationProfile, maybeClearVendetta } from '../../livingWorld/repu
 import { suggestEncounterMode } from '../../livingWorld/encounterEscalator.js';
 import { readDmAgentState } from '../../livingWorld/dmMemoryService.js';
 import { normalizeLanguage } from '../../livingWorld/contentLocalizer.js';
-import { LOCATION_KIND_WORLD, LOCATION_KIND_CAMPAIGN } from '../../locationRefs.js';
+import { LOCATION_KIND_CAMPAIGN } from '../../locationRefs.js';
 
 import { buildSettlementBlock } from './settlement.js';
 import { buildSeededSettlementsBlock } from './seededSettlements.js';
@@ -81,7 +81,7 @@ export async function buildLivingWorldContext(campaignId, currentLocation, { tra
   // + recent world events + any companions travelling with the party
   // (Phase 2) + lazy vendetta clear + Phase 4 DM agent memory.
   const [npcs, events, companions, , dmState] = await Promise.all([
-    listNpcsAtLocation(location.id, { campaignId, locationKind: LOCATION_KIND_WORLD, aliveOnly: true }).catch(() => []),
+    listNpcsAtLocation(location.id, { campaignId, locationKind, aliveOnly: true }).catch(() => []),
     worldEventsForLocation({
       locationId: location.id,
       campaignId,

@@ -24,6 +24,7 @@ import {
   getDistance,
   computeAttackPreview,
 } from '../../services/combatEngine';
+import { getCombatMoveDurationMs } from '../../services/combatAnimationTiming';
 import CombatCanvas from './CombatCanvas';
 import { PROJECTILE_TOTAL_MS } from './combat/combatCanvasDraw';
 import { useCombatCommentary } from '../../hooks/useCombatCommentary';
@@ -133,7 +134,7 @@ function buildAiDiceLogDetails(diceResult, t) {
   return details;
 }
 
-const ACTION_ANIM_MS = 1500;
+const ACTION_ANIM_MS = 500;
 const SHOVE_ANIM_MS = 750;
 
 export default function CombatPanel({
@@ -453,11 +454,16 @@ export default function CombatPanel({
     return rawExecuteManoeuvre(manoeuvreKey, targetId, customDesc, extraOpts);
   }, [isBeerDuel, combat, isMultiplayer, myPlayerId, rawExecuteManoeuvre]);
 
-  const confirmManoeuvre = useCallback(() => {
+  const confirmManoeuvre = useCallback(async () => {
     if (!pendingManoeuvre) return;
     const { key, targetId, customDesc, extraOpts } = pendingManoeuvre;
-    setPendingManoeuvre(null);
-    rawExecuteManoeuvre(key, targetId, customDesc, extraOpts);
+    setPendingManoeuvre((current) => current ? { ...current, resolving: true } : current);
+    const result = await rawExecuteManoeuvre(key, targetId, customDesc, extraOpts);
+    if (!result) {
+      setPendingManoeuvre(null);
+      return;
+    }
+    setPendingManoeuvre((current) => current ? { ...current, resolving: false, result } : current);
   }, [pendingManoeuvre, rawExecuteManoeuvre]);
 
   const cancelManoeuvre = useCallback(() => setPendingManoeuvre(null), []);
@@ -468,7 +474,7 @@ export default function CombatPanel({
     const { combat: updated, moved, distance: dist } = moveCombatant(combat, actorId, targetCell);
     if (!moved) return;
 
-    scheduleTokenAnim({ [actorId]: { durationMs: dist * 1500 } });
+    scheduleTokenAnim({ [actorId]: { durationMs: getCombatMoveDurationMs(dist) } });
 
     const actor = updated.combatants.find((c) => c.id === actorId);
     const uid = shortId(4);
@@ -863,6 +869,8 @@ export default function CombatPanel({
       {pendingManoeuvre && (
         <PreRollPreview
           preview={pendingManoeuvre.preview}
+          result={pendingManoeuvre.result}
+          resolving={pendingManoeuvre.resolving}
           onConfirm={confirmManoeuvre}
           onCancel={cancelManoeuvre}
         />

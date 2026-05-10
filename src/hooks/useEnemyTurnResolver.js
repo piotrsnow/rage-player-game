@@ -1,5 +1,6 @@
 import { useEffect } from 'react';
 import { getCurrentTurnCombatant, resolveEnemyTurns, getEnemyAction } from '../services/combatEngine';
+import { getCombatMoveDurationMs } from '../services/combatAnimationTiming';
 import { useEvent } from './useEvent';
 
 const AI_TURN_DELAY_MS = 2500;
@@ -44,7 +45,7 @@ export function resolveEnemyTurnStep({
       const after = normalizePos(c.position);
       if (before && (before.x !== after.x || before.y !== after.y)) {
         const dist = Math.max(Math.abs(after.x - before.x), Math.abs(after.y - before.y));
-        const duration = Math.min(dist * 150, 1500);
+        const duration = getCombatMoveDurationMs(dist);
         anims[c.id] = { durationMs: duration };
         if (duration > maxSlideDuration) maxSlideDuration = duration;
       }

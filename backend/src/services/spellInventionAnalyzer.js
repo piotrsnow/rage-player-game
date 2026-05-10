@@ -52,8 +52,8 @@ function sanitizeInventedSpell(spell, fallbackManaCost = 2) {
   return { name, school, manaCost, description, effect, spellIcon };
 }
 
-function defaultFailVerdict(threshold, successRoll) {
-  return `Próba kończy się fiaskiem. Na k50 potrzebujesz wyniku co najwyżej ${threshold} (masz ${successRoll}) — energia rozprasza się bez trwałego efektu.`;
+function defaultFailVerdict(sum, dc) {
+  return `Próba kończy się fiaskiem. Potrzebujesz sumy co najmniej ${dc}, a uzyskujesz ${sum} — energia rozprasza się bez trwałego efektu.`;
 }
 
 export async function analyzeSpellInvention({
@@ -97,8 +97,8 @@ export async function analyzeSpellInvention({
 
 Ważne zasady:
 - Oblicz favorability w zakresie -15..15 (warunki, nauczyciel, miejsce, rytuał, spójność z historią).
-- threshold = inteligencja + favorability, potem ogranicz do 1..50.
-- Sukces gdy successRoll <= threshold LUB (osobna mechanika szczęścia: los 1–100 <= wartość szczęścia — backend to liczy, nie duplikuj w verdict).
+- System: suma = successRoll + inteligencja + favorability. Sukces gdy suma >= 51 (stały próg trudności).
+- Osobna mechanika szczęścia: los 1–100 <= wartość szczęścia — backend to liczy, nie duplikuj w verdict.
 - powerTier na podstawie powerRoll:
   - 1..15 cantrip
   - 16..30 standard
@@ -124,7 +124,6 @@ ${spellIconsBlock}
 Dozwolony kształt:
 {
   "outcome": "success_existing" | "success_new" | "fail_circumstances" | "fail_roll",
-  "threshold": number,
   "favorability": number,
   "hasTeacher": boolean,
   "powerTier": "cantrip" | "standard" | "strong" | "legendary",
@@ -177,11 +176,11 @@ ${sceneBlock || '(brak scen)'}`;
   }
 
   const favorability = clampInt(parsed?.favorability ?? 0, -15, 15);
-  const threshold = clampInt(parsed?.threshold ?? (baseIntelligence + favorability), 1, 50);
-  // Same szczęście rule as rest of RPGon: separate 1–100 roll, success when luckRoll <= szczęście (%).
+  const DC = 51;
+  const sum = successRoll + baseIntelligence + favorability;
   const luckRoll = rollPercentile100();
   const successByLuck = isLuckySuccess(luck, luckRoll);
-  const successByThreshold = successRoll <= threshold;
+  const successByThreshold = sum >= DC;
   const success = successByLuck || successByThreshold;
 
   let outcome = OUTCOMES.includes(parsed?.outcome) ? parsed.outcome : (success ? 'success_new' : 'fail_roll');
@@ -193,7 +192,7 @@ ${sceneBlock || '(brak scen)'}`;
   const existingSpellName = normalizeExistingSpellName(parsed?.existingSpellName, candidates);
   const inventedSpell = sanitizeInventedSpell(parsed?.inventedSpell, powerTier === 'legendary' ? 5 : 2);
 
-  const verdict = sanitizeNarrative(parsed?.verdict) || defaultFailVerdict(threshold, successRoll);
+  const verdict = sanitizeNarrative(parsed?.verdict) || defaultFailVerdict(sum, DC);
   const narrativeComment = sanitizeNarrative(parsed?.narrativeComment);
 
   const iconNameForFallback =
@@ -210,8 +209,10 @@ ${sceneBlock || '(brak scen)'}`;
 
   return {
     outcome,
-    threshold,
+    threshold: DC,
+    sum,
     favorability,
+    intelligence: baseIntelligence,
     hasTeacher,
     powerTier,
     existingSpellName,

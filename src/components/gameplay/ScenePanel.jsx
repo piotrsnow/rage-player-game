@@ -15,6 +15,23 @@ const Scene3DPanel = lazy(() => import('./Scene3D/Scene3DPanel'));
 
 const INTENSITY_MAP = { low: 0.35, medium: 0.65, high: 1 };
 
+function SceneFrame({ children }) {
+  return (
+    <div className="scene-frame">
+      <div className="scene-frame-corner scene-frame-corner--tl" />
+      <div className="scene-frame-corner scene-frame-corner--tr" />
+      <div className="scene-frame-corner scene-frame-corner--bl" />
+      <div className="scene-frame-corner scene-frame-corner--br" />
+      <div className="scene-frame-corner-diamond" style={{ top: -1, left: -1 }} />
+      <div className="scene-frame-corner-diamond" style={{ top: -1, right: -1 }} />
+      <div className="scene-frame-corner-diamond" style={{ bottom: -1, left: -1 }} />
+      <div className="scene-frame-corner-diamond" style={{ bottom: -1, right: -1 }} />
+      <div className="scene-frame-shine" />
+      {children}
+    </div>
+  );
+}
+
 function SceneGameErrorOverlay({
   error,
   mpErrorCode,
@@ -321,25 +338,28 @@ export default function ScenePanel({
 
   if (!scene) {
     return (
-      <div className="relative w-full h-[clamp(340px,calc(56vh+60px),840px)] rounded-lg overflow-hidden border border-outline-variant/10 shadow-[0_0_40px_rgba(0,0,0,0.8)] bg-gradient-to-br from-surface-container-high via-surface-container to-surface-container-lowest flex items-center justify-center">
-        <div className="absolute inset-0 bg-primary/[0.02]" style={{ animation: 'glowPulse 4s ease-in-out infinite' }} />
-        <div className="text-center relative z-10">
-          <span className="material-symbols-outlined text-6xl text-outline/20 mb-3 block animate-float-slow">auto_stories</span>
-          <p className="text-on-surface-variant text-xs">{t('gameplay.adventureBegins')}</p>
+      <SceneFrame>
+        <div className="relative w-full h-[clamp(340px,calc(56vh+60px),840px)] rounded-lg overflow-hidden bg-gradient-to-br from-surface-container-high via-surface-container to-surface-container-lowest flex items-center justify-center">
+          <div className="absolute inset-0 bg-primary/[0.02]" style={{ animation: 'glowPulse 4s ease-in-out infinite' }} />
+          <div className="text-center relative z-10">
+            <span className="material-symbols-outlined text-6xl text-outline/20 mb-3 block animate-float-slow">auto_stories</span>
+            <p className="text-on-surface-variant text-xs">{t('gameplay.adventureBegins')}</p>
+          </div>
+          <SceneGameErrorOverlay
+            error={gameError}
+            mpErrorCode={mpErrorCode}
+            isMultiplayer={isMultiplayer}
+            onDismiss={onDismissGameError}
+            onOpenSettings={onOpenSettings}
+          />
         </div>
-        <SceneGameErrorOverlay
-          error={gameError}
-          mpErrorCode={mpErrorCode}
-          isMultiplayer={isMultiplayer}
-          onDismiss={onDismissGameError}
-          onOpenSettings={onOpenSettings}
-        />
-      </div>
+      </SceneFrame>
     );
   }
 
   return (
-    <div data-testid="scene-panel" className="relative w-full h-[clamp(340px,calc(56vh+60px),840px)] rounded-lg overflow-hidden border border-outline-variant/10 shadow-[0_0_40px_rgba(0,0,0,0.8)] animate-fade-in">
+    <SceneFrame>
+    <div data-testid="scene-panel" className="relative w-full h-[clamp(340px,calc(56vh+60px),840px)] rounded-lg overflow-hidden animate-fade-in">
       {/* Dream overlay */}
       {scene.scenePacing === 'dream' && (
         <>
@@ -632,5 +652,6 @@ export default function ScenePanel({
         onOpenSettings={onOpenSettings}
       />
     </div>
+    </SceneFrame>
   );
 }

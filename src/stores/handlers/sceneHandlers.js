@@ -1,4 +1,5 @@
 import { applyTimeAndNeeds } from './applyStateChangesHandler/timeAndNeeds';
+import { applyCharacterMutations } from './applyStateChangesHandler/character';
 
 export const sceneHandlers = {
   ADD_SCENE: (draft, action) => {
@@ -45,6 +46,7 @@ export const sceneHandlers = {
       npcSpeakerGender,
       npcReply,
       timeAdvance,
+      newItems,
       timestamp,
       consecutiveCount,
     } = action.payload;
@@ -75,6 +77,21 @@ export const sceneHandlers = {
         : {}),
       timestamp: now + 1,
     });
+
+    if (Array.isArray(newItems) && newItems.length > 0) {
+      applyCharacterMutations(draft, { newItems });
+      const charName = draft.character?.name || '?';
+      for (const item of newItems) {
+        const itemName = typeof item === 'string' ? item : item.name;
+        draft.chatHistory.push({
+          id: `qb_${id}_item_${itemName}`,
+          role: 'system',
+          subtype: 'item_gained',
+          content: `${charName} +${itemName}`,
+          timestamp: now + 2,
+        });
+      }
+    }
 
     if (typeof timeAdvance === 'number' && timeAdvance > 0) {
       applyTimeAndNeeds(draft, { timeAdvance: { hoursElapsed: timeAdvance } });

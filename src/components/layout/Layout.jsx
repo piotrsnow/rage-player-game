@@ -19,6 +19,7 @@ import { useMultiplayer } from '../../contexts/MultiplayerContext';
 import { useSettings } from '../../contexts/SettingsContext';
 import ErrorBoundary from '../ui/ErrorBoundary';
 import DevEventLogPanel from '../admin/DevEventLogPanel';
+import FloatingDiceOverlay from '../ui/FloatingDiceOverlay';
 import CharacterSheet from '../character/CharacterSheet';
 import DMSettingsPage from '../settings/DMSettingsPage';
 import KeysModal from '../settings/KeysModal';
@@ -188,6 +189,7 @@ export default function Layout() {
           <MobileNav />
           <ModalLayer />
           <DevEventLogPanel />
+          {/* <FloatingDiceOverlay /> */}
           <div className="fixed inset-0 pointer-events-none z-[100] opacity-[0.03] mix-blend-overlay">
             <div className="absolute inset-0 noise-overlay" />
           </div>

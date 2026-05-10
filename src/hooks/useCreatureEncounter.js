@@ -67,7 +67,9 @@ export function useCreatureEncounter({ generateScene } = {}) {
     if (!encounter) return { success: false };
 
     const zrecznosc = character.attributes?.zrecznosc || 1;
-    const uniki = character.skills?.find(s => s.name === 'Uniki')?.level || 0;
+    const uniki = Array.isArray(character?.skills)
+      ? (character.skills.find(s => s.name === 'Uniki')?.level || 0)
+      : (character?.skills?.Uniki?.level || 0);
     const target = zrecznosc + uniki + encounter.fleePenalty;
     const roll = rollD50();
 

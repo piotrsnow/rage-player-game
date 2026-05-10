@@ -86,9 +86,15 @@ export function applyNpcs(draft, changes) {
     if (incoming.attitude) npc.attitude = incoming.attitude;
     if (incoming.location) npc.lastLocation = incoming.location;
     // Faza 3a — preferowane: composite ref. AI-emitted lub BE-resolved.
+    // Clear stale ref when location text changes without an accompanying ref,
+    // so the NPC doesn't remain "visible" at the old composite-ref location.
     {
       const incomingRef = parseLocationRef(incoming.locationRef);
-      if (incomingRef) npc.locationRef = incomingRef;
+      if (incomingRef) {
+        npc.locationRef = incomingRef;
+      } else if (incoming.location) {
+        npc.locationRef = null;
+      }
     }
     if (incoming.notes) npc.notes = incoming.notes;
     if (typeof incoming.race === 'string') npc.race = incoming.race;

@@ -19,6 +19,47 @@ function radiusForGraphScale(scale) {
   return 14;
 }
 
+/**
+ * Push overlapping nodes apart until no pair is closer than r_a + r_b + pad.
+ * Mutates `pos` in place. Early-exits when no pair moved.
+ */
+export function resolveCollisions(pos, nodes, { iterations = 50, separationPad = 30 } = {}) {
+  const ids = [...pos.keys()];
+  if (ids.length < 2) return;
+  const radii = new Map();
+  const nodeById = new Map((nodes || []).map((n) => [n.id ?? n, n]));
+  for (const id of ids) {
+    const n = nodeById.get(id);
+    radii.set(id, radiusForGraphScale(n?.scale));
+  }
+  for (let iter = 0; iter < iterations; iter++) {
+    let moved = false;
+    for (let i = 0; i < ids.length; i++) {
+      for (let j = i + 1; j < ids.length; j++) {
+        const a = ids[i];
+        const b = ids[j];
+        const pa = pos.get(a);
+        const pb = pos.get(b);
+        if (!pa || !pb) continue;
+        let dx = pb.x - pa.x;
+        let dy = pb.y - pa.y;
+        let d = Math.sqrt(dx * dx + dy * dy) || 1e-6;
+        const minSep = radii.get(a) + radii.get(b) + separationPad;
+        if (d >= minSep) continue;
+        moved = true;
+        const push = (minSep - d) / 2;
+        dx /= d;
+        dy /= d;
+        pa.x -= dx * push;
+        pa.y -= dy * push;
+        pb.x += dx * push;
+        pb.y += dy * push;
+      }
+    }
+    if (!moved) break;
+  }
+}
+
 function stableEdgeFallbackIndex(a, b) {
   const s = `${a}:${b}`;
   let h = 0;
@@ -102,6 +143,7 @@ export function geoProjectLayout(nodes, opts = {}) {
       y: offsetY + (maxY - y) * scale,
     });
   }
+  resolveCollisions(result, nodes);
   return result;
 }
 
@@ -118,8 +160,8 @@ export function directedGraphLayout(nodes, edges, {
   width = GRAPH_LAYOUT_W,
   height = GRAPH_LAYOUT_H,
   pad = GRAPH_LAYOUT_PAD,
-  collisionIters = 40,
-  separationPad = 8,
+  collisionIters = 50,
+  separationPad = 30,
 } = {}) {
   if (!nodes?.length) return new Map();
 
@@ -228,31 +270,7 @@ export function directedGraphLayout(nodes, edges, {
     }
   }
 
-  const radii = new Map(ids.map((id) => [id, radiusForGraphScale(nodeById.get(id)?.scale)]));
-
-  for (let iter = 0; iter < collisionIters; iter++) {
-    for (let i = 0; i < ids.length; i++) {
-      for (let j = i + 1; j < ids.length; j++) {
-        const a = ids[i];
-        const b = ids[j];
-        const pa = pos.get(a);
-        const pb = pos.get(b);
-        if (!pa || !pb) continue;
-        let dx = pb.x - pa.x;
-        let dy = pb.y - pa.y;
-        let d = Math.sqrt(dx * dx + dy * dy) || 1e-6;
-        const minSep = radii.get(a) + radii.get(b) + separationPad;
-        if (d >= minSep) continue;
-        const push = (minSep - d) / 2;
-        dx /= d;
-        dy /= d;
-        pa.x -= dx * push;
-        pa.y -= dy * push;
-        pb.x += dx * push;
-        pb.y += dy * push;
-      }
-    }
-  }
+  resolveCollisions(pos, nodes, { iterations: collisionIters, separationPad });
 
   let minX = Infinity;
   let minY = Infinity;
@@ -357,6 +375,8 @@ export function forceDirectedLayout(nodes, edges, { width = 600, height = 400, i
       p.y += v.y;
     });
   }
+
+  resolveCollisions(pos, nodes.map((n) => ({ id: n })));
 
   let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
   pos.forEach(({ x, y }) => {

@@ -29,6 +29,7 @@ export function useNarratorQueue({
   playback,
   settings,
   voicePools,
+  perVoiceVolumes,
   state,
   dispatch,
   hasApiKey,
@@ -73,6 +74,14 @@ export function useNarratorQueue({
   const loadingSegmentsRef = useRef(new Set());
   const streamingRef = useRef(null);
   const processStreamingQueueRef = useRef(null);
+  const perVoiceVolumesRef = useRef(perVoiceVolumes);
+  perVoiceVolumesRef.current = perVoiceVolumes;
+
+  const computeVolume = (voiceId) => {
+    const base = (settings.dialogueVolume ?? 80) / 100;
+    const voiceMul = (perVoiceVolumesRef.current?.[voiceId] ?? 100) / 100;
+    return base * voiceMul;
+  };
 
   const setCurrentMessageId = useCallback((msgId) => {
     setCurrentMessageIdRaw(msgId);
@@ -161,7 +170,8 @@ export function useNarratorQueue({
       }
 
       const audio = new Audio(playableAudioUrl);
-      audio.volume = (settings.dialogueVolume ?? 80) / 100;
+      audio._voiceId = activeVoiceId;
+      audio.volume = computeVolume(activeVoiceId);
       const baseRate = (dialogueSpeed || 100) / 100;
       const pacingMul = PACING_SPEED_MULTIPLIERS[scenePacing] || 1.0;
       const natural = clampRate(baseRate * pacingMul, 0.5, MAX_NATURAL_PLAYBACK_RATE);
@@ -386,7 +396,8 @@ export function useNarratorQueue({
             const playableAudioUrl = apiClient.resolveMediaUrl(prefetched.audioUrl);
             objectUrlsRef.current.push(playableAudioUrl);
             const audio = new Audio(playableAudioUrl);
-            audio.volume = (settings.dialogueVolume ?? 80) / 100;
+            audio._voiceId = voiceId;
+            audio.volume = computeVolume(voiceId);
             const baseRate = (dialogueSpeed || 100) / 100;
             const pacingMul = PACING_SPEED_MULTIPLIERS[scenePacing] || 1.0;
             const natural = clampRate(baseRate * pacingMul, 0.5, MAX_NATURAL_PLAYBACK_RATE);
@@ -550,7 +561,8 @@ export function useNarratorQueue({
         const playableAudioUrl = apiClient.resolveMediaUrl(result.audioUrl);
         objectUrlsRef.current.push(playableAudioUrl);
         const audio = new Audio(playableAudioUrl);
-        audio.volume = (settings.dialogueVolume ?? 80) / 100;
+        audio._voiceId = voiceId;
+        audio.volume = computeVolume(voiceId);
         const baseRate = (dialogueSpeed || 100) / 100;
         const pacingMul = PACING_SPEED_MULTIPLIERS[s.scenePacing] || 1.0;
         const natural = clampRate(baseRate * pacingMul, 0.5, MAX_NATURAL_PLAYBACK_RATE);

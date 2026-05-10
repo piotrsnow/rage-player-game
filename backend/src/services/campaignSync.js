@@ -418,6 +418,9 @@ export async function reconstructFromNormalized(campaignId, coreState, { current
       disposition: n.disposition,
       alive: n.alive,
       lastLocation: n.lastLocation,
+      locationRef: (n.lastLocationKind && n.lastLocationId)
+        ? { kind: n.lastLocationKind, id: n.lastLocationId }
+        : null,
       factionId: n.factionId,
       notes: n.notes,
       race: n.race,

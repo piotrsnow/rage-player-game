@@ -7,7 +7,7 @@ import { useNarratorQueue } from './narrator/useNarratorQueue';
 import { STATES } from './narrator/narratorUtils';
 
 export function useNarrator({ viewerMode = false, shareToken = null, backendUrl = null } = {}) {
-  const { settings, hasApiKey, voicePools } = useSettings();
+  const { settings, hasApiKey, voicePools, perVoiceVolumes } = useSettings();
   const { state, dispatch } = useGame();
 
   const coordinatorSessionRef = useRef(null);
@@ -25,6 +25,7 @@ export function useNarrator({ viewerMode = false, shareToken = null, backendUrl 
 
   const playback = useNarratorPlayback({
     settings,
+    perVoiceVolumes,
     dispatch,
     viewerMode,
     coordinatorSessionRef,
@@ -36,6 +37,7 @@ export function useNarrator({ viewerMode = false, shareToken = null, backendUrl 
     playback,
     settings,
     voicePools,
+    perVoiceVolumes,
     state,
     dispatch,
     hasApiKey,

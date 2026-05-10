@@ -60,6 +60,38 @@ export function useIdleTimer({
     setFastMode((prev) => !prev);
   }, []);
 
+  const runIdleCheck = useCallback((forceRoll) => {
+    if (isRolling) return false;
+
+    const checkIdx = checkIndexRef.current;
+    const threshold = getThreshold(checkIdx);
+    const roll = forceRoll ?? rollPercentage();
+    const triggered = roll <= threshold;
+
+    checkIndexRef.current = checkIdx + 1;
+
+    setLastRoll({ roll, threshold, triggered });
+    setIsRolling(true);
+
+    if (rollTimeoutRef.current) {
+      clearTimeout(rollTimeoutRef.current);
+      rollTimeoutRef.current = null;
+    }
+    rollTimeoutRef.current = setTimeout(() => {
+      setIsRolling(false);
+      if (triggered) {
+        onIdleEventRef.current?.({ roll, threshold });
+      }
+    }, ROLL_DISPLAY_MS);
+
+    return true;
+  }, [isRolling]);
+
+  const triggerManualCheck = useCallback(() => {
+    if (!timerActive || paused || !documentVisible) return false;
+    return runIdleCheck(1);
+  }, [timerActive, paused, documentVisible, runIdleCheck]);
+
   // Reset when scene changes
   useEffect(() => {
     if (sceneId !== sceneIdRef.current) {
@@ -75,6 +107,17 @@ export function useIdleTimer({
     document.addEventListener('visibilitychange', onVisibilityChange);
     return () => document.removeEventListener('visibilitychange', onVisibilityChange);
   }, []);
+
+  // Mouse movement resets idle countdown (user is not AFK)
+  useEffect(() => {
+    if (!timerActive) return;
+    const onMouseMove = () => {
+      setIdleSeconds(0);
+      checkIndexRef.current = 0;
+    };
+    window.addEventListener('mousemove', onMouseMove);
+    return () => window.removeEventListener('mousemove', onMouseMove);
+  }, [timerActive]);
 
   // Start logic: wait for narrator to finish, or use grace period
   useEffect(() => {
@@ -117,22 +160,8 @@ export function useIdleTimer({
         const checkIdx = checkIndexRef.current;
         const checkAt = getCheckSeconds(checkIdx);
 
-        if (next >= checkAt && !isRolling) {
-          const threshold = getThreshold(checkIdx);
-          const roll = rollPercentage();
-          const triggered = roll <= threshold;
-
-          checkIndexRef.current = checkIdx + 1;
-
-          setLastRoll({ roll, threshold, triggered });
-          setIsRolling(true);
-
-          rollTimeoutRef.current = setTimeout(() => {
-            setIsRolling(false);
-            if (triggered) {
-              onIdleEventRef.current?.({ roll, threshold });
-            }
-          }, ROLL_DISPLAY_MS);
+        if (next >= checkAt) {
+          runIdleCheck();
         }
 
         return next;
@@ -140,7 +169,7 @@ export function useIdleTimer({
     }, tickMs);
 
     return () => clearInterval(interval);
-  }, [timerActive, paused, isRolling, fastMode, documentVisible]);
+  }, [timerActive, paused, fastMode, documentVisible, runIdleCheck]);
 
   useEffect(() => {
     return () => {
@@ -157,5 +186,6 @@ export function useIdleTimer({
     fastMode,
     resetTimer,
     toggleFastMode,
+    triggerManualCheck,
   };
 }

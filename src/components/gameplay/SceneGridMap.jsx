@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { filterNpcsHere } from '../../utils/npcLocation';
 
 const PASSABLE_TILE_TYPES = new Set(['P', 'F', 'D', 'E', 'I', 'N', '.']);
 
@@ -212,10 +213,11 @@ export default function SceneGridMap({
       playerNames.add(characterName.toLowerCase());
     }
 
-    const npcsHere = (world?.npcs || []).filter((npc) => {
-      if (!npc?.name || npc.alive === false) return false;
-      return npc.lastLocation?.toLowerCase() === world?.currentLocation?.toLowerCase();
-    });
+    const npcsHere = filterNpcsHere(
+      world?.npcs || [],
+      world?.currentLocationRef,
+      world?.currentLocation,
+    );
 
     for (const npc of npcsHere) {
       if (out.some((e) => e.name?.toLowerCase() === npc.name.toLowerCase())) continue;

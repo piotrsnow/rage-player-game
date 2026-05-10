@@ -583,7 +583,18 @@ export async function adminLivingWorldRoutes(fastify) {
 
   // Admin LocationGraph modal (world scope) — full LocationEdge graph + orphans,
   // canonical WorldNPC occupants, campaigns linked per discovery / current pose / sandbox.
-  fastify.get('/world-graph', guard(), async () => {
+  fastify.get('/world-graph', guard({
+    schema: {
+      querystring: {
+        type: 'object',
+        additionalProperties: false,
+        properties: {
+          showOrphans: BOOL_STRING,
+        },
+      },
+    },
+  }), async (request) => {
+    const showOrphans = request.query.showOrphans === 'true';
     let { nodes: nodeMap, edges } = await loadWorldGraph();
 
     const seenWorldIds = new Set();
@@ -593,19 +604,28 @@ export async function adminLivingWorldRoutes(fastify) {
       else if (row._kind === LOCATION_KIND_CAMPAIGN) seenCampaignLocIds.add(row.id);
     }
 
-    const [orphanWorldRows, orphanCampaignRows] = await Promise.all([
-      seenWorldIds.size > 0
-        ? prisma.worldLocation.findMany({ where: { id: { notIn: [...seenWorldIds] } } })
-        : prisma.worldLocation.findMany(),
-      seenCampaignLocIds.size > 0
-        ? prisma.campaignLocation.findMany({ where: { id: { notIn: [...seenCampaignLocIds] } } })
-        : prisma.campaignLocation.findMany(),
-    ]);
+    const orphanWorldWhere = {
+      ...(seenWorldIds.size > 0 ? { id: { notIn: [...seenWorldIds] } } : {}),
+      ...(!showOrphans ? {
+        globallyActive: true,
+        softDeletedAt: null,
+        NOT: { canonicalName: { startsWith: '__draft::' } },
+      } : {}),
+    };
+    const orphanWorldRows = await prisma.worldLocation.findMany({ where: orphanWorldWhere });
+
     for (const r of orphanWorldRows) {
       nodeMap.set(`${LOCATION_KIND_WORLD}:${r.id}`, { ...r, _kind: LOCATION_KIND_WORLD });
     }
-    for (const r of orphanCampaignRows) {
-      nodeMap.set(`${LOCATION_KIND_CAMPAIGN}:${r.id}`, { ...r, _kind: LOCATION_KIND_CAMPAIGN });
+
+    if (showOrphans) {
+      const orphanCampaignWhere = seenCampaignLocIds.size > 0
+        ? { id: { notIn: [...seenCampaignLocIds] } }
+        : {};
+      const orphanCampaignRows = await prisma.campaignLocation.findMany({ where: orphanCampaignWhere });
+      for (const r of orphanCampaignRows) {
+        nodeMap.set(`${LOCATION_KIND_CAMPAIGN}:${r.id}`, { ...r, _kind: LOCATION_KIND_CAMPAIGN });
+      }
     }
 
     /** @typedef {{ id: string, name: string, discoveredAt: string|null, relations: string[] }} CampaignRefMerged */
@@ -861,6 +881,49 @@ export async function adminLivingWorldRoutes(fastify) {
       factionOverlay,
       occupants,
     };
+  });
+
+  // ── Cleanup stale __draft:: WorldLocation registry entries ──────────
+  fastify.delete('/draft-locations', guard({
+    config: { rateLimit: { max: 1, timeWindow: '1 minute' } },
+    schema: {
+      querystring: {
+        type: 'object',
+        additionalProperties: false,
+        properties: {
+          olderThanDays: { type: 'integer', minimum: 0, maximum: 3650, default: 30 },
+        },
+      },
+    },
+  }), async (request) => {
+    const days = request.query.olderThanDays ?? 30;
+    const cutoff = new Date(Date.now() - days * 86_400_000);
+
+    const liveCampaignIds = new Set(
+      (await prisma.campaign.findMany({ select: { id: true } })).map((c) => c.id),
+    );
+
+    const drafts = await prisma.worldLocation.findMany({
+      where: {
+        canonicalName: { startsWith: '__draft::' },
+        createdAt: { lt: cutoff },
+      },
+      select: { id: true, canonicalName: true },
+    });
+
+    const toDelete = drafts.filter((d) => {
+      const parts = d.canonicalName.split('::');
+      const campaignId = parts[1];
+      return !campaignId || !liveCampaignIds.has(campaignId);
+    });
+
+    if (toDelete.length > 0) {
+      await prisma.worldLocation.deleteMany({
+        where: { id: { in: toDelete.map((d) => d.id) } },
+      });
+    }
+
+    return { deleted: toDelete.length };
   });
 
   // ── Bulk sprite generation jobs ─────────────────────────────────────

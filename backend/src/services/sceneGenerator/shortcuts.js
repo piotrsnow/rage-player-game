@@ -113,9 +113,14 @@ export function tryTradeShortcut(intentResult, coreState, dbNpcs) {
   }
   if (!matchedNpc) {
     const currentLoc = coreState.world?.currentLocation;
-    matchedNpc = dbNpcs.find(n =>
-      n.alive !== false && (!currentLoc || n.lastLocation === currentLoc)
-    ) || dbNpcs.find(n => n.alive !== false);
+    const curRef = coreState.world?.currentLocationRef;
+    matchedNpc = dbNpcs.find(n => {
+      if (n.alive === false) return false;
+      if (curRef && n.lastLocationKind && n.lastLocationId) {
+        return n.lastLocationKind === curRef.kind && n.lastLocationId === curRef.id;
+      }
+      return !currentLoc || n.lastLocation === currentLoc;
+    }) || dbNpcs.find(n => n.alive !== false);
   }
 
   if (!matchedNpc) return { handled: false };

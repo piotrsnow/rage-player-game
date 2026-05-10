@@ -18,7 +18,7 @@ function RarityBadge({ rarity, t }) {
   const label = t(`achievements.rarity.${rarity}`, { defaultValue: rarity });
   return (
     <span
-      className={`text-[9px] font-label uppercase tracking-wider px-1.5 py-0.5 rounded-sm border ${RARITY_STYLES[rarity] || RARITY_STYLES.common}`}
+      className={`text-[13.5px] font-label uppercase tracking-wider px-1.5 py-0.5 rounded-sm border ${RARITY_STYLES[rarity] || RARITY_STYLES.common}`}
     >
       {label}
     </span>
@@ -30,31 +30,33 @@ function AchievementCard({ achievement, unlocked, t }) {
 
   return (
     <div
-      className={`relative p-2.5 rounded-sm border border-outline-variant/10 bg-surface-container/35 backdrop-blur-sm transition-colors ${
-        unlocked ? '' : 'opacity-55 grayscale-[0.35]'
+      className={`relative p-2.5 rounded-sm border bg-surface-container-high/75 shadow-[0_10px_30px_rgba(0,0,0,0.22)] backdrop-blur-sm transition-colors ${
+        unlocked
+          ? 'border-primary/30 bg-primary/[0.14] shadow-[0_10px_30px_rgba(0,0,0,0.22),0_0_12px_rgba(197,154,255,0.08)]'
+          : 'border-outline-variant/30 opacity-70 grayscale-[0.25]'
       }`}
     >
       <div className="flex gap-2.5">
         <div className="relative shrink-0 w-10 h-10 rounded-sm bg-surface-dim/80 border border-outline-variant/15 flex items-center justify-center">
-          <span className={`material-symbols-outlined text-xl ${unlocked ? 'text-primary' : 'text-outline'}`}>{icon}</span>
+          <span className={`material-symbols-outlined text-[30px] ${unlocked ? 'text-primary' : 'text-outline'}`}>{icon}</span>
           {!unlocked && (
             <span
               className="absolute inset-0 flex items-center justify-center rounded-sm bg-black/45 backdrop-blur-[2px]"
               aria-hidden
             >
-              <span className="material-symbols-outlined text-lg text-on-surface/90">lock</span>
+              <span className="material-symbols-outlined text-[27px] text-on-surface/90">lock</span>
             </span>
           )}
         </div>
         <div className="min-w-0 flex-1 space-y-1">
           <div className="flex items-start justify-between gap-2">
-            <h3 className="text-[11px] font-bold text-on-surface leading-tight">{name}</h3>
+            <h3 className="text-[16.5px] font-bold text-on-surface leading-tight">{name}</h3>
             <RarityBadge rarity={rarity} t={t} />
           </div>
-          <p className="text-[10px] text-on-surface-variant leading-snug line-clamp-3">{description}</p>
+          <p className="text-[15px] text-on-surface-variant leading-snug line-clamp-3">{description}</p>
           {typeof xpReward === 'number' && (
-            <div className="flex items-center gap-1 text-[10px] text-primary/90 font-label uppercase tracking-wide">
-              <span className="material-symbols-outlined text-xs">bolt</span>
+            <div className="flex items-center gap-1 text-[15px] text-primary/90 font-label uppercase tracking-wide">
+              <span className="material-symbols-outlined text-lg">bolt</span>
               {t('achievements.xpReward', { count: xpReward, defaultValue: '+{{count}} XP' })}
             </div>
           )}
@@ -107,17 +109,17 @@ export default function AchievementsPanel({ achievementState, onClose }) {
       <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
       <div
         ref={modalRef}
-        className="relative w-full max-w-2xl max-h-[85vh] bg-surface-container-highest/80 backdrop-blur-2xl border border-outline-variant/15 rounded-sm flex flex-col shadow-2xl animate-fade-in"
+        className="relative w-full max-w-5xl max-h-[85vh] bg-surface-container-highest/80 backdrop-blur-2xl border border-outline-variant/15 rounded-sm flex flex-col shadow-2xl animate-fade-in"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between px-5 py-3.5 border-b border-outline-variant/10 shrink-0">
           <div className="flex items-center gap-2 min-w-0">
-            <span className="material-symbols-outlined text-primary text-xl shrink-0">emoji_events</span>
+            <span className="material-symbols-outlined text-primary text-[30px] shrink-0">emoji_events</span>
             <div className="min-w-0">
-              <h2 className="text-sm font-bold text-on-surface uppercase tracking-widest truncate">
+              <h2 className="text-[21px] font-bold text-on-surface uppercase tracking-widest truncate">
                 {t('achievements.title', { defaultValue: 'Achievements' })}
               </h2>
-              <p className="text-[10px] text-on-surface-variant font-label uppercase tracking-wider mt-0.5 tabular-nums">
+              <p className="text-[15px] text-on-surface-variant font-label uppercase tracking-wider mt-0.5 tabular-nums">
                 {t('achievements.progressLabel', {
                   unlocked: progress.unlocked,
                   total: progress.total,
@@ -132,7 +134,7 @@ export default function AchievementsPanel({ achievementState, onClose }) {
             type="button"
             onClick={onClose}
             aria-label={t('common.close')}
-            className="material-symbols-outlined text-lg text-outline hover:text-on-surface transition-colors shrink-0"
+            className="material-symbols-outlined text-[27px] text-outline hover:text-on-surface transition-colors shrink-0"
           >
             close
           </button>
@@ -157,7 +159,7 @@ export default function AchievementsPanel({ achievementState, onClose }) {
             />
           </div>
           {catLabel && (
-            <p className="text-[9px] text-on-surface-variant font-label uppercase tracking-widest mt-1.5">
+            <p className="text-[13.5px] text-on-surface-variant font-label uppercase tracking-widest mt-1.5">
               {t('achievements.categoryProgress', {
                 category: t(`achievements.categories.${activeCategory}`, {
                   defaultValue: ACHIEVEMENT_CATEGORIES[activeCategory]?.name,
@@ -180,14 +182,14 @@ export default function AchievementsPanel({ achievementState, onClose }) {
                 key={key}
                 type="button"
                 onClick={() => setActiveCategory(key)}
-                className={`flex items-center gap-1.5 px-2.5 py-2 text-[9px] font-label uppercase tracking-widest transition-colors whitespace-nowrap border-b-2 ${
+                className={`flex items-center gap-1.5 px-2.5 py-2 text-[13.5px] font-label uppercase tracking-widest transition-colors whitespace-nowrap border-b-2 ${
                   isActive
                     ? 'text-primary border-primary'
                     : 'text-outline border-transparent hover:text-on-surface-variant hover:border-outline-variant/30'
                 }`}
                 title={cProg ? `${cProg.unlocked}/${cProg.total}` : undefined}
               >
-                <span className="material-symbols-outlined text-sm" style={isActive && meta?.color ? { color: meta.color } : undefined}>
+                <span className="material-symbols-outlined text-[21px]" style={isActive && meta?.color ? { color: meta.color } : undefined}>
                   {meta?.icon}
                 </span>
                 {t(`achievements.categories.${key}`, { defaultValue: meta?.name })}
@@ -199,8 +201,8 @@ export default function AchievementsPanel({ achievementState, onClose }) {
         <div className="flex-1 min-h-0 overflow-y-auto custom-scrollbar p-4">
           {list.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-10 gap-2 text-outline">
-              <span className="material-symbols-outlined text-3xl">inventory_2</span>
-              <p className="text-[10px] font-label uppercase tracking-widest">
+              <span className="material-symbols-outlined text-[45px]">inventory_2</span>
+              <p className="text-[15px] font-label uppercase tracking-widest">
                 {t('achievements.emptyCategory', { defaultValue: 'No achievements in this category' })}
               </p>
             </div>
@@ -219,10 +221,10 @@ export default function AchievementsPanel({ achievementState, onClose }) {
         </div>
 
         <div className="shrink-0 border-t border-outline-variant/10 bg-surface-container/25 px-4 py-3">
-          <div className="text-[9px] font-label uppercase tracking-widest text-on-surface-variant mb-2">
+          <div className="text-[13.5px] font-label uppercase tracking-widest text-on-surface-variant mb-2">
             {t('achievements.statsHeading', { defaultValue: 'Tracker' })}
           </div>
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-[10px]">
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-[15px]">
             <StatPill icon="history" label={t('achievements.stats.scenesPlayed', { defaultValue: 'Scenes' })} value={scenesPlayed} />
             <StatPill icon="swords" label={t('achievements.stats.combatWins', { defaultValue: 'Combat wins' })} value={combatWins} />
             <StatPill icon="skull" label={t('achievements.stats.enemiesDefeated', { defaultValue: 'Enemies defeated' })} value={enemiesDefeated} />
@@ -240,12 +242,10 @@ export default function AchievementsPanel({ achievementState, onClose }) {
 
 function StatPill({ icon, label, value }) {
   return (
-    <div className="flex items-center gap-2 rounded-sm border border-outline-variant/10 bg-surface-container/40 px-2 py-1.5">
-      <span className="material-symbols-outlined text-sm text-primary shrink-0">{icon}</span>
-      <div className="min-w-0">
-        <div className="text-[9px] text-on-surface-variant uppercase tracking-wide truncate leading-tight">{label}</div>
-        <div className="text-xs font-bold text-on-surface tabular-nums">{value}</div>
-      </div>
+    <div className="flex items-center gap-2 rounded-sm border border-outline-variant/30 bg-surface-container-high/70 px-2.5 py-2.5 shadow-[0_8px_22px_rgba(0,0,0,0.18)]">
+      <span className="material-symbols-outlined text-[24px] text-primary shrink-0">{icon}</span>
+      <span className="text-lg font-bold text-on-surface tabular-nums shrink-0">{value}</span>
+      <span className="text-[13.5px] text-on-surface-variant uppercase tracking-wide truncate">{label}</span>
     </div>
   );
 }

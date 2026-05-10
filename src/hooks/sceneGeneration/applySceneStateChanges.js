@@ -6,6 +6,7 @@ import { gameData } from '../../services/gameDataService';
 import { getGameState } from '../../stores/gameStore';
 import { shortId } from '../../utils/ids';
 import { devLog } from '../../stores/devEventLogStore';
+import { isNpcAtLocation } from '../../utils/npcLocation';
 
 /**
  * Build a combat-enemy payload from a full NPC sheet (shape from
@@ -46,12 +47,8 @@ export function injectCombatFallback(result, state, playerAction, isFirstScene, 
   const currentRef = state.world?.currentLocationRef || null;
   const fallbackNpc = (state.world?.npcs || []).find((npc) => {
     if (!npc?.name || npc.alive === false) return false;
-    // Faza 3a — preferuj match po composite ref. Fallback: string.
-    if (currentRef && npc.locationRef) {
-      return npc.locationRef.kind === currentRef.kind && npc.locationRef.id === currentRef.id;
-    }
-    if (!currentLocation) return true;
-    return String(npc.lastLocation || '').trim().toLowerCase() === String(currentLocation).trim().toLowerCase();
+    if (!currentLocation && !currentRef) return true;
+    return isNpcAtLocation(npc, currentRef, currentLocation);
   });
 
   // NPC-first: when the fallback opponent has a generated character sheet,
