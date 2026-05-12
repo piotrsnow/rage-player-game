@@ -178,7 +178,7 @@ ${sceneBlock || '(brak scen)'}`;
 
   const favorability = clampInt(parsed?.favorability ?? 0, -15, 15);
   const DC = 51;
-  const sum = successRoll + baseIntelligence + favorability;
+  const sum = successRoll + baseIntelligence + luck + favorability;
   const luckRoll = rollPercentile100();
   const successByLuck = isLuckySuccess(luck, luckRoll);
   const successByThreshold = sum >= DC;
@@ -190,11 +190,24 @@ ${sceneBlock || '(brak scen)'}`;
 
   const powerTier = POWER_TIERS.includes(parsed?.powerTier) ? parsed.powerTier : resolvedPowerTier;
   const hasTeacher = Boolean(parsed?.hasTeacher);
-  const existingSpellName = normalizeExistingSpellName(parsed?.existingSpellName, candidates);
+  let existingSpellName = normalizeExistingSpellName(parsed?.existingSpellName, candidates);
   const inventedSpell = sanitizeInventedSpell(parsed?.inventedSpell, powerTier === 'legendary' ? 5 : 2);
 
   const verdict = sanitizeNarrative(parsed?.verdict) || defaultFailVerdict(sum, DC);
   const narrativeComment = sanitizeNarrative(parsed?.narrativeComment);
+
+  if (outcome === 'success_new' && !inventedSpell) {
+    if (existingSpellName) {
+      outcome = 'success_existing';
+    } else {
+      const knownLower = new Set(knownSpells.map((n) => n.toLowerCase()));
+      const fallback = candidates.find((c) => !knownLower.has(String(c.name || '').toLowerCase()));
+      if (fallback) {
+        outcome = 'success_existing';
+        existingSpellName = fallback.name;
+      }
+    }
+  }
 
   const iconNameForFallback =
     outcome === 'success_existing'
@@ -214,6 +227,7 @@ ${sceneBlock || '(brak scen)'}`;
     sum,
     favorability,
     intelligence: baseIntelligence,
+    luck,
     hasTeacher,
     powerTier,
     existingSpellName,
