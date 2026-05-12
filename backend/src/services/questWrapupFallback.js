@@ -139,7 +139,7 @@ export async function generateWrapupFallback({
     const callPromise = callAIJson({
       provider,
       modelTier: 'nano',
-      taskCategory: 'intentClassification',
+      taskCategory: 'questWrapup',
       systemPrompt: prompts.system,
       userPrompt: prompts.user,
       maxTokens: 250,

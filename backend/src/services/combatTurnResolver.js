@@ -188,7 +188,7 @@ export async function resolveCombatTurn({
     provider,
     model,
     modelTier,
-    taskCategory: 'sceneGeneration',
+    taskCategory: 'combatResolution',
     systemPrompt: prompts.system,
     userPrompt: prompts.user,
     maxTokens: 500,

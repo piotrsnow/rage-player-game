@@ -1,5 +1,6 @@
 import { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
+import { getAiTaskDefaultTier } from '../../shared/domain/aiTaskCategories.js';
 import { storage } from '../services/storage';
 import { apiClient } from '../services/apiClient';
 import { gameData } from '../services/gameDataService';
@@ -393,15 +394,7 @@ export function SettingsProvider({ children }) {
     const provider = settings.aiProvider || 'openai';
     const override = taskModelConfig.models?.[taskCategory]?.[provider];
     if (override) return override;
-    const tierMap = {
-      sceneGeneration: 'premium',
-      campaignGeneration: 'premium',
-      intentClassification: 'nano',
-      memoryExtraction: 'nanoReasoning',
-      imagePrompt: 'nano',
-      auxiliary: 'standard',
-    };
-    const tier = tierMap[taskCategory] || 'premium';
+    const tier = getAiTaskDefaultTier(taskCategory);
     return taskModelConfig.defaults?.[tier]?.[provider] || null;
   }, [settings.aiProvider, taskModelConfig]);
 

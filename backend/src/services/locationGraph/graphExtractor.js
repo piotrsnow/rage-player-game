@@ -88,6 +88,7 @@ Extract graph updates as JSON.`;
       provider,
       modelTier: 'nano',
       model: modelOverride,
+      taskCategory: 'graphExtraction',
       systemPrompt: SYSTEM_PROMPT,
       userPrompt,
       maxTokens: 1500,

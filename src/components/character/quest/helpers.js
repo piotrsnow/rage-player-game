@@ -10,6 +10,25 @@ export const TYPE_ICONS = {
   personal: 'person',
 };
 
+const OBJECTIVE_TYPE_PATTERNS = [
+  ['kill', /\b(zabij|pokonaj|zlikwiduj|zgładź|wyeliminuj|ubij|rozpraw się|przebij się|przebić się)\b/i],
+  ['escort', /\b(eskortuj|odprowadź|ochroń|doprowadź|towarzysz)\b/i],
+  ['fetch', /\b(znajdź|odnajdź|odzyskaj|zdobądź|przynieś|weź|zabierz)\b/i],
+  ['deliver', /\b(dostarcz|zanieś|przekaż|oddaj|zwróć)\b/i],
+  ['craft', /\b(stwórz|wytwórz|wykuj|uwarz|napraw|zbuduj)\b/i],
+  ['explore', /\b(zbadaj|odwiedź|dotrzyj|wejdź|przeszukaj|sprawdź)\b/i],
+  ['interact', /\b(porozmawiaj|wypytaj|przekonaj|negocjuj|użyj|wyciągnij|poznaj)\b/i],
+  ['survive', /\b(przetrwaj|ucieknij|uniknij|ukryj się|obroń się)\b/i],
+  ['gather', /\b(zbierz|nazbieraj|pozyskaj|zgromadź)\b/i],
+];
+
+export function resolveObjectiveType(obj) {
+  if (obj?.objectiveType) return obj.objectiveType;
+  const description = String(obj?.description || '').toLowerCase();
+  const match = OBJECTIVE_TYPE_PATTERNS.find(([, pattern]) => pattern.test(description));
+  return match?.[0] || null;
+}
+
 // Helpers ekstrakcji statusu z objective. Backward-compat:
 //  - legacy: bool `completed`, brak `status` → pochodne pending/done
 //  - graph (oś 1): explicit `status` field z BE (pending/done/locked/skipped/failed)

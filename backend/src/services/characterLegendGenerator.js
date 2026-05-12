@@ -59,7 +59,7 @@ export async function generateCharacterLegend({
     userApiKeys,
     resolvedProvider === 'anthropic' ? 'Anthropic' : 'OpenAI',
   );
-  const overrideModel = await resolveModelForTask('auxiliary', resolvedProvider);
+  const overrideModel = await resolveModelForTask('characterLegend', resolvedProvider);
   const resolvedModel = overrideModel || model || config.aiModels.standard[resolvedProvider];
 
   const summary = summarizeCharacter(character);

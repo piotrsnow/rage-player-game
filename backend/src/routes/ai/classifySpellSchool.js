@@ -76,9 +76,10 @@ Zwróć WYŁĄCZNIE poprawny JSON bez dodatkowego tekstu, w kształcie:
       try {
         const { text } = await callAIJson({
           modelTier: 'nano',
+          taskCategory: 'spellClassification',
           systemPrompt,
           userPrompt,
-        maxTokens: 900,
+          maxTokens: 900,
           temperature: 0.1,
           userApiKeys,
           userId,

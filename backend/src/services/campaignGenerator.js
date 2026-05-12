@@ -2,8 +2,10 @@ import { requireServerApiKey } from './apiKeyService.js';
 import { parseProviderError } from './aiErrors.js';
 import { config } from '../config.js';
 import { resolveModelForTask } from './serverConfig.js';
+import { logLlmCallStart, logLlmCallFinish, logLlmCallFail } from './llmCallLogger.js';
 import { pickStartSpawn, loadRoadNeighborsForSettlement } from './livingWorld/startSpawnPicker.js';
 import { rememberStartSpawn, attachInitialLocations } from './livingWorld/startSpawnCache.js';
+import { rollObjectiveTypes } from '../../../shared/domain/questObjectiveTypes.js';
 
 export async function generateCampaignStream(settings, { provider = 'openai', model = null, language = 'en', userApiKeys = null, userId = null } = {}, onEvent) {
   const resolvedProvider = provider === 'anthropic' ? 'anthropic' : 'openai';
@@ -48,6 +50,15 @@ export async function generateCampaignStream(settings, { provider = 'openai', mo
 
   const systemPrompt = 'You are a master RPG campaign designer. Create rich, immersive campaign foundations that draw players into the story. Always respond with valid JSON only.';
   const userPrompt = buildCampaignCreationPrompt(settings, language, { startSpawn, worldNeighborhood });
+  const logId = await logLlmCallStart({
+    userId,
+    type: 'campaignGeneration',
+    label: 'Campaign generation',
+    provider: resolvedProvider,
+    model: resolvedModel,
+    request: { userPrompt },
+  });
+  const t0 = Date.now();
 
   try {
     const streamFn = resolvedProvider === 'anthropic' ? callAnthropicStreaming : callOpenAIStreaming;
@@ -59,6 +70,7 @@ export async function generateCampaignStream(settings, { provider = 'openai', mo
     );
 
     const parsed = parseResponse(accumulated);
+    await logLlmCallFinish(logId, { durationMs: Date.now() - t0, response: { text: accumulated } });
     // Forward AI's `initialLocations` to the BE-side cache so POST /v1/campaigns
     // (next request from this user) can apply them. FE round-tripping isn't an
     // option — useGameState ignores `aiResult.initialLocations` and stores
@@ -70,6 +82,7 @@ export async function generateCampaignStream(settings, { provider = 'openai', mo
     }
     onEvent({ type: 'complete', data: parsed });
   } catch (err) {
+    await logLlmCallFail(logId, err);
     onEvent({ type: 'error', error: err.message || 'Campaign generation failed', code: err.code || 'STREAM_ERROR' });
   }
 }
@@ -266,6 +279,10 @@ const LENGTH_PARAMS = {
 function buildCampaignCreationPrompt(settings, language = 'en', { startSpawn = null, worldNeighborhood = [] } = {}) {
   const lp = LENGTH_PARAMS[settings.length] || LENGTH_PARAMS.Medium;
 
+  // Pre-roll objective types (upper bound of range → e.g. "9-12" → 12)
+  const objCountUpper = parseInt(String(lp.objectives).split('-').pop(), 10) || 9;
+  const preRolledTypes = rollObjectiveTypes(objCountUpper);
+
   const langInstruction = language === 'pl'
     ? '\n\nIMPORTANT: Write ALL text content (name, worldDescription, hook, character backstory, narrative, quest names, quest descriptions, quest completion conditions, quest objectives, world facts, suggested actions) in Polish.'
     : '';
@@ -438,15 +455,7 @@ Respond with ONLY valid JSON:
       "items": [{"id": "reward_1", "name": "${language === 'pl' ? 'Nazwa nagrody' : 'Reward item name'}", "type": "weapon|armor|trinket|consumable", "description": "${language === 'pl' ? 'Opis nagrody' : 'Reward item description'}", "rarity": "uncommon"}]
     },
     "objectives": [
-      {"id": "obj_1", "description": "${language === 'pl' ? 'Spotkaj się z NPC_1 w lokalizacji_1 — dowiedz się o problemie' : 'Meet NPC_1 at location_1 — learn about the problem'}"},
-      {"id": "obj_2", "description": "${language === 'pl' ? 'Zbierz informacje od NPC_2 w lokalizacji_2' : 'Gather information from NPC_2 at location_2'}"},
-      {"id": "obj_3", "description": "${language === 'pl' ? 'Zdobądź kluczowy przedmiot (qitem_1) z lokalizacji_3' : 'Obtain key item (qitem_1) from location_3'}"},
-      {"id": "obj_4", "description": "${language === 'pl' ? 'Przeszukaj lokalizację_4 w poszukiwaniu wskazówek' : 'Search location_4 for clues'}"},
-      {"id": "obj_5", "description": "${language === 'pl' ? 'Porozmawiaj z NPC_3 — przekonaj go do pomocy' : 'Talk to NPC_3 — convince them to help'}"},
-      {"id": "obj_6", "description": "${language === 'pl' ? 'Dostarcz przedmiot (qitem_2) do NPC_4 w lokalizacji_5' : 'Deliver item (qitem_2) to NPC_4 at location_5'}"},
-      {"id": "obj_7", "description": "${language === 'pl' ? 'Zmierz się z przeszkodą lub wrogiem w lokalizacji_6' : 'Face an obstacle or enemy at location_6'}"},
-      {"id": "obj_8", "description": "${language === 'pl' ? 'Użyj zdobytej wiedzy/przedmiotu aby rozwiązać zagadkę' : 'Use acquired knowledge/item to solve the puzzle'}"},
-      {"id": "obj_9", "description": "${language === 'pl' ? 'Wróć do zleceniodawcy z dowodem wykonania zadania' : 'Return to quest giver with proof of completion'}"}
+${preRolledTypes.map((type, i) => `      {"id": "obj_${i + 1}", "objectiveType": "${type}", "description": "${language === 'pl' ? 'opis celu pasujący do typu' : 'description matching the type'}"}`).join(',\n')}
     ],
     "questItems": [
       {"id": "qitem_1", "name": "${language === 'pl' ? 'Nazwa przedmiotu 1' : 'Item 1 name'}", "type": "key_item|document|artifact|tool|ingredient", "description": "${language === 'pl' ? 'Co to jest i dlaczego jest ważne' : 'What it is and why it matters'}", "relatedObjectiveId": "obj_3", "location": "${language === 'pl' ? 'Gdzie go znaleźć lub kto go posiada' : 'Where to find it or who has it'}"},
@@ -483,6 +492,7 @@ CAMPAIGN LENGTH: "${settings.length}" → target ~${lp.totalScenes} scenes (${lp
 
 IMPORTANT for initialQuest and initialNPCs:
 - The initialQuest MUST have ${lp.objectives} objectives forming a coherent multi-step story arc — NOT generic placeholders.
+- Each objective has a pre-assigned "objectiveType". Write the description to match the type (kill = combat/elimination, escort = protecting someone during travel, fetch = finding/retrieving, deliver = transporting to recipient, craft = creating/assembling, explore = searching/investigating a place, interact = conversation/negotiation, survive = enduring danger, gather = collecting multiple items). Do NOT change objectiveType values.
 - Mix objective types: NPC conversations/meetings (at least ${lp.npcMeetings}), item retrieval (at least ${lp.itemRetrieval}), location exploration/investigation (at least ${lp.locationExplore}), combat/confrontation (at least ${lp.combat}), puzzle/skill challenge (at least ${lp.puzzle}).
 - Each objective referencing an NPC meeting MUST correspond to a named NPC in initialNPCs. Use the NPC's actual name in the objective description.
 - Each objective referencing an item MUST correspond to an entry in questItems. Use the item's actual name in the objective description.

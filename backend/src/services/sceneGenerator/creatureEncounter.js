@@ -95,6 +95,7 @@ export async function generateCreatureEncounter(campaignId, opts = {}, onEvent) 
         callAIJson({
           provider,
           modelTier: 'nano',
+          taskCategory: 'creatureEncounter',
           systemPrompt: system,
           userPrompt: user,
           maxTokens: 200,

@@ -1,4 +1,5 @@
 import { prisma } from '../lib/prisma.js';
+import { AI_TASK_CATEGORY_KEYS } from '../../../shared/domain/aiTaskCategories.js';
 
 const SINGLETON_ID = 'singleton';
 const CACHE_TTL_MS = 60_000;
@@ -6,15 +7,7 @@ const CACHE_TTL_MS = 60_000;
 let cached = null;
 let cachedAt = 0;
 
-export const TASK_CATEGORIES = [
-  'sceneGeneration',
-  'campaignGeneration',
-  'intentClassification',
-  'memoryExtraction',
-  'imagePrompt',
-  'storyPrompt',
-  'auxiliary',
-];
+export const TASK_CATEGORIES = AI_TASK_CATEGORY_KEYS;
 
 export async function getModelOverrides() {
   const now = Date.now();

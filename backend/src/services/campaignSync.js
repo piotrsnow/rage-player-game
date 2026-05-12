@@ -533,6 +533,8 @@ export async function reconstructFromNormalized(campaignId, coreState, { current
         objectives: (q.objectives || []).map((o) => ({
           description: o.description,
           completed: o.status === 'done',
+          objectiveType: o.objectiveType || null,
+          xpAwarded: o.xpAwarded || 0,
           progress: o.progress,
           target: o.targetAmount,
           ...(o.metadata && typeof o.metadata === 'object' ? o.metadata : {}),
@@ -589,6 +591,8 @@ export async function loadQuestsForReconcile(campaignId) {
         description: o.description,
         completed: o.status === 'done',
         status: o.status,
+        objectiveType: o.objectiveType || null,
+        xpAwarded: o.xpAwarded || 0,
         progress: o.progress,
         target: o.targetAmount,
         nodeKey: o.nodeKey || null,

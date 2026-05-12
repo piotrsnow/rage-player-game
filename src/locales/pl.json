@@ -360,8 +360,7 @@
     "tabKeys": "Klucze API",
     "tabModels": "Przypisanie modeli",
     "modelsTitle": "Przypisanie modeli do zadań",
-    "modelsSubtitle": "Wybierz model per-dostawca dla każdej kategorii zapytań AI. Puste pole = domyślny model z tieru.",
-    "modelsDefault": "— domyślny (tier) —",
+    "modelsSubtitle": "Przypisz każdy rodzaj zapytania AI do konkretnego modelu. OpenAI i Anthropic mają osobne mapy routingu.",
     "modelsSaveBtn": "Zapisz",
     "modelsSaving": "Zapisuję…",
     "modelsSaved": "Zapisano",
@@ -887,6 +886,7 @@
     "stuckHintGeneric": "Poszukaj wskazówek w świecie gry, by odkryć kolejny krok.",
     "progressLog": "Dziennik postępu",
     "progressLogEmpty": "Brak wpisów — graj dalej, a dziennik uzupełni się automatycznie",
+    "questTimeline": "Kronika zdarzeń",
     "sceneLabel": "Scena {{index}}",
     "objectiveTypes": {
       "kill": "Zabij",

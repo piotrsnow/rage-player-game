@@ -75,6 +75,7 @@ export async function summarizeOfflineActivity({
       timeoutMs,
       maxTokens: 400,
       reasoning: true,
+      taskCategory: 'npcOfflineSummary',
       taskType: 'offline-summary',
       taskLabel: 'NPC offline summary',
     });

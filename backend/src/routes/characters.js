@@ -586,7 +586,7 @@ Return JSON with exactly three fields, all written in ${isPolish ? 'Polish' : 'E
       const { text } = await callAIJson({
         provider,
         modelTier: 'nano',
-        taskCategory: 'auxiliary',
+        taskCategory: 'characterBadge',
         systemPrompt,
         userPrompt,
         maxTokens: 1000,

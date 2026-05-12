@@ -368,8 +368,7 @@
     "tabKeys": "API Keys",
     "tabModels": "Model assignment",
     "modelsTitle": "Model assignment per task",
-    "modelsSubtitle": "Choose a model per provider for each AI query category. Empty = default model from tier.",
-    "modelsDefault": "— default (tier) —",
+    "modelsSubtitle": "Route every AI query type to a concrete model. OpenAI and Anthropic keep separate routing maps.",
     "modelsSaveBtn": "Save",
     "modelsSaving": "Saving…",
     "modelsSaved": "Saved",
@@ -894,6 +893,7 @@
     "stuckHintGeneric": "Look for clues in the game world to discover the next step.",
     "progressLog": "Progress Log",
     "progressLogEmpty": "No entries yet — keep playing and the log will fill in automatically",
+    "questTimeline": "Event Chronicle",
     "sceneLabel": "Scene {{index}}",
     "objectiveTypes": {
       "kill": "Kill",

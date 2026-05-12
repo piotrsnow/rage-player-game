@@ -158,6 +158,7 @@ ${sceneBlock || '(brak scen)'}`;
 
   const { text } = await callAIJson({
     modelTier: 'premium',
+    taskCategory: 'spellInvention',
     systemPrompt,
     userPrompt,
     maxTokens: 1500,

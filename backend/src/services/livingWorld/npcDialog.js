@@ -94,7 +94,7 @@ export async function generate({
     const { text } = await callAIJson({
       provider,
       modelTier: 'standard',
-      taskCategory: 'auxiliary',
+      taskCategory: 'npcDialog',
       systemPrompt,
       userPrompt: playerMessage,
       maxTokens: 400,

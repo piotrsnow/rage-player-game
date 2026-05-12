@@ -62,7 +62,7 @@ export default function QuestLog({ active = [], completed = [], npcs = [], onVer
       </div>
 
       <div className="flex gap-5 min-h-[200px] flex-1">
-        <div className="w-2/5 min-w-0 space-y-1 overflow-y-auto max-h-[50vh] pr-1 scrollbar-thin">
+        <div className="w-1/4 min-w-0 space-y-1 overflow-y-auto max-h-[60vh] pr-1 scrollbar-thin">
           {sortedActive.map((quest) => (
             <QuestListItem
               key={quest.id}
@@ -104,7 +104,7 @@ export default function QuestLog({ active = [], completed = [], npcs = [], onVer
           )}
         </div>
 
-        <div className="w-3/5 min-w-0 bg-surface-container-highest/40 border border-outline-variant/10 rounded-sm p-5 overflow-y-auto max-h-[50vh] scrollbar-thin">
+        <div className="w-3/4 min-w-0 bg-surface-container-highest/40 border border-outline-variant/10 rounded-sm p-5 overflow-y-auto max-h-[60vh] scrollbar-thin">
           <QuestDetailPanel
             selected={selected}
             findNpc={findNpc}

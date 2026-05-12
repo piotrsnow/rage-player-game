@@ -351,7 +351,7 @@ ${currentSummary.map((f, i) => `${i + 1}. ${factText(f)}`).join('\n') || '(empty
     // before JSON output AND we now emit more fields (memory + gmNotes +
     // hooks + world/codex/knowledge/needs). 1800 leaves headroom against
     // mid-JSON truncation.
-    const result = await callNano(RUNNING_SUMMARY_SYSTEM, userPrompt, provider, { timeoutMs, maxTokens: 1800, reasoning: true, taskType: 'memory-compression', taskLabel: 'Scene memory compression' });
+    const result = await callNano(RUNNING_SUMMARY_SYSTEM, userPrompt, provider, { timeoutMs, maxTokens: 1800, reasoning: true, taskCategory: 'sceneMemoryCompression', taskType: 'memory-compression', taskLabel: 'Scene memory compression' });
     if (!result) {
       log.warn({ campaignId, sceneIndex }, 'compressSceneToSummary: nano returned null');
       return null;
@@ -611,7 +611,7 @@ ${scenesAtLocation.join('\n\n')}`;
 
     // Reasoning tier — location summary is synthesis + unresolved-thread
     // detection; async, no latency concern.
-    const result = await callNano(LOCATION_SUMMARY_SYSTEM, userPrompt, provider, { timeoutMs, maxTokens: 500, reasoning: true, taskType: 'location-summary', taskLabel: 'Location summary' });
+    const result = await callNano(LOCATION_SUMMARY_SYSTEM, userPrompt, provider, { timeoutMs, maxTokens: 500, reasoning: true, taskCategory: 'locationSummary', taskType: 'location-summary', taskLabel: 'Location summary' });
     if (!result?.summary) return;
 
     const data = {

@@ -43,7 +43,7 @@ export async function enhanceImagePrompt({
     userApiKeys,
     resolvedProvider === 'anthropic' ? 'Anthropic' : 'OpenAI',
   );
-  const overrideModel = await resolveModelForTask('imagePrompt', resolvedProvider);
+  const overrideModel = await resolveModelForTask('imagePromptEnhancement', resolvedProvider);
   const resolvedModel = overrideModel || model || config.aiModels.standard[resolvedProvider];
 
   const systemPrompt = [

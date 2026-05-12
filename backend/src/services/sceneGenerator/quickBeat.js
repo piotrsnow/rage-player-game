@@ -265,6 +265,7 @@ export async function runQuickBeat(campaignId, playerAction, options = {}, onEve
         callAIJson({
           provider,
           modelTier: 'nano',
+          taskCategory: 'quickBeat',
           systemPrompt: system,
           userPrompt,
           maxTokens: 300,
