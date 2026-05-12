@@ -1804,3 +1804,16 @@
 .animate-beer-mug-shake {
   animation: beer-mug-shake 0.52s cubic-bezier(0.34, 0.06, 0.22, 1) both;
 }
+
+/* DidYouKnow holographic effects */
+@keyframes holoShimmer {
+  0%   { background-position: 0% 0%; }
+  50%  { background-position: 100% 100%; }
+  100% { background-position: 0% 0%; }
+}
+
+@keyframes holoSheen {
+  0%   { background-position: 200% 0; }
+  50%  { background-position: -50% 0; }
+  100% { background-position: 200% 0; }
+}

@@ -33,6 +33,7 @@ import ActionPanel from './ActionPanel';
 import ChatPanel from './ChatPanel';
 import StatusBar from '../ui/StatusBar';
 import LoadingSpinner from '../ui/LoadingSpinner';
+import DidYouKnow from '../ui/DidYouKnow';
 import SceneGenerationProgress from './SceneGenerationProgress';
 import CombatPanel from './CombatPanel';
 import MagicPanel from './MagicPanel';
@@ -694,8 +695,9 @@ export default function GameplayPage({ readOnly = false, shareToken = null, onRe
   });
 
   if (!campaign) return (
-    <div className="flex items-center justify-center h-[calc(100vh-4rem)]">
+    <div className="flex flex-col items-center justify-center h-[calc(100vh-4rem)]">
       <LoadingSpinner size="lg" text={t('gameplay.loadingCampaign', 'Loading campaign...')} />
+      <DidYouKnow />
     </div>
   );
 
