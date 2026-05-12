@@ -573,7 +573,7 @@ function SpellsGrid({
                   key={spell.name}
                   type="button"
                   onClick={() => onSelectSpell(spell.name)}
-                  className="bg-surface-container-high/60 backdrop-blur-md border-b-2 border-tertiary/20 flex flex-col items-center text-center transition-all hover:bg-surface-container-highest/80 hover:border-tertiary/50 overflow-hidden"
+                  className="group bg-surface-container-high/60 backdrop-blur-md border-b-2 border-tertiary/20 flex flex-col items-center text-center transition-all hover:bg-surface-container-highest/80 hover:border-tertiary/50 overflow-hidden"
                 >
                   {imageUrl ? (
                     <div className="w-full aspect-square relative">
@@ -586,10 +586,24 @@ function SpellsGrid({
                       <div className="absolute inset-0 items-center justify-center hidden">
                         <span className="material-symbols-outlined text-tertiary text-3xl">{spell.icon}</span>
                       </div>
+                      {spell.uses > 0 && (
+                        <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                          <span className="text-4xl font-black text-white/[0.12] group-hover:text-white/[0.28] transition-colors duration-200 drop-shadow-[0_2px_4px_rgba(0,0,0,0.5)]">
+                            ×{spell.uses}
+                          </span>
+                        </div>
+                      )}
                     </div>
                   ) : (
-                    <div className="w-full aspect-square flex items-center justify-center">
+                    <div className="w-full aspect-square flex items-center justify-center relative">
                       <span className="material-symbols-outlined text-tertiary text-3xl">{spell.icon}</span>
+                      {spell.uses > 0 && (
+                        <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                          <span className="text-4xl font-black text-white/[0.12] group-hover:text-white/[0.28] transition-colors duration-200 drop-shadow-[0_2px_4px_rgba(0,0,0,0.5)]">
+                            ×{spell.uses}
+                          </span>
+                        </div>
+                      )}
                     </div>
                   )}
                   <div className="p-2 w-full">
@@ -600,11 +614,6 @@ function SpellsGrid({
                       <span className="text-xs text-outline font-bold">
                         {spell.manaCost} {t('magic.manaShort', 'many')}
                       </span>
-                      {spell.uses > 0 && (
-                        <span className="text-xs text-primary/80 font-bold">
-                          ×{spell.uses}
-                        </span>
-                      )}
                     </div>
                   </div>
                 </button>
