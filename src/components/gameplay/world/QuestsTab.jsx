@@ -7,6 +7,18 @@ const TYPE_COLORS = {
   personal: 'bg-secondary/15 text-secondary',
 };
 
+const OBJECTIVE_TYPE_COLORS = {
+  kill: 'bg-red-500/20 text-red-300',
+  escort: 'bg-sky-500/20 text-sky-300',
+  fetch: 'bg-amber-500/20 text-amber-300',
+  deliver: 'bg-teal-500/20 text-teal-300',
+  craft: 'bg-orange-500/20 text-orange-300',
+  explore: 'bg-emerald-500/20 text-emerald-300',
+  interact: 'bg-violet-500/20 text-violet-300',
+  survive: 'bg-rose-500/20 text-rose-300',
+  gather: 'bg-lime-500/20 text-lime-300',
+};
+
 export default function QuestsTab({ quests, npcs, navigateTo, t }) {
   // Sort: main first → potem po id (stabilnie). createdAt nie jest
   // surface'owane przez campaignLoader dla questów z DB, więc dla aktywnych
@@ -66,7 +78,14 @@ export default function QuestsTab({ quests, npcs, navigateTo, t }) {
               <span className={`material-symbols-outlined text-sm mt-0.5 ${obj.completed ? 'text-primary' : 'text-outline'}`}>
                 {obj.completed ? 'check_circle' : 'radio_button_unchecked'}
               </span>
-              <span className={obj.completed ? 'line-through text-outline' : ''}>{obj.description}</span>
+              <span className={obj.completed ? 'line-through text-outline' : ''}>
+                {obj.objectiveType && (
+                  <span className={`inline-block text-[10px] font-bold uppercase tracking-wider px-1.5 py-px rounded mr-1.5 align-middle ${OBJECTIVE_TYPE_COLORS[obj.objectiveType] || 'bg-outline/20 text-outline'}`}>
+                    {t(`quests.objectiveTypes.${obj.objectiveType}`)}
+                  </span>
+                )}
+                {obj.description}
+              </span>
             </div>
           ))}
           {hiddenCount > 0 && (

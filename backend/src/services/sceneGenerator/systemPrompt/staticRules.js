@@ -34,7 +34,7 @@ export function coreRulesBlock() {
 - Consequences: risky actions generate reputation/disposition/resource/wound/rumor consequences. Criminal acts accumulate heat (guards, bounties, higher prices).
 - NPC disposition: engine calculates bonuses. Reflect attitude in narration (≥15=friendly, ≤-15=hostile). Trust builds slow, breaks fast.
 - Currency: 1GC=10SS=100CP. stateChanges.moneyChange for purchase costs (negative deltas). For income/loot use stateChanges.rewards with type:'money'. Engine validates affordability.
-- Character XP is NOT awarded per scene. It cascades automatically from skill level-ups and from completed quest rewards (quest.reward.xp). Do not emit stateChanges.xp.
+- Character XP is NOT awarded per scene. XP cascades from skill level-ups. Quest XP is awarded incrementally: half split across objectives (on completion of each), other half on quest completion. Do NOT emit stateChanges.xp for quest rewards — the engine handles it automatically.
 - The world is grim and perilous. Death is real. Consequences are lasting.
 - creativityBonus (TOP-LEVEL, int 0-20): ONLY for player_input_kind=custom (suggested/auto=ALWAYS 0).
   Reward players who INVEST in describing HOW they act — tactical thinking, environment use, character voice, in-world logic.
@@ -108,7 +108,8 @@ Emit stateChanges reflecting ALL of the above. Empty fields are OK only when the
 - QUEST GIVER FIRST CONTACT: when emitting a questOffer, in the SAME scene emit objectiveReveals for the root nodes (parents=[]) that the questgiver explicitly described aloud. Other nodes stay undiscovered.
 - questMutations (rare, narrative override): \`[{questId, mutation: "stall"|"fail"|"reroute", reason}]\`. Use ONLY when narration EXPLICITLY disrupts a quest (questgiver dies on-screen via your prose, target location is destroyed). Most disruptions are detected backend-side from npc agent loop ticks — do NOT emit unless your dialogueSegments narrate the disruption.
 - questOffers (full schema): \`[{id, name, description, type, questGiverId, turnInNpcId, relatedHookId?, relatedNpcRefs?, completionCondition, objectives}]\`. Each objective is a graph node:
-  \`{nodeKey, description, parents?, branchType?, branchGroup?, choiceLabel?, placeholderHint?, failsOn?}\`.
+  \`{nodeKey, objectiveType, description, parents?, branchType?, branchGroup?, choiceLabel?, placeholderHint?, failsOn?}\`.
+  * objectiveType (REQUIRED): one of "kill", "escort", "fetch", "deliver", "craft", "explore", "interact", "survive", "gather". Categorises the objective for the player's UI.
   * nodeKey: snake_case [a-z0-9_]{1,40}, unique within quest. Stable refs LLM uses across scenes.
   * parents: nodeKeys that must be \`done\` before this node unlocks. Empty parents = root node = pending immediately.
   * branchType: "and" (default — equivalent to AND chain), "path" (XOR — chosen sibling closes the others), "or" (any-of group).

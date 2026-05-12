@@ -853,7 +853,18 @@
     "turnInNpc": "Turn in to",
     "questGiver": "Quest giver",
     "completedQuests": "Completed",
-    "hiddenObjectives": "More objectives will be revealed as you progress..."
+    "hiddenObjectives": "More objectives will be revealed as you progress...",
+    "objectiveTypes": {
+      "kill": "Kill",
+      "escort": "Escort",
+      "fetch": "Fetch",
+      "deliver": "Deliver",
+      "craft": "Craft",
+      "explore": "Explore",
+      "interact": "Talk",
+      "survive": "Survive",
+      "gather": "Gather"
+    }
   },
   "inventory": {
     "title": "Armory & Artifacts",

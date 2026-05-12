@@ -590,16 +590,20 @@ export async function processStateChanges(campaignId, stateChanges, { prevLoc = 
   // an auto-completion during questUpdates leaves only one active quest,
   // and the single-active fallback in completedQuests could wrongly close
   // the wrong quest.
+  let totalQuestXpDelta = 0;
   if (stateChanges.completedQuests?.length) {
-    stateChanges.completedQuests = await processQuestStatusChange(
+    const { resolvedIds, questXpDelta } = await processQuestStatusChange(
       campaignId, stateChanges.completedQuests, 'completed',
     );
+    stateChanges.completedQuests = resolvedIds;
+    totalQuestXpDelta += questXpDelta;
   }
 
   if (stateChanges.failedQuests?.length) {
-    stateChanges.failedQuests = await processQuestStatusChange(
+    const { resolvedIds } = await processQuestStatusChange(
       campaignId, stateChanges.failedQuests, 'failed',
     );
+    stateChanges.failedQuests = resolvedIds;
   }
 
   // ── Oś 5 — diegetic discovery: reveals BEFORE quest updates ────────
@@ -630,17 +634,41 @@ export async function processStateChanges(campaignId, stateChanges, { prevLoc = 
     if (!parsed.ok) {
       log.warn({ campaignId, issues: parsed.error?.issues?.slice(0, 5) }, 'stateChanges.questUpdates failed schema validation — passing through unchanged for legacy compat');
     }
-    const autoCompleted = await processQuestObjectiveUpdates(
+    const { autoCompleted, questXpDelta } = await processQuestObjectiveUpdates(
       campaignId,
       updates || stateChanges.questUpdates,
       stateChanges.completedQuests || [],
     );
+    totalQuestXpDelta += questXpDelta;
     if (autoCompleted.length > 0) {
       if (!Array.isArray(stateChanges.completedQuests)) stateChanges.completedQuests = [];
       for (const id of autoCompleted) {
         if (!stateChanges.completedQuests.includes(id)) stateChanges.completedQuests.push(id);
       }
+      // Auto-completed quests also earn their completion bonus.
+      for (const questId of autoCompleted) {
+        try {
+          const quest = await prisma.campaignQuest.findFirst({
+            where: { campaignId, questId },
+            include: { objectives: { select: { xpAwarded: true } } },
+          });
+          if (quest) {
+            const rewardXp = quest.reward?.xp || 0;
+            if (rewardXp > 0) {
+              const sumAwarded = (quest.objectives || []).reduce((s, o) => s + (o.xpAwarded || 0), 0);
+              const bonus = Math.max(0, rewardXp - sumAwarded);
+              if (bonus > 0) totalQuestXpDelta += bonus;
+            }
+          }
+        } catch (err) {
+          log.warn({ err: err?.message, campaignId, questId }, 'Auto-complete bonus XP calc failed (non-fatal)');
+        }
+      }
     }
+  }
+
+  if (totalQuestXpDelta > 0) {
+    stateChanges.questXpDelta = totalQuestXpDelta;
   }
 
   // ── Oś 4 — explicit quest mutations (rare, narrative override) ──────

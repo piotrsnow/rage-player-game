@@ -88,8 +88,10 @@ function applyCompletedQuests(draft, changes) {
   }
 
   // Quest reward XP is applied on BE; RECONCILE brings the authoritative total.
-  // `totalRewardXp` stays around only so message generation can surface it as a toast.
-  void totalRewardXp;
+  // Stash it on `changes` so stateChangeMessages can surface as a toast.
+  if (totalRewardXp > 0) {
+    changes._questCompletionXp = (changes._questCompletionXp || 0) + totalRewardXp;
+  }
   if ((rewardMoney.gold || rewardMoney.silver || rewardMoney.copper) && draft.character) {
     const cur = draft.character.money || { gold: 0, silver: 0, copper: 0 };
     draft.character.money = normalizeMoney({

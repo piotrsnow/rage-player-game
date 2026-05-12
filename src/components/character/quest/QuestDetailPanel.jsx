@@ -2,6 +2,18 @@ import { useState } from 'react';
 import RewardBadge from './RewardBadge';
 import { TYPE_STYLES, TYPE_ICONS, isReadyToTurnIn, getVisibleObjectives, objStatus } from './helpers';
 
+const OBJECTIVE_TYPE_COLORS = {
+  kill: 'bg-red-500/20 text-red-300',
+  escort: 'bg-sky-500/20 text-sky-300',
+  fetch: 'bg-amber-500/20 text-amber-300',
+  deliver: 'bg-teal-500/20 text-teal-300',
+  craft: 'bg-orange-500/20 text-orange-300',
+  explore: 'bg-emerald-500/20 text-emerald-300',
+  interact: 'bg-violet-500/20 text-violet-300',
+  survive: 'bg-rose-500/20 text-rose-300',
+  gather: 'bg-lime-500/20 text-lime-300',
+};
+
 // Ikona statusu dla pojedynczego objective.
 function StatusIcon({ status, isNext }) {
   switch (status) {
@@ -176,6 +188,11 @@ export default function QuestDetailPanel({ selected, findNpc, onVerifyObjective,
               <StatusIcon status="done" />
               <div className="flex-1 min-w-0">
                 <p className="text-xs leading-relaxed text-on-surface-variant line-through">
+                  {obj.objectiveType && (
+                    <span className={`inline-block text-[9px] font-bold uppercase tracking-wider px-1 py-px rounded mr-1 align-middle no-underline ${OBJECTIVE_TYPE_COLORS[obj.objectiveType] || ''}`}>
+                      {t(`quests.objectiveTypes.${obj.objectiveType}`)}
+                    </span>
+                  )}
                   {obj.description}
                 </p>
               </div>
@@ -190,6 +207,11 @@ export default function QuestDetailPanel({ selected, findNpc, onVerifyObjective,
                 <StatusIcon status="pending" isNext={isNext} />
                 <div className="flex-1 min-w-0">
                   <p className="text-xs leading-relaxed text-on-surface">
+                    {obj.objectiveType && (
+                      <span className={`inline-block text-[9px] font-bold uppercase tracking-wider px-1 py-px rounded mr-1 align-middle ${OBJECTIVE_TYPE_COLORS[obj.objectiveType] || ''}`}>
+                        {t(`quests.objectiveTypes.${obj.objectiveType}`)}
+                      </span>
+                    )}
                     {obj.description}
                     {obj.choiceLabel && (
                       <span className="ml-2 text-[10px] font-label uppercase tracking-widest text-primary/70">
@@ -236,6 +258,11 @@ export default function QuestDetailPanel({ selected, findNpc, onVerifyObjective,
               <StatusIcon status="locked" />
               <div className="flex-1 min-w-0">
                 <p className="text-xs leading-relaxed text-on-surface-variant italic">
+                  {obj.objectiveType && (
+                    <span className={`inline-block text-[9px] font-bold uppercase tracking-wider px-1 py-px rounded mr-1 align-middle ${OBJECTIVE_TYPE_COLORS[obj.objectiveType] || ''}`}>
+                      {t(`quests.objectiveTypes.${obj.objectiveType}`)}
+                    </span>
+                  )}
                   {obj.description}
                 </p>
                 {Array.isArray(obj.parents) && obj.parents.length > 0 && (
@@ -252,6 +279,11 @@ export default function QuestDetailPanel({ selected, findNpc, onVerifyObjective,
               <StatusIcon status="failed" />
               <div className="flex-1 min-w-0">
                 <p className="text-xs leading-relaxed text-rose-300/80 line-through">
+                  {obj.objectiveType && (
+                    <span className={`inline-block text-[9px] font-bold uppercase tracking-wider px-1 py-px rounded mr-1 align-middle no-underline ${OBJECTIVE_TYPE_COLORS[obj.objectiveType] || ''}`}>
+                      {t(`quests.objectiveTypes.${obj.objectiveType}`)}
+                    </span>
+                  )}
                   {obj.description}
                 </p>
               </div>

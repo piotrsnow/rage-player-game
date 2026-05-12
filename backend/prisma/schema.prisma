@@ -713,6 +713,11 @@ model CampaignQuestObjective {
   //   metadata.lastKnownLocation?: string   — quest dynamics tick payload
   //   metadata.onComplete: { moveNpcToPlayer, message }   — trigger (legacy)
   metadata     Json          @default("{}")
+  // Objective type tag (kill, escort, fetch, etc.) — visual badge + prompt hint.
+  // Nullable for backward compat with objectives created before this feature.
+  objectiveType String?
+  // Tracks XP already awarded for this objective (prevents double-award).
+  xpAwarded    Int           @default(0)
   // Stable string ref dla LLM (snake_case). Generowany przez questOffers,
   // BE waliduje [a-z0-9_]{1,40}. Resolver fallback do displayOrder index
   // dla legacy linear questów (bez nodeKey).

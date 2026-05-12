@@ -202,6 +202,7 @@ export async function fireMoveNpcToPlayerTrigger(campaignId, onComplete) {
 
 export async function processQuestObjectiveUpdates(campaignId, questUpdates, alreadyCompletedQuestIds = []) {
   const touchedQuestIds = new Set();
+  let questXpDelta = 0;
   for (const update of questUpdates) {
     try {
       const quest = await resolveActiveQuest(campaignId, update.questId);
@@ -228,14 +229,30 @@ export async function processQuestObjectiveUpdates(campaignId, questUpdates, alr
       if (typeof update.addProgress === 'number') {
         updateData.progress = (targetObj.progress || 0) + update.addProgress;
       }
+
+      // Partial XP reward: floor(quest.reward.xp / (2 * objectiveCount))
+      // Awarded once per objective (xpAwarded prevents double-award on replay).
+      let objXpAwarded = 0;
+      if (update.completed && targetObj.xpAwarded === 0) {
+        const rewardXp = quest.reward?.xp || 0;
+        const objectiveCount = objectives.length;
+        if (rewardXp > 0 && objectiveCount > 0) {
+          objXpAwarded = Math.floor(rewardXp / (2 * objectiveCount));
+          if (objXpAwarded > 0) {
+            updateData.xpAwarded = objXpAwarded;
+            questXpDelta += objXpAwarded;
+          }
+        }
+      }
+
       if (Object.keys(updateData).length > 0) {
         await prisma.campaignQuestObjective.update({
           where: { id: targetObj.id },
           data: updateData,
         });
-        // Reflect on local copy for follow-up graph operations in the same iteration
         if (updateData.status) targetObj.status = updateData.status;
         if (updateData.progress !== undefined) targetObj.progress = updateData.progress;
+        if (updateData.xpAwarded !== undefined) targetObj.xpAwarded = updateData.xpAwarded;
       }
       if (update.completed) touchedQuestIds.add(quest.questId);
 
@@ -330,7 +347,7 @@ export async function processQuestObjectiveUpdates(campaignId, questUpdates, alr
       log.error({ err, campaignId, questId }, 'Failed to auto-complete quest');
     }
   }
-  return autoCompleted;
+  return { autoCompleted, questXpDelta };
 }
 
 // ── Oś 5 — diegetic discovery ──────────────────────────────────────────
@@ -491,6 +508,7 @@ export async function processQuestOffers(campaignId, offers) {
           questId: quest.id,
           displayOrder: idx,
           description: o.description || '',
+          objectiveType: o.objectiveType || null,
           progress: 0,
           targetAmount: 1,
           status: isRoot ? 'pending' : 'locked',
@@ -565,12 +583,12 @@ export async function processQuestMutations(campaignId, mutations, sceneIndex = 
   return applied;
 }
 
-// Returns the list of ACTUALLY-resolved questIds so callers (e.g. world
-// impact audit, goal reassignment) can use real ids instead of whatever
-// premium emitted. Unresolved entries are dropped with a warn already logged
-// by resolveActiveQuest.
+// Returns the list of ACTUALLY-resolved questIds + accumulated quest XP
+// (completion bonus). Unresolved entries are dropped with a warn already
+// logged by resolveActiveQuest.
 export async function processQuestStatusChange(campaignId, questIds, status) {
   const resolvedIds = [];
+  let questXpDelta = 0;
   for (const rawId of questIds) {
     try {
       const quest = await resolveActiveQuest(campaignId, rawId);
@@ -580,10 +598,24 @@ export async function processQuestStatusChange(campaignId, questIds, status) {
           data: { status, completedAt: new Date() },
         });
         resolvedIds.push(quest.questId);
+
+        // Completion bonus XP: total reward minus already-awarded per-objective XP.
+        if (status === 'completed') {
+          const rewardXp = quest.reward?.xp || 0;
+          if (rewardXp > 0) {
+            const objectives = await prisma.campaignQuestObjective.findMany({
+              where: { questId: quest.id },
+              select: { xpAwarded: true },
+            });
+            const sumAwarded = objectives.reduce((sum, o) => sum + (o.xpAwarded || 0), 0);
+            const bonus = Math.max(0, rewardXp - sumAwarded);
+            if (bonus > 0) questXpDelta += bonus;
+          }
+        }
       }
     } catch (err) {
       log.error({ err, campaignId, questId: rawId, status }, 'Failed to update quest status');
     }
   }
-  return resolvedIds;
+  return { resolvedIds, questXpDelta };
 }

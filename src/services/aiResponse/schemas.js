@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { ATTRIBUTE_KEYS } from '../../data/rpgSystem.js';
+import { OBJECTIVE_TYPES } from '../../../shared/domain/questObjectiveTypes.js';
 
 const AttributeKeySchema = z.enum(ATTRIBUTE_KEYS);
 
@@ -164,6 +165,7 @@ const QuestDeadlineSchema = z.object({
 const QuestObjectiveSchema = z.object({
   id: z.string(),
   description: z.string(),
+  objectiveType: z.enum(OBJECTIVE_TYPES).nullable().optional(),
   // Graph-aware fields (oś 1 + 5). Wszystkie optional + passthrough, więc
   // legacy linear questy bez tych pól dalej walidują się czysto. BE
   // dostarcza je gdy questGraphEnabled (nowe kampanie).

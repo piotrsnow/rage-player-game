@@ -1,6 +1,7 @@
 import { prisma } from '../lib/prisma.js';
 import { childLogger } from '../lib/logger.js';
 import { generateSceneEmbedding, processStateChanges } from './sceneGenerator/processStateChanges.js';
+import { getCampaignCharacterIds } from './campaignSync.js';
 import { compressSceneToSummary, generateLocationSummary, appendSceneDigest } from './memoryCompressor.js';
 import { pauseNpcsAtLocation, resumeNpcsAtLocation } from './livingWorld/npcLifecycle.js';
 import { applyCompanionTravel } from './livingWorld/companionService.js';
@@ -212,6 +213,20 @@ export async function handlePostSceneWork({
 
   const results = await Promise.allSettled(phase1Tasks);
 
+  // Quest XP: processStateChanges attaches `stateChanges.questXpDelta` when
+  // quest objectives are completed or quests finish. Apply it to the active
+  // character(s) now — after phase 1 settled and the delta is known.
+  if (stateChanges?.questXpDelta > 0) {
+    try {
+      const charIds = await getCampaignCharacterIds(campaignId);
+      for (const charId of charIds) {
+        await applyQuestXpToCharacter(charId, stateChanges.questXpDelta);
+      }
+    } catch (err) {
+      log.warn({ err: err?.message, campaignId, xp: stateChanges.questXpDelta }, 'Quest XP application failed (non-fatal)');
+    }
+  }
+
   // Snapshot the post-Phase-1 location into the scene's stateChanges. Phase 1
   // ran `processStateChanges` (if any) so `Campaign.currentLocation*` now
   // reflects where the scene actually settled. Persist a `_locationSnapshot`
@@ -384,4 +399,37 @@ export async function handlePostSceneWork({
     throw new Error(`Post-scene work failed: ${failures.length} task(s)`);
   }
   log.info({ sceneId, campaignId, tasksSettled: results.length }, 'Post-scene work DONE');
+}
+
+function charLevelCost(targetLevel) {
+  return 5 * targetLevel * targetLevel;
+}
+
+function cumulativeCharXpThreshold(targetLevel) {
+  if (targetLevel <= 1) return 0;
+  let sum = 0;
+  for (let k = 2; k <= targetLevel; k++) sum += charLevelCost(k);
+  return sum;
+}
+
+async function applyQuestXpToCharacter(characterId, xpDelta) {
+  const char = await prisma.character.findUnique({
+    where: { id: characterId },
+    select: { characterXp: true, characterLevel: true, attributePoints: true },
+  });
+  if (!char) return;
+  let charXp = (char.characterXp || 0) + xpDelta;
+  let charLevel = char.characterLevel || 1;
+  let attrPoints = char.attributePoints || 0;
+  while (charXp >= cumulativeCharXpThreshold(charLevel + 1)) {
+    charLevel++;
+    attrPoints++;
+  }
+  await prisma.character.update({
+    where: { id: characterId },
+    data: { characterXp: charXp, characterLevel: charLevel, attributePoints: attrPoints },
+  });
+  if (charLevel > (char.characterLevel || 1)) {
+    log.info({ characterId, charXp, charLevel, xpDelta }, 'Quest XP caused level-up');
+  }
 }

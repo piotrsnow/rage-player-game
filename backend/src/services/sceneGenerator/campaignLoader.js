@@ -160,6 +160,7 @@ export async function loadCampaignState(campaignId) {
           // jest legacy boolean). worldBlock + FE czytają oba.
           status: o.status,
           nodeKey: o.nodeKey,
+          objectiveType: o.objectiveType || null,
           progress: o.progress,
           target: o.targetAmount,
           ...(o.metadata && typeof o.metadata === 'object' ? o.metadata : {}),

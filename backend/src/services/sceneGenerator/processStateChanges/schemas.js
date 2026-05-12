@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { NPC_RACES } from '../../../../../shared/domain/npcRaces.js';
+import { OBJECTIVE_TYPES } from '../../../../../shared/domain/questObjectiveTypes.js';
 
 /**
  * Zod schemas for Living World `stateChanges` buckets on the BACKEND path.
@@ -170,6 +171,7 @@ export const QuestUpdatesSchema = z.array(QuestUpdateSchema).max(20);
 const QuestObjectiveOfferSchema = z.object({
   nodeKey: NodeKeySchema,
   description: z.string().trim().min(1).max(400),
+  objectiveType: z.enum(OBJECTIVE_TYPES),
   parents: z.array(NodeKeySchema).max(8).optional(),
   unlocks: z.array(NodeKeySchema).max(8).optional(),
   branchType: z.enum(['and', 'path', 'or']).optional(),
@@ -179,10 +181,8 @@ const QuestObjectiveOfferSchema = z.object({
   failsOn: z.object({
     npcDead: z.array(z.string().trim().max(120)).max(8).optional(),
     locationDestroyed: z.array(z.string().trim().max(200)).max(4).optional(),
-    deadline: z.string().trim().max(40).nullable().optional(),  // ISO game time
+    deadline: z.string().trim().max(40).nullable().optional(),
   }).passthrough().optional(),
-  // metadata.discovered jest ZAWSZE false dla nowo materializowanych nodes —
-  // BE ustawia explicit. LLM nie kontroluje tego pola w questOffers.
 }).passthrough();
 
 const QuestOfferSchema = z.object({

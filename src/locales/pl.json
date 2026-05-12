@@ -846,7 +846,18 @@
     "turnInNpc": "Zdaj u",
     "questGiver": "Zleceniodawca",
     "completedQuests": "Ukończone",
-    "hiddenObjectives": "Kolejne cele odkryjesz w trakcie przygody..."
+    "hiddenObjectives": "Kolejne cele odkryjesz w trakcie przygody...",
+    "objectiveTypes": {
+      "kill": "Zabij",
+      "escort": "Eskortuj",
+      "fetch": "Przynieś",
+      "deliver": "Dostarcz",
+      "craft": "Stwórz",
+      "explore": "Zbadaj",
+      "interact": "Porozmawiaj",
+      "survive": "Przetrwaj",
+      "gather": "Zbierz"
+    }
   },
   "inventory": {
     "title": "Zbrojownia i Artefakty",
