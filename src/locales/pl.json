@@ -847,6 +847,9 @@
     "questGiver": "Zleceniodawca",
     "completedQuests": "Ukończone",
     "hiddenObjectives": "Kolejne cele odkryjesz w trakcie przygody...",
+    "progressLog": "Dziennik postępu",
+    "progressLogEmpty": "Brak wpisów — graj dalej, a dziennik uzupełni się automatycznie",
+    "sceneLabel": "Scena {{index}}",
     "objectiveTypes": {
       "kill": "Zabij",
       "escort": "Eskortuj",

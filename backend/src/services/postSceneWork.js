@@ -17,6 +17,7 @@ import { listLocationsForCampaign } from './livingWorld/locationQueries.js';
 import { LOCATION_KIND_WORLD } from './locationRefs.js';
 import { extractGraphUpdate, validateGraphUpdate, applyGraphUpdate } from './locationGraph/index.js';
 import { setLlmCallUserId } from './llmCallLogger.js';
+import { checkQuestProgress } from './questProgressChecker.js';
 
 const log = childLogger({ module: 'postSceneWork' });
 
@@ -370,6 +371,22 @@ export async function handlePostSceneWork({
       );
     }
   }
+  // Quest Progress Log — every 2 scenes, nano checks for player actions
+  // that relate to active quest objectives and writes matches to
+  // CampaignQuestObjective.metadata.progressLog[]. Best-effort.
+  if (scene.sceneIndex % 2 === 0) {
+    await checkQuestProgress({
+      campaignId,
+      sceneTranscript,
+      playerAction,
+      sceneIndex: scene.sceneIndex,
+      provider,
+      timeoutMs: llmNanoTimeoutMs,
+    }).catch((err) =>
+      log.warn({ err: err?.message, campaignId }, 'Quest progress check failed (non-fatal)'),
+    );
+  }
+
   // Location History Digest — append a one-line digest to the current
   // location's ring buffer so return-to-location scenes get grounded context.
   // Uses the first major memory entry from the compress result as the digest

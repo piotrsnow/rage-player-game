@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import RewardBadge from './RewardBadge';
+import QuestProgressDrawer from './QuestProgressDrawer';
 import { TYPE_STYLES, TYPE_ICONS, isReadyToTurnIn, getVisibleObjectives, objStatus } from './helpers';
 
 const OBJECTIVE_TYPE_COLORS = {
@@ -33,9 +34,28 @@ function StatusIcon({ status, isNext }) {
   }
 }
 
+function ProgressLogButton({ obj, onClick, t }) {
+  const entries = Array.isArray(obj?.progressLog) ? obj.progressLog : [];
+  if (entries.length === 0) return null;
+  return (
+    <button
+      type="button"
+      title={t('quests.progressLog')}
+      onClick={(e) => { e.stopPropagation(); onClick(); }}
+      className="relative material-symbols-outlined text-sm text-outline/40 hover:text-primary opacity-0 group-hover:opacity-100 transition-opacity shrink-0 mt-0.5 cursor-pointer"
+    >
+      history
+      <span className="absolute -top-1.5 -right-1.5 flex items-center justify-center w-3.5 h-3.5 text-[8px] font-bold rounded-full bg-primary text-on-primary">
+        {entries.length}
+      </span>
+    </button>
+  );
+}
+
 export default function QuestDetailPanel({ selected, findNpc, onVerifyObjective, t }) {
   const [verifyingId, setVerifyingId] = useState(null);
   const [verifyResult, setVerifyResult] = useState(null);
+  const [logObjective, setLogObjective] = useState(null);
 
   if (!selected) {
     return (
@@ -196,6 +216,7 @@ export default function QuestDetailPanel({ selected, findNpc, onVerifyObjective,
                   {obj.description}
                 </p>
               </div>
+              <ProgressLogButton obj={obj} onClick={() => setLogObjective(obj)} t={t} />
             </div>
           ))}
           {/* PENDING DISCOVERED — first one is ▶ NEXT */}
@@ -223,6 +244,7 @@ export default function QuestDetailPanel({ selected, findNpc, onVerifyObjective,
                     <p className="text-[10px] text-primary-dim/70 italic mt-0.5">{obj.progress}</p>
                   )}
                 </div>
+                <ProgressLogButton obj={obj} onClick={() => setLogObjective(obj)} t={t} />
                 {questStatus === 'active' && (
                   isVerifying ? (
                     <span className="material-symbols-outlined text-sm text-primary animate-spin shrink-0 mt-0.5">progress_activity</span>
@@ -321,6 +343,14 @@ export default function QuestDetailPanel({ selected, findNpc, onVerifyObjective,
         </div>
         );
       })()}
+
+      {logObjective && (
+        <QuestProgressDrawer
+          objective={logObjective}
+          onClose={() => setLogObjective(null)}
+          t={t}
+        />
+      )}
     </div>
   );
 }

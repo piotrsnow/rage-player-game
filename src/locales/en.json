@@ -854,6 +854,9 @@
     "questGiver": "Quest giver",
     "completedQuests": "Completed",
     "hiddenObjectives": "More objectives will be revealed as you progress...",
+    "progressLog": "Progress Log",
+    "progressLogEmpty": "No entries yet — keep playing and the log will fill in automatically",
+    "sceneLabel": "Scene {{index}}",
     "objectiveTypes": {
       "kill": "Kill",
       "escort": "Escort",
