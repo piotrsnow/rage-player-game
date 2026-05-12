@@ -473,7 +473,7 @@ const _imageServiceImpl = {
     let spellNegative = null;
     if (provider === 'sd-webui') {
       const styleNeg = getImageStyleSdNegative(imageStyle);
-      const baseSpellNeg = 'person, human, character, hand, hands, fingers, holding, wielding, figure, body, face, portrait, full body, half body, item, weapon, inventory icon, text, UI';
+      const baseSpellNeg = 'person, people, human, man, woman, 1girl, 1boy, wizard, mage, sorcerer, sorceress, caster, character, figure, body, face, portrait, full body, half body, hand, hands, fingers, arm, arms, holding, wielding, casting, silhouette, item, weapon, inventory icon, text, UI, watermark';
       spellNegative = styleNeg ? `${baseSpellNeg}, ${styleNeg}` : baseSpellNeg;
     }
     const url = await generateSceneViaProxy(prompt, provider, campaignId, { sdModel, sdSeed, forceNew, shape: 'square', negativePrompt: spellNegative, resolutionMultiplier });

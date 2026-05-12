@@ -94,7 +94,7 @@ function SkillsTab({ character }) {
     return Object.entries(skills)
       .map(([name, data]) => {
         const d = typeof data === 'object' ? data : { level: data || 0, xp: 0, cap: SKILL_CAPS.basic };
-        return { name, ...d, xp: d.xp ?? d.progress ?? 0, attribute: getSkillAttribute(name) };
+        return { name, ...d, xp: d.xp ?? d.progress ?? 0, cap: Math.max(d.cap ?? SKILL_CAPS.basic, SKILL_CAPS.basic), attribute: getSkillAttribute(name) };
       })
       .sort((a, b) => {
         if (b.level !== a.level) return b.level - a.level;

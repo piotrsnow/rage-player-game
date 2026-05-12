@@ -9,6 +9,10 @@ import { useGraphShortcuts } from '../../../hooks/useGraphShortcuts.js';
 import { useEntityBrowser } from '../../../hooks/useEntityBrowser.js';
 import { useWorldGraphSpriteJob } from '../../../hooks/useWorldGraphSpriteJob.js';
 import { useNodeImageBulkGeneration } from '../../../hooks/useNodeImageBulkGeneration.js';
+<<<<<<< Updated upstream
+import { useGraphRevision } from '../../../hooks/useGraphRevision.js';
+=======
+>>>>>>> Stashed changes
 import { useSettings } from '../../../contexts/SettingsContext.jsx';
 import GraphCanvas from './GraphCanvas.jsx';
 import HierarchyTree from './HierarchyTree.jsx';
@@ -16,6 +20,7 @@ import InspectorPanel from './InspectorPanel.jsx';
 import GraphToolbar from './GraphToolbar.jsx';
 import AddNodeForm from './AddNodeForm.jsx';
 import AddEdgeFlow from './AddEdgeFlow.jsx';
+import RevisionPanel from './RevisionPanel.jsx';
 import ModalNavBar from './ModalNavBar.jsx';
 import EntityBrowserPanel from './EntityBrowserPanel.jsx';
 import EntityInspector from './EntityInspector.jsx';
@@ -124,13 +129,25 @@ export default function LocationGraphModal({ campaignId = null, onClose, openGen
       }
     },
     startStandard: (provider) => {
+<<<<<<< Updated upstream
+      const p = provider || stdProvider || 'dalle';
+      bulkImageGenHook.start(graph.allNodes, {
+        provider: p,
+        sdModel: p === 'sd-webui' ? (settings.sdWebuiModel || null) : null,
+=======
       bulkImageGenHook.start(graph.allNodes, {
         provider,
         sdModel: provider === 'sd-webui' ? (settings.sdWebuiModel || null) : null,
+>>>>>>> Stashed changes
       });
     },
   }), [bulkImageGenHook, graph.allNodes, stdProvider, worldMode, spriteJob, settings.sdWebuiModel]);
 
+<<<<<<< Updated upstream
+  const revision = useGraphRevision({ graph, worldMode, campaignId });
+
+=======
+>>>>>>> Stashed changes
   const [activeTab, setActiveTab] = useState('graph');
   const [selectedNpcId, setSelectedNpcId] = useState(null);
 
@@ -400,6 +417,12 @@ export default function LocationGraphModal({ campaignId = null, onClose, openGen
                       onCancel={() => { setEdgeSource(null); setAddingEdge(false); }}
                     />
                   )}
+
+                  <RevisionPanel
+                    revision={revision}
+                    allNodes={graph.allNodes}
+                    allEdges={graph.allEdges}
+                  />
                 </div>
 
                 <GraphToolbar
@@ -423,6 +446,10 @@ export default function LocationGraphModal({ campaignId = null, onClose, openGen
                   onResetLayout={handleResetLayout}
                   spriteJob={worldMode ? { ...spriteJob, nodes: graph.allNodes } : undefined}
                   bulkImageGen={bulkImageGen}
+<<<<<<< Updated upstream
+                  revision={revision}
+=======
+>>>>>>> Stashed changes
                   showOrphans={showOrphans}
                   onToggleOrphans={worldMode ? () => setShowOrphans((v) => !v) : undefined}
                 />

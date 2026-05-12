@@ -59,6 +59,7 @@ export default function ActionPanel({
   quickBeatStreak = 0,
   quickBeatLimit = 5,
   isQuickBeatLocked = false,
+  isQuickBeatPending = false,
   disabled,
   npcs = [],
   autoPlayerTypingText = '',
@@ -641,6 +642,7 @@ export default function ActionPanel({
             quickBeatStreak={quickBeatStreak}
             quickBeatLimit={quickBeatLimit}
             isQuickBeatLocked={isQuickBeatLocked}
+            isQuickBeatPending={isQuickBeatPending}
             disabled={disabled}
             autoPlayerTypingText={autoPlayerTypingText}
             listening={listening}

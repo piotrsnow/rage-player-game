@@ -273,6 +273,15 @@ describe('applyCharacterStateChanges', () => {
       expect(result.skills['perswazja']).toBeUndefined();
     });
 
+    it('promotes skill from level 0 to 1 (free tier) and banks remaining XP', () => {
+      const c = baseCharacter({ skills: {} });
+      const result = applyCharacterStateChanges(c, {
+        skillProgress: { 'Jezdziectwo': 4 },
+      });
+      expect(result.skills.Jezdziectwo.level).toBe(1);
+      expect(result.skills.Jezdziectwo.xp).toBe(4);
+    });
+
     it('still creates badge for truly unknown skill names', () => {
       const c = baseCharacter();
       const result = applyCharacterStateChanges(c, {

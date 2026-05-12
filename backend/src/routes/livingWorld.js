@@ -41,6 +41,7 @@ import { buildPixelSpriteDescription } from '../services/pixelLabSpritePrompt.js
 import { createMediaStore } from '../services/mediaStore.js';
 import { config } from '../config.js';
 import { callAIJson } from '../services/aiJsonCall.js';
+import { reviseGraph } from '../services/locationGraph/graphRevisionService.js';
 import { ensureCharacterSpritesBatch, MAX_CHARACTER_SPRITE_BATCH } from '../services/characterSpriteService.js';
 import {
   appendCampaignNpcLocationMovement,
@@ -57,6 +58,7 @@ export function buildWorldLocationPatch(b) {
   const data = {};
   if (b.regionX !== undefined) data.regionX = b.regionX;
   if (b.regionY !== undefined) data.regionY = b.regionY;
+  if (b.scale !== undefined) data.scale = b.scale;
   if (b.shape !== undefined) data.nodeShape = b.shape || null;
   if (b.icon !== undefined) data.nodeIcon = b.icon || null;
   if (b.nodeImageUrl !== undefined) data.nodeImageUrl = b.nodeImageUrl || null;
@@ -1552,6 +1554,29 @@ export async function livingWorldRoutes(fastify) {
     }
 
     return reply.send({ valid: warnings.length === 0, warnings: warnings.slice(0, 50) });
+  });
+
+  // POST /campaigns/:id/location-graph/revise-graph
+  fastify.post('/campaigns/:id/location-graph/revise-graph', {
+    config: { rateLimit: { max: 5, timeWindow: '1 minute' } },
+    schema: {
+      params: campaignIdParam,
+      body: {
+        type: 'object',
+        required: ['nodes', 'edges'],
+        additionalProperties: false,
+        properties: {
+          nodes: { type: 'array', maxItems: 500, items: { type: 'object' } },
+          edges: { type: 'array', maxItems: 2000, items: { type: 'object' } },
+        },
+      },
+    },
+  }, async (request, reply) => {
+    const campaign = await assertCampaignOwnership(request, reply, request.params.id);
+    if (!campaign) return;
+    const userApiKeys = await loadUserApiKeys(prisma, request.user.id);
+    const { nodes, edges } = request.body;
+    return reviseGraph({ nodes, edges, userApiKeys, userId: request.user.id });
   });
 
   // GET /news — recent global world events for the "world news" panel

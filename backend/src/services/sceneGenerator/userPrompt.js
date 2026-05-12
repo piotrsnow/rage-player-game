@@ -148,18 +148,28 @@ Keep it dramatic but fair. Include stateChanges. timeAdvance: 0.25h.`);
     parts.push(`## [RECENT QUICK BEATS] — drobne RP-bity od ostatniej pełnej sceny (kontynuuj z tego punktu, NIE powtarzaj ich):\n${beatLines.join('\n')}`);
   }
 
-  // Structured entity references selected by the player
   if (Array.isArray(entityTags) && entityTags.length > 0) {
     const tagLines = entityTags.map((tag) => {
-      const extras = [];
-      if (tag.meta?.tree) extras.push(`drzewo: ${sanitizeForPrompt(tag.meta.tree, 60)}`);
-      if (tag.meta?.manaCost != null) extras.push(`koszt: ${tag.meta.manaCost} many`);
-      if (tag.meta?.role) extras.push(sanitizeForPrompt(tag.meta.role, 60));
-      if (tag.meta?.locationType) extras.push(sanitizeForPrompt(tag.meta.locationType, 60));
-      const suffix = extras.length > 0 ? ` (${extras.join(', ')})` : '';
-      return `- ${tag.kind}: ${sanitizeForPrompt(tag.name, 100)}${suffix}`;
+      const name = sanitizeForPrompt(tag.name, 100);
+      if (tag.kind === 'spell') {
+        const tree = tag.meta?.tree ? ` (drzewo: ${sanitizeForPrompt(tag.meta.tree, 60)})` : '';
+        const cost = tag.meta?.manaCost != null ? `, koszt: ${tag.meta.manaCost} many` : '';
+        return `- SPELL CAST: "${name}"${tree}${cost}. Postać RZUCA to zaklęcie. Opisz rzucanie i efekty w narracji. MUSISZ emitować spellUsage:{"${name}":1} + manaChange (ujemny, równy kosztowi). Jeśli mana.current < koszt → opisz nieudaną próbę (brak many), NIE emituj spellUsage ani efektu.`;
+      }
+      if (tag.kind === 'item') {
+        return `- ITEM USED: "${name}". Gracz UŻYWA tego przedmiotu w tej akcji. Opisz JAK go wykorzystuje w narracji. Jeśli jest zużywalny — emituj removeItems.`;
+      }
+      if (tag.kind === 'npc') {
+        const role = tag.meta?.role ? ` (${sanitizeForPrompt(tag.meta.role, 60)})` : '';
+        return `- NPC TARGETED: "${name}"${role}. Gracz kieruje akcję DO tego NPC. MUSISZ uwzględnić go w scenie — dialog, reakcja, interakcja.`;
+      }
+      if (tag.kind === 'location') {
+        const locType = tag.meta?.locationType ? ` (${sanitizeForPrompt(tag.meta.locationType, 60)})` : '';
+        return `- LOCATION REF: "${name}"${locType}. Gracz odnosi się do tej lokacji. Uwzględnij ją w narracji.`;
+      }
+      return `- ${tag.kind}: ${name}`;
     });
-    parts.push(`## Entity references (player-selected)\n${tagLines.join('\n')}`);
+    parts.push(`## PLAYER-SELECTED ENTITIES (MUST incorporate into this scene)\n${tagLines.join('\n')}`);
   }
 
   // Combat intent

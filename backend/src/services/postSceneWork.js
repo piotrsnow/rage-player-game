@@ -228,6 +228,22 @@ export async function handlePostSceneWork({
     }
   }
 
+  // Quest money: same pattern — auto-completed quests' reward money is applied
+  // here because the character snapshot was already sent to FE inline.
+  // (Explicitly-completed quests' money is merged into moneyChange inline in
+  // generateSceneStream before the snapshot is built.)
+  const qm = stateChanges?.questMoneyDelta;
+  if (qm && (qm.gold || qm.silver || qm.copper)) {
+    try {
+      const charIds = await getCampaignCharacterIds(campaignId);
+      for (const charId of charIds) {
+        await applyQuestMoneyToCharacter(charId, qm);
+      }
+    } catch (err) {
+      log.warn({ err: err?.message, campaignId, money: qm }, 'Quest money application failed (non-fatal)');
+    }
+  }
+
   // Snapshot the post-Phase-1 location into the scene's stateChanges. Phase 1
   // ran `processStateChanges` (if any) so `Campaign.currentLocation*` now
   // reflects where the scene actually settled. Persist a `_locationSnapshot`
@@ -427,6 +443,22 @@ function cumulativeCharXpThreshold(targetLevel) {
   let sum = 0;
   for (let k = 2; k <= targetLevel; k++) sum += charLevelCost(k);
   return sum;
+}
+
+async function applyQuestMoneyToCharacter(characterId, moneyDelta) {
+  const char = await prisma.character.findUnique({
+    where: { id: characterId },
+    select: { money: true },
+  });
+  if (!char) return;
+  const cur = char.money || { gold: 0, silver: 0, copper: 0 };
+  const gold = (cur.gold || 0) + (moneyDelta.gold || 0);
+  const silver = (cur.silver || 0) + (moneyDelta.silver || 0);
+  const copper = (cur.copper || 0) + (moneyDelta.copper || 0);
+  await prisma.character.update({
+    where: { id: characterId },
+    data: { money: { gold, silver, copper } },
+  });
 }
 
 async function applyQuestXpToCharacter(characterId, xpDelta) {

@@ -11,6 +11,7 @@ import {
   QuickBeatMessage,
 } from './chat/ChatMessages';
 import DiceRollCard from './DiceRollCard';
+import Tooltip from '../ui/Tooltip';
 
 const FONT_SIZE_KEY = 'rpgon:chatFontScale';
 const FONT_STEP = 0.1;
@@ -103,11 +104,24 @@ export default function ChatPanel({
     return idx >= 0 ? messages.slice(0, idx + 1) : messages;
   }, [chatGate, gateBoundaryId, messages]);
 
+  const totalCreativity = useMemo(
+    () => messages.reduce((sum, m) => m.subtype === 'creativity_score' ? sum + (m.creativityBonus || 0) : sum, 0),
+    [messages],
+  );
+
   return (
     <div className="flex min-h-0 flex-col h-full overflow-hidden">
       {/* Header */}
       <div className="px-4 py-2 shrink-0">
         <div className="flex items-center gap-2 flex-wrap justify-end">
+<<<<<<< Updated upstream
+          <Tooltip content={t('chat.totalPlayTime')} placement="bottom" variant="compact" asChild>
+            <span className="flex items-center gap-1.5 px-2 py-0.5 rounded-sm text-xs bg-on-surface/5 border border-outline-variant/20 text-on-surface-variant/60 tabular-nums">
+              <span className="material-symbols-outlined text-sm">timer</span>
+              {formatDuration(totalPlayTime)}
+            </span>
+          </Tooltip>
+=======
           <span
             className="flex items-center gap-1.5 px-2 py-0.5 rounded-sm text-xs bg-on-surface/5 border border-outline-variant/20 text-on-surface-variant/60 tabular-nums"
             title={t('chat.totalPlayTime')}
@@ -115,32 +129,44 @@ export default function ChatPanel({
             <span className="material-symbols-outlined text-sm">timer</span>
             {formatDuration(totalPlayTime)}
           </span>
+>>>>>>> Stashed changes
           {narrationTime > 0 && (
-            <span className="flex items-center gap-1.5 px-2 py-0.5 rounded-sm text-xs bg-on-surface/5 border border-outline-variant/20 text-on-surface-variant/60 tabular-nums" title={t('chat.narrationTime')}>
-              <span className="material-symbols-outlined text-sm">record_voice_over</span>
-              {formatDuration(Math.round(narrationTime))}
-            </span>
+            <Tooltip content={t('chat.narrationTime')} placement="bottom" variant="compact" asChild>
+              <span className="flex items-center gap-1.5 px-2 py-0.5 rounded-sm text-xs bg-on-surface/5 border border-outline-variant/20 text-on-surface-variant/60 tabular-nums">
+                <span className="material-symbols-outlined text-sm">record_voice_over</span>
+                {formatDuration(Math.round(narrationTime))}
+              </span>
+            </Tooltip>
           )}
-          <button
-            type="button"
-            onClick={onMomentumClick}
-            disabled={!onMomentumClick || momentumMinigameActive}
-            className={`flex items-center gap-1.5 px-2 py-0.5 rounded-sm text-xs tabular-nums transition-all ${
-              momentumMinigameActive
-                ? 'bg-amber-400/15 border border-amber-400/50 text-amber-300 animate-pulse cursor-default'
-                : momentumBonus > 0
-                  ? 'bg-blue-400/10 border border-blue-400/30 text-blue-300 hover:bg-blue-400/20 hover:border-blue-400/50 cursor-pointer'
-                  : momentumBonus < 0
-                    ? 'bg-red-400/10 border border-red-400/30 text-red-300 hover:bg-red-400/20 hover:border-red-400/50 cursor-pointer'
-                    : 'bg-on-surface/5 border border-outline-variant/20 text-on-surface-variant/60 hover:bg-on-surface/10 hover:border-outline-variant/40 cursor-pointer'
-            }`}
-            title={momentumMinigameActive ? t('gameplay.momentumMinigameActive') : t('gameplay.momentumClickHint')}
-          >
-            <span className="material-symbols-outlined text-sm">
-              {momentumMinigameActive ? 'target' : momentumBonus > 0 ? 'bolt' : momentumBonus < 0 ? 'trending_down' : 'casino'}
-            </span>
-            {t('gameplay.momentumActive', { bonus: (momentumBonus > 0 ? '+' : '') + momentumBonus })}
-          </button>
+          <Tooltip content={momentumMinigameActive ? t('gameplay.momentumMinigameActive') : t('gameplay.momentumClickHint')} placement="bottom" variant="compact" asChild>
+            <button
+              type="button"
+              onClick={onMomentumClick}
+              disabled={!onMomentumClick || momentumMinigameActive}
+              className={`flex items-center gap-1.5 px-2 py-0.5 rounded-sm text-xs tabular-nums transition-all ${
+                momentumMinigameActive
+                  ? 'bg-amber-400/15 border border-amber-400/50 text-amber-300 animate-pulse cursor-default'
+                  : momentumBonus > 0
+                    ? 'bg-blue-400/10 border border-blue-400/30 text-blue-300 hover:bg-blue-400/20 hover:border-blue-400/50 cursor-pointer'
+                    : momentumBonus < 0
+                      ? 'bg-red-400/10 border border-red-400/30 text-red-300 hover:bg-red-400/20 hover:border-red-400/50 cursor-pointer'
+                      : 'bg-on-surface/5 border border-outline-variant/20 text-on-surface-variant/60 hover:bg-on-surface/10 hover:border-outline-variant/40 cursor-pointer'
+              }`}
+            >
+              <span className="material-symbols-outlined text-sm">
+                {momentumMinigameActive ? 'target' : momentumBonus > 0 ? 'bolt' : momentumBonus < 0 ? 'trending_down' : 'casino'}
+              </span>
+              {(momentumBonus > 0 ? '+' : '') + momentumBonus}
+            </button>
+          </Tooltip>
+          {totalCreativity > 0 && (
+            <Tooltip content={t('chat.totalCreativity')} placement="bottom" variant="compact" asChild>
+              <span className="flex items-center gap-1.5 px-2 py-0.5 rounded-sm text-xs bg-amber-400/10 border border-amber-400/30 text-amber-300 tabular-nums">
+                <span className="material-symbols-outlined text-sm">emoji_objects</span>
+                {totalCreativity}
+              </span>
+            </Tooltip>
+          )}
           <div className="flex items-center gap-0.5 px-1 py-0.5 rounded-sm bg-on-surface/5 border border-outline-variant/20">
             <button
               type="button"

@@ -1,4 +1,4 @@
-import { useCallback } from 'react';
+import { useCallback, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useGame } from '../../contexts/GameContext';
 import { useSettings } from '../../contexts/SettingsContext';
@@ -14,12 +14,13 @@ const QUICK_BEAT_LIMIT = 5;
  * etc.) falls back to the provided `generateScene` so the player gets a full
  * scene without needing to re-click anything.
  *
- * Returns { submitQuickBeat, isQuickBeatLocked, quickBeatStreak, remaining }.
+ * Returns { submitQuickBeat, isQuickBeatPending, isQuickBeatLocked, quickBeatStreak, remaining }.
  */
 export function useQuickBeat({ generateScene, onEscalate, onError } = {}) {
   const { t } = useTranslation();
   const { state, dispatch } = useGame();
   const { settings } = useSettings();
+  const [isQuickBeatPending, setIsQuickBeatPending] = useState(false);
 
   const quickBeatStreak = state.quickBeatStreak || 0;
   const isQuickBeatLocked = quickBeatStreak >= QUICK_BEAT_LIMIT;
@@ -40,6 +41,7 @@ export function useQuickBeat({ generateScene, onEscalate, onError } = {}) {
       return;
     }
 
+    setIsQuickBeatPending(true);
     devLog.emit({ category: 'pipeline', type: 'quick_beat_start', label: `Quick beat: ${playerAction.slice(0, 60)}`, data: { playerAction, streak: quickBeatStreak } });
 
     let outcome;
@@ -52,16 +54,14 @@ export function useQuickBeat({ generateScene, onEscalate, onError } = {}) {
         dmSettings: settings.dmSettings,
       });
     } catch (err) {
+      setIsQuickBeatPending(false);
       devLog.emit({ category: 'system', type: 'quick_beat_error', label: `Error: ${err.message?.slice(0, 80)}`, severity: 'error', data: { message: err.message } });
       onError?.({ code: err.code || 'QUICK_BEAT_ERROR', message: err.message });
       return;
     }
 
     if (outcome.kind === 'escalate') {
-      // BE detected combat/travel/trade/etc. — fall through to the full scene
-      // flow so the player gets the proper pipeline (image gen, post-scene
-      // work, memory compression, etc.). We pass the original action through
-      // unchanged; intent classifier will pick it up.
+      setIsQuickBeatPending(false);
       devLog.emit({ category: 'pipeline', type: 'quick_beat_escalate', label: `Escalated: ${outcome.reason}`, data: { reason: outcome.reason } });
       onEscalate?.(outcome.reason);
       if (typeof generateScene === 'function') {
@@ -69,6 +69,8 @@ export function useQuickBeat({ generateScene, onEscalate, onError } = {}) {
       }
       return;
     }
+
+    setIsQuickBeatPending(false);
 
     if (outcome.kind === 'error') {
       onError?.({ code: outcome.code, message: outcome.message });
@@ -97,6 +99,7 @@ export function useQuickBeat({ generateScene, onEscalate, onError } = {}) {
 
   return {
     submitQuickBeat,
+    isQuickBeatPending,
     isQuickBeatLocked,
     quickBeatStreak,
     remaining,

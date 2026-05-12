@@ -217,6 +217,13 @@ export const AI_TASK_CATEGORIES = [
     description: 'Extract location graph updates.',
   },
   {
+    key: 'graphRevision',
+    label: 'Graph revision',
+    defaultTier: 'standard',
+    group: 'Location Graph',
+    description: 'AI review and correction of location graph.',
+  },
+  {
     key: 'travelCheck',
     label: 'Travel check',
     defaultTier: 'nano',

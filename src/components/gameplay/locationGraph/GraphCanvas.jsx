@@ -8,7 +8,10 @@ import {
   GRAPH_LAYOUT_H,
   GRAPH_LAYOUT_PAD,
 } from '../../../services/graphLayout.js';
-import { getNodeVisual, getEdgeVisual, getNodeRadius } from './graphVisuals.js';
+import {
+  getNodeVisual, getEdgeVisual, getNodeRadius,
+  buildWavyPath, buildZigzagPath, buildBridgeTicks,
+} from './graphVisuals.js';
 import { SHAPE_PATHS } from './nodeShapes.js';
 import { apiClient } from '../../../services/apiClient.js';
 
@@ -268,6 +271,15 @@ export default function GraphCanvas({
         <pattern id="graph-grid" width={GRID_STEP} height={GRID_STEP} patternUnits="userSpaceOnUse">
           <circle cx={GRID_STEP / 2} cy={GRID_STEP / 2} r={0.8} fill="rgba(255,255,255,0.12)" />
         </pattern>
+        <filter id="edge-portal-glow" x="-50%" y="-50%" width="200%" height="200%">
+          <feGaussianBlur in="SourceGraphic" result="blur">
+            <animate attributeName="stdDeviation" values="2;4;2" dur="2s" repeatCount="indefinite" />
+          </feGaussianBlur>
+          <feMerge>
+            <feMergeNode in="blur" />
+            <feMergeNode in="SourceGraphic" />
+          </feMerge>
+        </filter>
       </defs>
 
       <g transform={`translate(${pan.x + (size.w - LAYOUT_W) / 2},${pan.y + (size.h - LAYOUT_H) / 2}) scale(${zoom})`}>
@@ -278,36 +290,15 @@ export default function GraphCanvas({
           const fromPos = getNodePos(edge.fromId);
           const toPos = getNodePos(edge.toId);
           if (!fromPos || !toPos) return null;
-          const vis = getEdgeVisual(edge.category, edge.metadata);
-          const isSelected = selected?.type === 'edge' && selected.id === edge.id;
-          const isBlocked = edge.edgeType === 'blocked_path_to';
-          const edgeOpacity = vis.opacity ?? 0.7;
-
           return (
-            <g key={edge.id}>
-              <line
-                x1={fromPos.x} y1={fromPos.y}
-                x2={toPos.x} y2={toPos.y}
-                stroke={isBlocked ? '#ef4444' : vis.color}
-                strokeWidth={isSelected ? vis.width + 1.5 : vis.width}
-                strokeDasharray={isBlocked ? '6,3' : vis.dash}
-                opacity={edgeOpacity}
-                style={{ cursor: 'pointer' }}
-                onClick={(e) => { e.stopPropagation(); onSelect({ type: 'edge', id: edge.id }); }}
-              />
-              {isSelected && (
-                <line
-                  x1={fromPos.x} y1={fromPos.y}
-                  x2={toPos.x} y2={toPos.y}
-                  stroke="#fbbf24" strokeWidth={vis.width + 3}
-                  strokeDasharray={vis.dash} opacity={0.3}
-                  pointerEvents="none"
-                />
-              )}
-              {!edge.bidirectional && (
-                <ArrowHead from={fromPos} to={toPos} color={vis.color} />
-              )}
-            </g>
+            <EdgeRenderer
+              key={edge.id}
+              edge={edge}
+              fromPos={fromPos}
+              toPos={toPos}
+              isSelected={selected?.type === 'edge' && selected.id === edge.id}
+              onSelect={onSelect}
+            />
           );
         })}
 
@@ -556,22 +547,205 @@ export default function GraphCanvas({
   );
 }
 
-function ArrowHead({ from, to, color }) {
+function EdgeRenderer({ edge, fromPos, toPos, isSelected, onSelect }) {
+  const vis = getEdgeVisual(edge.category, edge.metadata, edge.edgeType);
+  const opacity = vis.opacity ?? 0.7;
+  const w = isSelected ? vis.width + 1.5 : vis.width;
+  const handleClick = (e) => { e.stopPropagation(); onSelect({ type: 'edge', id: edge.id }); };
+
+  const hitTarget = (
+    <line
+      x1={fromPos.x} y1={fromPos.y} x2={toPos.x} y2={toPos.y}
+      stroke="transparent" strokeWidth={Math.max(vis.width + 8, 12)}
+      style={{ cursor: 'pointer' }} onClick={handleClick}
+    />
+  );
+
+  const selGlow = isSelected ? (
+    <line
+      x1={fromPos.x} y1={fromPos.y} x2={toPos.x} y2={toPos.y}
+      stroke="#fbbf24" strokeWidth={vis.width + 4} opacity={0.3} pointerEvents="none"
+    />
+  ) : null;
+
+  const arrow = !edge.bidirectional ? (
+    <ArrowHead from={fromPos} to={toPos} color={vis.color} size={Math.max(vis.width * 1.5, 8)} />
+  ) : null;
+
+  const midIcon = vis.midIcon ? (
+    <MidpointIcon from={fromPos} to={toPos} icon={vis.midIcon} color={vis.color} />
+  ) : null;
+
+  let visual;
+  switch (vis.renderMode) {
+    case 'double': {
+      visual = (
+        <>
+          <line
+            x1={fromPos.x} y1={fromPos.y} x2={toPos.x} y2={toPos.y}
+            stroke={vis.borderColor || '#000'} strokeWidth={w}
+            strokeDasharray={vis.dash} opacity={opacity}
+            strokeLinecap="round" pointerEvents="none"
+          />
+          <line
+            x1={fromPos.x} y1={fromPos.y} x2={toPos.x} y2={toPos.y}
+            stroke={vis.color} strokeWidth={w * 0.55}
+            strokeDasharray={vis.dash} opacity={opacity}
+            strokeLinecap="round" pointerEvents="none"
+          />
+        </>
+      );
+      break;
+    }
+    case 'bridge': {
+      const ticks = buildBridgeTicks(fromPos, toPos, w * 0.6, 14);
+      visual = (
+        <>
+          <line
+            x1={fromPos.x} y1={fromPos.y} x2={toPos.x} y2={toPos.y}
+            stroke={vis.borderColor || '#000'} strokeWidth={w}
+            opacity={opacity} strokeLinecap="round" pointerEvents="none"
+          />
+          <line
+            x1={fromPos.x} y1={fromPos.y} x2={toPos.x} y2={toPos.y}
+            stroke={vis.color} strokeWidth={w * 0.55}
+            opacity={opacity} strokeLinecap="round" pointerEvents="none"
+          />
+          {ticks.map((tk, i) => (
+            <line
+              key={i}
+              x1={tk.x1} y1={tk.y1} x2={tk.x2} y2={tk.y2}
+              stroke={vis.borderColor || '#000'} strokeWidth={1.5}
+              opacity={opacity} pointerEvents="none"
+            />
+          ))}
+        </>
+      );
+      break;
+    }
+    case 'wavy': {
+      const d = buildWavyPath(fromPos, toPos, vis.wavyAmp ?? 5, 3);
+      visual = (
+        <path
+          d={d} fill="none" stroke={vis.color} strokeWidth={w}
+          strokeDasharray={vis.dash} opacity={opacity}
+          strokeLinecap="round" strokeLinejoin="round" pointerEvents="none"
+        />
+      );
+      break;
+    }
+    case 'zigzag': {
+      const d = buildZigzagPath(fromPos, toPos, vis.zigzagAmp ?? 5);
+      visual = (
+        <path
+          d={d} fill="none" stroke={vis.color} strokeWidth={w}
+          opacity={opacity} strokeLinejoin="round" strokeLinecap="round"
+          pointerEvents="none"
+        />
+      );
+      break;
+    }
+    case 'glow': {
+      visual = (
+        <>
+          <line
+            x1={fromPos.x} y1={fromPos.y} x2={toPos.x} y2={toPos.y}
+            stroke={vis.color} strokeWidth={w}
+            opacity={opacity} strokeLinecap="round"
+            filter="url(#edge-portal-glow)" pointerEvents="none"
+          />
+          <line
+            x1={fromPos.x} y1={fromPos.y} x2={toPos.x} y2={toPos.y}
+            stroke="#fff" strokeWidth={w * 0.4}
+            opacity={opacity * 0.6} strokeLinecap="round" pointerEvents="none"
+          />
+        </>
+      );
+      break;
+    }
+    case 'door': {
+      const dx = toPos.x - fromPos.x;
+      const dy = toPos.y - fromPos.y;
+      const len = Math.sqrt(dx * dx + dy * dy);
+      const gapPx = Math.min(8, len * 0.15);
+      const ux = len > 0 ? dx / len : 0;
+      const uy = len > 0 ? dy / len : 0;
+      const mx = (fromPos.x + toPos.x) / 2;
+      const my = (fromPos.y + toPos.y) / 2;
+      visual = (
+        <>
+          <line
+            x1={fromPos.x} y1={fromPos.y}
+            x2={mx - ux * gapPx} y2={my - uy * gapPx}
+            stroke={vis.color} strokeWidth={w}
+            opacity={opacity} strokeLinecap="round" pointerEvents="none"
+          />
+          <line
+            x1={mx + ux * gapPx} y1={my + uy * gapPx}
+            x2={toPos.x} y2={toPos.y}
+            stroke={vis.color} strokeWidth={w}
+            opacity={opacity} strokeLinecap="round" pointerEvents="none"
+          />
+        </>
+      );
+      break;
+    }
+    default: {
+      visual = (
+        <line
+          x1={fromPos.x} y1={fromPos.y} x2={toPos.x} y2={toPos.y}
+          stroke={vis.color} strokeWidth={w}
+          strokeDasharray={vis.dash} opacity={opacity}
+          strokeLinecap="round" pointerEvents="none"
+        />
+      );
+      break;
+    }
+  }
+
+  return (
+    <g>
+      {selGlow}
+      {hitTarget}
+      {visual}
+      {midIcon}
+      {arrow}
+    </g>
+  );
+}
+
+function MidpointIcon({ from, to, icon, color }) {
+  const mx = (from.x + to.x) / 2;
+  const my = (from.y + to.y) / 2;
+  return (
+    <g transform={`translate(${mx},${my})`} pointerEvents="none">
+      <circle r={8} fill="rgba(0,0,0,0.7)" stroke={color} strokeWidth={0.5} />
+      <text
+        textAnchor="middle" dominantBaseline="central"
+        fill={color} fontSize={10} fontFamily="Material Symbols Outlined"
+      >
+        {icon}
+      </text>
+    </g>
+  );
+}
+
+function ArrowHead({ from, to, color, size = 8 }) {
   const dx = to.x - from.x;
   const dy = to.y - from.y;
   const len = Math.sqrt(dx * dx + dy * dy);
   if (len < 1) return null;
   const nx = dx / len;
   const ny = dy / len;
-  const arrowLen = 8;
+  const halfBase = size * 0.5;
   const midX = (from.x + to.x) / 2;
   const midY = (from.y + to.y) / 2;
-  const tipX = midX + nx * arrowLen;
-  const tipY = midY + ny * arrowLen;
-  const baseX1 = midX - ny * 4;
-  const baseY1 = midY + nx * 4;
-  const baseX2 = midX + ny * 4;
-  const baseY2 = midY - nx * 4;
+  const tipX = midX + nx * size;
+  const tipY = midY + ny * size;
+  const baseX1 = midX - ny * halfBase;
+  const baseY1 = midY + nx * halfBase;
+  const baseX2 = midX + ny * halfBase;
+  const baseY2 = midY - nx * halfBase;
 
   return (
     <polygon

@@ -28,9 +28,12 @@ const SYSTEM_PROMPT = `You are a Location Graph Analyst for an RPG world. Analyz
 - Vague references without spatial significance
 - NEVER use NPC or character names as location names. Locations must be geographic sites (buildings, rooms, areas, paths). If an NPC is mentioned, they belong in npcMoves, not newNodes
 
+## SCALE (1-7, higher = larger)
+7 = country/region, 6 = city/town, 5 = district/quarter, 4 = neighborhood/area, 3 = building complex/large building, 2 = house/single building, 1 = room/chamber.
+
 ## OUTPUT (JSON)
 {
-  "newNodes": [{ "name": "...", "type": "room|site|district|...", "scale": 5, "parentName": "...", "description": "...", "tags": [], "reason": "..." }],
+  "newNodes": [{ "name": "...", "type": "room|site|district|...", "scale": 3, "parentName": "...", "description": "...", "tags": [], "reason": "..." }],
   "newEdges": [{ "fromName": "...", "toName": "...", "edgeType": "door_to|stairs_to|path_to|...", "category": "movement|perception|...", "bidirectional": true, "metadata": {}, "reason": "..." }],
   "updatedEdges": [{ "fromName": "...", "toName": "...", "edgeType": "...", "changes": {}, "reason": "..." }],
   "npcMoves": [{ "npcName": "...", "toLocationName": "...", "reason": "..." }],

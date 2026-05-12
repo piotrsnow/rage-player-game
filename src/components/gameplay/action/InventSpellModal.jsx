@@ -266,6 +266,9 @@ export default function InventSpellModal({ campaignId, character = null, dispatc
                     {result.intelligence != null && (
                       <span className="text-purple-300/80 font-label">{t('attributes.inteligencja', 'Int')} +{result.intelligence}</span>
                     )}
+                    {result.luck != null && (
+                      <span className="text-emerald-300/80 font-label">{t('attributes.szczescie', 'Szcz')} +{result.luck}</span>
+                    )}
                     {result.favorability != null && result.favorability !== 0 && (
                       <span className="text-orange-300/80 font-label">{result.favorability > 0 ? '+' : ''}{result.favorability} {t('gameplay.inventSpellCircumstances', 'okol.')}</span>
                     )}
@@ -295,6 +298,9 @@ export default function InventSpellModal({ campaignId, character = null, dispatc
                   <div className="flex items-center gap-2 text-xs">
                     {result.intelligence != null && (
                       <span className="text-purple-300/80 font-label">{t('attributes.inteligencja', 'Int')} +{result.intelligence}</span>
+                    )}
+                    {result.luck != null && (
+                      <span className="text-emerald-300/80 font-label">{t('attributes.szczescie', 'Szcz')} +{result.luck}</span>
                     )}
                     {result.favorability != null && result.favorability !== 0 && (
                       <span className="text-orange-300/80 font-label">{result.favorability > 0 ? '+' : ''}{result.favorability} {t('gameplay.inventSpellCircumstances', 'okol.')}</span>
@@ -345,6 +351,9 @@ export default function InventSpellModal({ campaignId, character = null, dispatc
                   <span>k50: <span className="font-mono font-label text-on-surface/90">{result.successRoll}</span></span>
                   {result.intelligence != null && (
                     <span>+ {t('attributes.inteligencja', 'Int')}: <span className="font-mono font-label text-purple-300/80">{result.intelligence}</span></span>
+                  )}
+                  {result.luck != null && (
+                    <span>+ {t('attributes.szczescie', 'Szcz')}: <span className="font-mono font-label text-emerald-300/80">{result.luck}</span></span>
                   )}
                   {result.favorability != null && result.favorability !== 0 && (
                     <span>{result.favorability > 0 ? '+' : ''}<span className="font-mono font-label text-orange-300/80">{result.favorability}</span> {t('gameplay.inventSpellCircumstances', 'okol.')}</span>

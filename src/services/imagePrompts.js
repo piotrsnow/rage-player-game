@@ -556,10 +556,10 @@ export function buildItemImagePrompt(item, { genre = 'Fantasy', tone = 'Epic', p
   const traitsClause = traitParts ? ` Visual traits: ${traitParts}.` : '';
 
   if (isGemini) {
-    return `Generate an image in this EXACT art style: ${styleDirective}.${darkDirective}${seriousnessDirective} A single "${itemName}" (${itemType}) on a solid BLACK background.${traitsClause} One object only, centered, clean silhouette, no characters, no hands, no scene, no text, no UI, no watermark.`;
+    return `Generate an image in this EXACT art style: ${styleDirective}.${darkDirective}${seriousnessDirective} Product-shot style showcase of a single "${itemName}" (${itemType}), presented alone on a solid BLACK background as if displayed in a catalog.${traitsClause} Exactly one isolated object, centered in frame, clean silhouette, no other objects, no characters, no hands, no scene, no environment, no text, no UI, no watermark.`;
   }
 
-  return `ART STYLE: ${styleDirective}.${darkDirective}${seriousnessDirective} A single "${itemName}" (${itemType}) on a solid BLACK background.${traitsClause} One object only, centered, clean silhouette, no characters, no hands, no scene, no text, no UI, no watermark.`;
+  return `ART STYLE: ${styleDirective}.${darkDirective}${seriousnessDirective} Product-shot style showcase of a single "${itemName}" (${itemType}), presented alone on a solid BLACK background as if displayed in a catalog.${traitsClause} Exactly one isolated object, centered in frame, clean silhouette, no other objects, no characters, no hands, no scene, no environment, no text, no UI, no watermark.`;
 }
 
 export function buildSpellImagePrompt(spell, { genre = 'Fantasy', tone = 'Epic', provider = 'dalle', imageStyle = 'painting', darkPalette = false, seriousness = null, sdModel = null } = {}) {
@@ -570,7 +570,7 @@ export function buildSpellImagePrompt(spell, { genre = 'Fantasy', tone = 'Epic',
   const spellDescription = sanitizeForImageGen(spell?.description || `${spellName}, magical energy`, provider);
 
   if (isSdWebui) {
-    const sdSubject = `single magical spell effect on solid black background, ${spellName} (${spellSchool} magic), ${spellDescription}, glowing arcane energy, centered composition, no person, no hands, no character, no items, no weapons`;
+    const sdSubject = `SOLO spell effect only, abstract magical energy, ${spellName} (${spellSchool} magic), ${spellDescription}, glowing arcane energy on solid black background, centered composition, spell icon, no people`;
     return buildSdPrompt({
       subject: sdSubject,
       tone,
@@ -588,11 +588,13 @@ export function buildSpellImagePrompt(spell, { genre = 'Fantasy', tone = 'Epic',
   const darkDirective = darkPalette ? ' Use a dark, moody color palette with deep shadows, low-key lighting, muted desaturated tones.' : '';
   const seriousnessDirective = seriousness != null ? ` Mood/tone: ${getSeriousnessDirective(seriousness)}.` : '';
 
+  const noCharacterClause = 'absolutely no people, no person, no human figure, no face, no hands, no body parts, no characters, no silhouettes';
+
   if (isGemini) {
-    return `Generate an image in this EXACT art style: ${styleDirective}. Mood: ${mood}.${darkDirective}${seriousnessDirective} Subject: a magical spell visualization of "${spellName}" (${spellSchool} magic) on a solid BLACK background. Visual: ${spellDescription}. Glowing magical energy, centered composition, dramatic lighting, no characters, no items, no text, no UI elements, no watermark, high detail.`;
+    return `Generate an image in this EXACT art style: ${styleDirective}. Mood: ${mood}.${darkDirective}${seriousnessDirective} Subject: a magical spell visualization of "${spellName}" (${spellSchool} magic) on a solid BLACK background. Visual: ${spellDescription}. Glowing magical energy, centered composition, dramatic lighting, ${noCharacterClause}, no items, no text, no UI elements, no watermark, high detail.`;
   }
 
-  return `ART STYLE: ${styleDirective}. ${mood}.${darkDirective}${seriousnessDirective} Subject: a magical spell effect "${spellName}" (${spellSchool} magic) on a solid BLACK background. Visual: ${spellDescription}. Centered glowing arcane energy, dramatic lighting, no characters, no items, no text, no UI elements, no watermark, high detail.`;
+  return `ART STYLE: ${styleDirective}. ${mood}.${darkDirective}${seriousnessDirective} Subject: a magical spell effect "${spellName}" (${spellSchool} magic) on a solid BLACK background. Visual: ${spellDescription}. Centered glowing arcane energy, dramatic lighting, ${noCharacterClause}, no items, no text, no UI elements, no watermark, high detail.`;
 }
 
 // Humanoid species recognised by the portrait pipeline. Anything else routes

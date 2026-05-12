@@ -200,11 +200,11 @@ export function applyCharacterStateChanges(character, changes) {
       const oldLevel = current.level || 0;
       let newXp = (current.xp ?? current.progress ?? 0) + xpGain;
       let newLevel = oldLevel;
-      const cap = current.cap || SKILL_CAPS.basic;
+      const cap = Math.max(current.cap || SKILL_CAPS.basic, SKILL_CAPS.basic);
 
       while (newLevel < cap) {
         const needed = xpForSkillLevel(newLevel + 1);
-        if (needed <= 0 || newXp < needed) break;
+        if (needed < 0 || newXp < needed) break;
         newXp -= needed;
         newLevel++;
         charXpGained += charXpFromSkillLevelUp(newLevel);

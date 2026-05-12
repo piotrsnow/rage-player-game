@@ -55,14 +55,20 @@ const FACTS = [
 
 const ROTATION_INTERVAL_MS = 20_000;
 
+const PHASE_STYLES = {
+  visible:  { opacity: 1, transform: 'translateY(0)',    transition: 'opacity 420ms ease, transform 420ms ease' },
+  exiting:  { opacity: 0, transform: 'translateY(-6px)', transition: 'opacity 420ms ease, transform 420ms ease' },
+  entering: { opacity: 0, transform: 'translateY(6px)',  transition: 'none' },
+};
+
 export default function DidYouKnow() {
   const [currentIndex, setCurrentIndex] = useState(() => Math.floor(Math.random() * FACTS.length));
-  const [fading, setFading] = useState(false);
+  const [phase, setPhase] = useState('visible');
   const timerRef = useRef(null);
 
   useEffect(() => {
     timerRef.current = setInterval(() => {
-      setFading(true);
+      setPhase('exiting');
       setTimeout(() => {
         setCurrentIndex((prev) => {
           let next;
@@ -71,8 +77,11 @@ export default function DidYouKnow() {
           } while (next === prev && FACTS.length > 1);
           return next;
         });
-        setFading(false);
-      }, 400);
+        setPhase('entering');
+        requestAnimationFrame(() => {
+          requestAnimationFrame(() => setPhase('visible'));
+        });
+      }, 420);
     }, ROTATION_INTERVAL_MS);
 
     return () => clearInterval(timerRef.current);
@@ -105,8 +114,8 @@ export default function DidYouKnow() {
               Czy wiesz, że...?
             </p>
             <p
-              className="text-sm leading-relaxed text-sky-100/90 transition-opacity duration-400"
-              style={{ opacity: fading ? 0 : 1 }}
+              className="text-sm leading-relaxed text-sky-100/90"
+              style={PHASE_STYLES[phase]}
             >
               {FACTS[currentIndex]}
             </p>

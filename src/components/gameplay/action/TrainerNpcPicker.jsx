@@ -30,7 +30,7 @@ export default function TrainerNpcPicker({ trainers, character, dispatch, onCanc
               <div className="flex flex-wrap gap-1">
                 {(npc.canTrain || []).map((skillName) => {
                   const skill = character?.skills?.[skillName];
-                  const cap = skill?.cap ?? SKILL_CAPS.basic;
+                  const cap = Math.max(skill?.cap ?? SKILL_CAPS.basic, SKILL_CAPS.basic);
                   const maxed = cap >= SKILL_CAPS.max;
                   return (
                     <button

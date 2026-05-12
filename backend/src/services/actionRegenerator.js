@@ -12,7 +12,7 @@ const TONE_DESCRIPTIONS = {
   aggressive:   'agresywne — konfrontacyjne, groźby, zastraszanie, siłowe rozwiązania',
   neutral:      'neutralne — wyważone, pragmatyczne, bez emocji',
   conciliatory: 'ugodowe — dyplomatyczne, łagodzące napięcia, szukające kompromisu',
-  sleazy:       'obleśne — dwuznaczne, nieprzyzwoite, prowokujące obrzydliwie',
+  sleazy:       'obrzydliwe — dwuznaczne, nieprzyzwoite, prowokujące obrzydliwie',
   empathetic:   'empatyczne — współczujące, troskliwe, wczuwające się w emocje innych',
 };
 

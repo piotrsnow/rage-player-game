@@ -430,6 +430,7 @@ model CampaignQuickBeat {
   npcSpeaker       String?
   npcReply         String?  @db.Text
   timeAdvance      Float?
+  newItems         Json?
   createdAt        DateTime @default(now()) @db.Timestamptz
 
   campaign Campaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)

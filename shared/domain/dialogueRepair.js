@@ -94,7 +94,11 @@ function lookupGender(name, knownNpcs, existingDialogueSegments) {
 }
 
 function normalizeTextForDedup(text) {
-  return (text || '').trim().toLowerCase().replace(/[""„"«»'']/g, '').replace(/\s+/g, ' ').trim();
+  return (text || '').trim().toLowerCase().replace(/[""„"«»'']/g, '').replace(/[,;:]+/g, '').replace(/\s+/g, ' ').trim();
+}
+
+function normalizeForQuoteMatch(text) {
+  return (text || '').trim().toLowerCase().replace(/[""„"«»'']/g, '').replace(/[,;:.\-–—…]+/g, '').replace(/\s+/g, ' ').trim();
 }
 
 function escapeRegex(value) {
@@ -541,18 +545,20 @@ export function ensurePlayerDialogue(segments, playerAction, characterName, char
   if (playerQuotes.length === 0) return segments;
 
   const charLower = characterName.toLowerCase();
-  const quoteLookup = new Set(playerQuotes.map((q) => q.toLowerCase()));
+  const quoteLookupNorm = new Set(playerQuotes.map((q) => normalizeForQuoteMatch(q)));
 
   // Pre-pass: when the AI returns a player quote attributed to a partial
   // version of the player's name (e.g. "Barnaba" instead of "Mścichuj
   // Barnaba"), rewrite `character` to the full player name. Gated on a
   // matching player quote so unrelated NPCs sharing a name token are safe.
+  // Uses normalizeForQuoteMatch so minor AI punctuation edits (added comma,
+  // dropped period) don't break the match.
   const normalized = (segments || []).map((s) => {
     if (s?.type !== 'dialogue' || !hasNamedSpeaker(s.character)) return s;
     const sLower = s.character.toLowerCase().trim();
     if (sLower === charLower) return s;
-    const segText = (s.text || '').trim().toLowerCase();
-    if (!quoteLookup.has(segText)) return s;
+    const segTextNorm = normalizeForQuoteMatch(s.text);
+    if (!quoteLookupNorm.has(segTextNorm)) return s;
     if (!speakerMatchesPlayerName(s.character, characterName)) return s;
     return {
       ...s,
@@ -571,13 +577,13 @@ export function ensurePlayerDialogue(segments, playerAction, characterName, char
 
   for (let i = 0; i < result.length; i++) {
     const seg = result[i];
-    if (seg.type === 'dialogue' && isGenericSpeakerName(seg.character) && quoteLookup.has((seg.text || '').trim().toLowerCase())) {
+    if (seg.type === 'dialogue' && isGenericSpeakerName(seg.character) && quoteLookupNorm.has(normalizeForQuoteMatch(seg.text))) {
       result[i] = { ...seg, character: characterName, ...(characterGender ? { gender: characterGender } : {}) };
-      reattributed.add(seg.text.trim().toLowerCase());
+      reattributed.add(normalizeForQuoteMatch(seg.text));
     }
   }
 
-  const remainingQuotes = playerQuotes.filter((q) => !reattributed.has(q.toLowerCase()));
+  const remainingQuotes = playerQuotes.filter((q) => !reattributed.has(normalizeForQuoteMatch(q)));
   if (remainingQuotes.length === 0) return result;
 
   const playerSegments = remainingQuotes.map((text) => ({
