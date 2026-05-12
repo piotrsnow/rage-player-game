@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useCallback, cloneElement, isValidElement, Children } from 'react';
+import { useState, useRef, useEffect, useLayoutEffect, useCallback, cloneElement, isValidElement, Children } from 'react';
 import { createPortal } from 'react-dom';
 
 const VARIANT_CLASSES = {
@@ -119,6 +119,7 @@ export default function Tooltip({
   const resolvedHideOnClick = hideOnClick ?? defaults.hideOnClick;
 
   const [visible, setVisible] = useState(false);
+  const [positioned, setPositioned] = useState(false);
   const [coords, setCoords] = useState({ top: 0, left: 0 });
   const [resolvedSide, setResolvedSide] = useState(placement);
   const triggerRef = useRef(null);
@@ -135,19 +136,29 @@ export default function Tooltip({
         const result = computeCursorPlacement(pointer, tipRect);
         setCoords({ top: result.top, left: result.left });
         setResolvedSide(result.side);
+        setPositioned(true);
         return;
       }
 
-      if (!triggerRef.current) return;
-      const triggerRect = triggerRef.current.getBoundingClientRect();
+      const triggerEl = triggerRef.current;
+      if (!triggerEl) {
+        setVisible(false);
+        return;
+      }
+      const triggerRect = triggerEl.getBoundingClientRect();
+      if (triggerRect.width === 0 && triggerRect.height === 0) {
+        setVisible(false);
+        return;
+      }
       const result = computePlacement(triggerRect, tipRect, placement, offset);
       setCoords({ top: result.top, left: result.left });
       setResolvedSide(result.side);
+      setPositioned(true);
     },
     [placement, offset, asChild],
   );
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (visible) updatePosition(pointerRef.current);
   }, [visible, updatePosition]);
 
@@ -171,6 +182,7 @@ export default function Tooltip({
   const hide = useCallback(() => {
     clearTimeout(timeoutRef.current);
     setVisible(false);
+    setPositioned(false);
   }, []);
 
   const handleMouseMove = useCallback(
@@ -206,7 +218,7 @@ export default function Tooltip({
           ref={tooltipRef}
           role="tooltip"
           style={{ top: coords.top, left: coords.left }}
-          className={`fixed z-[9999] text-on-surface bg-surface-container-highest border border-outline-variant/20 backdrop-blur-xl animate-fade-in pointer-events-none ${VARIANT_CLASSES[variant] || VARIANT_CLASSES.default} ${tooltipClassName}`.trim()}
+          className={`fixed z-[9999] text-on-surface bg-surface-container-highest border border-outline-variant/20 backdrop-blur-xl pointer-events-none ${positioned ? 'animate-fade-in' : 'opacity-0'} ${VARIANT_CLASSES[variant] || VARIANT_CLASSES.default} ${tooltipClassName}`.trim()}
         >
           {content}
           {arrow && (
