@@ -691,6 +691,30 @@ describe('ensurePlayerDialogue', () => {
     expect(playerSeg.text).toBe('Hej!');
   });
 
+  it('re-attributes partial-name dialogue when AI slightly changes punctuation (comma added)', () => {
+    const segments = [
+      { type: 'narration', text: 'Przy progu świątyni stoi jeleń.' },
+      { type: 'dialogue', character: 'Mścichuj', text: 'Co tam, byczku?', gender: 'male' },
+      { type: 'narration', text: 'Jeleń obraca łeb powoli.' },
+    ];
+    const result = ensurePlayerDialogue(
+      segments,
+      '„Co tam byczku?"',
+      'Mścichuj Barnaba',
+      'male'
+    );
+
+    const matching = result.filter(
+      (s) => s.type === 'dialogue' && s.character === 'Mścichuj Barnaba'
+    );
+    expect(matching).toHaveLength(1);
+    expect(matching[0].text).toBe('Co tam, byczku?');
+    const stray = result.filter(
+      (s) => s.type === 'dialogue' && s.character === 'Mścichuj' && s.character !== 'Mścichuj Barnaba'
+    );
+    expect(stray).toHaveLength(0);
+  });
+
   it('re-attributes unnamed generic dialogue to player character', () => {
     const segments = [
       { type: 'narration', text: 'Barnaba zatrzymuje się przy drzwiach.' },
