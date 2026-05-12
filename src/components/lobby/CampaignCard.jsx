@@ -62,7 +62,7 @@ export default function CampaignCard({ campaign, onLoad, onDelete, loading, disa
               {campaign.name || 'Untitled'}
             </p>
             <p className="text-on-surface-variant text-xs mt-1">
-              {campaign.characterName || '?'} · {campaign.characterCareer || '?'} ({t('common.tier')} {campaign.characterTier || 1}) · {campaign.sceneCount || 0} {t('common.scenes')}
+              {campaign.characterName || '?'} · {campaign.characterCareer || campaign.characterSpecies || '?'} ({t('common.tier')} {campaign.characterTier || campaign.characterLevel || 1}) · {campaign.sceneCount || 0} {t('common.scenes')}
             </p>
             <div className="flex gap-2 mt-2">
               <span className="px-2.5 py-0.5 bg-surface-bright text-primary text-[10px] font-bold border border-primary/10 rounded-full">

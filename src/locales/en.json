@@ -633,6 +633,17 @@
     "inventSpellNew": "New!",
     "inventSpellMana": "Mana cost",
     "inventSpellSchool": "School",
+    "regenerateActions": "Change action style",
+    "actionTones": {
+      "thoughtful": "Thoughtful",
+      "bold": "Bold",
+      "stupid": "Stupid",
+      "aggressive": "Aggressive",
+      "neutral": "Neutral",
+      "conciliatory": "Conciliatory",
+      "sleazy": "Sleazy",
+      "empathetic": "Empathetic"
+    },
     "forceRoll": {
       "button": "Force roll",
       "descriptionOff": "Force a dice roll on this action. Left click: enable. Double click: favorable (+30). Right click: unfavorable (−30).",
@@ -644,6 +655,10 @@
     "continueButton": "Continue",
     "continueAction": "[CONTINUE]",
     "continueChatMessage": "Continue — moving the story forward.",
+    "initiateCombatChat": "I charge into battle!",
+    "attackNpcChat": "I attack {{name}}!",
+    "beerDuelChat": "I propose a beer duel!",
+    "beerDuelVsChat": "I propose a beer duel against {{name}}!",
     "continueDisabledTooltip": "You cannot pick “Continue” twice in a row. Choose another action or “Wait”.",
     "waitButton": "Wait",
     "waitAction": "[WAIT]",
@@ -1094,9 +1109,11 @@
       "wild": "Wild"
     },
     "lengthLabels": {
+      "veryShort": "Very short",
       "short": "Short",
       "medium": "Medium",
-      "long": "Long"
+      "long": "Long",
+      "veryLong": "Very long"
     },
     "language": "Language",
     "languageDesc": "Interface and AI narration language",

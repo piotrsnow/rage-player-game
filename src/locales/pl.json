@@ -626,6 +626,17 @@
     "inventSpellNew": "Nowe!",
     "inventSpellMana": "Koszt many",
     "inventSpellSchool": "Szkoła",
+    "regenerateActions": "Zmień styl akcji",
+    "actionTones": {
+      "thoughtful": "Przemyślane",
+      "bold": "Odważne",
+      "stupid": "Głupie",
+      "aggressive": "Agresywne",
+      "neutral": "Neutralne",
+      "conciliatory": "Ugodowe",
+      "sleazy": "Obleśne",
+      "empathetic": "Empatyczne"
+    },
     "forceRoll": {
       "button": "Wymuś rzut",
       "descriptionOff": "Wymusza rzut na tej akcji. Lewy klik: włącz. Dwuklik: sprzyjające okoliczności (+30). Prawy klik: niesprzyjające (−30).",
@@ -637,6 +648,10 @@
     "continueButton": "Dalej",
     "continueAction": "[CONTINUE]",
     "continueChatMessage": "Dalej — kontynuujemy opowieść.",
+    "initiateCombatChat": "Rzucam się do walki!",
+    "attackNpcChat": "Atakuję {{name}}!",
+    "beerDuelChat": "Proponuję pojedynek piwny!",
+    "beerDuelVsChat": "Proponuję pojedynek piwny z {{name}}!",
     "continueDisabledTooltip": "Nie można dwukrotnie z rzędu wybrać „Dalej”. Wybierz inną akcję lub „Czekaj”.",
     "waitButton": "Czekaj",
     "waitAction": "[WAIT]",
@@ -1088,9 +1103,11 @@
       "wild": "Dziki"
     },
     "lengthLabels": {
+      "veryShort": "Bardzo krótka",
       "short": "Krótka",
       "medium": "Średnia",
-      "long": "Długa"
+      "long": "Długa",
+      "veryLong": "Bardzo długa"
     },
     "language": "Język",
     "languageDesc": "Język interfejsu i narracji AI",

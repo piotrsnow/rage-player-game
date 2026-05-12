@@ -376,7 +376,7 @@ export async function syncQuestsToNormalized(campaignId, quests) {
         // locationId/locationName for promotion-pipeline scoring, etc.) in
         // JSONB. Anything not in the column set survives roundtrip via the
         // reader-side serializer.
-        const KNOWN_COLS = new Set(['description', 'text', 'completed', 'status', 'progress', 'target', 'id']);
+        const KNOWN_COLS = new Set(['description', 'text', 'completed', 'status', 'progress', 'target', 'id', 'objectiveType', 'nodeKey']);
         const metadata = {};
         for (const [k, v2] of Object.entries(obj)) {
           if (!KNOWN_COLS.has(k) && v2 !== undefined && v2 !== null) metadata[k] = v2;
@@ -385,6 +385,8 @@ export async function syncQuestsToNormalized(campaignId, quests) {
           questId: dbId,
           displayOrder: idx,
           description,
+          objectiveType: obj.objectiveType || null,
+          nodeKey: obj.nodeKey || null,
           progress: typeof obj.progress === 'number' ? obj.progress : (completed ? 1 : 0),
           targetAmount: typeof obj.target === 'number' ? obj.target : 1,
           status: completed ? 'done' : 'pending',

@@ -148,6 +148,7 @@ export default function GameplayPage({ readOnly = false, shareToken = null, onRe
     streamingNarrative,
     streamComplete,
     streamError, retryAfterStreamError, dismissStreamError,
+    streamedBytes, avgSceneSizeBytes,
   } = useAI();
 
   // Resolve "which source of truth" for every slice — single branch point
@@ -219,6 +220,7 @@ export default function GameplayPage({ readOnly = false, shareToken = null, onRe
   const [viewingSceneIndex, setViewingSceneIndex] = useState(null);
   const [autoPlayScenes, setAutoPlayScenes] = useState(false);
   const [combatExpandedLayout, setCombatExpandedLayout] = useState(false);
+  const [isRegeneratingActions, setIsRegeneratingActions] = useState(false);
   useEffect(() => { if (!combat?.active) setCombatExpandedLayout(false); }, [combat?.active]);
   const handleSceneNavRef = useRef(null);
   const consecutiveIdleEventsRef = useRef(0);
@@ -587,6 +589,29 @@ export default function GameplayPage({ readOnly = false, shareToken = null, onRe
     });
   }, [generateScene, isMultiplayer]);
 
+  const handleRegenerateActions = useCallback(async (tone) => {
+    const cid = sCampaign?.backendId || urlCampaignId;
+    if (!cid || isMultiplayer || isRegeneratingActions) return;
+    setIsRegeneratingActions(true);
+    try {
+      const res = await apiClient.post('/ai/regenerate-actions', {
+        campaignId: cid,
+        tone,
+        language: settings.language || 'pl',
+      });
+      if (res?.suggestedActions?.length) {
+        const sceneId = scenes[scenes.length - 1]?.id;
+        if (sceneId) {
+          dispatch({ type: 'UPDATE_SCENE_ACTIONS', payload: { sceneId, actions: res.suggestedActions } });
+        }
+      }
+    } catch (err) {
+      console.warn('Action regeneration failed:', err?.message);
+    } finally {
+      setIsRegeneratingActions(false);
+    }
+  }, [sCampaign?.backendId, urlCampaignId, isMultiplayer, isRegeneratingActions, settings.language, scenes, dispatch]);
+
   const actions = useGameplayActions({
     dispatch,
     autoSave,
@@ -818,6 +843,8 @@ export default function GameplayPage({ readOnly = false, shareToken = null, onRe
               showLoader={isPlayerActionOverlayActive && isGeneratingScene}
               loaderStartTime={isMultiplayer ? mpSceneGenStartTime : sceneGenStartTime}
               loaderEstimatedMs={lastSceneGenMs}
+              loaderStreamedBytes={streamedBytes}
+              loaderAvgSceneSizeBytes={avgSceneSizeBytes}
               fastFinish={overlayFastFinish}
               canManuallySkip={canManuallySkipOverlay}
               waitForDice={diceIsActive}
@@ -848,6 +875,8 @@ export default function GameplayPage({ readOnly = false, shareToken = null, onRe
               startTime={isMultiplayer ? mpSceneGenStartTime : sceneGenStartTime}
               estimatedMs={lastSceneGenMs}
               completing={streamingNarrative !== null}
+              streamedBytes={streamedBytes}
+              avgSceneSizeBytes={avgSceneSizeBytes}
             />
           </div>
         )}
@@ -901,6 +930,8 @@ export default function GameplayPage({ readOnly = false, shareToken = null, onRe
                 setWorldModalInitialTab('map');
                 setWorldModalOpen(true);
               }}
+              onRegenerateActions={!isMultiplayer ? handleRegenerateActions : null}
+              isRegeneratingActions={isRegeneratingActions}
             />
           </div>
         )}

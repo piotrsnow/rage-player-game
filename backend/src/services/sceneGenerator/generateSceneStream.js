@@ -123,6 +123,7 @@ export async function generateSceneStream(campaignId, playerAction, options = {}
     userId = null,
     requestId = null,
   } = options;
+  const genStartMs = Date.now();
   let resolvedMechanics = resolvedMechanicsOpt;
   const creativityEligible = isCreativityEligible(playerAction, { isCustomAction, fromAutoPlayer });
 
@@ -678,6 +679,9 @@ export async function generateSceneStream(campaignId, playerAction, options = {}
       }
     }
 
+    const generationDurationMs = Date.now() - genStartMs;
+    const responseSizeBytes = Buffer.byteLength(JSON.stringify(sceneResult), 'utf8');
+
     const sceneCreateData = {
       campaignId,
       sceneIndex: newSceneIndex,
@@ -690,6 +694,8 @@ export async function generateSceneStream(campaignId, playerAction, options = {}
       diceRoll: sceneResult.diceRolls ?? sceneResult.diceRoll ?? null,
       stateChanges: sceneResult.stateChanges ?? null,
       scenePacing: sceneResult.scenePacing || 'exploration',
+      generationDurationMs,
+      responseSizeBytes,
     };
 
     // Scene + character must commit together. Function-form $transaction so
@@ -734,10 +740,21 @@ export async function generateSceneStream(campaignId, playerAction, options = {}
 
     // 10. Complete — emit immediately so frontend can render the scene
     let authoritativeQuests = null;
+    let avgResponseSizeBytes = null;
     try {
-      authoritativeQuests = await loadQuestsForReconcile(campaignId);
+      const [questsResult, avgResult] = await Promise.all([
+        loadQuestsForReconcile(campaignId),
+        prisma.campaignScene.aggregate({
+          where: { campaignId, responseSizeBytes: { not: null } },
+          _avg: { responseSizeBytes: true },
+        }),
+      ]);
+      authoritativeQuests = questsResult;
+      avgResponseSizeBytes = avgResult._avg.responseSizeBytes
+        ? Math.round(avgResult._avg.responseSizeBytes)
+        : null;
     } catch (err) {
-      log.warn({ err: err?.message, campaignId }, 'loadQuestsForReconcile failed (non-fatal)');
+      log.warn({ err: err?.message, campaignId }, 'loadQuestsForReconcile / avg aggregate failed (non-fatal)');
     }
 
     onEvent({
@@ -750,6 +767,9 @@ export async function generateSceneStream(campaignId, playerAction, options = {}
         quests: authoritativeQuests,
         newlyUnlockedAchievements,
         updatedAchievementState,
+        generationDurationMs,
+        responseSizeBytes,
+        avgResponseSizeBytes,
       },
     });
 

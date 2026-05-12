@@ -20,6 +20,8 @@ export default function TypewriterActionOverlay({
   showLoader = false,
   loaderStartTime,
   loaderEstimatedMs,
+  loaderStreamedBytes = 0,
+  loaderAvgSceneSizeBytes = null,
   fastFinish = false,
   canManuallySkip = false,
   waitForDice = false,
@@ -275,6 +277,8 @@ export default function TypewriterActionOverlay({
             <SceneGenerationProgress
               startTime={loaderStartTime}
               estimatedMs={loaderEstimatedMs}
+              streamedBytes={loaderStreamedBytes}
+              avgSceneSizeBytes={loaderAvgSceneSizeBytes}
             />
             <DidYouKnow />
           </>

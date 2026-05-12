@@ -11,6 +11,17 @@ import {
 } from './ChatMessageParts';
 import { filterDuplicateDialogueSegmentsWithIndex } from '../../../services/dialogueSegments';
 
+function formatSceneStats(message) {
+  const parts = [];
+  if (message.responseSizeBytes > 0) {
+    parts.push(`${(message.responseSizeBytes / 1024).toFixed(1)} kB`);
+  }
+  if (message.generationDurationMs > 0) {
+    parts.push(`${(message.generationDurationMs / 1000).toFixed(1)}s`);
+  }
+  return parts.length > 0 ? parts.join(' · ') : null;
+}
+
 export function DmMessage({ message, narrator }) {
   const { t } = useTranslation();
   const [showRawAiSpeech, setShowRawAiSpeech] = useState(false);
@@ -28,11 +39,15 @@ export function DmMessage({ message, narrator }) {
       scenePacing: message.scenePacing || 'exploration',
     };
   const rawAiSpeechText = JSON.stringify(rawAiSpeech, null, 2);
+  const statsLabel = formatSceneStats(message);
 
   return (
     <div className="flex flex-col gap-2 animate-fade-in">
       <div className="text-[10px] font-bold text-primary uppercase tracking-widest flex items-center justify-between gap-2 min-w-0">
-        <span className="truncate">{t('chat.dmAi')} · {formatTimestamp(message.timestamp)}</span>
+        <span className="truncate">
+          {t('chat.dmAi')} · {formatTimestamp(message.timestamp)}
+          {statsLabel && <span className="text-on-surface-variant/60 font-normal"> · {statsLabel}</span>}
+        </span>
         <NarratorHeaderButtons
           message={message}
           narrator={narrator}

@@ -79,55 +79,33 @@ export default function DidYouKnow() {
   }, []);
 
   return (
-    <div className="w-full max-w-md mx-auto mt-6 px-4">
+    <div className="w-full max-w-lg mx-auto mt-6 px-4">
       <div
-        className="relative rounded-lg p-4 overflow-hidden"
+        className="relative rounded-xl p-5"
         style={{
-          background: 'linear-gradient(135deg, rgba(14, 25, 42, 0.85), rgba(8, 18, 35, 0.9))',
-          backdropFilter: 'blur(8px)',
-          border: '1px solid transparent',
-          backgroundClip: 'padding-box',
+          background: 'rgba(2, 4, 10, 0.85)',
+          border: '1px solid rgba(125, 211, 252, 0.3)',
+          boxShadow: '0 0 12px rgba(125, 211, 252, 0.07), inset 0 0 12px rgba(125, 211, 252, 0.03)',
         }}
       >
-        {/* Holographic animated border */}
-        <div
-          className="absolute inset-0 rounded-lg pointer-events-none"
-          style={{
-            padding: '1px',
-            background: 'linear-gradient(135deg, rgba(125, 211, 252, 0.5), rgba(56, 189, 248, 0.2), rgba(186, 230, 253, 0.4), rgba(34, 211, 238, 0.3), rgba(125, 211, 252, 0.5))',
-            backgroundSize: '300% 300%',
-            animation: 'holoShimmer 6s ease-in-out infinite',
-            mask: 'linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0)',
-            maskComposite: 'exclude',
-            WebkitMask: 'linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0)',
-            WebkitMaskComposite: 'xor',
-          }}
-        />
-
-        {/* Holographic sheen overlay */}
-        <div
-          className="absolute inset-0 rounded-lg pointer-events-none opacity-[0.07]"
-          style={{
-            background: 'linear-gradient(105deg, transparent 20%, rgba(125, 211, 252, 0.8) 35%, rgba(186, 230, 253, 0.6) 50%, transparent 65%)',
-            backgroundSize: '200% 100%',
-            animation: 'holoSheen 4s ease-in-out infinite',
-          }}
-        />
 
         <div className="relative flex items-start gap-3">
           <span
-            className="material-symbols-outlined text-sky-300 text-lg shrink-0 mt-0.5"
-            style={{ textShadow: '0 0 10px rgba(125, 211, 252, 0.5)' }}
+            className="material-symbols-outlined text-sky-300 text-xl shrink-0 mt-0.5"
+            style={{ textShadow: '0 0 12px rgba(125, 211, 252, 0.6)' }}
           >
             auto_awesome
           </span>
 
           <div className="min-w-0">
-            <p className="text-[10px] uppercase tracking-widest font-bold text-sky-300/80 mb-1.5">
+            <p
+              className="text-xs uppercase tracking-widest font-bold mb-2"
+              style={{ color: 'rgba(125, 211, 252, 0.85)', textShadow: '0 0 8px rgba(125, 211, 252, 0.3)' }}
+            >
               Czy wiesz, że...?
             </p>
             <p
-              className="text-xs leading-relaxed text-sky-100/80 transition-opacity duration-400"
+              className="text-sm leading-relaxed text-sky-100/90 transition-opacity duration-400"
               style={{ opacity: fading ? 0 : 1 }}
             >
               {FACTS[currentIndex]}

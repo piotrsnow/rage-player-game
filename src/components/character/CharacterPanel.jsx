@@ -477,8 +477,12 @@ function SpellsGrid({
       {viewMode === 'list' ? (
         selectedSpell ? (
           <div
-            className="relative min-h-[22rem] overflow-hidden rounded-sm border border-tertiary/20 bg-surface-container-high animate-slide-in-right"
+            className="relative min-h-[22rem] overflow-hidden rounded-sm border border-tertiary/20 bg-surface-container-high animate-slide-in-right cursor-pointer"
             style={selectedSpellImageUrl ? { backgroundImage: `url(${selectedSpellImageUrl})`, backgroundSize: 'cover', backgroundPosition: 'center' } : undefined}
+            onClick={() => onSelectSpell(null)}
+            role="button"
+            tabIndex={0}
+            onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') onSelectSpell(null); }}
           >
             <div className="absolute inset-0 bg-gradient-to-t from-surface-dim via-surface-dim/85 to-surface-dim/35" />
             <div className="absolute inset-0 backdrop-blur-[1px]" />
@@ -545,7 +549,7 @@ function SpellsGrid({
                 {onRegenerateImage && (
                   <button
                     type="button"
-                    onClick={() => onRegenerateImage(selectedSpell.name)}
+                    onClick={(e) => { e.stopPropagation(); onRegenerateImage(selectedSpell.name); }}
                     disabled={regeneratingSpellName === selectedSpell.name}
                     className="flex items-center gap-1.5 text-xs font-label text-on-surface-variant/80 hover:text-tertiary transition-colors disabled:opacity-50"
                   >
@@ -592,9 +596,16 @@ function SpellsGrid({
                     <span className="text-on-surface-variant font-label text-[11px] uppercase tracking-[0.1em] leading-tight block">
                       {spell.name}
                     </span>
-                    <span className="text-xs text-outline mt-0.5 block font-bold">
-                      {spell.manaCost} {t('magic.manaShort', 'many')}
-                    </span>
+                    <div className="flex items-center justify-center gap-2 mt-0.5">
+                      <span className="text-xs text-outline font-bold">
+                        {spell.manaCost} {t('magic.manaShort', 'many')}
+                      </span>
+                      {spell.uses > 0 && (
+                        <span className="text-xs text-primary/80 font-bold">
+                          ×{spell.uses}
+                        </span>
+                      )}
+                    </div>
                   </div>
                 </button>
               );

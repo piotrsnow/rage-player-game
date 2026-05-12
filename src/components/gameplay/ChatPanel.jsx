@@ -94,13 +94,10 @@ export default function ChatPanel({
         <div className="flex items-center gap-2 flex-wrap justify-end">
           <span
             className="flex items-center gap-1.5 px-2 py-0.5 rounded-sm text-xs bg-on-surface/5 border border-outline-variant/20 text-on-surface-variant/60 tabular-nums"
-            title={`${t('chat.sessionTime')}: ${formatDuration(sessionSeconds)} / ${t('chat.totalPlayTime')}: ${formatDuration(totalPlayTime)}`}
+            title={t('chat.totalPlayTime')}
           >
             <span className="material-symbols-outlined text-sm">timer</span>
-            {formatDuration(sessionSeconds)}
-            {totalPlayTime > sessionSeconds && (
-              <span className="text-on-surface-variant/35">/ {formatDuration(totalPlayTime)}</span>
-            )}
+            {formatDuration(totalPlayTime)}
           </span>
           {narrationTime > 0 && (
             <span className="flex items-center gap-1.5 px-2 py-0.5 rounded-sm text-xs bg-on-surface/5 border border-outline-variant/20 text-on-surface-variant/60 tabular-nums" title={t('chat.narrationTime')}>

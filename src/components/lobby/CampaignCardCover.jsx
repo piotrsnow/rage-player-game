@@ -10,7 +10,7 @@ const genreIcons = {
 
 const ROTATION_INTERVAL_MS = 4000;
 
-export default function CampaignCardCover({ images = [], genre = 'Fantasy', campaignName = '' }) {
+export default function CampaignCardCover({ images = [], genre = 'Fantasy', campaignName = '', className = '' }) {
   const { t } = useTranslation();
   const [activeIndex, setActiveIndex] = useState(0);
   const [coverHovered, setCoverHovered] = useState(false);
@@ -39,9 +39,11 @@ export default function CampaignCardCover({ images = [], genre = 'Fantasy', camp
     setActiveIndex(0);
   };
 
+  const sizeClass = className || 'w-24 h-24 shrink-0';
+
   if (validImages.length === 0) {
     return (
-      <div className="w-24 h-24 bg-surface-container-high rounded-sm flex items-center justify-center border border-primary/10 shrink-0 group-hover:border-primary/25 transition-colors">
+      <div className={`${sizeClass} bg-surface-container-high rounded-sm flex items-center justify-center border border-primary/10 group-hover:border-primary/25 transition-colors`}>
         <span className="material-symbols-outlined text-primary-dim group-hover:text-primary transition-colors">
           {genreIcons[genre] || 'book_5'}
         </span>
@@ -51,7 +53,7 @@ export default function CampaignCardCover({ images = [], genre = 'Fantasy', camp
 
   return (
     <div
-      className="relative w-24 h-24 overflow-hidden rounded-sm border border-primary/10 shrink-0 group-hover:border-primary/25 transition-colors"
+      className={`relative ${sizeClass} overflow-hidden rounded-sm border border-primary/10 group-hover:border-primary/25 transition-colors`}
       onMouseEnter={() => setCoverHovered(true)}
       onMouseLeave={handleCoverLeave}
     >

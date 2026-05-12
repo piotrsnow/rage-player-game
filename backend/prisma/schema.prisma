@@ -403,6 +403,8 @@ model CampaignScene {
   scenePacing      String?
   embeddingText    String?
   embedding        Unsupported("vector(1536)")?
+  generationDurationMs Int?
+  responseSizeBytes    Int?
   createdAt        DateTime                     @default(now()) @db.Timestamptz
 
   campaign    Campaign        @relation(fields: [campaignId], references: [id], onDelete: Cascade)
