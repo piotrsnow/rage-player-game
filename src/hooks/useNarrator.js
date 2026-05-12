@@ -59,6 +59,7 @@ export function useNarrator({ viewerMode = false, shareToken = null, backendUrl 
     speak: queue.speak,
     speakScene: queue.speakScene,
     speakSingle: queue.speakSingle,
+    playSegment: queue.playSegment,
     pause: playback.pause,
     resume: playback.resume,
     stop: queue.stop,

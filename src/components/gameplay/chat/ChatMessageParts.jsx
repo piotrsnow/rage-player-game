@@ -1,197 +1,11 @@
-import { useState, useRef, useCallback, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
-import { splitTextForHighlight, elevenlabsService } from '../../../services/elevenlabs';
-import { xttsService } from '../../../services/xtts';
-import { apiClient } from '../../../services/apiClient';
+import { splitTextForHighlight } from '../../../services/elevenlabs';
 import { getDialogueSpeakerLabel } from '../../../services/dialogueSegments';
 import { useGameSlice } from '../../../stores/gameSelectors';
-import { useGame } from '../../../contexts/GameContext';
-import { useSettings } from '../../../contexts/SettingsContext';
-import { resolveSegmentVoice } from '../../../services/characterVoiceResolver';
 import { GenderIcon } from '../../../utils/genderIcon';
 import Tooltip from '../../ui/Tooltip';
 import NpcSpeakerChip from './NpcSpeakerChip';
-import {
-  claimExclusiveReadAloud,
-  clearExclusiveReadAloudAudio,
-  isExclusiveReadAloudOwner,
-  setExclusiveReadAloudAudio,
-  silencePeerDialogAudio,
-  subscribeExclusiveReadAloud,
-  beginDialogSession,
-  setDialogSessionState,
-  endDialogSession,
-} from '../../../utils/readAloudExclusive';
-
-export function ReadAloudButton({ text, seg = null, scenePacing = null }) {
-  const { settings, hasApiKey, voicePools } = useSettings();
-  const { state: gameState, dispatch } = useGame();
-  const campaignId = useGameSlice((s) => s.campaign?.backendId) || null;
-  const [state, setState] = useState('idle');
-  const audioRef = useRef(null);
-  const mountedRef = useRef(true);
-  const lastAttemptRef = useRef(null);
-  const coordSessionRef = useRef(null);
-
-  const endCoordSession = useCallback(() => {
-    if (coordSessionRef.current != null) {
-      endDialogSession(coordSessionRef.current);
-      coordSessionRef.current = null;
-    }
-  }, []);
-
-  useEffect(() => {
-    mountedRef.current = true;
-    return () => {
-      mountedRef.current = false;
-      lastAttemptRef.current = null;
-      audioRef.current?.pause();
-      audioRef.current = null;
-      endCoordSession();
-    };
-  }, [endCoordSession]);
-
-  useEffect(() => {
-    return subscribeExclusiveReadAloud(() => {
-      const mine = lastAttemptRef.current;
-      if (mine == null) return;
-      if (isExclusiveReadAloudOwner(mine)) return;
-      try { audioRef.current?.pause(); } catch { /* ignore */ }
-      lastAttemptRef.current = null;
-      audioRef.current = null;
-      endCoordSession();
-      if (mountedRef.current) setState('idle');
-    });
-  }, [endCoordSession]);
-
-  const stop = useCallback(() => {
-    try { audioRef.current?.pause(); } catch { /* ignore */ }
-    lastAttemptRef.current = null;
-    audioRef.current = null;
-    endCoordSession();
-    silencePeerDialogAudio();
-    if (mountedRef.current) setState('idle');
-  }, [endCoordSession]);
-
-  const toggle = async (e) => {
-    e.stopPropagation();
-    if (state === 'playing' || state === 'loading') { stop(); return; }
-
-    const attemptId = claimExclusiveReadAloud();
-    lastAttemptRef.current = attemptId;
-
-    const provider = ['elevenlabs', 'xtts'].includes(settings.sceneTtsTier) ? settings.sceneTtsTier : (settings.ttsProvider || 'elevenlabs');
-    const voiceId = seg
-      ? resolveSegmentVoice(seg, {
-          defaultVoiceId: voicePools.narratorVoiceId,
-          narratorVoiceId: voicePools.narratorVoiceId,
-          maleVoices: voicePools.maleVoices,
-          femaleVoices: voicePools.femaleVoices,
-          characterVoiceMap: gameState.characterVoiceMap,
-          ttsProvider: provider,
-          viewerMode: false,
-          dispatch,
-        }).voiceId
-      : voicePools.narratorVoiceId;
-    const hasTts = voiceId && hasApiKey(provider);
-
-    if (!hasTts) {
-      const synth = window.speechSynthesis;
-      if (!synth) return;
-      const csid = beginDialogSession({ source: 'readaloud-synth' });
-      coordSessionRef.current = csid;
-      const u = new SpeechSynthesisUtterance(text);
-      u.lang = settings.language || 'pl';
-      u.rate = 1;
-      u.onend = () => {
-        if (!isExclusiveReadAloudOwner(attemptId) || !mountedRef.current) return;
-        lastAttemptRef.current = null;
-        endCoordSession();
-        setState('idle');
-      };
-      u.onerror = () => {
-        if (!isExclusiveReadAloudOwner(attemptId) || !mountedRef.current) return;
-        lastAttemptRef.current = null;
-        endCoordSession();
-        setState('idle');
-      };
-      setDialogSessionState(csid, 'playing');
-      setState('playing');
-      synth.speak(u);
-      return;
-    }
-
-    const csid = beginDialogSession({ source: 'readaloud' });
-    coordSessionRef.current = csid;
-    setState('loading');
-    try {
-      let audioUrl;
-      if (provider === 'xtts') {
-        const res = await xttsService.textToSpeech(voiceId, text, settings.language || 'pl', campaignId);
-        audioUrl = res.audioUrl;
-      } else {
-        const res = await elevenlabsService.textToSpeechWithTimestamps(undefined, voiceId, text, undefined, campaignId, scenePacing);
-        audioUrl = res.audioUrl;
-      }
-      if (!mountedRef.current) { endCoordSession(); return; }
-      if (!isExclusiveReadAloudOwner(attemptId)) {
-        lastAttemptRef.current = null;
-        endCoordSession();
-        if (mountedRef.current) setState('idle');
-        return;
-      }
-      const fullUrl = apiClient.resolveMediaUrl(audioUrl);
-      const audio = new Audio(fullUrl);
-      audioRef.current = audio;
-      setExclusiveReadAloudAudio(audio);
-      audio.onended = () => {
-        clearExclusiveReadAloudAudio(audio);
-        if (!isExclusiveReadAloudOwner(attemptId) || !mountedRef.current) return;
-        lastAttemptRef.current = null;
-        endCoordSession();
-        setState('idle');
-        audioRef.current = null;
-      };
-      audio.onerror = () => {
-        clearExclusiveReadAloudAudio(audio);
-        if (!isExclusiveReadAloudOwner(attemptId) || !mountedRef.current) return;
-        lastAttemptRef.current = null;
-        endCoordSession();
-        setState('idle');
-        audioRef.current = null;
-      };
-      setDialogSessionState(csid, 'playing');
-      setState('playing');
-      audio.play();
-    } catch {
-      lastAttemptRef.current = null;
-      endCoordSession();
-      if (mountedRef.current) setState('idle');
-    }
-  };
-
-  const icon = state === 'loading' ? 'hourglass_top'
-    : state === 'playing' ? 'stop_circle'
-    : 'volume_up';
-
-  return (
-    <button
-      type="button"
-      onClick={toggle}
-      disabled={state === 'loading'}
-      className={`inline-flex items-center justify-center w-4 h-4 rounded-full transition-all shrink-0 ml-1 ${
-        state !== 'idle'
-          ? 'opacity-100 bg-primary/10'
-          : 'opacity-0 group-hover/seg:opacity-60 hover:!opacity-100 hover:bg-primary/10'
-      }`}
-      aria-label={state === 'playing' ? 'Stop' : 'Read aloud'}
-    >
-      <span className={`material-symbols-outlined text-[12px] text-primary/70 hover:text-primary ${state === 'loading' ? 'animate-spin' : ''}`}>
-        {icon}
-      </span>
-    </button>
-  );
-}
+import { NarrableText } from '../../ui/NarrableText';
 
 /**
  * Look up the full NPC row for a dialogue speaker. Case-insensitive match
@@ -343,19 +157,35 @@ export function DialogueSegments({ segments, narrator, messageId, scenePacing = 
                   </span>
                 )}
               </div>
-              <div className="flex items-start gap-0.5">
+              <NarrableText
+                text={seg.text}
+                narrator={narrator}
+                messageId={messageId}
+                segmentIndex={logicalIndex}
+                seg={seg}
+                scenePacing={scenePacing}
+                className="flex items-start gap-0.5"
+                as="div"
+              >
                 <p className="text-xs text-on-surface leading-snug flex-1">
                   &ldquo;<HighlightedText text={seg.text} highlightInfo={narrator?.highlightInfo} segmentIndex={logicalIndex} messageId={messageId} />&rdquo;
                 </p>
-                <ReadAloudButton text={seg.text} seg={seg} scenePacing={scenePacing} />
-              </div>
+              </NarrableText>
             </div>
           );
         }
         return (
           <div key={i} className={`group/seg relative transition-colors ${active ? 'bg-surface-tint/5 rounded-sm' : ''}`}>
             {loading && <TtsLoadingOverlay />}
-            <div className="flex items-start gap-0.5">
+            <NarrableText
+              text={seg.text}
+              narrator={narrator}
+              messageId={messageId}
+              segmentIndex={logicalIndex}
+              scenePacing={scenePacing}
+              className="flex items-start gap-0.5"
+              as="div"
+            >
               <p className="text-xs text-on-surface-variant leading-snug italic flex-1">
                 <HighlightedText text={seg.text} highlightInfo={narrator?.highlightInfo} segmentIndex={logicalIndex} messageId={messageId} />
                 {active && (
@@ -364,8 +194,7 @@ export function DialogueSegments({ segments, narrator, messageId, scenePacing = 
                   </span>
                 )}
               </p>
-              <ReadAloudButton text={seg.text} />
-            </div>
+            </NarrableText>
           </div>
         );
       })}

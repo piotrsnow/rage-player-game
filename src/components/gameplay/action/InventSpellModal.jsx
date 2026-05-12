@@ -2,7 +2,7 @@ import { useState, useCallback, useEffect, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useModalA11y } from '../../../hooks/useModalA11y';
 import { apiClient } from '../../../services/apiClient';
-import { ReadAloudButton } from '../chat/ChatMessageParts';
+import { NarrableText } from '../../ui/NarrableText';
 import DiceRoller from '../../../effects/DiceRoller';
 
 function randomD50() {
@@ -379,8 +379,7 @@ export default function InventSpellModal({ campaignId, character = null, dispatc
                 <div className="bg-primary/5 border border-primary/15 rounded-sm px-3 py-2.5">
                   <div className="flex items-start gap-2">
                     <span className="material-symbols-outlined text-primary/60 text-sm mt-0.5 shrink-0">auto_stories</span>
-                    <p className="text-sm text-on-surface/85 leading-relaxed italic flex-1">{result.narrativeComment}</p>
-                    <ReadAloudButton text={result.narrativeComment} />
+                    <NarrableText text={result.narrativeComment} className="text-sm text-on-surface/85 leading-relaxed italic flex-1" />
                   </div>
                 </div>
               )}

@@ -2,7 +2,7 @@ import { useState, useCallback, useEffect, useRef, memo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useModalA11y } from '../../../hooks/useModalA11y';
 import { apiClient } from '../../../services/apiClient';
-import { ReadAloudButton } from '../chat/ChatMessageParts';
+import { NarrableText } from '../../ui/NarrableText';
 
 const TechnicalDetailsBlock = memo(function TechnicalDetailsBlock({ details, t }) {
   const [open, setOpen] = useState(false);
@@ -279,10 +279,7 @@ export default function IncidentModal({ campaignId, dispatch = null, onClose, on
                 <div className="bg-primary/5 border border-primary/15 rounded-sm px-3 py-2.5 group/seg">
                   <div className="flex items-start gap-2">
                     <span className="material-symbols-outlined text-primary/60 text-sm mt-0.5 shrink-0">auto_stories</span>
-                    <p className="text-sm text-on-surface/85 leading-relaxed italic flex-1">
-                      {result.narrativeComment}
-                    </p>
-                    <ReadAloudButton text={result.narrativeComment} />
+                    <NarrableText text={result.narrativeComment} className="text-sm text-on-surface/85 leading-relaxed italic flex-1" />
                   </div>
                 </div>
               )}
@@ -373,10 +370,7 @@ export default function IncidentModal({ campaignId, dispatch = null, onClose, on
                     <div className="bg-primary/5 border border-primary/10 rounded-sm px-2.5 py-2 group/seg">
                       <div className="flex items-start gap-2">
                         <span className="material-symbols-outlined text-primary/50 text-xs mt-0.5 shrink-0">auto_stories</span>
-                        <p className="text-[11px] text-on-surface/70 leading-relaxed italic flex-1">
-                          {inc.narrativeComment}
-                        </p>
-                        <ReadAloudButton text={inc.narrativeComment} />
+                        <NarrableText text={inc.narrativeComment} className="text-[11px] text-on-surface/70 leading-relaxed italic flex-1" />
                       </div>
                     </div>
                   )}
