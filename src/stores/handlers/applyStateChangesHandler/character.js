@@ -77,10 +77,11 @@ function applySkillProgress(draft, changes) {
     }
     const skill = draft.character.skills[skillName];
     skill.xp = (skill.xp ?? skill.progress ?? 0) + xpGain;
+    const cap = Math.max(skill.cap ?? SKILL_CAPS.basic, SKILL_CAPS.basic);
 
-    while (skill.level < skill.cap) {
+    while (skill.level < cap) {
       const needed = xpForSkillLevel(skill.level + 1);
-      if (needed <= 0 || skill.xp < needed) break;
+      if (needed < 0 || skill.xp < needed) break;
       skill.xp -= needed;
       skill.level += 1;
     }

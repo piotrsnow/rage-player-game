@@ -776,6 +776,7 @@
     "sessionTime": "Session",
     "totalPlayTime": "Total",
     "narrationTime": "Narration",
+    "totalCreativity": "Total creativity",
     "openNpcSheet": "Open character sheet: {{name}}"
   },
   "character": {

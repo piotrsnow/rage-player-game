@@ -83,6 +83,7 @@ export const characterHandlers = {
       char.skills[skillName] = { level: 0, xp: 0, cap: SKILL_CAPS.basic };
     }
     const skill = char.skills[skillName];
+    if (skill.cap < SKILL_CAPS.basic) skill.cap = SKILL_CAPS.basic;
     if (skill.cap >= SKILL_CAPS.max) return;
     skill.cap = Math.min(SKILL_CAPS.max, skill.cap + 1);
 

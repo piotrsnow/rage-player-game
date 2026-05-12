@@ -182,7 +182,7 @@ function getSkillXpProgress(skillName, skillsMap) {
     : { level: typeof raw === 'number' ? raw : 0, xp: 0, cap: SKILL_CAPS.basic };
   const level = obj.level ?? 0;
   const xp = obj.xp ?? obj.progress ?? 0;
-  const cap = obj.cap ?? SKILL_CAPS.basic;
+  const cap = Math.max(obj.cap ?? SKILL_CAPS.basic, SKILL_CAPS.basic);
   const atCap = level >= cap;
   const needed = atCap ? 0 : xpForSkillLevel(level + 1);
   const xpPct = needed > 0 ? Math.min(100, (xp / needed) * 100) : atCap ? 100 : 0;

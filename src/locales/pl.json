@@ -633,7 +633,7 @@
       "aggressive": "Agresywne",
       "neutral": "Neutralne",
       "conciliatory": "Ugodowe",
-      "sleazy": "Obleśne",
+      "sleazy": "Obrzydliwe",
       "empathetic": "Empatyczne"
     },
     "forceRoll": {
@@ -769,6 +769,7 @@
     "sessionTime": "Sesja",
     "totalPlayTime": "Łącznie",
     "narrationTime": "Narracja",
+    "totalCreativity": "Suma kreatywności",
     "openNpcSheet": "Otwórz kartę postaci: {{name}}"
   },
   "character": {
