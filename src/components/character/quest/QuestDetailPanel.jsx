@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import RewardBadge from './RewardBadge';
 import QuestProgressDrawer from './QuestProgressDrawer';
-import { TYPE_STYLES, TYPE_ICONS, isReadyToTurnIn, getVisibleObjectives, objStatus } from './helpers';
+import { TYPE_STYLES, TYPE_ICONS, isReadyToTurnIn, getVisibleObjectives, objStatus, resolveObjectiveType } from './helpers';
 
 const OBJECTIVE_TYPE_COLORS = {
   kill: 'bg-red-500/20 text-red-300',
@@ -42,13 +42,24 @@ function ProgressLogButton({ obj, onClick, t }) {
       type="button"
       title={t('quests.progressLog')}
       onClick={(e) => { e.stopPropagation(); onClick(); }}
-      className="relative material-symbols-outlined text-sm text-outline/40 hover:text-primary opacity-0 group-hover:opacity-100 transition-opacity shrink-0 mt-0.5 cursor-pointer"
+      className="relative material-symbols-outlined text-sm text-outline/50 hover:text-primary transition-colors shrink-0 mt-0.5 cursor-pointer"
     >
       history
       <span className="absolute -top-1.5 -right-1.5 flex items-center justify-center w-3.5 h-3.5 text-[8px] font-bold rounded-full bg-primary text-on-primary">
         {entries.length}
       </span>
     </button>
+  );
+}
+
+function ObjectiveTypeBadge({ obj, t, className = '' }) {
+  const objectiveType = resolveObjectiveType(obj);
+  if (!objectiveType) return null;
+  const fallbackMark = obj?.objectiveType ? '' : ' ^';
+  return (
+    <span className={`inline-block text-[9px] font-bold uppercase tracking-wider px-1 py-px rounded mr-1 align-middle ${className} ${OBJECTIVE_TYPE_COLORS[objectiveType] || ''}`}>
+      {t(`quests.objectiveTypes.${objectiveType}`)}{fallbackMark}
+    </span>
   );
 }
 
@@ -93,8 +104,8 @@ export default function QuestDetailPanel({ selected, findNpc, onVerifyObjective,
     <div className="animate-fade-in space-y-4">
       <div>
         <div className="flex items-center gap-2 mb-1">
-          <span className={`material-symbols-outlined text-base ${headerClass}`}>{headerIcon}</span>
-          <h4 className={`font-headline text-on-surface flex-1 ${questStatus === 'completed' ? 'line-through opacity-60' : ''}`}>
+          <span className={`material-symbols-outlined text-lg ${headerClass}`}>{headerIcon}</span>
+          <h4 className={`font-headline text-base text-on-surface flex-1 ${questStatus === 'completed' ? 'line-through opacity-60' : ''}`}>
             {selected.name}
           </h4>
           {isStalled && (
@@ -114,7 +125,7 @@ export default function QuestDetailPanel({ selected, findNpc, onVerifyObjective,
             </span>
           )}
         </div>
-        <p className="text-on-surface-variant text-xs leading-relaxed ml-6">{selected.description}</p>
+        <p className="text-on-surface-variant text-sm leading-relaxed ml-7">{selected.description}</p>
       </div>
 
       {(isStalled || isFailedQuest) && lastMutation && (
@@ -126,7 +137,7 @@ export default function QuestDetailPanel({ selected, findNpc, onVerifyObjective,
             <p className={`text-[10px] font-label uppercase tracking-widest ${isFailedQuest ? 'text-rose-400' : 'text-amber-400'}`}>
               {isFailedQuest ? t('quests.mutationFailReason', { defaultValue: 'Powód porażki' }) : t('quests.mutationStallReason', { defaultValue: 'Powód zatrzymania' })}
             </p>
-            <p className="text-xs text-on-surface mt-0.5 leading-relaxed">{lastMutation.reason}</p>
+            <p className="text-sm text-on-surface mt-0.5 leading-relaxed">{lastMutation.reason}</p>
           </div>
         </div>
       )}
@@ -155,14 +166,14 @@ export default function QuestDetailPanel({ selected, findNpc, onVerifyObjective,
             <div className="flex items-center gap-1.5">
               <span className="material-symbols-outlined text-xs text-on-surface-variant">person</span>
               <span className="text-[10px] font-label text-on-surface-variant uppercase tracking-widest">{t('quests.questGiver')}:</span>
-              <span className="text-xs text-on-surface">{findNpc(selected.questGiverId)?.name || selected.questGiverId}</span>
+              <span className="text-sm text-on-surface">{findNpc(selected.questGiverId)?.name || selected.questGiverId}</span>
             </div>
           )}
           {selected.turnInNpcId && selected.turnInNpcId !== selected.questGiverId && (
             <div className="flex items-center gap-1.5">
               <span className="material-symbols-outlined text-xs text-on-surface-variant">assignment_return</span>
               <span className="text-[10px] font-label text-on-surface-variant uppercase tracking-widest">{t('quests.turnInNpc')}:</span>
-              <span className="text-xs text-on-surface">{findNpc(selected.turnInNpcId)?.name || selected.turnInNpcId}</span>
+              <span className="text-sm text-on-surface">{findNpc(selected.turnInNpcId)?.name || selected.turnInNpcId}</span>
             </div>
           )}
         </div>
@@ -177,7 +188,7 @@ export default function QuestDetailPanel({ selected, findNpc, onVerifyObjective,
             <p className={`text-[10px] font-label uppercase tracking-widest ${questStatus === 'active' ? 'text-primary-dim' : 'text-outline'}`}>
               {t('quests.completionCondition')}
             </p>
-            <p className="text-xs text-on-surface mt-0.5 leading-relaxed">{selected.completionCondition}</p>
+            <p className="text-sm text-on-surface mt-0.5 leading-relaxed">{selected.completionCondition}</p>
           </div>
         </div>
       )}
@@ -187,6 +198,9 @@ export default function QuestDetailPanel({ selected, findNpc, onVerifyObjective,
           ? { done: selected.objectives, pending: [], locked: [], failed: [], hiddenCount: 0, branchGroups: [] }
           : getVisibleObjectives(selected.objectives);
         const { done, pending, locked, failed, hiddenCount, branchGroups } = sections;
+        const rewardXp = selected.reward?.xp || 0;
+        const objCount = selected.objectives.length;
+        const xpPerObj = rewardXp > 0 && objCount > 0 ? Math.floor(rewardXp / (2 * objCount)) : 0;
         return (
         <div className="space-y-1.5 ml-1">
           <p className="text-[10px] font-label uppercase tracking-widest text-on-surface-variant mb-2">
@@ -207,15 +221,16 @@ export default function QuestDetailPanel({ selected, findNpc, onVerifyObjective,
             <div key={obj.id || obj.nodeKey} className="group flex items-start gap-2 py-1 px-2 rounded-sm hover:bg-surface-container-highest/60 transition-colors">
               <StatusIcon status="done" />
               <div className="flex-1 min-w-0">
-                <p className="text-xs leading-relaxed text-on-surface-variant line-through">
-                  {obj.objectiveType && (
-                    <span className={`inline-block text-[9px] font-bold uppercase tracking-wider px-1 py-px rounded mr-1 align-middle no-underline ${OBJECTIVE_TYPE_COLORS[obj.objectiveType] || ''}`}>
-                      {t(`quests.objectiveTypes.${obj.objectiveType}`)}
-                    </span>
-                  )}
+                <p className="text-sm leading-relaxed text-on-surface-variant line-through">
+                  <ObjectiveTypeBadge obj={obj} t={t} className="no-underline" />
                   {obj.description}
                 </p>
               </div>
+              {xpPerObj > 0 && (
+                <span className={`shrink-0 text-[9px] font-label px-1 py-px rounded-sm ${obj.xpAwarded ? 'bg-primary/15 text-primary' : 'bg-surface-container/60 text-on-surface-variant/50'}`}>
+                  {obj.xpAwarded || xpPerObj} xp
+                </span>
+              )}
               <ProgressLogButton obj={obj} onClick={() => setLogObjective(obj)} t={t} />
             </div>
           ))}
@@ -227,12 +242,8 @@ export default function QuestDetailPanel({ selected, findNpc, onVerifyObjective,
               <div key={obj.id || obj.nodeKey} className="group flex items-start gap-2 py-1 px-2 rounded-sm hover:bg-surface-container-highest/60 transition-colors">
                 <StatusIcon status="pending" isNext={isNext} />
                 <div className="flex-1 min-w-0">
-                  <p className="text-xs leading-relaxed text-on-surface">
-                    {obj.objectiveType && (
-                      <span className={`inline-block text-[9px] font-bold uppercase tracking-wider px-1 py-px rounded mr-1 align-middle ${OBJECTIVE_TYPE_COLORS[obj.objectiveType] || ''}`}>
-                        {t(`quests.objectiveTypes.${obj.objectiveType}`)}
-                      </span>
-                    )}
+                  <p className="text-sm leading-relaxed text-on-surface">
+                    <ObjectiveTypeBadge obj={obj} t={t} />
                     {obj.description}
                     {obj.choiceLabel && (
                       <span className="ml-2 text-[10px] font-label uppercase tracking-widest text-primary/70">
@@ -244,6 +255,11 @@ export default function QuestDetailPanel({ selected, findNpc, onVerifyObjective,
                     <p className="text-[10px] text-primary-dim/70 italic mt-0.5">{obj.progress}</p>
                   )}
                 </div>
+                {xpPerObj > 0 && (
+                  <span className="shrink-0 text-[9px] font-label px-1 py-px rounded-sm bg-surface-container/60 text-on-surface-variant/50">
+                    {xpPerObj} xp
+                  </span>
+                )}
                 <ProgressLogButton obj={obj} onClick={() => setLogObjective(obj)} t={t} />
                 {questStatus === 'active' && (
                   isVerifying ? (
@@ -279,12 +295,8 @@ export default function QuestDetailPanel({ selected, findNpc, onVerifyObjective,
             <div key={obj.id || obj.nodeKey} className="flex items-start gap-2 py-1 px-2 rounded-sm opacity-60">
               <StatusIcon status="locked" />
               <div className="flex-1 min-w-0">
-                <p className="text-xs leading-relaxed text-on-surface-variant italic">
-                  {obj.objectiveType && (
-                    <span className={`inline-block text-[9px] font-bold uppercase tracking-wider px-1 py-px rounded mr-1 align-middle ${OBJECTIVE_TYPE_COLORS[obj.objectiveType] || ''}`}>
-                      {t(`quests.objectiveTypes.${obj.objectiveType}`)}
-                    </span>
-                  )}
+                <p className="text-sm leading-relaxed text-on-surface-variant italic">
+                  <ObjectiveTypeBadge obj={obj} t={t} />
                   {obj.description}
                 </p>
                 {Array.isArray(obj.parents) && obj.parents.length > 0 && (
@@ -300,12 +312,8 @@ export default function QuestDetailPanel({ selected, findNpc, onVerifyObjective,
             <div key={obj.id || obj.nodeKey} className="flex items-start gap-2 py-1 px-2 rounded-sm">
               <StatusIcon status="failed" />
               <div className="flex-1 min-w-0">
-                <p className="text-xs leading-relaxed text-rose-300/80 line-through">
-                  {obj.objectiveType && (
-                    <span className={`inline-block text-[9px] font-bold uppercase tracking-wider px-1 py-px rounded mr-1 align-middle no-underline ${OBJECTIVE_TYPE_COLORS[obj.objectiveType] || ''}`}>
-                      {t(`quests.objectiveTypes.${obj.objectiveType}`)}
-                    </span>
-                  )}
+                <p className="text-sm leading-relaxed text-rose-300/80 line-through">
+                  <ObjectiveTypeBadge obj={obj} t={t} className="no-underline" />
                   {obj.description}
                 </p>
               </div>
@@ -353,6 +361,47 @@ export default function QuestDetailPanel({ selected, findNpc, onVerifyObjective,
             </div>
           )}
         </div>
+        );
+      })()}
+
+      {/* Aggregated quest timeline — progress log entries from all objectives + mutation events */}
+      {(() => {
+        const timeline = [];
+        for (const obj of selected.objectives || []) {
+          for (const entry of Array.isArray(obj.progressLog) ? obj.progressLog : []) {
+            timeline.push({ kind: 'progress', sceneIndex: entry.sceneIndex ?? 0, text: entry.text, objective: obj.description });
+          }
+        }
+        for (const mut of Array.isArray(selected.mutationLog) ? selected.mutationLog : []) {
+          timeline.push({ kind: 'mutation', sceneIndex: mut.sceneIndex ?? 0, text: mut.reason, mutation: mut.mutation });
+        }
+        timeline.sort((a, b) => a.sceneIndex - b.sceneIndex);
+        if (timeline.length === 0) return null;
+        return (
+          <div className="mt-2 ml-1">
+            <p className="text-[10px] font-label uppercase tracking-widest text-on-surface-variant mb-2 flex items-center gap-1.5">
+              <span className="material-symbols-outlined" style={{ fontSize: '12px' }}>history</span>
+              {t('quests.questTimeline')}
+            </p>
+            <div className="space-y-2 border-l border-outline-variant/15 pl-3 ml-1">
+              {timeline.map((entry, i) => (
+                <div key={i} className="flex items-start gap-2">
+                  <span className="shrink-0 inline-flex items-center justify-center px-1.5 py-0.5 text-[9px] font-label uppercase tracking-widest rounded-sm bg-primary/10 text-primary border border-primary/20 mt-0.5">
+                    {t('quests.sceneLabel', { index: entry.sceneIndex })}
+                  </span>
+                  <div className="min-w-0">
+                    <p className="text-sm text-on-surface leading-relaxed">{entry.text}</p>
+                    {entry.kind === 'progress' && entry.objective && (
+                      <p className="text-[10px] text-outline/60 mt-0.5 truncate">{entry.objective}</p>
+                    )}
+                    {entry.kind === 'mutation' && (
+                      <p className="text-[10px] text-amber-400/70 mt-0.5">{entry.mutation}</p>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
         );
       })()}
 

@@ -388,6 +388,7 @@ ${playerComplaint}`;
 
   const { text } = await callAIJson({
     modelTier: 'premium',
+    taskCategory: 'incidentAnalysis',
     systemPrompt,
     userPrompt,
     maxTokens: 2000,

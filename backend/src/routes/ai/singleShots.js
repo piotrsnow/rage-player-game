@@ -13,6 +13,7 @@ import { resolveCombatTurn } from '../../services/combatTurnResolver.js';
 import { verifyObjective } from '../../services/objectiveVerifier.js';
 import { generateRecap } from '../../services/recapGenerator.js';
 import { ensureAppearanceAndDialect } from '../../services/livingWorld/npcAppearanceDialect.js';
+import { regenerateActions } from '../../services/actionRegenerator.js';
 import {
   STORY_PROMPT_SCHEMA,
   CHARACTER_LEGEND_SCHEMA,
@@ -25,6 +26,7 @@ import {
   VERIFY_OBJECTIVE_SCHEMA,
   RECAP_SCHEMA,
   NPC_MISSING_FIELDS_SCHEMA,
+  REGENERATE_ACTIONS_SCHEMA,
 } from './schemas.js';
 
 /**
@@ -325,6 +327,54 @@ export async function singleShotRoutes(fastify) {
       return await resolveCombatTurn({
         combatSnapshot, playerAction, diceRoll, language, provider, model, modelTier, userApiKeys,
       });
+    } catch (err) {
+      const status = err.statusCode || 502;
+      return reply.code(status).send({ error: err.message, code: err.code || 'AI_REQUEST_FAILED' });
+    }
+  });
+
+  /**
+   * POST /ai/regenerate-actions — nano-tier re-generation of 3 suggested
+   * actions for the current scene in a caller-chosen tone/style.
+   */
+  fastify.post('/regenerate-actions', { schema: { body: REGENERATE_ACTIONS_SCHEMA } }, async (request, reply) => {
+    const { campaignId, tone, provider = 'openai', model } = request.body || {};
+
+    const lastScene = await prisma.campaignScene.findFirst({
+      where: { campaignId },
+      orderBy: { sceneIndex: 'desc' },
+      select: { narrative: true, stateChanges: true, suggestedActions: true },
+    });
+    if (!lastScene) return reply.code(404).send({ error: 'No scenes found for this campaign' });
+
+    const campaign = await prisma.campaign.findUnique({
+      where: { id: campaignId },
+      select: { currentLocationName: true, coreState: true },
+    });
+    const currentLocation = campaign?.currentLocationName
+      || campaign?.coreState?.world?.currentLocation || '';
+    const characterName = campaign?.coreState?.character?.name || '';
+
+    const npcs = Array.isArray(lastScene.stateChanges?.npcs)
+      ? lastScene.stateChanges.npcs
+      : (Array.isArray(campaign?.coreState?.world?.npcs) ? campaign.coreState.world.npcs : []);
+
+    const userApiKeys = await loadUserApiKeys(prisma, request.user?.id);
+    try {
+      const actions = await regenerateActions({
+        narrative: lastScene.narrative,
+        npcs,
+        currentLocation,
+        characterName,
+        tone,
+        provider,
+        model,
+        userApiKeys,
+      });
+      if (!actions) {
+        return reply.code(502).send({ error: 'Failed to generate actions', code: 'AI_REQUEST_FAILED' });
+      }
+      return { suggestedActions: actions };
     } catch (err) {
       const status = err.statusCode || 502;
       return reply.code(status).send({ error: err.message, code: err.code || 'AI_REQUEST_FAILED' });

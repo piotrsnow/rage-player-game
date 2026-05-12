@@ -20,11 +20,15 @@ export default function NarrativeAnchorsSection({ dmSettings, updateDMSettings }
         ? t('settings.chaosLabels.chaotic')
         : t('settings.chaosLabels.wild');
 
-  const lengthLabel = dmSettings.responseLength < 33
-    ? t('settings.lengthLabels.short')
-    : dmSettings.responseLength < 66
-      ? t('settings.lengthLabels.medium')
-      : t('settings.lengthLabels.long');
+  const lengthLabel = dmSettings.responseLength < 20
+    ? t('settings.lengthLabels.veryShort')
+    : dmSettings.responseLength < 40
+      ? t('settings.lengthLabels.short')
+      : dmSettings.responseLength < 60
+        ? t('settings.lengthLabels.medium')
+        : dmSettings.responseLength < 80
+          ? t('settings.lengthLabels.long')
+          : t('settings.lengthLabels.veryLong');
 
   const combatCommentaryFrequency = dmSettings.combatCommentaryFrequency ?? 3;
   const combatCommentaryLabel = combatCommentaryFrequency === 0

@@ -93,7 +93,7 @@ export async function generateCombatCommentary({
     provider,
     model,
     modelTier,
-    taskCategory: 'sceneGeneration',
+    taskCategory: 'combatCommentary',
     systemPrompt: prompts.system,
     userPrompt: prompts.user,
     maxTokens: 700,

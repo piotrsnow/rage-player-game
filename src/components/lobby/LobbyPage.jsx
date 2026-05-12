@@ -14,6 +14,7 @@ import { useLobbyLoggedInSizing } from '../../hooks/useLobbyLoggedInSizing';
 import Button from '../ui/Button';
 import GlassCard from '../ui/GlassCard';
 import CampaignCard from './CampaignCard';
+import FeaturedCampaignCard from './FeaturedCampaignCard';
 import AuthPanel from './AuthPanel';
 import IntroOverlay from './IntroOverlay';
 import VideoBackground from '../ui/VideoBackground';
@@ -865,7 +866,19 @@ export default function LobbyPage() {
               </button>
             </div>
             <div className="overflow-y-auto p-6 pt-4 space-y-1">
-              {campaigns.map((c, i) => (
+              {campaigns.length > 0 && (
+                <FeaturedCampaignCard
+                  campaign={campaigns[0]}
+                  loading={loadingCampaignId === campaigns[0].id}
+                  disabled={!!loadingCampaignId}
+                  onLoad={() => { handleLoad(campaigns[0]); setShowAllCampaigns(false); }}
+                  onDelete={() => handleDelete(campaigns[0].id)}
+                />
+              )}
+              {campaigns.length > 1 && (
+                <div className="border-t border-outline-variant/10 mt-4 pt-3" />
+              )}
+              {campaigns.slice(1).map((c, i) => (
                 <CampaignCard
                   key={c.id || i}
                   campaign={c}

@@ -316,6 +316,9 @@ export const aiService = {
         quests: result.quests || null,
         newlyUnlockedAchievements: result.newlyUnlockedAchievements || [],
         updatedAchievementState: result.updatedAchievementState || null,
+        generationDurationMs: result.generationDurationMs || null,
+        responseSizeBytes: result.responseSizeBytes || null,
+        avgResponseSizeBytes: result.avgResponseSizeBytes || null,
       };
 
       aiCallLog.finish(logId, finalResult);

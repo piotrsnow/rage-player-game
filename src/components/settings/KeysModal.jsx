@@ -24,7 +24,7 @@ export default function KeysModal({ onClose }) {
       <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
       <div
         ref={modalRef}
-        className="relative w-full max-w-4xl max-h-[90vh] bg-surface-container-highest/80 backdrop-blur-2xl border border-outline-variant/15 rounded-sm flex flex-col shadow-2xl animate-fade-in"
+        className={`relative w-full max-h-[90vh] bg-surface-container-highest/80 backdrop-blur-2xl border border-outline-variant/15 rounded-sm flex flex-col shadow-2xl animate-fade-in ${activeTab === 'models' ? 'max-w-6xl' : 'max-w-4xl'}`}
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between px-6 py-4 border-b border-outline-variant/15 shrink-0">
@@ -62,7 +62,7 @@ export default function KeysModal({ onClose }) {
         )}
 
         <div className="overflow-y-auto custom-scrollbar flex-1">
-          <div className="max-w-4xl mx-auto px-6 lg:px-10 py-8">
+          <div className={`mx-auto px-6 lg:px-10 py-8 ${activeTab === 'models' ? '' : 'max-w-4xl'}`}>
             {activeTab === 'keys' && (
               <>
                 <header className="mb-8 animate-fade-in">

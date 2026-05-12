@@ -2,15 +2,35 @@ import { useState, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useModalA11y } from '../../../hooks/useModalA11y';
 import { apiClient } from '../../../services/apiClient';
+import { OBJECTIVE_TYPES } from '../../../../shared/domain/questObjectiveTypes.js';
+
+const TYPE_COLORS = {
+  kill: 'border-red-500/40 bg-red-500/10 text-red-300',
+  escort: 'border-sky-500/40 bg-sky-500/10 text-sky-300',
+  fetch: 'border-amber-500/40 bg-amber-500/10 text-amber-300',
+  deliver: 'border-teal-500/40 bg-teal-500/10 text-teal-300',
+  craft: 'border-orange-500/40 bg-orange-500/10 text-orange-300',
+  explore: 'border-emerald-500/40 bg-emerald-500/10 text-emerald-300',
+  interact: 'border-violet-500/40 bg-violet-500/10 text-violet-300',
+  survive: 'border-rose-500/40 bg-rose-500/10 text-rose-300',
+  gather: 'border-lime-500/40 bg-lime-500/10 text-lime-300',
+};
 
 export default function SelfQuestModal({ campaignId, onClose, onQuestAccepted }) {
   const { t } = useTranslation();
   const modalRef = useModalA11y(onClose);
   const [view, setView] = useState('form');
   const [description, setDescription] = useState('');
+  const [requiredTypes, setRequiredTypes] = useState([]);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState(null);
   const [result, setResult] = useState(null);
+
+  const toggleType = useCallback((type) => {
+    setRequiredTypes((prev) =>
+      prev.includes(type) ? prev.filter((v) => v !== type) : [...prev, type]
+    );
+  }, []);
 
   const handleSubmit = useCallback(async () => {
     const trimmed = description.trim();
@@ -18,9 +38,9 @@ export default function SelfQuestModal({ campaignId, onClose, onQuestAccepted })
     setSubmitting(true);
     setError(null);
     try {
-      const data = await apiClient.post(`/ai/campaigns/${campaignId}/self-quest`, {
-        description: trimmed,
-      });
+      const body = { description: trimmed };
+      if (requiredTypes.length > 0) body.requiredTypes = requiredTypes;
+      const data = await apiClient.post(`/ai/campaigns/${campaignId}/self-quest`, body);
       setResult(data);
       setView(data.approved ? 'success' : 'rejection');
     } catch (err) {
@@ -28,7 +48,7 @@ export default function SelfQuestModal({ campaignId, onClose, onQuestAccepted })
     } finally {
       setSubmitting(false);
     }
-  }, [description, submitting, campaignId, t]);
+  }, [description, submitting, campaignId, requiredTypes, t]);
 
   const handleConfirmQuest = useCallback(() => {
     if (result?.quest && onQuestAccepted) {
@@ -40,6 +60,7 @@ export default function SelfQuestModal({ campaignId, onClose, onQuestAccepted })
   const resetToForm = useCallback(() => {
     setView('form');
     setDescription('');
+    setRequiredTypes([]);
     setResult(null);
     setError(null);
   }, []);
@@ -85,6 +106,29 @@ export default function SelfQuestModal({ campaignId, onClose, onQuestAccepted })
                 maxLength={500}
                 className="w-full bg-surface-container/60 border border-outline-variant/20 rounded-sm px-3 py-2.5 text-sm text-on-surface placeholder:text-on-surface-variant/50 focus:outline-none focus:border-primary/40 resize-none disabled:opacity-50"
               />
+              {/* Objective type checkboxes */}
+              <div className="space-y-1.5">
+                <p className="text-[10px] text-on-surface-variant/50 uppercase tracking-widest font-label">
+                  {t('gameplay.selfQuestTypesHint', { defaultValue: 'Wymagane typy celów (reszta losowana)' })}
+                </p>
+                <div className="flex flex-wrap gap-1.5">
+                  {OBJECTIVE_TYPES.map((type) => {
+                    const active = requiredTypes.includes(type);
+                    return (
+                      <button
+                        key={type}
+                        type="button"
+                        onClick={() => toggleType(type)}
+                        disabled={submitting}
+                        className={`px-2 py-1 text-[10px] font-label uppercase tracking-wider rounded-sm border transition-all ${active ? TYPE_COLORS[type] : 'border-outline-variant/20 bg-surface-container/40 text-on-surface-variant/60 hover:border-outline-variant/40'}`}
+                      >
+                        {t(`quests.objectiveTypes.${type}`)}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-3">
                   <span className="text-[10px] text-on-surface-variant/40">Shift+Enter — wyślij</span>

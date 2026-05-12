@@ -456,7 +456,7 @@ export async function livingWorldRoutes(fastify) {
       const { text } = await callAIJson({
         provider: 'openai',
         modelTier: 'nano',
-        taskCategory: 'travel_check',
+        taskCategory: 'travelCheck',
         systemPrompt,
         userPrompt,
         maxTokens: 200,

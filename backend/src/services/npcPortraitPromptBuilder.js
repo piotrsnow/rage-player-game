@@ -123,7 +123,7 @@ export async function buildNpcPortraitPrompt({ npc, userApiKeys = null, force = 
     callAIJson({
       provider: 'openai',
       modelTier: 'nano',
-      taskCategory: 'imagePrompt',
+      taskCategory: 'npcPortraitPrompt',
       systemPrompt: SYSTEM_PROMPT,
       userPrompt,
       maxTokens: 300,

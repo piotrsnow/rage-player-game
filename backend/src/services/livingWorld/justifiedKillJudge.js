@@ -68,7 +68,7 @@ export async function judgeKill({
     const parsed = await callNano(SYSTEM_PROMPT, userPrompt, provider, {
       timeoutMs,
       maxTokens: 120,
-      taskCategory: 'auxiliary',
+      taskCategory: 'killJudge',
       taskType: 'kill-judge',
       taskLabel: 'Justified kill judge',
     });

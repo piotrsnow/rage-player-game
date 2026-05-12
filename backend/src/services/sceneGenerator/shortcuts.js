@@ -35,7 +35,7 @@ async function generateShortNarrative(instruction, playerAction, provider = 'ope
   } catch { return instruction; }
 
   const resolvedProvider = provider === 'anthropic' ? 'anthropic' : 'openai';
-  const overrideModel = await resolveModelForTask('sceneGeneration', resolvedProvider);
+  const overrideModel = await resolveModelForTask('sceneShortcutNarrative', resolvedProvider);
 
   const usedModel = overrideModel || (resolvedProvider === 'anthropic' ? config.aiModels.standard.anthropic : config.aiModels.standard.openai);
   const logId = await logLlmCallStart({ type: 'shortcut-narrative', label: 'Shortcut narrative', provider: resolvedProvider, model: usedModel, request: { userPrompt: playerAction } });

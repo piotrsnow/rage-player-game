@@ -346,6 +346,19 @@ export const CREATURE_ENCOUNTER_SCHEMA = {
   },
 };
 
+export const REGENERATE_ACTIONS_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    campaignId: { type: 'string', maxLength: 64 },
+    tone: { type: 'string', maxLength: 30 },
+    language: LANGUAGE_SCHEMA,
+    provider: PROVIDER_SCHEMA,
+    model: MODEL_SCHEMA,
+  },
+  required: ['campaignId', 'tone'],
+};
+
 export const SCENE_IMAGE_PATCH_SCHEMA = {
   type: 'object',
   additionalProperties: false,

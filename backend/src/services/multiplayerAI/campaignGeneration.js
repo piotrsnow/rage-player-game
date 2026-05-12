@@ -1,6 +1,7 @@
 import { callAI } from './aiClient.js';
 import { repairDialogueSegments } from '../../../../shared/domain/dialogueRepair.js';
 import { ensureSuggestedActions } from '../../../../shared/domain/fallbackActions.js';
+import { rollObjectiveTypes } from '../../../../shared/domain/questObjectiveTypes.js';
 
 export async function generateMultiplayerCampaign(settings, players, _encryptedApiKeys, language = 'en') {
   const playerCharList = players.map((p) => {
@@ -15,6 +16,11 @@ export async function generateMultiplayerCampaign(settings, players, _encryptedA
   const humorousToneGuidance = settings.tone === 'Humorous'
     ? `\n\nHUMOROUS TONE GUIDELINES: The humor must NOT rely on random absurdity, slapstick, or zaniness. Instead, ground the campaign in a believable world and derive comedy from 1-2 genuinely controversial, provocative, or morally ambiguous elements — corrupt institutions, taboo customs, ethically questionable practices, morally grey factions, or politically charged conflicts. Comedy should emerge from how characters earnestly navigate these uncomfortable realities: dark irony, social satire, awkward moral dilemmas, characters taking absurd stances on serious issues. Sharp wit about real controversies, not random nonsense.\n`
     : '';
+
+  const preRolledTypes = rollObjectiveTypes(7);
+  const objectivesTemplate = preRolledTypes
+    .map((type, i) => `{"id": "obj_${i + 1}", "objectiveType": "${type}", "description": "..."}`)
+    .join(', ');
 
   const prompt = `Create a new MULTIPLAYER RPGon campaign with these parameters:
 - Genre: ${settings.genre}
@@ -42,9 +48,11 @@ Generate the campaign foundation. The characters are already pre-created by the 
     "suggestedActions": ["Action 1", "Action 2", "Action 3", "Action 4"],
     "journalEntries": ["Opening scene summary"]
   },
-  "initialQuest": {"name": "Quest name", "description": "Quest description", "completionCondition": "Main goal to finish the quest", "objectives": [{"id": "obj_1", "description": "First milestone"}, {"id": "obj_2", "description": "Second milestone"}]},
+  "initialQuest": {"name": "Quest name", "description": "Quest description", "completionCondition": "Main goal to finish the quest", "objectives": [${objectivesTemplate}]},
   "initialWorldFacts": ["Fact 1", "Fact 2", "Fact 3"]
 }
+
+Each objective has a pre-assigned "objectiveType". Write the description to match the type (kill = combat/elimination, escort = protecting someone, fetch = finding/retrieving, deliver = transporting, craft = creating, explore = investigating a place, interact = conversation/negotiation, survive = enduring danger, gather = collecting). Do NOT change objectiveType values.
 
 ${language === 'pl' ? 'Write ALL text in Polish.' : ''}`;
 
@@ -146,8 +154,9 @@ ${language === 'pl' ? 'Write ALL text in Polish.' : ''}`;
       active: result.initialQuest ? [{
         id: `quest_${Date.now()}`,
         ...result.initialQuest,
-        objectives: (result.initialQuest.objectives || []).map((obj) => ({
+        objectives: (result.initialQuest.objectives || []).map((obj, i) => ({
           ...obj,
+          objectiveType: obj.objectiveType || preRolledTypes[i] || null,
           completed: obj.completed ?? false,
         })),
       }] : [],

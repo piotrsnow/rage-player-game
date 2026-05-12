@@ -23,6 +23,11 @@ export function useSceneBackendStream() {
   const [streamError, setStreamError] = useState(null);
   const streamingNarrativeRef = useRef(null);
 
+  const streamedBytesRef = useRef(0);
+  const bytesFlushRef = useRef(0);
+  const [streamedBytes, setStreamedBytes] = useState(0);
+  const textEncoder = useRef(null);
+
   const resetStreamState = useCallback(() => {
     setEarlyDiceRoll(null);
     earlyDiceRollEmittedRef.current = false;
@@ -35,6 +40,9 @@ export function useSceneBackendStream() {
     setStreamingSegments(null);
     setStreamComplete(false);
     setStreamError(null);
+    streamedBytesRef.current = 0;
+    bytesFlushRef.current = 0;
+    setStreamedBytes(0);
   }, []);
 
   const clearStreamingOutput = useCallback(() => {
@@ -112,6 +120,9 @@ export function useSceneBackendStream() {
           rawAccumulated = '';
           streamedDiceRollCountRef.current = 0;
           streamedNpcsIntroducedCountRef.current = 0;
+          streamedBytesRef.current = 0;
+          bytesFlushRef.current = 0;
+          setStreamedBytes(0);
           setStreamingNarrative(null);
           streamingNarrativeRef.current = null;
           setStreamingSegments(null);
@@ -126,9 +137,19 @@ export function useSceneBackendStream() {
           devLog.emit({ category: 'ai', type: 'context_ready', label: 'Context assembly complete' });
         } else if (event.type === 'complete') {
           devLog.emit({ category: 'pipeline', type: 'sse_complete', label: 'SSE complete event received' });
+          setStreamedBytes(streamedBytesRef.current);
           setStreamComplete(true);
         } else if (event.type === 'chunk' && event.text) {
           rawAccumulated += event.text;
+
+          if (!textEncoder.current) textEncoder.current = new TextEncoder();
+          streamedBytesRef.current += textEncoder.current.encode(event.text).byteLength;
+          const now = performance.now();
+          if (now - bytesFlushRef.current > 200) {
+            bytesFlushRef.current = now;
+            setStreamedBytes(streamedBytesRef.current);
+          }
+
           const parsed = parsePartialJson(rawAccumulated);
           if (!parsed) return;
 
@@ -229,5 +250,6 @@ export function useSceneBackendStream() {
     streamError,
     setStreamError,
     hasPartialNarrative,
+    streamedBytes,
   };
 }

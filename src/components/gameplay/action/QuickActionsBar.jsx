@@ -127,6 +127,8 @@ export default function QuickActionsBar({
   onForceRollLeft,
   onForceRollDouble,
   onForceRollRight,
+  onRegenerateActions = null,
+  isRegeneratingActions = false,
 }) {
   const { t } = useTranslation();
   const tradeActive = useGameSlice((s) => s.trade?.active);
@@ -212,6 +214,17 @@ export default function QuickActionsBar({
       tone: 'pink',
       visible: recruitableCount > 0 && partyHasSlot && !!dispatch && !!onToggleRecruitPicker,
     },
+  ];
+
+  const toneItems = [
+    { id: 'thoughtful',   icon: 'psychology',      label: t('gameplay.actionTones.thoughtful'),   action: 'thoughtful',   tone: 'blue' },
+    { id: 'bold',         icon: 'local_fire_department', label: t('gameplay.actionTones.bold'),   action: 'bold',         tone: 'red' },
+    { id: 'stupid',       icon: 'sentiment_very_dissatisfied', label: t('gameplay.actionTones.stupid'), action: 'stupid', tone: 'yellow' },
+    { id: 'aggressive',   icon: 'flash_on',        label: t('gameplay.actionTones.aggressive'),   action: 'aggressive',   tone: 'red' },
+    { id: 'neutral',      icon: 'balance',         label: t('gameplay.actionTones.neutral'),      action: 'neutral',      tone: 'gray' },
+    { id: 'conciliatory', icon: 'handshake',       label: t('gameplay.actionTones.conciliatory'), action: 'conciliatory', tone: 'teal' },
+    { id: 'sleazy',       icon: 'sentiment_excited', label: t('gameplay.actionTones.sleazy'),     action: 'sleazy',       tone: 'pink' },
+    { id: 'empathetic',   icon: 'favorite',        label: t('gameplay.actionTones.empathetic'),   action: 'empathetic',   tone: 'purple' },
   ];
 
   const craftItems = [
@@ -305,6 +318,17 @@ export default function QuickActionsBar({
         disabled={isDisabled}
         items={craftItems}
       />
+
+      {onRegenerateActions && !isMultiplayer && (
+        <GroupButton
+          icon={isRegeneratingActions ? 'progress_activity' : 'casino'}
+          label={t('gameplay.regenerateActions', 'Zmień styl akcji')}
+          tone="yellow"
+          disabled={isDisabled || isRegeneratingActions}
+          items={toneItems}
+          onSelect={onRegenerateActions}
+        />
+      )}
 
       {onOpenIncident && (
         <button

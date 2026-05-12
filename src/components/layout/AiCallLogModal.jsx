@@ -233,7 +233,7 @@ export default function AiCallLogModal({ entry, onClose }) {
           </div>
           <div>
             <div className="opacity-60">Model</div>
-            <div className="text-on-surface normal-case tracking-normal font-medium">{entry.model || 'default'}</div>
+            <div className="text-on-surface normal-case tracking-normal font-medium">{entry.model || '—'}</div>
           </div>
           <div>
             <div className="opacity-60">Started</div>

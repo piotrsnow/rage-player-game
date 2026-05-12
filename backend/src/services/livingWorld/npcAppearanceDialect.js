@@ -63,7 +63,7 @@ export async function generateMissingFields(npc, fields, { provider = 'openai', 
     const { text } = await callAIJson({
       provider,
       modelTier: 'standard',
-      taskCategory: 'auxiliary',
+      taskCategory: 'npcAppearance',
       systemPrompt: SYSTEM_PROMPT,
       userPrompt: buildUserPrompt(npc, fields),
       maxTokens: 200,

@@ -6,7 +6,11 @@ function formatSeconds(ms) {
   return `${s}s`;
 }
 
-export default function SceneGenerationProgress({ startTime, estimatedMs, completing = false }) {
+function formatKB(bytes) {
+  return (bytes / 1024).toFixed(1);
+}
+
+export default function SceneGenerationProgress({ startTime, estimatedMs, completing = false, streamedBytes = 0, avgSceneSizeBytes = null }) {
   const { t } = useTranslation();
   const [elapsed, setElapsed] = useState(0);
   const [fadingOut, setFadingOut] = useState(false);
@@ -119,6 +123,12 @@ export default function SceneGenerationProgress({ startTime, estimatedMs, comple
             </span>
           )}
         </div>
+        {streamedBytes > 0 && (
+          <div className="text-center text-[10px] text-on-surface-variant/70 tabular-nums tracking-wider">
+            {formatKB(streamedBytes)} kB
+            {avgSceneSizeBytes > 0 && <> / ~{formatKB(avgSceneSizeBytes)} kB</>}
+          </div>
+        )}
       </div>
     </div>
   );

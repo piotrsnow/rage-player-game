@@ -29,6 +29,35 @@ const RETRYABLE_CODES = new Set(['LLM_TIMEOUT', 'LLM_ERROR', 'OVERLOADED']);
 // want the latency win back.
 const SPECULATIVE_EARLY_IMAGE_ENABLED = false;
 
+function humanizePlayerAction(action, t) {
+  if (!action || !action.startsWith('[')) return action;
+
+  if (action === '[CONTINUE]') return t('gameplay.continueChatMessage');
+
+  if (action === '[PROVIDENCE_AFTER_INCIDENT]') return null;
+  if (action.startsWith('[Combat resolved:')) return null;
+  if (action.startsWith('[BEER_DUEL_RESOLVED:')) return null;
+  if (action.startsWith('[CREATURE_FLEE_FAILED:')) return null;
+
+  if (action === '[INITIATE COMBAT]')
+    return t('gameplay.initiateCombatChat', 'Rzucam się do walki!');
+
+  const beerMatch = action.match(/^\[INITIATE BEER DUEL(?::\s*(.+?))?\]$/);
+  if (beerMatch)
+    return beerMatch[1]
+      ? t('gameplay.beerDuelVsChat', { name: beerMatch[1], defaultValue: 'Proponuję pojedynek piwny z {{name}}!' })
+      : t('gameplay.beerDuelChat', 'Proponuję pojedynek piwny!');
+
+  const attackMatch = action.match(/^\[ATTACK:\s*(.+?)\]$/);
+  if (attackMatch)
+    return t('gameplay.attackNpcChat', { name: attackMatch[1], defaultValue: 'Atakuję {{name}}!' });
+
+  const creatureMatch = action.match(/^\[CREATURE_ENCOUNTER:\s*.+?\]\s*(.+)/s);
+  if (creatureMatch) return creatureMatch[1];
+
+  return null;
+}
+
 export function useSceneGeneration({ ensureMissingInventoryImages, ensureMissingSpellImages, ensureMissingNpcPortraits, imageGenEnabled, imageApiKey, imageProvider, imageStyle, darkPalette, imageSeriousness, imgKeyProvider }) {
   const { t } = useTranslation();
   const { state, dispatch, autoSave } = useGame();
@@ -45,6 +74,12 @@ export function useSceneGeneration({ ensureMissingInventoryImages, ensureMissing
     return historyToSceneGenEstimateMs(history);
   });
   const [sceneGenStartTime, setSceneGenStartTime] = useState(null);
+  const [avgSceneSizeBytes, setAvgSceneSizeBytes] = useState(() => {
+    try {
+      const v = Number(localStorage.getItem('rpgon_avg_scene_size_bytes'));
+      return v > 0 ? v : null;
+    } catch { return null; }
+  });
 
   const { aiProvider, language, needsSystemEnabled, aiModelTier = 'premium', sdWebuiModel = '', sdWebuiSeed = null } = settings;
   const sdWebuiQualityPreset = settings.sdWebuiQualityPreset || 'balanced';
@@ -167,6 +202,22 @@ export function useSceneGeneration({ ensureMissingInventoryImages, ensureMissing
           throw new Error('Backend connection required for scene generation');
         }
 
+        // Player message dispatched before callStream so it precedes any
+        // dice_early events emitted during SSE streaming.
+        const earlyPlayerMsgSent = Boolean(resolved.diceRoll);
+        if (!earlyPlayerMsgSent && !isFirstScene && playerAction && !isPassiveSceneAction) {
+          const displayText = humanizePlayerAction(playerAction, t);
+          if (displayText) {
+            dispatch({ type: 'ADD_CHAT_MESSAGE', payload: { id: `msg_${Date.now()}_player`, role: 'player', content: displayText, timestamp: Date.now() } });
+          }
+        }
+        if (isIdleWorldEvent) {
+          dispatch({ type: 'ADD_CHAT_MESSAGE', payload: { id: `msg_${Date.now()}_world_event`, role: 'system', subtype: 'world_event', content: t('idle.worldEvent', 'Something stirs in the world...'), timestamp: Date.now() } });
+        }
+        if (playerAction === '[WAIT]') {
+          dispatch({ type: 'ADD_CHAT_MESSAGE', payload: { id: `msg_${Date.now()}_wait`, role: 'system', subtype: 'wait', content: t('gameplay.waitSystemMessage'), timestamp: Date.now() } });
+        }
+
         // Stream scene from backend
         devLog.emit({ category: 'pipeline', type: 'backend_stream_start', label: 'Backend SSE stream started', data: { campaignId: backendCampaignId, provider: settings.aiProvider } });
         const backendResult = await stream.callStream(backendCampaignId, playerAction, {
@@ -181,6 +232,12 @@ export function useSceneGeneration({ ensureMissingInventoryImages, ensureMissing
           ? backendResult.newlyUnlockedAchievements
           : [];
         const updatedAchievementState = backendResult.updatedAchievementState || null;
+        const sceneGenerationDurationMs = backendResult.generationDurationMs || null;
+        const sceneResponseSizeBytes = backendResult.responseSizeBytes || null;
+        if (backendResult.avgResponseSizeBytes > 0) {
+          setAvgSceneSizeBytes(backendResult.avgResponseSizeBytes);
+          try { localStorage.setItem('rpgon_avg_scene_size_bytes', String(backendResult.avgResponseSizeBytes)); } catch {}
+        }
 
         const serverSceneId = backendResult.sceneId || null;
         const serverSceneIndex = Number.isInteger(backendResult.sceneIndex) ? backendResult.sceneIndex : null;
@@ -283,18 +340,7 @@ export function useSceneGeneration({ ensureMissingInventoryImages, ensureMissing
           });
         }
 
-        // Chat messages
-        const earlyPlayerMsgSent = Boolean(resolved.diceRoll);
-        if (!earlyPlayerMsgSent && !isFirstScene && playerAction && !isPassiveSceneAction) {
-          dispatch({ type: 'ADD_CHAT_MESSAGE', payload: { id: `msg_${Date.now()}_player`, role: 'player', content: playerAction === '[CONTINUE]' ? t('gameplay.continueChatMessage') : playerAction, timestamp: Date.now() } });
-        }
-        if (isIdleWorldEvent) {
-          dispatch({ type: 'ADD_CHAT_MESSAGE', payload: { id: `msg_${Date.now()}_world_event`, role: 'system', subtype: 'world_event', content: t('idle.worldEvent', 'Something stirs in the world...'), timestamp: Date.now() } });
-        }
-        if (playerAction === '[WAIT]') {
-          dispatch({ type: 'ADD_CHAT_MESSAGE', payload: { id: `msg_${Date.now()}_wait`, role: 'system', subtype: 'wait', content: t('gameplay.waitSystemMessage'), timestamp: Date.now() } });
-        }
-        dispatch({ type: 'ADD_CHAT_MESSAGE', payload: { id: `msg_${Date.now()}_dm`, role: 'dm', sceneId, content: result.narrative, scenePacing: result.scenePacing || 'exploration', dialogueSegments: finalSegments, rawAiSpeech, soundEffect: result.soundEffect || null, dialogueIfQuestTargetCompleted: result.dialogueIfQuestTargetCompleted || null, timestamp: Date.now() } });
+        dispatch({ type: 'ADD_CHAT_MESSAGE', payload: { id: `msg_${Date.now()}_dm`, role: 'dm', sceneId, content: result.narrative, scenePacing: result.scenePacing || 'exploration', dialogueSegments: finalSegments, rawAiSpeech, soundEffect: result.soundEffect || null, dialogueIfQuestTargetCompleted: result.dialogueIfQuestTargetCompleted || null, generationDurationMs: sceneGenerationDurationMs, responseSizeBytes: sceneResponseSizeBytes, timestamp: Date.now() } });
 
         // State changes
         applyNeedsAndRest(result, resolved, needsSystemEnabled);
@@ -450,5 +496,7 @@ export function useSceneGeneration({ ensureMissingInventoryImages, ensureMissing
     streamError: stream.streamError,
     retryAfterStreamError,
     dismissStreamError,
+    streamedBytes: stream.streamedBytes,
+    avgSceneSizeBytes,
   };
 }

@@ -117,7 +117,7 @@ export async function getVerdictForCandidate({
     response = await callAIJson({
       provider,
       modelTier,
-      taskCategory: 'auxiliary',
+      taskCategory: 'postCampaignWorld',
       systemPrompt: SYSTEM_PROMPT,
       userPrompt,
       maxTokens,

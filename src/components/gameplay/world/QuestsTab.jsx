@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { CrossLinkChip, EmptyState, findNpcByRef } from './shared';
-import { getVisibleObjectives } from '../../character/quest/helpers';
+import { getVisibleObjectives, resolveObjectiveType } from '../../character/quest/helpers';
 
 const TYPE_COLORS = {
   main: 'bg-tertiary/15 text-tertiary',
@@ -19,6 +19,17 @@ const OBJECTIVE_TYPE_COLORS = {
   survive: 'bg-rose-500/20 text-rose-300',
   gather: 'bg-lime-500/20 text-lime-300',
 };
+
+function ObjectiveTypeBadge({ obj, t, className = '' }) {
+  const objectiveType = resolveObjectiveType(obj);
+  if (!objectiveType) return null;
+  const fallbackMark = obj?.objectiveType ? '' : ' ^';
+  return (
+    <span className={`inline-block text-[10px] font-bold uppercase tracking-wider px-1.5 py-px rounded mr-1.5 align-middle ${className} ${OBJECTIVE_TYPE_COLORS[objectiveType] || 'bg-outline/20 text-outline'}`}>
+      {t(`quests.objectiveTypes.${objectiveType}`)}{fallbackMark}
+    </span>
+  );
+}
 
 export default function QuestsTab({ quests, npcs, navigateTo, t }) {
   // Sort: main first → potem po id (stabilnie). createdAt nie jest
@@ -74,11 +85,7 @@ export default function QuestsTab({ quests, npcs, navigateTo, t }) {
             <div key={obj.id || obj.nodeKey} className="flex items-start gap-1.5 text-sm text-on-surface-variant">
               <span className="material-symbols-outlined text-sm mt-0.5 text-primary">check_circle</span>
               <span className="line-through text-outline">
-                {obj.objectiveType && (
-                  <span className={`inline-block text-[10px] font-bold uppercase tracking-wider px-1.5 py-px rounded mr-1.5 align-middle no-underline ${OBJECTIVE_TYPE_COLORS[obj.objectiveType] || 'bg-outline/20 text-outline'}`}>
-                    {t(`quests.objectiveTypes.${obj.objectiveType}`)}
-                  </span>
-                )}
+                <ObjectiveTypeBadge obj={obj} t={t} className="no-underline" />
                 {obj.description}
               </span>
             </div>
@@ -87,11 +94,7 @@ export default function QuestsTab({ quests, npcs, navigateTo, t }) {
             <div key={obj.id || obj.nodeKey} className="flex items-start gap-1.5 text-sm text-on-surface-variant">
               <span className="material-symbols-outlined text-sm mt-0.5 text-outline">radio_button_unchecked</span>
               <span>
-                {obj.objectiveType && (
-                  <span className={`inline-block text-[10px] font-bold uppercase tracking-wider px-1.5 py-px rounded mr-1.5 align-middle ${OBJECTIVE_TYPE_COLORS[obj.objectiveType] || 'bg-outline/20 text-outline'}`}>
-                    {t(`quests.objectiveTypes.${obj.objectiveType}`)}
-                  </span>
-                )}
+                <ObjectiveTypeBadge obj={obj} t={t} />
                 {obj.description}
               </span>
             </div>
@@ -100,11 +103,7 @@ export default function QuestsTab({ quests, npcs, navigateTo, t }) {
             <div key={obj.id || obj.nodeKey} className="flex items-start gap-1.5 text-sm text-outline/40 italic">
               <span className="material-symbols-outlined text-sm mt-0.5">lock</span>
               <span>
-                {obj.objectiveType && (
-                  <span className={`inline-block text-[10px] font-bold uppercase tracking-wider px-1.5 py-px rounded mr-1.5 align-middle ${OBJECTIVE_TYPE_COLORS[obj.objectiveType] || 'bg-outline/20 text-outline'}`}>
-                    {t(`quests.objectiveTypes.${obj.objectiveType}`)}
-                  </span>
-                )}
+                <ObjectiveTypeBadge obj={obj} t={t} />
                 {obj.description}
               </span>
             </div>
@@ -113,11 +112,7 @@ export default function QuestsTab({ quests, npcs, navigateTo, t }) {
             <div key={obj.id || obj.nodeKey} className="flex items-start gap-1.5 text-sm text-rose-300/80">
               <span className="material-symbols-outlined text-sm mt-0.5 text-rose-400">cancel</span>
               <span className="line-through">
-                {obj.objectiveType && (
-                  <span className={`inline-block text-[10px] font-bold uppercase tracking-wider px-1.5 py-px rounded mr-1.5 align-middle no-underline ${OBJECTIVE_TYPE_COLORS[obj.objectiveType] || 'bg-outline/20 text-outline'}`}>
-                    {t(`quests.objectiveTypes.${obj.objectiveType}`)}
-                  </span>
-                )}
+                <ObjectiveTypeBadge obj={obj} t={t} className="no-underline" />
                 {obj.description}
               </span>
             </div>

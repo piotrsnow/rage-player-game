@@ -296,6 +296,13 @@ export function repairDialogueSegments(narrative, segments, knownNpcs = [], excl
     }
   }
 
+  // Tag narration segments that came from the AI response — these should not
+  // be promoted to dialogue by heuristics (unquoted speech detection, second
+  // pass). Quote extraction still runs (explicit quotes are a strong signal).
+  segments = segments.map((seg) =>
+    seg.type === 'narration' ? { ...seg, _aiNarration: true } : seg,
+  );
+
   const existingDialogueSegments = segments.filter((s) => s.type === 'dialogue' && hasNamedSpeaker(s.character));
   const knownNames = [
     ...new Set([
@@ -392,10 +399,14 @@ export function repairDialogueSegments(narrative, segments, knownNpcs = [], excl
         knownNames,
         excludeNames,
       );
+      // For AI-typed narration: don't fall back to previous segment speakers —
+      // the AI explicitly chose narration, so a quote here might be indirect
+      // speech or reporting. The single-NPC fallback and local-text speaker
+      // still work (those are high-confidence signals).
       const resolvedSpeaker = resolveFallbackSpeaker({
         preferredSpeaker: speakerName,
         segments,
-        currentIndex: segIndex,
+        currentIndex: seg._aiNarration ? -1 : segIndex,
         textBeforeQuote: seg.text.slice(0, match.index),
         knownNames,
         knownNpcs,
@@ -510,7 +521,11 @@ export function repairDialogueSegments(narrative, segments, knownNpcs = [], excl
     }
   }
 
-  return hardened;
+  return hardened.map((seg) => {
+    if (!seg._aiNarration) return seg;
+    const { _aiNarration, ...clean } = seg;
+    return clean;
+  });
 }
 
 export function ensurePlayerDialogue(segments, playerAction, characterName, characterGender) {

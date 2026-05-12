@@ -7,7 +7,11 @@ export function narrativeLabel(val) {
 }
 
 export function responseLengthLabel(val) {
-  return val < 33 ? 'short (2-3 sentences)' : val < 66 ? 'medium (1-2 paragraphs)' : 'long (3+ paragraphs)';
+  return val < 20 ? 'very short (1-2 sentences)'
+    : val < 40 ? 'short (2-3 sentences)'
+    : val < 60 ? 'medium (4-6 sentences)'
+    : val < 80 ? 'long (1-2 paragraphs)'
+    : 'very long (3+ paragraphs)';
 }
 
 export function sliderLabel(val, labels) {

@@ -27,6 +27,68 @@ function canonicalUrl(url) {
   return toCanonicalStoragePath(url);
 }
 
+const NODE_TYPE_LABELS = {
+  generic: 'fantasy location',
+  hamlet: 'tiny hamlet with a few houses',
+  village: 'small fantasy village',
+  town: 'medieval fantasy town',
+  city: 'large walled fantasy city',
+  capital: 'grand capital city with towers and walls',
+  dungeon: 'dungeon entrance',
+  forest: 'dense enchanted forest',
+  wilderness: 'untamed wilderness landscape',
+  mountain: 'rocky mountain highlands',
+  ruin: 'ancient crumbling ruins',
+  camp: 'makeshift camp or encampment',
+  cave: 'underground cave entrance',
+  interior: 'building interior',
+  dungeon_room: 'dark dungeon chamber',
+  campaignPlace: 'notable fantasy landmark',
+  region: 'sweeping regional landscape',
+  area: 'distinct fantasy area',
+  district: 'town district',
+  site: 'point of interest',
+  room: 'single room interior',
+  point: 'small point of interest',
+};
+
+const DANGER_LABELS = {
+  moderate: 'eerie and somewhat ominous atmosphere',
+  dangerous: 'dangerous and hostile atmosphere',
+  deadly: 'deadly, terrifying atmosphere',
+};
+
+async function buildNodeImagePromptFromMeta(node) {
+  const parts = ['Fantasy landscape illustration'];
+  const typeLabel = NODE_TYPE_LABELS[node.locationType || node.type] || 'fantasy location';
+  parts.push(`of a ${typeLabel}`);
+  if (node.name) {
+    const enName = await ensureEnglish(node.name);
+    parts.push(`called "${enName}"`);
+  }
+  if (node.description) {
+    const enDesc = await ensureEnglish(
+      node.description.length > 200 ? node.description.slice(0, 200) + '…' : node.description,
+    );
+    parts.push(`. ${enDesc}`);
+  }
+  if (node.atmosphere) {
+    const enAtmo = await ensureEnglish(node.atmosphere);
+    parts.push(`. Atmosphere: ${enAtmo}`);
+  }
+  if (node.biome) parts.push(`. Biome: ${node.biome}`);
+  const dangerPhrase = DANGER_LABELS[node.dangerLevel];
+  if (dangerPhrase) parts.push(`. ${dangerPhrase}`);
+  const tags = Array.isArray(node.tags) ? node.tags.filter(Boolean) : [];
+  if (tags.length) parts.push(`. Features: ${tags.slice(0, 5).join(', ')}`);
+  parts.push('. Richly detailed, dramatic lighting, painterly style, square composition');
+  let result = parts.join(' ');
+  if (result.length > 600) result = result.slice(0, 599) + '…';
+  return result;
+}
+
+export { buildNodeImagePromptFromMeta };
+
 // Attach SDXL preset hints (sampler/steps/cfg/width/height/negative) to the
 // /proxy/sd-webui/generate body so each checkpoint runs at its sweet spot.
 // Backend does the same lookup as a safety net — we send from FE so the UI
@@ -386,6 +448,21 @@ const _imageServiceImpl = {
     return { url, prompt };
   },
 
+  async generateNodeImage(node, { provider = 'dalle', campaignId = null, sdModel = null, forceNew = true, customPrompt = null } = {}) {
+    let prompt;
+    if (customPrompt?.trim()) {
+      prompt = await ensureEnglish(customPrompt.trim());
+    } else {
+      prompt = await buildNodeImagePromptFromMeta(node);
+    }
+    const url = await generateSceneViaProxy(prompt, provider, campaignId, {
+      sdModel,
+      forceNew,
+      shape: 'square',
+    });
+    return { url, prompt };
+  },
+
   async generateSpellImage(spell, { genre, tone, provider = 'dalle', imageStyle = 'painting', darkPalette = false, seriousness = null, campaignId = null, sdModel = null, sdSeed = null, forceNew = false, resolutionMultiplier = 1 } = {}) {
     const [enName, enDescription] = await Promise.all([
       ensureEnglish(spell?.name),
@@ -419,5 +496,8 @@ export const imageService = {
   },
   generateSpellImage(...args) {
     return enqueueImageRequest(() => _imageServiceImpl.generateSpellImage(...args));
+  },
+  generateNodeImage(...args) {
+    return enqueueImageRequest(() => _imageServiceImpl.generateNodeImage(...args));
   },
 };

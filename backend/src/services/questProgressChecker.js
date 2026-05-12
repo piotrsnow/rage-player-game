@@ -73,6 +73,7 @@ ${objectiveList}`;
     timeoutMs,
     maxTokens: 600,
     reasoning: false,
+    taskCategory: 'questProgressCheck',
     taskType: 'quest-progress-check',
     taskLabel: 'Quest progress check',
   });

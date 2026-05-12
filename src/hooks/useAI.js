@@ -33,6 +33,8 @@ export function useAI() {
     streamError,
     retryAfterStreamError,
     dismissStreamError,
+    streamedBytes,
+    avgSceneSizeBytes,
   } = useSceneGeneration({
     ensureMissingInventoryImages,
     ensureMissingSpellImages,
@@ -80,5 +82,7 @@ export function useAI() {
     streamError,
     retryAfterStreamError,
     dismissStreamError,
+    streamedBytes,
+    avgSceneSizeBytes,
   };
 }

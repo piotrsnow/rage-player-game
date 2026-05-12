@@ -360,8 +360,7 @@
     "tabKeys": "Klucze API",
     "tabModels": "Przypisanie modeli",
     "modelsTitle": "Przypisanie modeli do zadań",
-    "modelsSubtitle": "Wybierz model per-dostawca dla każdej kategorii zapytań AI. Puste pole = domyślny model z tieru.",
-    "modelsDefault": "— domyślny (tier) —",
+    "modelsSubtitle": "Przypisz każdy rodzaj zapytania AI do konkretnego modelu. OpenAI i Anthropic mają osobne mapy routingu.",
     "modelsSaveBtn": "Zapisz",
     "modelsSaving": "Zapisuję…",
     "modelsSaved": "Zapisano",
@@ -626,6 +625,17 @@
     "inventSpellNew": "Nowe!",
     "inventSpellMana": "Koszt many",
     "inventSpellSchool": "Szkoła",
+    "regenerateActions": "Zmień styl akcji",
+    "actionTones": {
+      "thoughtful": "Przemyślane",
+      "bold": "Odważne",
+      "stupid": "Głupie",
+      "aggressive": "Agresywne",
+      "neutral": "Neutralne",
+      "conciliatory": "Ugodowe",
+      "sleazy": "Obleśne",
+      "empathetic": "Empatyczne"
+    },
     "forceRoll": {
       "button": "Wymuś rzut",
       "descriptionOff": "Wymusza rzut na tej akcji. Lewy klik: włącz. Dwuklik: sprzyjające okoliczności (+30). Prawy klik: niesprzyjające (−30).",
@@ -637,6 +647,10 @@
     "continueButton": "Dalej",
     "continueAction": "[CONTINUE]",
     "continueChatMessage": "Dalej — kontynuujemy opowieść.",
+    "initiateCombatChat": "Rzucam się do walki!",
+    "attackNpcChat": "Atakuję {{name}}!",
+    "beerDuelChat": "Proponuję pojedynek piwny!",
+    "beerDuelVsChat": "Proponuję pojedynek piwny z {{name}}!",
     "continueDisabledTooltip": "Nie można dwukrotnie z rzędu wybrać „Dalej”. Wybierz inną akcję lub „Czekaj”.",
     "waitButton": "Czekaj",
     "waitAction": "[WAIT]",
@@ -872,6 +886,7 @@
     "stuckHintGeneric": "Poszukaj wskazówek w świecie gry, by odkryć kolejny krok.",
     "progressLog": "Dziennik postępu",
     "progressLogEmpty": "Brak wpisów — graj dalej, a dziennik uzupełni się automatycznie",
+    "questTimeline": "Kronika zdarzeń",
     "sceneLabel": "Scena {{index}}",
     "objectiveTypes": {
       "kill": "Zabij",
@@ -1088,9 +1103,11 @@
       "wild": "Dziki"
     },
     "lengthLabels": {
+      "veryShort": "Bardzo krótka",
       "short": "Krótka",
       "medium": "Średnia",
-      "long": "Długa"
+      "long": "Długa",
+      "veryLong": "Bardzo długa"
     },
     "language": "Język",
     "languageDesc": "Język interfejsu i narracji AI",

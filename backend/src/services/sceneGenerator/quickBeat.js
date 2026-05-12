@@ -131,7 +131,7 @@ SCHEMA:
   "npcSpeaker": "string|null (imię z listy poniżej lub null jeśli żaden NPC nie reaguje)",
   "npcReply": "string|null (jedno zdanie jeśli npcSpeaker jest podany, inaczej null)",
   "timeAdvance": 0 | 0.05 | 0.1 | 0.15 | 0.2 | 0.25,
-  "newItems": [{"name": "string", "type": "weapon|armor|shield|accessory|consumable|material|misc", "quantity": 1}] | null
+  "newItems": [{"name": "string", "type": "weapon|armor|shield|accessory|consumable|material|misc", "quantity": 1, "description": "string (krótki opis fabularny, 5-15 słów)"}] | null
 }`;
 
   const user = `Obecna lokacja: ${currentLocation || '(nieznana)'}
@@ -265,6 +265,7 @@ export async function runQuickBeat(campaignId, playerAction, options = {}, onEve
         callAIJson({
           provider,
           modelTier: 'nano',
+          taskCategory: 'quickBeat',
           systemPrompt: system,
           userPrompt,
           maxTokens: 300,
@@ -330,6 +331,9 @@ export async function runQuickBeat(campaignId, playerAction, options = {}, onEve
           name: it.name.trim().slice(0, 80),
           type: VALID_TYPES.has(it.type) ? it.type : 'misc',
           quantity: Math.max(1, Math.min(10, Number(it.quantity) || 1)),
+          ...(typeof it.description === 'string' && it.description.trim()
+            ? { description: it.description.trim().slice(0, 200) }
+            : {}),
         }));
       if (newItems.length === 0) newItems = null;
     }

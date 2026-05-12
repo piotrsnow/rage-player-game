@@ -43,7 +43,7 @@ export default function QuestProgressDrawer({ objective, onClose, t }) {
 
         {/* Objective description */}
         <div className="px-4 py-2 border-b border-outline-variant/10">
-          <p className="text-xs text-on-surface-variant leading-relaxed">{objective?.description}</p>
+          <p className="text-sm text-on-surface-variant leading-relaxed">{objective?.description}</p>
         </div>
 
         {/* Entries */}
@@ -61,7 +61,7 @@ export default function QuestProgressDrawer({ objective, onClose, t }) {
                 <span className="shrink-0 inline-flex items-center justify-center px-1.5 py-0.5 text-[9px] font-label uppercase tracking-widest rounded-sm bg-primary/10 text-primary border border-primary/20 mt-0.5">
                   {t('quests.sceneLabel', { index: entry.sceneIndex })}
                 </span>
-                <p className="text-xs text-on-surface leading-relaxed">{entry.text}</p>
+                <p className="text-sm text-on-surface leading-relaxed">{entry.text}</p>
               </div>
             ))
           )}

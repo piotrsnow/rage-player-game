@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import SceneGenerationProgress from './SceneGenerationProgress';
+import DidYouKnow from '../ui/DidYouKnow';
 
 const CHAR_INTERVAL_MS = 18;
 const TYPING_SFX_COUNT = 3;
@@ -19,6 +20,8 @@ export default function TypewriterActionOverlay({
   showLoader = false,
   loaderStartTime,
   loaderEstimatedMs,
+  loaderStreamedBytes = 0,
+  loaderAvgSceneSizeBytes = null,
   fastFinish = false,
   canManuallySkip = false,
   waitForDice = false,
@@ -270,10 +273,15 @@ export default function TypewriterActionOverlay({
         </div>
 
         {showLoader && (
-          <SceneGenerationProgress
-            startTime={loaderStartTime}
-            estimatedMs={loaderEstimatedMs}
-          />
+          <>
+            <SceneGenerationProgress
+              startTime={loaderStartTime}
+              estimatedMs={loaderEstimatedMs}
+              streamedBytes={loaderStreamedBytes}
+              avgSceneSizeBytes={loaderAvgSceneSizeBytes}
+            />
+            <DidYouKnow />
+          </>
         )}
       </div>
     </div>

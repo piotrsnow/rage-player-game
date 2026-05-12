@@ -73,6 +73,8 @@ export default function ActionPanel({
   onIncidentCorrectionsApplied = null,
   onProvidenceScene = null,
   onOpenTravelMap = null,
+  onRegenerateActions = null,
+  isRegeneratingActions = false,
 }) {
   const [customAction, setCustomAction] = useState('');
   const [combatPickerOpen, setCombatPickerOpen] = useState(false);
@@ -452,10 +454,10 @@ export default function ActionPanel({
                     }}
                   />
                   <div className="relative flex items-center gap-3.5">
-                    <span className="w-6 h-6 shrink-0 flex items-center justify-center rounded-full bg-gradient-to-br from-primary-dim/20 to-primary/10 text-primary font-headline text-sm leading-none border border-primary/15 group-hover:border-primary/30 group-hover:shadow-[0_0_8px_rgba(197,154,255,0.2)] transition-all">
+                    <span className="w-7 h-7 shrink-0 flex items-center justify-center rounded-full bg-gradient-to-br from-primary-dim/20 to-primary/10 text-primary font-headline text-base leading-none border border-primary/15 group-hover:border-primary/30 group-hover:shadow-[0_0_8px_rgba(197,154,255,0.2)] transition-all">
                       {i + 1}
                     </span>
-                    <p className="text-sm font-medium text-on-surface-variant group-hover:text-on-surface transition-colors leading-snug line-clamp-2">
+                    <p className="text-base font-medium text-on-surface-variant group-hover:text-on-surface transition-colors leading-snug line-clamp-2">
                       {action}
                     </p>
                   </div>
@@ -625,6 +627,8 @@ export default function ActionPanel({
             onForceRollLeft={handleForceRollLeft}
             onForceRollDouble={handleForceRollDouble}
             onForceRollRight={handleForceRollRight}
+            onRegenerateActions={onRegenerateActions}
+            isRegeneratingActions={isRegeneratingActions}
           />
           <CustomActionForm
             inputRef={inputRef}

@@ -102,6 +102,12 @@ export const sceneHandlers = {
       : (draft.quickBeatStreak || 0) + 1;
   },
 
+  UPDATE_SCENE_ACTIONS: (draft, action) => {
+    const { sceneId, actions } = action.payload;
+    const scene = draft.scenes.find((s) => s.id === sceneId);
+    if (scene) scene.actions = actions;
+  },
+
   UPDATE_SCENE_QUEST_OFFER: (draft, action) => {
     const { sceneId, offerId, status } = action.payload;
     const scene = draft.scenes.find((s) => s.id === sceneId);
