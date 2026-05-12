@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef } from 'react';
+import { useState, useCallback, useRef, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { EDGE_TYPES } from '../../../../shared/domain/locationGraph.js';
 import { defaultLengthKmBetweenScales } from '../../../../shared/domain/locationGraphLayout.js';
@@ -87,6 +87,16 @@ function NodeInspector({ node, occupants = [], onUpdate, onDelete, mode, campaig
       setSaveError(err.message || t('locationGraph.inspector.saveFailed', { defaultValue: 'Zapis nie powiódł się' }));
     });
   }, [node.id, onUpdate, readOnly, t]);
+
+  const [localScale, setLocalScale] = useState(node.scale ?? 5);
+  const scaleTimerRef = useRef(null);
+  useEffect(() => { setLocalScale(node.scale ?? 5); }, [node.id, node.scale]);
+  const handleScaleChange = useCallback((e) => {
+    const v = Number(e.target.value);
+    setLocalScale(v);
+    clearTimeout(scaleTimerRef.current);
+    scaleTimerRef.current = setTimeout(() => handleField('scale', v), 300);
+  }, [handleField]);
 
   const handleMentionLocation = useCallback(() => {
     if (!actionTagCtx || readOnly || worldMode) return;
@@ -294,10 +304,10 @@ function NodeInspector({ node, occupants = [], onUpdate, onDelete, mode, campaig
           <input
             type="range" min={0} max={7} step={1}
             className="w-full"
-            value={node.scale ?? 5}
-            onChange={(e) => handleField('scale', Number(e.target.value))}
+            value={localScale}
+            onChange={handleScaleChange}
           />
-          <span className="text-xs text-outline">{node.scale ?? 5}</span>
+          <span className="text-xs text-outline">{localScale}</span>
         </Field>
 
         <Field label={t('locationGraph.inspector.shape', { defaultValue: 'Kształt' })}>

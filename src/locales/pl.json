@@ -2353,7 +2353,22 @@
       "startingSprites": "Startuję…",
       "cancelSprites": "Stop",
       "spritesDone": "Gotowe: {{done}}, err: {{failed}}",
-      "spritesFailed": "Job nie powiódł się"
+      "spritesFailed": "Job nie powiódł się",
+      "revision": "Rewizja",
+      "revisionTooltip": "AI sprawdzi spójność grafu i zaproponuje poprawki",
+      "revising": "Analizuję...",
+      "revisionReady": "{{count}} zmian",
+      "revisionClean": "Graf OK"
+    },
+    "revision": {
+      "title": "Rewizja AI",
+      "applyAll": "Zastosuj wszystkie",
+      "apply": "Zastosuj",
+      "reject": "Odrzuć",
+      "applied": "OK",
+      "noChanges": "Graf jest spójny — brak zmian.",
+      "nodeChanges": "Lokacje ({{count}})",
+      "edgeChanges": "Krawędzie ({{count}})"
     },
     "addNode": {
       "title": "Nowa Lokacja",

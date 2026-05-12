@@ -24,6 +24,7 @@ import { promoteCampaignNpcToWorld } from '../services/livingWorld/postCampaignP
 import { promoteWorldLocationToCanonical } from '../services/livingWorld/postCampaignLocationPromotion.js';
 import { migrateExistingCampaignGraph, runGraphConsistencyCheck, loadCampaignGraph, loadWorldGraph, createEdge } from '../services/locationGraph/index.js';
 import { getExtractionStats } from '../services/locationGraph/graphExtractor.js';
+import { reviseGraph } from '../services/locationGraph/graphRevisionService.js';
 import { LOCATION_KIND_WORLD, LOCATION_KIND_CAMPAIGN } from '../services/locationRefs.js';
 import { getModelOverrides, setModelOverrides, TASK_CATEGORIES } from '../services/serverConfig.js';
 import { config } from '../config.js';
@@ -881,6 +882,64 @@ export async function adminLivingWorldRoutes(fastify) {
       factionOverlay,
       occupants,
     };
+  });
+
+  // ── AI graph revision ──────────────────────────────────────────────
+  fastify.post('/world-graph/revise-graph', guard({
+    config: { rateLimit: { max: 5, timeWindow: '1 minute' } },
+    schema: {
+      body: {
+        type: 'object',
+        required: ['nodes', 'edges'],
+        additionalProperties: false,
+        properties: {
+          nodes: {
+            type: 'array',
+            maxItems: 500,
+            items: { type: 'object' },
+          },
+          edges: {
+            type: 'array',
+            maxItems: 2000,
+            items: { type: 'object' },
+          },
+        },
+      },
+    },
+  }), async (request) => {
+    const { nodes, edges } = request.body;
+    return reviseGraph({ nodes, edges, userId: request.user?.id });
+  });
+
+  // ── World-scope edge patch (for edges with campaignId=null) ────────
+  fastify.patch('/edges/:edgeId', guard({
+    schema: {
+      params: {
+        type: 'object',
+        required: ['edgeId'],
+        properties: { edgeId: { type: 'string', format: 'uuid' } },
+      },
+      body: {
+        type: 'object',
+        additionalProperties: false,
+        properties: {
+          edgeType: { type: 'string', maxLength: 60 },
+          category: { type: 'string', maxLength: 40 },
+          weight: { type: 'number', minimum: 0 },
+          bidirectional: { type: 'boolean' },
+          metadata: { type: 'object' },
+          discoveryState: { type: 'string', maxLength: 20 },
+          isActive: { type: 'boolean' },
+        },
+      },
+    },
+  }), async (request, reply) => {
+    const { edgeId } = request.params;
+    const edge = await prisma.locationEdge.findUnique({ where: { id: edgeId }, select: { id: true, campaignId: true } });
+    if (!edge) return reply.code(404).send({ error: 'LocationEdge not found' });
+    const data = request.body;
+    if (Object.keys(data).length === 0) return reply.code(400).send({ error: 'No fields provided' });
+    return prisma.locationEdge.update({ where: { id: edgeId }, data });
   });
 
   // ── Cleanup stale __draft:: WorldLocation registry entries ──────────
