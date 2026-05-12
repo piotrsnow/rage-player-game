@@ -696,6 +696,22 @@ export function useNarratorQueue({
     }, 50);
   }, [stop, processQueue]);
 
+  const playSegment = useCallback((seg, messageId, segmentIndex, scenePacing) => {
+    stop();
+    setTimeout(() => {
+      queueRef.current.push({
+        dialogueSegments: [{ ...seg, _logicalSegmentIndex: segmentIndex }],
+        soundEffect: null,
+        narrative: '',
+        scenePacing,
+        segmentPrefetchWindow: 1,
+        messageId,
+      });
+      abortRef.current = false;
+      processQueue();
+    }, 50);
+  }, [stop, processQueue]);
+
   const startStreaming = useCallback((messageId, scenePacing) => {
     stop();
     streamingRef.current = {
@@ -767,6 +783,7 @@ export function useNarratorQueue({
     speak,
     speakScene,
     speakSingle,
+    playSegment,
     startStreaming,
     pushStreamingSegments,
     finishStreaming,

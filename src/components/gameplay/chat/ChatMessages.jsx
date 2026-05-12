@@ -7,8 +7,8 @@ import {
   DialogueSegments,
   NarratorHeaderButtons,
   NarrativeWithLoading,
-  ReadAloudButton,
 } from './ChatMessageParts';
+import { NarrableText } from '../../ui/NarrableText';
 import { filterDuplicateDialogueSegmentsWithIndex } from '../../../services/dialogueSegments';
 
 export function DmMessage({ message, narrator }) {
@@ -47,12 +47,19 @@ export function DmMessage({ message, narrator }) {
               <DialogueSegments segments={visibleSegments} narrator={narrator} messageId={message.id} scenePacing={message.scenePacing} />
             ) : (
               <NarrativeWithLoading narrator={narrator} messageId={message.id} segmentIndex={0}>
-                <div className="group/seg flex items-start gap-0.5">
+                <NarrableText
+                  text={narrativeText}
+                  narrator={narrator}
+                  messageId={message.id}
+                  segmentIndex={0}
+                  scenePacing={message.scenePacing}
+                  className="flex items-start gap-0.5"
+                  as="div"
+                >
                   <p className="text-xs text-on-surface-variant leading-snug italic flex-1">
                     <HighlightedText text={narrativeText} highlightInfo={narrator?.highlightInfo} segmentIndex={0} messageId={message.id} />
                   </p>
-                  <ReadAloudButton text={narrativeText} scenePacing={message.scenePacing} />
-                </div>
+                </NarrableText>
               </NarrativeWithLoading>
             )}
             <QuestWrapupEpilogue wrapup={message.dialogueIfQuestTargetCompleted} />
@@ -151,12 +158,19 @@ export const QuickBeatMessage = memo(function QuickBeatMessage({ message, narrat
             <DialogueSegments segments={segments} narrator={narrator} messageId={message.id} scenePacing={message.scenePacing || 'exploration'} />
           ) : (
             <NarrativeWithLoading narrator={narrator} messageId={message.id} segmentIndex={0}>
-              <div className="group/seg flex items-start gap-0.5">
+              <NarrableText
+                text={message.content}
+                narrator={narrator}
+                messageId={message.id}
+                segmentIndex={0}
+                scenePacing={message.scenePacing || 'exploration'}
+                className="flex items-start gap-0.5"
+                as="div"
+              >
                 <p className="text-xs text-on-surface-variant leading-snug italic flex-1">
                   <HighlightedText text={message.content} highlightInfo={narrator?.highlightInfo} segmentIndex={0} messageId={message.id} />
                 </p>
-                <ReadAloudButton text={message.content} scenePacing={message.scenePacing || 'exploration'} />
-              </div>
+              </NarrableText>
             </NarrativeWithLoading>
           )}
         </div>
@@ -184,12 +198,19 @@ export function CombatCommentaryMessage({ message, narrator }) {
           <DialogueSegments segments={message.dialogueSegments} narrator={narrator} messageId={message.id} scenePacing={message.scenePacing || 'combat'} />
         ) : (
           <NarrativeWithLoading narrator={narrator} messageId={message.id} segmentIndex={0}>
-            <div className="group/seg flex items-start gap-0.5">
+            <NarrableText
+              text={message.content}
+              narrator={narrator}
+              messageId={message.id}
+              segmentIndex={0}
+              scenePacing={message.scenePacing || 'combat'}
+              className="flex items-start gap-0.5"
+              as="div"
+            >
               <p className="text-xs text-on-surface leading-snug whitespace-pre-line flex-1">
                 <HighlightedText text={message.content} highlightInfo={narrator?.highlightInfo} segmentIndex={0} messageId={message.id} />
               </p>
-              <ReadAloudButton text={message.content} scenePacing={message.scenePacing || 'combat'} />
-            </div>
+            </NarrableText>
           </NarrativeWithLoading>
         )}
       </div>
