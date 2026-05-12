@@ -202,6 +202,22 @@ export function useSceneGeneration({ ensureMissingInventoryImages, ensureMissing
           throw new Error('Backend connection required for scene generation');
         }
 
+        // Player message dispatched before callStream so it precedes any
+        // dice_early events emitted during SSE streaming.
+        const earlyPlayerMsgSent = Boolean(resolved.diceRoll);
+        if (!earlyPlayerMsgSent && !isFirstScene && playerAction && !isPassiveSceneAction) {
+          const displayText = humanizePlayerAction(playerAction, t);
+          if (displayText) {
+            dispatch({ type: 'ADD_CHAT_MESSAGE', payload: { id: `msg_${Date.now()}_player`, role: 'player', content: displayText, timestamp: Date.now() } });
+          }
+        }
+        if (isIdleWorldEvent) {
+          dispatch({ type: 'ADD_CHAT_MESSAGE', payload: { id: `msg_${Date.now()}_world_event`, role: 'system', subtype: 'world_event', content: t('idle.worldEvent', 'Something stirs in the world...'), timestamp: Date.now() } });
+        }
+        if (playerAction === '[WAIT]') {
+          dispatch({ type: 'ADD_CHAT_MESSAGE', payload: { id: `msg_${Date.now()}_wait`, role: 'system', subtype: 'wait', content: t('gameplay.waitSystemMessage'), timestamp: Date.now() } });
+        }
+
         // Stream scene from backend
         devLog.emit({ category: 'pipeline', type: 'backend_stream_start', label: 'Backend SSE stream started', data: { campaignId: backendCampaignId, provider: settings.aiProvider } });
         const backendResult = await stream.callStream(backendCampaignId, playerAction, {
@@ -324,20 +340,6 @@ export function useSceneGeneration({ ensureMissingInventoryImages, ensureMissing
           });
         }
 
-        // Chat messages
-        const earlyPlayerMsgSent = Boolean(resolved.diceRoll);
-        if (!earlyPlayerMsgSent && !isFirstScene && playerAction && !isPassiveSceneAction) {
-          const displayText = humanizePlayerAction(playerAction, t);
-          if (displayText) {
-            dispatch({ type: 'ADD_CHAT_MESSAGE', payload: { id: `msg_${Date.now()}_player`, role: 'player', content: displayText, timestamp: Date.now() } });
-          }
-        }
-        if (isIdleWorldEvent) {
-          dispatch({ type: 'ADD_CHAT_MESSAGE', payload: { id: `msg_${Date.now()}_world_event`, role: 'system', subtype: 'world_event', content: t('idle.worldEvent', 'Something stirs in the world...'), timestamp: Date.now() } });
-        }
-        if (playerAction === '[WAIT]') {
-          dispatch({ type: 'ADD_CHAT_MESSAGE', payload: { id: `msg_${Date.now()}_wait`, role: 'system', subtype: 'wait', content: t('gameplay.waitSystemMessage'), timestamp: Date.now() } });
-        }
         dispatch({ type: 'ADD_CHAT_MESSAGE', payload: { id: `msg_${Date.now()}_dm`, role: 'dm', sceneId, content: result.narrative, scenePacing: result.scenePacing || 'exploration', dialogueSegments: finalSegments, rawAiSpeech, soundEffect: result.soundEffect || null, dialogueIfQuestTargetCompleted: result.dialogueIfQuestTargetCompleted || null, generationDurationMs: sceneGenerationDurationMs, responseSizeBytes: sceneResponseSizeBytes, timestamp: Date.now() } });
 
         // State changes

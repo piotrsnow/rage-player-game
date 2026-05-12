@@ -33,6 +33,22 @@ function formatDuration(totalSeconds) {
   return h > 0 ? `${h}:${pad(m)}:${pad(s)}` : `${m}:${pad(s)}`;
 }
 
+function SceneDivider() {
+  return (
+    <div className="flex items-center py-2 px-2 opacity-30">
+      <svg className="w-full h-3" viewBox="0 0 300 12" preserveAspectRatio="none">
+        <path
+          d="M0 6 Q 7.5 1, 15 6 T 30 6 T 45 6 T 60 6 T 75 6 T 90 6 T 105 6 T 120 6 T 135 6 T 150 6 T 165 6 T 180 6 T 195 6 T 210 6 T 225 6 T 240 6 T 255 6 T 270 6 T 285 6 T 300 6"
+          stroke="currentColor"
+          fill="none"
+          strokeWidth="0.8"
+          className="text-outline-variant"
+        />
+      </svg>
+    </div>
+  );
+}
+
 export default function ChatPanel({
   messages = [],
   streamingNarrative = null,
@@ -171,16 +187,22 @@ export default function ChatPanel({
             </p>
           </div>
         )}
-        {visibleMessages.map((msg) => {
+        {visibleMessages.map((msg, idx) => {
           let inner;
           let px = 'px-2';
+          const needsSceneDivider = msg.role === 'player' && msg.subtype !== 'quick_beat' && idx > 0;
           if (msg.subtype === 'quick_beat') inner = <QuickBeatMessage message={msg} narrator={narrator} />;
           else if (msg.role === 'dm') inner = <DmMessage message={msg} narrator={narrator} />;
           else if (msg.subtype === 'combat_commentary') inner = <CombatCommentaryMessage message={msg} narrator={narrator} />;
           else if (msg.role === 'player') { const isMe = myOdId ? msg.odId === myOdId : true; inner = <PlayerMessage message={msg} isMe={isMe} />; }
           else if (msg.subtype === 'dice_roll') { inner = msg.diceData ? <DiceRollCard diceData={msg.diceData} /> : <SystemMessage message={msg} />; px = 'px-3'; }
           else inner = <SystemMessage message={msg} />;
-          return <div key={msg.id} data-testid="chat-message" data-message-id={msg.id} className={px}>{inner}</div>;
+          return (
+            <div key={msg.id}>
+              {needsSceneDivider && <SceneDivider />}
+              <div data-testid="chat-message" data-message-id={msg.id} className={px}>{inner}</div>
+            </div>
+          );
         })}
         {/* Stream error — retry/dismiss UI (no partial narrative preview;
             the final DM message appears via chatHistory after complete). */}
