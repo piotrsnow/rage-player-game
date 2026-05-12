@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { EDGE_CATEGORIES } from '../../../../shared/domain/locationGraph.js';
 import { EDGE_VISUALS } from './graphVisuals.js';
@@ -16,6 +17,7 @@ export default function GraphToolbar({
   searchInputRef,
   snapToGrid, onToggleSnap, onResetLayout,
   spriteJob,
+  bulkImageGen,
   showOrphans = false, onToggleOrphans,
 }) {
   const { t } = useTranslation();
@@ -170,6 +172,13 @@ export default function GraphToolbar({
           <SpriteJobControls spriteJob={spriteJob} t={t} />
         </>
       )}
+
+      {bulkImageGen && (
+        <>
+          <div className="w-px h-5 bg-outline-variant/20" />
+          <BulkImageGenControls bulkImageGen={bulkImageGen} t={t} />
+        </>
+      )}
     </div>
   );
 }
@@ -230,5 +239,100 @@ function SpriteJobControls({ spriteJob, t }) {
         ? t('locationGraph.toolbar.startingSprites', { defaultValue: 'Startuję...' })
         : t('locationGraph.toolbar.generateAllSprites', { defaultValue: 'Generuj wszystkie' })}
     </button>
+  );
+}
+
+const BULK_PROVIDER_OPTIONS = [
+  { id: 'pixellab', label: 'PixelLab' },
+  { id: 'dalle', label: 'DALL-E' },
+  { id: 'gpt-image', label: 'GPT Image' },
+  { id: 'stability', label: 'Stability' },
+  { id: 'gemini', label: 'Gemini' },
+  { id: 'sd-webui', label: 'SD-WebUI' },
+];
+
+function BulkImageGenControls({ bulkImageGen, t }) {
+  const { startPixelLab, startStandard, cancel, clearProgress, isActive, progress, nodes, stdProvider } = bulkImageGen;
+  const [showMenu, setShowMenu] = useState(false);
+
+  if (isActive && progress) {
+    const pct = progress.total > 0 ? Math.round(((progress.done + progress.failed) / progress.total) * 100) : 0;
+    return (
+      <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-sm bg-tertiary/10 border border-tertiary/20 text-tertiary text-xs">
+          <span className="material-symbols-outlined text-sm animate-spin">progress_activity</span>
+          <span>{progress.done}/{progress.total}</span>
+          {progress.failed > 0 && <span className="text-red-400">({progress.failed} err)</span>}
+          <span className="text-tertiary/50">{pct}%</span>
+        </div>
+        <button
+          type="button"
+          onClick={cancel}
+          className="flex items-center gap-1 px-2 py-1 rounded-sm bg-red-500/10 border border-red-500/20 hover:bg-red-500/20 text-red-400 text-xs transition-colors"
+        >
+          <span className="material-symbols-outlined text-sm">stop</span>
+          Stop
+        </button>
+      </div>
+    );
+  }
+
+  if (progress && (progress.status === 'completed' || progress.status === 'cancelled')) {
+    return (
+      <div className="flex items-center gap-2">
+        <span className={`text-xs ${progress.status === 'completed' ? 'text-green-400' : 'text-yellow-400'}`}>
+          {progress.status === 'completed'
+            ? `Gotowe: ${progress.done}${progress.failed ? `, err: ${progress.failed}` : ''}`
+            : 'Anulowano'}
+        </span>
+        <button type="button" onClick={clearProgress} className="text-outline hover:text-on-surface text-xs">×</button>
+      </div>
+    );
+  }
+
+  const missingCount = nodes ? nodes.filter((n) => !n.nodeImageUrl).length : 0;
+
+  return (
+    <div className="relative">
+      <button
+        type="button"
+        onClick={() => setShowMenu((v) => !v)}
+        disabled={missingCount === 0}
+        className="flex items-center gap-1 px-3 py-1.5 rounded-sm bg-tertiary/10 border border-tertiary/20 hover:bg-tertiary/20 text-tertiary text-xs transition-colors uppercase tracking-widest disabled:opacity-50"
+        title={t('locationGraph.toolbar.generateAllImages', { defaultValue: 'Generuj wszystkie obrazki' })}
+      >
+        <span className="material-symbols-outlined text-sm">auto_awesome</span>
+        {t('locationGraph.toolbar.generateAllImages', { defaultValue: 'Generuj wszystkie' })}
+        {missingCount > 0 && <span className="text-tertiary/50 ml-0.5">({missingCount})</span>}
+      </button>
+      {showMenu && (
+        <>
+          <div className="fixed inset-0 z-40" onClick={() => setShowMenu(false)} />
+          <div className="absolute bottom-full left-0 mb-1 bg-surface-container-highest border border-outline-variant/20 rounded-sm shadow-xl py-1 min-w-[160px] z-50">
+            {BULK_PROVIDER_OPTIONS.map((opt) => {
+              const isPixel = opt.id === 'pixellab';
+              return (
+                <button
+                  key={opt.id}
+                  type="button"
+                  onClick={() => {
+                    setShowMenu(false);
+                    if (isPixel) {
+                      startPixelLab?.();
+                    } else {
+                      startStandard?.(opt.id);
+                    }
+                  }}
+                  className="w-full text-left px-3 py-1.5 text-xs hover:bg-white/10 text-on-surface transition-colors flex items-center gap-2"
+                >
+                  <span className="material-symbols-outlined text-sm">{isPixel ? 'auto_fix_high' : 'image'}</span>
+                  {opt.label}
+                </button>
+              );
+            })}
+          </div>
+        </>
+      )}
+    </div>
   );
 }

@@ -632,16 +632,32 @@ function IconPicker({ value, onChange }) {
 
 const SCALE_PX = [32, 32, 48, 48, 64, 80, 96, 128];
 
+const KNOWN_IMG_PROVIDERS = ['dalle', 'gpt-image', 'stability', 'gemini', 'sd-webui'];
+const PROVIDER_LABELS = {
+  dalle: 'DALL-E',
+  'gpt-image': 'GPT Image',
+  stability: 'Stability',
+  gemini: 'Gemini',
+  'sd-webui': 'SD-WebUI',
+};
+
 function NodeImageSection({ node, campaignId, onUpdate, isAdmin, readOnly = false }) {
   const { t } = useTranslation();
+  const { settings } = useSettings();
   const fileRef = useRef(null);
-  const [generating, setGenerating] = useState(false);
+  const [generatingPixel, setGeneratingPixel] = useState(false);
+  const [generatingStd, setGeneratingStd] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [showPicker, setShowPicker] = useState(false);
   const [gallery, setGallery] = useState(null);
   const [customPrompt, setCustomPrompt] = useState('');
 
   const spritePx = SCALE_PX[Math.min(Math.max(node.scale ?? 5, 0), 7)];
+  const stdProvider = KNOWN_IMG_PROVIDERS.includes(settings.sceneImageTier)
+    ? settings.sceneImageTier
+    : null;
+  const stdProviderLabel = PROVIDER_LABELS[stdProvider] || stdProvider;
+  const generating = generatingPixel || generatingStd;
 
   const handleUpload = useCallback(async (e) => {
     const file = e.target.files?.[0];
@@ -667,8 +683,8 @@ function NodeImageSection({ node, campaignId, onUpdate, isAdmin, readOnly = fals
     }
   }, [node.id, campaignId, onUpdate]);
 
-  const handleGenerate = useCallback(async () => {
-    setGenerating(true);
+  const handleGeneratePixel = useCallback(async () => {
+    setGeneratingPixel(true);
     try {
       const body = customPrompt.trim() ? { prompt: customPrompt.trim() } : {};
       const res = await apiClient.request(
@@ -679,9 +695,36 @@ function NodeImageSection({ node, campaignId, onUpdate, isAdmin, readOnly = fals
     } catch (err) {
       console.error('Sprite generation failed', err);
     } finally {
-      setGenerating(false);
+      setGeneratingPixel(false);
     }
   }, [campaignId, node.id, customPrompt, onUpdate]);
+
+  const handleGenerateStandard = useCallback(async () => {
+    if (!stdProvider) return;
+    setGeneratingStd(true);
+    try {
+      const { imageService } = await import('../../../services/imageGen.js');
+      const { url } = await imageService.generateNodeImage(node, {
+        provider: stdProvider,
+        campaignId,
+        sdModel: stdProvider === 'sd-webui' ? (settings.sdWebuiModel || null) : null,
+        customPrompt: customPrompt.trim() || null,
+      });
+      if (url) {
+        onUpdate('nodeImageUrl', url);
+        if (campaignId) {
+          await apiClient.request(
+            `/livingWorld/campaigns/${campaignId}/location-graph/nodes/${node.id}`,
+            { method: 'PUT', body: { nodeImageUrl: url } },
+          ).catch(() => {});
+        }
+      }
+    } catch (err) {
+      console.error('Standard image generation failed', err);
+    } finally {
+      setGeneratingStd(false);
+    }
+  }, [stdProvider, node, campaignId, customPrompt, onUpdate, settings.sdWebuiModel]);
 
   const loadGallery = useCallback(async () => {
     try {
@@ -708,7 +751,6 @@ function NodeImageSection({ node, campaignId, onUpdate, isAdmin, readOnly = fals
             src={apiClient.resolveMediaUrl(node.nodeImageUrl)}
             alt={node.name}
             className="max-w-[180px] w-full rounded-lg border border-outline-variant/15 bg-black/20"
-            style={{ imageRendering: 'pixelated' }}
           />
           {isAdmin && !readOnly && (
             <button
@@ -748,16 +790,31 @@ function NodeImageSection({ node, campaignId, onUpdate, isAdmin, readOnly = fals
             )}
             <button
               type="button"
-              onClick={handleGenerate}
+              onClick={handleGeneratePixel}
               disabled={generating}
               className="flex items-center gap-1 px-2 py-1 rounded bg-primary/10 border border-primary/20 hover:bg-primary/20 transition-colors text-primary text-xs disabled:opacity-50"
+              title="PixelLab — pixel art sprite"
             >
               <span className="material-symbols-outlined text-sm">auto_fix_high</span>
-              {generating
+              {generatingPixel
                 ? t('locationGraph.inspector.generating', { defaultValue: 'Generuję...' })
-                : t('locationGraph.inspector.generate', { defaultValue: 'Generuj' })}
+                : 'PixelLab'}
               <span className="text-[10px] text-primary/60 ml-0.5">{spritePx}px</span>
             </button>
+            {stdProvider && (
+              <button
+                type="button"
+                onClick={handleGenerateStandard}
+                disabled={generating}
+                className="flex items-center gap-1 px-2 py-1 rounded bg-tertiary/10 border border-tertiary/20 hover:bg-tertiary/20 transition-colors text-tertiary text-xs disabled:opacity-50"
+                title={`${stdProviderLabel} — 1024×1024`}
+              >
+                <span className="material-symbols-outlined text-sm">image</span>
+                {generatingStd
+                  ? t('locationGraph.inspector.generating', { defaultValue: 'Generuję...' })
+                  : stdProviderLabel}
+              </button>
+            )}
           </div>
 
           {isAdmin && <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={handleUpload} />}

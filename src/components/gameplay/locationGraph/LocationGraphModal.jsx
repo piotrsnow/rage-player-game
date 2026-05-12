@@ -8,6 +8,7 @@ import { apiClient } from '../../../services/apiClient.js';
 import { useGraphShortcuts } from '../../../hooks/useGraphShortcuts.js';
 import { useEntityBrowser } from '../../../hooks/useEntityBrowser.js';
 import { useWorldGraphSpriteJob } from '../../../hooks/useWorldGraphSpriteJob.js';
+import { useNodeImageBulkGeneration } from '../../../hooks/useNodeImageBulkGeneration.js';
 import { useSettings } from '../../../contexts/SettingsContext.jsx';
 import GraphCanvas from './GraphCanvas.jsx';
 import HierarchyTree from './HierarchyTree.jsx';
@@ -58,7 +59,7 @@ const LAYOUT_WORLD_KEY = '__world_admin__';
 export default function LocationGraphModal({ campaignId = null, onClose, openGeneration = 0, worldMode = false }) {
   const { t } = useTranslation();
   const modalRef = useModalA11y(onClose);
-  const { backendUser } = useSettings();
+  const { backendUser, settings } = useSettings();
   const isAdmin = !!backendUser?.isAdmin;
   const layoutStorageKey = worldMode ? LAYOUT_WORLD_KEY : campaignId;
 
@@ -99,6 +100,37 @@ export default function LocationGraphModal({ campaignId = null, onClose, openGen
   const spriteJob = useWorldGraphSpriteJob({
     onComplete: worldMode ? worldGraphHook.fetchGraph : undefined,
   });
+
+  const stdProvider = ['dalle', 'gpt-image', 'stability', 'gemini', 'sd-webui'].includes(settings.sceneImageTier)
+    ? settings.sceneImageTier
+    : null;
+
+  const bulkImageGenHook = useNodeImageBulkGeneration({
+    campaignId: worldMode ? undefined : campaignId,
+    onNodeComplete: useCallback((nodeId, url) => {
+      graph.updateNode(nodeId, { nodeImageUrl: url });
+    }, [graph]),
+  });
+
+  const bulkImageGen = useMemo(() => ({
+    ...bulkImageGenHook,
+    nodes: graph.allNodes,
+    stdProvider,
+    startPixelLab: () => {
+      if (worldMode) {
+        spriteJob.start(graph.allNodes);
+      } else {
+        bulkImageGenHook.start(graph.allNodes, { provider: 'pixellab' });
+      }
+    },
+    startStandard: (provider) => {
+      bulkImageGenHook.start(graph.allNodes, {
+        provider,
+        sdModel: provider === 'sd-webui' ? (settings.sdWebuiModel || null) : null,
+      });
+    },
+  }), [bulkImageGenHook, graph.allNodes, stdProvider, worldMode, spriteJob, settings.sdWebuiModel]);
+
   const [activeTab, setActiveTab] = useState('graph');
   const [selectedNpcId, setSelectedNpcId] = useState(null);
 
@@ -390,6 +422,7 @@ export default function LocationGraphModal({ campaignId = null, onClose, openGen
                   onToggleSnap={handleToggleSnap}
                   onResetLayout={handleResetLayout}
                   spriteJob={worldMode ? { ...spriteJob, nodes: graph.allNodes } : undefined}
+                  bulkImageGen={bulkImageGen}
                   showOrphans={showOrphans}
                   onToggleOrphans={worldMode ? () => setShowOrphans((v) => !v) : undefined}
                 />
