@@ -4,7 +4,7 @@ import { ATTRIBUTE_KEYS, ATTRIBUTE_SHORT } from '../../../data/rpgSystem';
 /**
  * Full NPC character sheet — used inside the World State NPC panel (expanded
  * section) and inside the chat NpcSheetModal. Reads the `stats` JSON shape
- * emitted by backend/src/services/npcs/npcCharacterSheet.js:
+ * emitted by shared/domain/npcCharacterSheet.js (re-exported on BE):
  *   { race, creatureKind, level, attributes, wounds, maxWounds, mana,
  *     skills, weapons, armourDR, traits }
  *

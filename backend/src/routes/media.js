@@ -1,9 +1,34 @@
 import { prisma } from '../lib/prisma.js';
 import { UUID_PATTERN } from '../lib/validators.js';
 import { createMediaStore } from '../services/mediaStore.js';
+import { LocalStore } from '../services/localStore.js';
 import { generateKey, toUuid } from '../services/hashService.js';
 import { config } from '../config.js';
+
 const store = createMediaStore(config);
+const localFallback = config.mediaBackend === 'gcp'
+  ? new LocalStore(config.mediaLocalPath)
+  : null;
+
+async function getWithLocalFallback(effectivePath, contentType, asset, log) {
+  let result = await store.get(effectivePath);
+  if (result || !localFallback) return result;
+
+  result = await localFallback.get(effectivePath);
+  if (!result) return null;
+
+  store.put(effectivePath, result.buffer, contentType).then(() => {
+    log.info(`Migrated ${effectivePath} from local to GCP`);
+    if (asset) {
+      prisma.mediaAsset.update({
+        where: { key: asset.key },
+        data: { backend: 'gcp' },
+      }).catch(err => log.warn(err, `backend field update failed for ${asset.key}`));
+    }
+  }).catch(err => log.warn(err, `GCP re-upload failed for ${effectivePath}`));
+
+  return result;
+}
 
 const EXT_CONTENT_TYPES = {
   jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png',
@@ -59,11 +84,12 @@ export async function mediaRoutes(fastify) {
     }
 
     const effectivePath = asset?.path || param;
-    const result = await store.get(effectivePath);
-    if (!result) return reply.code(404).send({ error: 'Media file not found' });
-
     const ext = effectivePath.split('.').pop()?.toLowerCase();
     const contentType = asset?.contentType || EXT_CONTENT_TYPES[ext] || 'application/octet-stream';
+
+    const result = await getWithLocalFallback(effectivePath, contentType, asset, fastify.log);
+    if (!result) return reply.code(404).send({ error: 'Media file not found' });
+
     reply.header('Content-Type', contentType);
     reply.header('Cache-Control', 'public, max-age=86400');
     reply.header('Cross-Origin-Resource-Policy', 'cross-origin');
@@ -146,7 +172,7 @@ export async function mediaRoutes(fastify) {
         data: { lastAccessedAt: new Date() },
       });
 
-      const result = await store.get(asset.path);
+      const result = await getWithLocalFallback(asset.path, asset.contentType, asset, f.log);
       if (!result) return reply.code(404).send({ error: 'Media file not found' });
 
       reply.header('Content-Type', asset.contentType);

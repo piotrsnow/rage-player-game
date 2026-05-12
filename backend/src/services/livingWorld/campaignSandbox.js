@@ -29,6 +29,7 @@
 import { prisma } from '../../lib/prisma.js';
 import { childLogger } from '../../lib/logger.js';
 import { LOCATION_KIND_CAMPAIGN } from '../locationRefs.js';
+import { generateNpcSheet } from '../../../../shared/domain/npcCharacterSheet.js';
 import { listNpcsAtLocation as listWorldNpcsAtLocation } from './worldStateService.js';
 import { categorize } from './questGoalAssigner.js';
 
@@ -73,6 +74,17 @@ export async function getOrCloneCampaignNpc(campaignId, worldNpcId) {
       return hit ? `${npcIdSlug}_${worldNpcId.slice(-6)}` : npcIdSlug;
     })();
 
+    const sheet = generateNpcSheet({
+      name: world.name,
+      race: world.race || null,
+      creatureKind: world.creatureKind || null,
+      role: world.role || '',
+      category,
+      personality: world.personality || '',
+      level: typeof world.level === 'number' ? world.level : null,
+      keyNpc: world.keyNpc === true,
+    });
+
     return await prisma.campaignNPC.create({
       data: {
         campaignId,
@@ -91,6 +103,10 @@ export async function getOrCloneCampaignNpc(campaignId, worldNpcId) {
         worldNpcId: world.id,
         isAgent: true,
         category,
+        race: sheet.race,
+        creatureKind: sheet.creatureKind,
+        level: sheet.level,
+        stats: sheet,
         // Vestigial — campaign-side goal mechanic was archived to
         // knowledge/ideas/npc-action-assignment.md. Columns stay so admin
         // serializers / future redesigns have a place to hang things;

@@ -10,7 +10,7 @@ import { isNpcAtLocation } from '../../utils/npcLocation';
 
 /**
  * Build a combat-enemy payload from a full NPC sheet (shape from
- * backend/src/services/npcs/npcCharacterSheet.js — race/creatureKind/level
+ * shared/domain/npcCharacterSheet.js — race/creatureKind/level
  * /attributes/skills/weapons/armourDR/traits/maxWounds). Returns `null` when
  * the NPC doesn't have a populated sheet so the caller can fall back to the
  * bestiary.
@@ -158,7 +158,7 @@ export function applyNeedsAndRest(result, resolved, needsSystemEnabled) {
 
 export function applySceneStateChanges({
   result, state, dispatch,
-  authoritativeCharacterSnapshot, ensureMissingInventoryImages, ensureMissingSpellImages, ensureMissingNpcPortraits, t,
+  authoritativeCharacterSnapshot, authoritativeQuests, ensureMissingInventoryImages, ensureMissingSpellImages, ensureMissingNpcPortraits, t,
   newlyUnlockedAchievements = [], updatedAchievementState = null,
   campaignId = null, sceneIndex = null,
 }) {
@@ -187,6 +187,9 @@ export function applySceneStateChanges({
 
   if (authoritativeCharacterSnapshot) {
     dispatch({ type: 'RECONCILE_CHARACTER_FROM_BACKEND', payload: authoritativeCharacterSnapshot });
+  }
+  if (authoritativeQuests) {
+    dispatch({ type: 'RECONCILE_QUESTS_FROM_BACKEND', payload: authoritativeQuests });
   }
   if (Array.isArray(validated.newItems) && validated.newItems.length > 0) {
     void ensureMissingInventoryImages(validated.newItems, { emitWarning: false });

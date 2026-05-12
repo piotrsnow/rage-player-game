@@ -136,6 +136,17 @@ export function classifyIntentHeuristic(playerAction, { isFirstScene = false, en
     return { ...emptySelection(), _intent: 'combat' };
   }
 
+  // [INITIATE BEER DUEL: NpcName] — must be before bare [INITIATE BEER DUEL]
+  const beerDuelNpcMatch = playerAction.match(/^\[INITIATE BEER DUEL:\s*(.+?)\]$/);
+  if (beerDuelNpcMatch) {
+    return {
+      ...emptySelection(),
+      expand_npcs: [beerDuelNpcMatch[1].trim()],
+      _intent: 'combat',
+      _combatMode: 'beer_duel',
+    };
+  }
+
   // [INITIATE BEER DUEL]
   if (playerAction.startsWith('[INITIATE BEER DUEL]')) {
     return { ...emptySelection(), _intent: 'combat', _combatMode: 'beer_duel' };

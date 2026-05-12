@@ -52,6 +52,8 @@ import {
   moveCombatant,
   isCellOccupied,
   computeAttackPreview,
+  getRemainingMovementPoints,
+  placeBeerDuelVomitPatch,
 } from './combatEngine.js';
 
 function makeCombatState({ actor = {}, target = {} } = {}) {
@@ -153,6 +155,17 @@ describe('createCombatState', () => {
     expect(combat.skirmish).toBeTruthy();
     expect(combat.skirmish.beerTokens).toHaveLength(2);
     expect(combat.skirmish.beersRemaining).toBe(2);
+    const playerCombatant = combat.combatants.find((c) => c.type === 'player');
+    // Base allowance for zr=10 is max(6, floor(10/2)+4)=9; beer duel doubles for the player.
+    expect(playerCombatant?.movementAllowance).toBe(18);
+  });
+
+  it('exposes remaining movement consistent with moveCombatant', () => {
+    expect(getRemainingMovementPoints({
+      movementAllowance: 10,
+      movementUsed: 3,
+      activeEffects: [],
+    })).toBe(7);
   });
 });
 
@@ -258,6 +271,98 @@ describe('resolveManoeuvre — new combat system', () => {
   });
 });
 
+describe('beer duel vomit', () => {
+  it('crossing a vomit patch spends one slip charge and slides one tile for free', () => {
+    const combat = {
+      mode: 'beer_duel',
+      active: true,
+      round: 1,
+      turnIndex: 0,
+      log: [],
+      terrainTiles: [],
+      combatants: [
+        {
+          id: 'player',
+          name: 'Hero',
+          type: 'player',
+          position: { x: 1, y: 4 },
+          movementUsed: 0,
+          movementAllowance: 10,
+          beerDuelVomitSlipUses: 0,
+          beerDuelVomitPlaceUses: 0,
+          isDefeated: false,
+          activeEffects: [],
+          attributes: { zrecznosc: 10 },
+          skills: {},
+        },
+        {
+          id: 'e1',
+          name: 'Gob',
+          type: 'enemy',
+          position: { x: 14, y: 4 },
+          movementUsed: 0,
+          movementAllowance: 8,
+          isDefeated: false,
+          activeEffects: [],
+        },
+      ],
+      skirmish: {
+        beerTokens: [],
+        beersRemaining: 0,
+        scoreByCombatantId: {},
+        winnerIds: [],
+        winnerScore: 0,
+        isComplete: false,
+        vomitPatches: [{ id: 'v1', x: 2, y: 4 }],
+      },
+    };
+    const { combat: after, moved } = moveCombatant(combat, 'player', { x: 4, y: 4 });
+    expect(moved).toBe(true);
+    const p = after.combatants.find((c) => c.id === 'player');
+    expect(p.position).toEqual({ x: 4, y: 4 });
+    expect(p.movementUsed).toBe(1);
+    expect(p.beerDuelVomitSlipUses).toBe(1);
+  });
+
+  it('placeBeerDuelVomitPatch adds a patch within range', () => {
+    const combat = {
+      mode: 'beer_duel',
+      active: true,
+      round: 1,
+      turnIndex: 0,
+      log: [],
+      terrainTiles: [],
+      combatants: [
+        {
+          id: 'player',
+          name: 'Hero',
+          type: 'player',
+          position: { x: 5, y: 4 },
+          movementUsed: 0,
+          movementAllowance: 10,
+          beerDuelVomitSlipUses: 0,
+          beerDuelVomitPlaceUses: 0,
+          isDefeated: false,
+          activeEffects: [],
+        },
+      ],
+      skirmish: {
+        beerTokens: [],
+        beersRemaining: 0,
+        scoreByCombatantId: {},
+        winnerIds: [],
+        winnerScore: 0,
+        isComplete: false,
+        vomitPatches: [],
+      },
+    };
+    const { combat: after, placed } = placeBeerDuelVomitPatch(combat, 'player', { x: 6, y: 4 });
+    expect(placed).toBe(true);
+    expect(after.skirmish.vomitPatches).toHaveLength(1);
+    expect(after.combatants[0].beerDuelVomitPlaceUses).toBe(1);
+  });
+});
+
 describe('isCombatOver', () => {
   it('returns true when all enemies are defeated', () => {
     const combat = makeCombatState({
@@ -288,6 +393,7 @@ describe('isCombatOver', () => {
       winnerIds: [],
       winnerScore: 0,
       isComplete: false,
+      vomitPatches: [],
     };
     combat.combatants[0].position = { x: 3, y: 3 };
     combat.combatants[1].position = { x: 10, y: 3 };

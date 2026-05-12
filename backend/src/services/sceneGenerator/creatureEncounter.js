@@ -1,5 +1,5 @@
 /**
- * Creature encounter — lightweight narration of a magical creature appearing.
+ * Creature encounter — lightweight narration of wildlife or a magical creature.
  *
  * Uses a nano model call (similar to quickBeat) to produce 2-3 sentences of
  * flavour text. No stateChanges, no postSceneWork, no scene-index bump.
@@ -8,16 +8,24 @@
 import { childLogger } from '../../lib/logger.js';
 import { callAIJson, parseJsonOrNull } from '../aiJsonCall.js';
 import { loadCampaignState } from './campaignLoader.js';
-import { MAGICAL_CREATURES, pickCreature } from '../../../../shared/domain/rpgCreatures.js';
+import { findCreatureById, MAGICAL_CREATURES, pickEncounterSubject } from '../../../../shared/domain/rpgCreatures.js';
 
 const log = childLogger({ module: 'creatureEncounter' });
 
-function buildCreaturePrompt({ currentLocation, creatureName, behaviorHints, timeOfDay }) {
-  const system = `Jesteś AI Game Masterem. Opisz w 2-3 zdaniach krótkie spotkanie z magiczną istotą. Istota może być urocza, zabawna lub groźna. Gracz jeszcze nie reaguje — opisz tylko pojawienie się istoty i jej zachowanie. Output: TYLKO valid JSON: { "narration": "string" }`;
-
+function buildEncounterPrompt({ encounterKind, currentLocation, creatureName, behaviorHints, timeOfDay }) {
   const hintsText = Array.isArray(behaviorHints) && behaviorHints.length > 0
     ? behaviorHints.join(', ')
     : '';
+
+  if (encounterKind === 'animal') {
+    const system = `Jesteś AI Game Masterem. Opisz w 2-3 zdaniach krótkie spotkanie ze zwyczajnym zwierzęciem (bez magii, bez mowy zwierząt). Zachowanie ma być realistyczne jak w naturze — strach, ciekawość, terytorialność, polowanie itd. Gracz jeszcze nie reaguje — opisz tylko pojawienie się zwierzęcia i jego zachowanie. Output: TYLKO valid JSON: { "narration": "string" }`;
+
+    const user = `Obecna lokacja: ${currentLocation || '(nieznana)'}. Zwierzę: ${creatureName}. Wskazówki zachowania: ${hintsText}. Pora dnia: ${timeOfDay || 'dzień'}. Napisz 2-3 zdania po polsku.`;
+
+    return { system, user };
+  }
+
+  const system = `Jesteś AI Game Masterem. Opisz w 2-3 zdaniach krótkie spotkanie z magiczną istotą. Istota może być urocza, zabawna lub groźna. Gracz jeszcze nie reaguje — opisz tylko pojawienie się istoty i jej zachowanie. Output: TYLKO valid JSON: { "narration": "string" }`;
 
   const user = `Obecna lokacja: ${currentLocation || '(nieznana)'}. Istota: ${creatureName}. Wskazówki: ${hintsText}. Pora dnia: ${timeOfDay || 'dzień'}. Napisz 2-3 zdania po polsku.`;
 
@@ -45,18 +53,27 @@ export async function generateCreatureEncounter(campaignId, opts = {}, onEvent) 
     const currentLocation = coreState.world?.currentLocation || '';
     const timeOfDay = coreState.world?.timeState?.timeOfDay || 'dzień';
 
+    const typeRoll = Math.floor(Math.random() * 100) + 1;
+
+    let encounterKind;
     let creature;
     if (creatureId) {
-      creature = MAGICAL_CREATURES.find((c) => c.id === creatureId) || null;
+      creature = findCreatureById(creatureId);
+      if (creature) {
+        encounterKind = MAGICAL_CREATURES.some((c) => c.id === creature.id) ? 'magical' : 'animal';
+      }
     }
     if (!creature) {
-      creature = pickCreature(currentLocation);
+      const picked = pickEncounterSubject({ currentLocation, typeRoll });
+      encounterKind = picked.kind;
+      creature = picked.creature;
     }
 
     const creatureName = creatureNameOverride || creature.namePl;
     const behaviorHints = creature.behaviorHints;
 
-    const { system, user } = buildCreaturePrompt({
+    const { system, user } = buildEncounterPrompt({
+      encounterKind,
       currentLocation,
       creatureName,
       behaviorHints,
@@ -107,6 +124,7 @@ export async function generateCreatureEncounter(campaignId, opts = {}, onEvent) 
     onEvent({
       type: 'complete',
       data: {
+        encounterKind,
         creatureId: creature.id,
         creatureName,
         narration: parsed.narration.trim().slice(0, 600),

@@ -8,6 +8,7 @@ import {
 } from '../services/refreshTokenService.js';
 import { generateCsrfToken, CSRF_COOKIE } from '../plugins/csrf.js';
 import { issueWsTicket } from '../services/wsTicketService.js';
+import { encrypt, decrypt } from '../services/apiKeyService.js';
 
 // /v1/auth — cookie-based refresh token flow (formerly /v2/auth, collapsed
 // 2026-04-14 since there's no prod to maintain backward compat for).
@@ -261,13 +262,13 @@ export async function authRoutes(fastify) {
     return user;
   });
 
-  // Read-only availability view for the Keys modal. Keys are server-only (env
-  // vars); this endpoint never touches the DB and never leaks secrets — only
-  // a masked preview of the configured value's last 4 chars.
-  fastify.get('/api-keys', { onRequest: [fastify.authenticate] }, async () => {
+  // Availability view for the Keys modal. Shows env-based key status and
+  // per-user override status (admin only sees overrides).
+  const OVERRIDABLE_KEY_NAMES = ['openai', 'anthropic', 'elevenlabs', 'stability', 'gemini', 'meshy'];
+
+  fastify.get('/api-keys', { onRequest: [fastify.authenticate] }, async (request) => {
     const resolved = {};
-    const keyNames = ['openai', 'anthropic', 'elevenlabs', 'stability', 'gemini', 'meshy'];
-    for (const name of keyNames) {
+    for (const name of OVERRIDABLE_KEY_NAMES) {
       const key = config.apiKeys[name] || '';
       resolved[name] = key
         ? { configured: true, masked: '••••' + key.slice(-4) }
@@ -279,9 +280,6 @@ export async function authRoutes(fastify) {
       ? { configured: true, masked: '••••' + plKey.slice(-4) }
       : { configured: false };
 
-    // Stable Diffusion WebUI has no API key — availability is driven by the
-    // SD_WEBUI_URL env var. `masked` shows the host so the user can verify
-    // they're talking to the right A1111 instance.
     if (config.sdWebui?.url) {
       let masked = config.sdWebui.url;
       try { masked = new URL(config.sdWebui.url).host; } catch { /* keep raw */ }
@@ -298,7 +296,85 @@ export async function authRoutes(fastify) {
       resolved['xtts'] = { configured: false };
     }
 
-    return resolved;
+    // Per-user override status (admin-only).
+    let userOverrides = {};
+    if (request.user?.isAdmin) {
+      const user = await prisma.user.findUnique({
+        where: { id: request.user.id },
+        select: { apiKeys: true },
+      });
+      if (user?.apiKeys && user.apiKeys !== '{}') {
+        try {
+          const parsed = JSON.parse(decrypt(user.apiKeys));
+          for (const name of OVERRIDABLE_KEY_NAMES) {
+            if (parsed[name]) {
+              userOverrides[name] = { configured: true, masked: '••••' + parsed[name].slice(-4) };
+            }
+          }
+        } catch { /* corrupted bundle — ignore */ }
+      }
+    }
+
+    return { env: resolved, userOverrides };
+  });
+
+  // Admin-only: save per-user API key overrides. Empty string clears a key.
+  fastify.put('/api-keys', {
+    onRequest: [fastify.authenticate, fastify.requireAdmin],
+    schema: {
+      body: {
+        type: 'object',
+        required: ['keys'],
+        additionalProperties: false,
+        properties: {
+          keys: {
+            type: 'object',
+            additionalProperties: false,
+            properties: Object.fromEntries(
+              OVERRIDABLE_KEY_NAMES.map((k) => [k, { type: 'string' }]),
+            ),
+          },
+        },
+      },
+    },
+  }, async (request) => {
+    const { keys } = request.body;
+
+    // Load existing bundle so we can patch (not replace) individual keys.
+    const user = await prisma.user.findUnique({
+      where: { id: request.user.id },
+      select: { apiKeys: true },
+    });
+    let existing = {};
+    if (user?.apiKeys && user.apiKeys !== '{}') {
+      try { existing = JSON.parse(decrypt(user.apiKeys)); } catch { /* start fresh */ }
+    }
+
+    for (const name of OVERRIDABLE_KEY_NAMES) {
+      if (name in keys) {
+        if (keys[name]) {
+          existing[name] = keys[name];
+        } else {
+          delete existing[name];
+        }
+      }
+    }
+
+    const hasKeys = Object.keys(existing).length > 0;
+    const encrypted = hasKeys ? encrypt(JSON.stringify(existing)) : '{}';
+    await prisma.user.update({
+      where: { id: request.user.id },
+      data: { apiKeys: encrypted },
+    });
+
+    // Return masked versions so the UI can update without re-fetching.
+    const result = {};
+    for (const name of OVERRIDABLE_KEY_NAMES) {
+      if (existing[name]) {
+        result[name] = { configured: true, masked: '••••' + existing[name].slice(-4) };
+      }
+    }
+    return { userOverrides: result };
   });
 
   fastify.post('/ws-ticket', { onRequest: [fastify.authenticate] }, async (request) => {

@@ -176,6 +176,7 @@ export function useSceneGeneration({ ensureMissingInventoryImages, ensureMissing
         devLog.emit({ category: 'pipeline', type: 'backend_stream_complete', label: `Stream complete (${Date.now() - sceneGenStartRef.current}ms)`, data: { durationMs: Date.now() - sceneGenStartRef.current, hasCharacter: !!backendResult.character, sceneIndex: backendResult.sceneIndex } });
         dispatch({ type: 'ADD_AI_COST', payload: calculateSceneCost(settings, sceneModelConfig) });
         const authoritativeCharacterSnapshot = backendResult.character || null;
+        const authoritativeQuests = backendResult.quests || null;
         const newlyUnlockedAchievements = Array.isArray(backendResult.newlyUnlockedAchievements)
           ? backendResult.newlyUnlockedAchievements
           : [];
@@ -301,7 +302,7 @@ export function useSceneGeneration({ ensureMissingInventoryImages, ensureMissing
         devLog.emit({ category: 'state', type: 'apply_state_changes', label: `State changes: ${scBuckets.join(', ') || 'none'}`, data: { buckets: scBuckets, hasCharacterSnapshot: !!authoritativeCharacterSnapshot } });
         applySceneStateChanges({
           result, state, dispatch,
-          authoritativeCharacterSnapshot, ensureMissingInventoryImages, ensureMissingSpellImages, ensureMissingNpcPortraits, t,
+          authoritativeCharacterSnapshot, authoritativeQuests, ensureMissingInventoryImages, ensureMissingSpellImages, ensureMissingNpcPortraits, t,
           newlyUnlockedAchievements, updatedAchievementState,
           campaignId: backendCampaignId || null,
           sceneIndex: serverSceneIndex,

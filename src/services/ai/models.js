@@ -19,13 +19,12 @@ export const AI_MODELS = [
   { id: 'gpt-4.1-nano',               provider: 'openai',    label: 'GPT-4.1 Nano',         cost: '~$0.10 / $0.40 per 1M tokens', tier: 'standard' },
   { id: 'o3-mini',                    provider: 'openai',    label: 'o3-mini',              cost: '~$1.10 / $4.40 per 1M tokens', tier: 'premium' },
 
-  // Anthropic — 6 scene picker entries (flagship small + large)
-  { id: 'claude-opus-4-20250514',      provider: 'anthropic', label: 'Claude Opus 4',        cost: '~$15 / $75 per 1M tokens',     tier: 'premium',  sceneBadge: 'premium' },
-  { id: 'claude-sonnet-4-20250514',    provider: 'anthropic', label: 'Claude Sonnet 4',      cost: '~$3.00 / $15 per 1M tokens',   tier: 'premium',  sceneBadge: 'balanced' },
-  { id: 'claude-3-5-sonnet-20241022',  provider: 'anthropic', label: 'Claude 3.5 Sonnet',    cost: '~$3.00 / $15 per 1M tokens',   tier: 'premium',  sceneBadge: 'balanced' },
-  { id: 'claude-3-7-sonnet-20250219',  provider: 'anthropic', label: 'Claude 3.7 Sonnet',    cost: '~$3.00 / $15 per 1M tokens',   tier: 'premium',  sceneBadge: 'reasoner' },
-  { id: 'claude-haiku-4-5-20251001',   provider: 'anthropic', label: 'Claude 4.5 Haiku',     cost: '~$0.80 / $4.00 per 1M tokens', tier: 'standard', sceneBadge: 'budget' },
-  { id: 'claude-3-5-haiku-20241022',   provider: 'anthropic', label: 'Claude 3.5 Haiku',     cost: '~$0.80 / $4.00 per 1M tokens', tier: 'standard', sceneBadge: 'budget' },
+  // Anthropic — 5 scene picker entries
+  { id: 'claude-opus-4-7',             provider: 'anthropic', label: 'Claude Opus 4.7',      cost: '~$5.00 / $25 per 1M tokens',   tier: 'premium',  sceneBadge: 'premium' },
+  { id: 'claude-sonnet-4-6',           provider: 'anthropic', label: 'Claude Sonnet 4.6',    cost: '~$3.00 / $15 per 1M tokens',   tier: 'premium',  sceneBadge: 'balanced' },
+  { id: 'claude-opus-4-6',             provider: 'anthropic', label: 'Claude Opus 4.6',      cost: '~$5.00 / $25 per 1M tokens',   tier: 'premium',  sceneBadge: 'premium' },
+  { id: 'claude-sonnet-4-5-20250929',  provider: 'anthropic', label: 'Claude Sonnet 4.5',    cost: '~$3.00 / $15 per 1M tokens',   tier: 'premium',  sceneBadge: 'reasoner' },
+  { id: 'claude-haiku-4-5-20251001',   provider: 'anthropic', label: 'Claude Haiku 4.5',     cost: '~$1.00 / $5.00 per 1M tokens', tier: 'standard', sceneBadge: 'budget' },
 ];
 
 // Shown as "Polecany" badge on the recommended model in the scene picker.
@@ -33,7 +32,7 @@ export const AI_MODELS = [
 // wasted latency/cost there, so the recommended pick is non-reasoner gpt-4.1.
 export const RECOMMENDED_MODELS = {
   openai: 'gpt-4.1',
-  anthropic: 'claude-sonnet-4-20250514',
+  anthropic: 'claude-sonnet-4-6',
 };
 
 // Mirrors backend/src/config.js `aiModels`. Backend has a 4th `nanoReasoning`
@@ -41,7 +40,7 @@ export const RECOMMENDED_MODELS = {
 // internal backend concern and has no FE picker.
 const MODEL_MAP = {
   openai:    { nano: 'gpt-4.1-nano', standard: 'gpt-4.1-mini',             premium: 'gpt-4.1' },
-  anthropic: { nano: 'claude-haiku-4-5-20251001', standard: 'claude-haiku-4-5-20251001', premium: 'claude-sonnet-4-20250514' },
+  anthropic: { nano: 'claude-haiku-4-5-20251001', standard: 'claude-haiku-4-5-20251001', premium: 'claude-sonnet-4-6' },
 };
 
 const TASK_TIER_OVERRIDE = {

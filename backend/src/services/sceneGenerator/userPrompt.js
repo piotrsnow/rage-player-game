@@ -62,6 +62,7 @@ Include stateChanges: timeAdvance, currentLocation, npcs (introduce at least 1),
   const isPostCombatDefeat = isPostCombat && (playerAction.includes('LOST') || playerAction.includes('did NOT win'));
   const isGeneralCombatInitiation = playerAction?.startsWith('[INITIATE COMBAT]');
   const isBeerDuelInitiation = playerAction?.startsWith('[INITIATE BEER DUEL]');
+  const beerDuelNpcNameMatch = playerAction?.match(/^\[INITIATE BEER DUEL:\s*(.+?)\]$/);
   const attackNpcMatch = playerAction?.match(/^\[ATTACK:\s*(.+?)\]$/);
   const talkNpcMatch = playerAction?.match(/^\[TALK:\s*(.+?)\]$/);
   const creatureEncounterMatch = playerAction?.match(/^\[CREATURE_ENCOUNTER:\s*(.+?)\]\s*(.*)/s);
@@ -164,7 +165,12 @@ Keep it dramatic but fair. Include stateChanges. timeAdvance: 0.25h.`);
   // Combat intent
   if (!isPostCombat && !isIdleWorldEvent && !isWait && !isProvidenceAfterIncident) {
     if (isBeerDuelInitiation) {
-      parts.push('BEER DUEL INITIATED. MUST include combatUpdate with mode="beer_duel". Keep regular enemies array/enemyHints for participants, but this is NOT lethal combat. Set modeConfig.beerCountMin=20 and modeConfig.beerCountMax=30.');
+      let extra = '';
+      if (beerDuelNpcNameMatch) {
+        const rival = beerDuelNpcNameMatch[1].trim();
+        extra = ` Player explicitly picked rival "${rival}" — they MUST appear as a beer-duel participant (enemy entry / enemyHints).`;
+      }
+      parts.push(`BEER DUEL INITIATED. MUST include combatUpdate with mode="beer_duel". Keep regular enemies array/enemyHints for participants, but this is NOT lethal combat. Set modeConfig.beerCountMin=20 and modeConfig.beerCountMax=30.${extra}`);
     } else if (isGeneralCombatInitiation) {
       parts.push(`COMBAT INITIATED. MUST include combatUpdate. PREFERRED: use enemyHints {location, budget, maxDifficulty, count, race} — engine selects from bestiary. Available races: ${BESTIARY_RACES_STR}. Available locations: ${BESTIARY_LOCATIONS_STR}.`);
     } else if (attackNpcMatch) {

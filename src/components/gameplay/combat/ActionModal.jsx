@@ -217,6 +217,7 @@ export default function ActionModal({
   savedCustomAttacks,
   onExecute,
   onMoveToPosition,
+  onPlaceBeerDuelVomit,
   onClose,
   onPersistCustomAttack,
   onRemoveCustomAttack,
@@ -340,6 +341,13 @@ export default function ActionModal({
   const handleMoveHere = () => {
     if (targetCell) {
       onMoveToPosition(targetCell);
+      onClose();
+    }
+  };
+
+  const handleBelchtaj = () => {
+    if (targetCell && onPlaceBeerDuelVomit) {
+      onPlaceBeerDuelVomit(targetCell);
       onClose();
     }
   };
@@ -547,9 +555,9 @@ export default function ActionModal({
         </div>
       </div>
 
-      {/* Ground: move here */}
+      {/* Ground: move here (+ beer duel belchtaj) */}
       {targetType === 'ground' && targetCell && myCombatant && (
-        <div className="p-2">
+        <div className="p-2 space-y-2">
           <button
             onClick={handleMoveHere}
             className="w-full flex items-center gap-2 px-3 py-2 text-xs font-bold rounded-md bg-primary/10 text-primary border border-primary/15 hover:bg-primary/20 transition-colors"
@@ -564,6 +572,31 @@ export default function ActionModal({
               })()}
             </span>
           </button>
+          {onPlaceBeerDuelVomit && (() => {
+            const placesLeft = Math.max(0, 2 - (myCombatant.beerDuelVomitPlaceUses || 0));
+            const pos = normalizePos(myCombatant.position);
+            const d = Math.max(Math.abs(targetCell.x - pos.x), Math.abs(targetCell.y - pos.y));
+            const canPlace = placesLeft > 0 && d <= 2;
+            return (
+              <button
+                type="button"
+                onClick={handleBelchtaj}
+                disabled={!canPlace}
+                title={!canPlace
+                  ? (placesLeft <= 0
+                    ? t('combat.belchtajNoUses', 'Brak użyć w tej turze (2).')
+                    : t('combat.belchtajTooFar', 'Za daleko (max 2 pola).'))
+                  : t('combat.belchtajHint', 'Zostaw ślizgawkę — max 2× na turę, zasięg 2 pola.')}
+                className="w-full flex items-center gap-2 px-3 py-2 text-xs font-bold rounded-md bg-lime-900/25 text-lime-200 border border-lime-500/25 hover:bg-lime-800/35 transition-colors disabled:opacity-35 disabled:cursor-not-allowed"
+              >
+                <span className="material-symbols-outlined text-base">sick</span>
+                {t('combat.belchtaj', 'Bełtaj')}
+                <span className="ml-auto text-[10px] text-lime-300/80 font-normal tabular-nums">
+                  {placesLeft}/2
+                </span>
+              </button>
+            );
+          })()}
         </div>
       )}
 

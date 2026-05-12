@@ -428,9 +428,9 @@ export async function processBranchGroupReveals(campaignId, reveals) {
 //   1. Walidacja grafu (validateGraphIntegrity) — odrzucamy quest jeśli graf
 //      ma cycle, missing parent, duplicate nodeKey.
 //   2. CampaignQuest.create + nested CampaignQuestObjective.createMany.
-//   3. Każdy objective dostaje `metadata.discovered=false` poza root nodes
-//      (parents=[]) — root jest discovered=false też, ale LLM po wprowadzeniu
-//      questa zazwyczaj emituje objectiveReveals dla root w tej samej scenie.
+//   3. Każdy objective dostaje `metadata.discovered=false` POZA PIERWSZYM
+//      rootem (parents=[]) — ten jedyny jest auto-revealed (discovered=true)
+//      aby gracz miał punkt startowy. Kolejne cele odkrywane narracyjnie.
 //   4. Status root = 'pending', non-root = 'locked'.
 //   5. Mark hook materialized (jeśli relatedHookId podany) — payload.materializedAs.
 export async function processQuestOffers(campaignId, offers) {
@@ -491,7 +491,8 @@ export async function processQuestOffers(campaignId, offers) {
       });
 
       // Build objectives — graf w metadata. discovered=false dla wszystkich
-      // (LLM emituje objectiveReveals w tej samej scenie dla root nodes).
+      // poza PIERWSZYM rootem (auto-revealed). Kolejne cele odkrywane
+      // narracyjnie via objectiveReveals emitowane przez LLM.
       const objectives = (offer.objectives || []).map((o, idx) => {
         const isRoot = !Array.isArray(o.parents) || o.parents.length === 0;
         const metadata = {
@@ -517,6 +518,13 @@ export async function processQuestOffers(campaignId, offers) {
         };
       });
       if (objectives.length > 0) {
+        // Auto-reveal only the first root objective so the player has one
+        // visible starting point. Subsequent objectives are discovered
+        // narratively via objectiveReveals from the LLM.
+        const firstRoot = objectives.find((o) => o.status === 'pending');
+        if (firstRoot) {
+          firstRoot.metadata = { ...firstRoot.metadata, discovered: true };
+        }
         await prisma.campaignQuestObjective.createMany({ data: objectives });
       }
 

@@ -19,7 +19,7 @@ export const COMBAT_INTENT_REGEX = /\b(atak|atakuj[eę]?|walcz[eęy]?|walk[eęi�
 export function detectCombatIntent(playerAction) {
   if (!playerAction) return false;
   if (playerAction.startsWith('[Combat resolved:')) return false;
-  if (playerAction.startsWith('[INITIATE COMBAT]') || playerAction.startsWith('[ATTACK:')) return true;
+  if (playerAction.startsWith('[INITIATE COMBAT]') || playerAction.startsWith('[ATTACK:') || playerAction.startsWith('[INITIATE BEER DUEL')) return true;
   if (isHypotheticalOrQuestioning(playerAction)) return false;
   return COMBAT_INTENT_REGEX.test(playerAction);
 }

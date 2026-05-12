@@ -152,6 +152,13 @@ describe('classifyIntentHeuristic — beer duel marker', () => {
     expect(result?._intent).toBe('combat');
     expect(result?._combatMode).toBe('beer_duel');
   });
+
+  it('maps beer duel vs named NPC to combat + expand_npcs + mode', () => {
+    const result = classifyIntentHeuristic('[INITIATE BEER DUEL: Staś Mocny]');
+    expect(result?._intent).toBe('combat');
+    expect(result?._combatMode).toBe('beer_duel');
+    expect(result?.expand_npcs).toEqual(['Staś Mocny']);
+  });
 });
 
 describe('classifyIntentHeuristic — trade false-positives', () => {

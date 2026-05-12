@@ -1,5 +1,11 @@
 import { shortId } from '../../../utils/ids';
 import { mergeUnique } from '../../../../shared/domain/arrays';
+import {
+  generateNpcSheet,
+  mergeSheetOverride,
+  npcStatsNeedsBaseline,
+  NPC_RACES,
+} from '../../../../shared/domain/npcCharacterSheet.js';
 import { npcToCompanion } from '../../../services/partyRecruitment';
 import { MAX_COMPANIONS } from '../partyHandlers';
 
@@ -46,6 +52,27 @@ export function applyNpcs(draft, changes) {
 
     if (incoming.action === 'introduce' && idx < 0) {
       const incomingRef = parseLocationRef(incoming.locationRef);
+      const rawRace = typeof incoming.race === 'string' && NPC_RACES.includes(incoming.race) ? incoming.race : null;
+      const rawCreatureKind = typeof incoming.creatureKind === 'string' && incoming.creatureKind.trim()
+        ? incoming.creatureKind.trim()
+        : null;
+      const resolvedRace = rawRace || (rawCreatureKind ? null : 'Human');
+      let stats = incoming.stats && typeof incoming.stats === 'object' ? incoming.stats : {};
+      if (npcStatsNeedsBaseline(stats)) {
+        stats = generateNpcSheet({
+          name: incoming.name,
+          race: resolvedRace,
+          creatureKind: rawCreatureKind,
+          role: incoming.role || '',
+          category: typeof incoming.category === 'string' ? incoming.category : 'commoner',
+          personality: incoming.personality || '',
+          level: typeof incoming.level === 'number' ? incoming.level : null,
+          keyNpc: incoming.keyNpc === true,
+        });
+      }
+      if (incoming.statsOverride && typeof incoming.statsOverride === 'object') {
+        stats = mergeSheetOverride(stats, incoming.statsOverride);
+      }
       const npcEntry = {
         id: incoming.campaignNpcId || `npc_${Date.now()}_${shortId(5)}`,
         campaignNpcId: incoming.campaignNpcId || null,
@@ -66,10 +93,10 @@ export function applyNpcs(draft, changes) {
         relatedQuestIds: incoming.relatedQuestIds || [],
         relationships: incoming.relationships || [],
         canTrain: Array.isArray(incoming.canTrain) ? incoming.canTrain : [],
-        race: typeof incoming.race === 'string' ? incoming.race : null,
-        creatureKind: typeof incoming.creatureKind === 'string' ? incoming.creatureKind : null,
-        level: typeof incoming.level === 'number' ? incoming.level : 1,
-        stats: incoming.stats && typeof incoming.stats === 'object' ? incoming.stats : {},
+        race: stats.race ?? rawRace,
+        creatureKind: stats.creatureKind ?? rawCreatureKind,
+        level: typeof stats.level === 'number' ? stats.level : (typeof incoming.level === 'number' ? incoming.level : 1),
+        stats,
       };
       draft.world.npcs.push(npcEntry);
       if (incoming.joinParty === true) pendingRecruits.push(npcEntry);
@@ -100,7 +127,36 @@ export function applyNpcs(draft, changes) {
     if (typeof incoming.race === 'string') npc.race = incoming.race;
     if (typeof incoming.creatureKind === 'string') npc.creatureKind = incoming.creatureKind;
     if (typeof incoming.level === 'number') npc.level = incoming.level;
-    if (incoming.stats && typeof incoming.stats === 'object') npc.stats = incoming.stats;
+    if (incoming.stats && typeof incoming.stats === 'object' && !npcStatsNeedsBaseline(incoming.stats)) {
+      npc.stats = incoming.stats;
+    }
+    const needsSheetMerge = npcStatsNeedsBaseline(npc.stats)
+      || (incoming.statsOverride && typeof incoming.statsOverride === 'object');
+    if (needsSheetMerge) {
+      const rawRace = typeof incoming.race === 'string' && NPC_RACES.includes(incoming.race) ? incoming.race : npc.race;
+      const rawCreatureKind = typeof incoming.creatureKind === 'string' && incoming.creatureKind.trim()
+        ? incoming.creatureKind.trim()
+        : npc.creatureKind;
+      const resolvedRace = rawRace || (rawCreatureKind ? null : 'Human');
+      const baseline = !npcStatsNeedsBaseline(npc.stats)
+        ? { ...npc.stats }
+        : generateNpcSheet({
+          name: npc.name,
+          race: resolvedRace,
+          creatureKind: rawCreatureKind || null,
+          role: incoming.role || npc.role || '',
+          category: typeof incoming.category === 'string' ? incoming.category : (npc.category || 'commoner'),
+          personality: incoming.personality || npc.personality || '',
+          level: typeof incoming.level === 'number' ? incoming.level : npc.level,
+          keyNpc: incoming.keyNpc === true || npc.keyNpc === true,
+        });
+      npc.stats = incoming.statsOverride && typeof incoming.statsOverride === 'object'
+        ? mergeSheetOverride(baseline, incoming.statsOverride)
+        : baseline;
+      if (npc.stats.race != null) npc.race = npc.stats.race;
+      if (npc.stats.creatureKind != null) npc.creatureKind = npc.stats.creatureKind;
+      if (typeof npc.stats.level === 'number') npc.level = npc.stats.level;
+    }
     if (Array.isArray(incoming.canTrain)) {
       const existing = Array.isArray(npc.canTrain) ? npc.canTrain : [];
       npc.canTrain = [...new Set([...existing, ...incoming.canTrain])];

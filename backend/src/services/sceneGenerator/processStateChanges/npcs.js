@@ -9,7 +9,11 @@ import { getOrCloneCampaignNpc } from '../../livingWorld/campaignSandbox.js';
 import { propagateRelationshipRipple } from '../../livingWorld/relationshipRippleService.js';
 import { coerceGender, normalizeGender } from '../../../../../shared/domain/npcGender.js';
 import { NPC_RACES } from '../../../../../shared/domain/npcRaces.js';
-import { generateNpcSheet, mergeSheetOverride } from '../../npcs/npcCharacterSheet.js';
+import {
+  generateNpcSheet,
+  mergeSheetOverride,
+  npcStatsNeedsBaseline,
+} from '../../../../../shared/domain/npcCharacterSheet.js';
 import {
   appendCampaignNpcLocationMovement,
   NPC_LOCATION_MOVE_SOURCE_SCENE,
@@ -209,9 +213,7 @@ export async function processNpcChanges(campaignId, npcs, { livingWorldEnabled =
           contentUpdate.level = Math.floor(npcChange.level);
         }
 
-        const existingStats = existing.stats && typeof existing.stats === 'object' && Object.keys(existing.stats).length > 0
-          ? existing.stats
-          : null;
+        const existingStats = !npcStatsNeedsBaseline(existing.stats) ? existing.stats : null;
         const needsBaseline = !existingStats;
         if (needsBaseline || npcChange.statsOverride) {
           const baseline = existingStats || generateNpcSheet({

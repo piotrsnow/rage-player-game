@@ -1,6 +1,11 @@
 import { prisma } from '../lib/prisma.js';
 import { childLogger } from '../lib/logger.js';
 import { reconstructCharacterSnapshot } from './characterRelations.js';
+import {
+  generateNpcSheet,
+  npcStatsNeedsBaseline,
+  NPC_RACES,
+} from '../../../shared/domain/npcCharacterSheet.js';
 
 const log = childLogger({ module: 'campaigns' });
 
@@ -79,24 +84,63 @@ export async function syncNPCsToNormalized(campaignId, npcs) {
   // Cuts query count from 2N (upsert) to ~2 + (N - newCount).
   const valid = npcs
     .filter((n) => n && n.name)
-    .map((npc) => ({
-      relationships: Array.isArray(npc.relationships) ? npc.relationships : [],
-      data: {
-        npcId: npc.name.toLowerCase().replace(/\s+/g, '_'),
-        name: npc.name,
-        gender: npc.gender || 'unknown',
-        role: npc.role || null,
-        personality: npc.personality || null,
-        attitude: npc.attitude || 'neutral',
-        disposition: npc.disposition ?? 0,
-        alive: npc.alive ?? true,
-        lastLocation: npc.lastLocation || null,
-        factionId: npc.factionId || null,
-        notes: npc.notes || null,
-        portraitUrl: npc.portraitUrl || null,
-        spriteUrl: npc.spriteUrl || null,
-      },
-    }));
+    .map((npc) => {
+      const rawStats = npc.stats && typeof npc.stats === 'object' ? npc.stats : null;
+      let race;
+      let creatureKind;
+      let level;
+      let stats;
+      if (rawStats && !npcStatsNeedsBaseline(rawStats)) {
+        race = typeof npc.race === 'string' && NPC_RACES.includes(npc.race) ? npc.race : (rawStats.race ?? null);
+        creatureKind = (typeof npc.creatureKind === 'string' && npc.creatureKind.trim())
+          ? npc.creatureKind.trim()
+          : (rawStats.creatureKind ?? null);
+        level = typeof npc.level === 'number' ? npc.level : (typeof rawStats.level === 'number' ? rawStats.level : 1);
+        stats = rawStats;
+      } else {
+        const rawRace = typeof npc.race === 'string' && NPC_RACES.includes(npc.race) ? npc.race : null;
+        const rawCreatureKind = typeof npc.creatureKind === 'string' && npc.creatureKind.trim()
+          ? npc.creatureKind.trim()
+          : null;
+        const resolvedRace = rawRace || (rawCreatureKind ? null : 'Human');
+        const sheet = generateNpcSheet({
+          name: npc.name,
+          race: resolvedRace,
+          creatureKind: rawCreatureKind,
+          role: npc.role || '',
+          category: typeof npc.category === 'string' ? npc.category : 'commoner',
+          personality: npc.personality || '',
+          level: typeof npc.level === 'number' ? npc.level : null,
+          keyNpc: npc.keyNpc === true,
+        });
+        race = sheet.race;
+        creatureKind = sheet.creatureKind;
+        level = sheet.level;
+        stats = sheet;
+      }
+      return {
+        relationships: Array.isArray(npc.relationships) ? npc.relationships : [],
+        data: {
+          npcId: npc.name.toLowerCase().replace(/\s+/g, '_'),
+          name: npc.name,
+          gender: npc.gender || 'unknown',
+          role: npc.role || null,
+          personality: npc.personality || null,
+          attitude: npc.attitude || 'neutral',
+          disposition: npc.disposition ?? 0,
+          alive: npc.alive ?? true,
+          lastLocation: npc.lastLocation || null,
+          factionId: npc.factionId || null,
+          notes: npc.notes || null,
+          portraitUrl: npc.portraitUrl || null,
+          spriteUrl: npc.spriteUrl || null,
+          race,
+          creatureKind,
+          level,
+          stats,
+        },
+      };
+    });
   if (valid.length === 0) return;
 
   let existing = [];
@@ -503,4 +547,58 @@ export async function reconstructFromNormalized(campaignId, coreState, { current
   }
 
   return coreState;
+}
+
+/**
+ * Load authoritative quest state for FE reconciliation after processStateChanges.
+ * Includes status, mutationLog, and full objective metadata (discovered, parents,
+ * branchGroup, nodeKey, status) that the FE needs for getVisibleObjectives().
+ */
+export async function loadQuestsForReconcile(campaignId) {
+  const dbQuests = await prisma.campaignQuest.findMany({
+    where: { campaignId },
+    orderBy: { createdAt: 'asc' },
+    include: {
+      prerequisites: { select: { prerequisite: { select: { questId: true } } } },
+      objectives: { orderBy: { displayOrder: 'asc' } },
+    },
+  });
+  if (dbQuests.length === 0) return null;
+
+  const active = [];
+  const completed = [];
+  for (const q of dbQuests) {
+    const quest = {
+      id: q.questId,
+      name: q.name,
+      type: q.type,
+      description: q.description,
+      completionCondition: q.completionCondition,
+      questGiverId: q.questGiverId,
+      turnInNpcId: q.turnInNpcId,
+      locationId: q.locationId,
+      status: q.status,
+      mutationLog: q.mutationLog ?? [],
+      prerequisiteQuestIds: Array.isArray(q.prerequisites)
+        ? q.prerequisites.map((p) => p.prerequisite?.questId).filter(Boolean)
+        : [],
+      objectives: (q.objectives || []).map((o) => ({
+        id: o.id != null ? String(o.id) : o.description,
+        description: o.description,
+        completed: o.status === 'done',
+        status: o.status,
+        progress: o.progress,
+        target: o.targetAmount,
+        nodeKey: o.nodeKey || null,
+        ...(o.metadata && typeof o.metadata === 'object' ? o.metadata : {}),
+      })),
+      reward: q.reward ?? null,
+    };
+    if (q.status === 'completed') {
+      completed.push({ ...quest, completedAt: q.completedAt?.getTime?.() || q.completedAt, rewardGranted: true });
+    } else {
+      active.push(quest);
+    }
+  }
+  return { active, completed };
 }

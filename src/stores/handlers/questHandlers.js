@@ -8,4 +8,11 @@ export const questHandlers = {
       ensureMapContainsLocationDraft(draft.world, quest.locationId);
     }
   },
+
+  RECONCILE_QUESTS_FROM_BACKEND: (draft, action) => {
+    if (!action.payload) return;
+    const { active = [], completed = [] } = action.payload;
+    draft.quests.active = active;
+    draft.quests.completed = completed;
+  },
 };

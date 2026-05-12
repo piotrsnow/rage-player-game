@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useState, useEffect, useMemo, useCallback, useRef, useLayoutEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { storage } from '../../services/storage';
@@ -18,6 +18,215 @@ import AuthPanel from './AuthPanel';
 import IntroOverlay from './IntroOverlay';
 import VideoBackground from '../ui/VideoBackground';
 import { INTRO_SEEN_SESSION_KEY, RESUME_PLAY_CAMPAIGN_SESSION_KEY } from '../../constants/sessionIntro';
+
+const LOBBY_SCALING_DICE_COUNT = 20;
+const REDUCED_MOTION_QUERY = '(prefers-reduced-motion: reduce)';
+/** Hold black overlay before fade; dice jolts reset this timer from parent. */
+const LOBBY_SCALING_OVERLAY_HOLD_MS = 1500;
+const LOBBY_SCALING_OVERLAY_FADE_MS = 300;
+/** Min horizontal viewport delta (px) to treat as width-driven layout change. */
+const LOBBY_SCALING_WIDTH_EPS_PX = 6;
+
+/** Per-die visual size multiplier in [2, 5] on top of a small base (px). */
+function randomLobbyDiceSizePx() {
+  const base = 10 + Math.random() * 10;
+  const mult = 2 + Math.random() * 3;
+  return Math.max(28, Math.round(base * mult));
+}
+
+function createLobbyScalingDiceBodies() {
+  const w = typeof window !== 'undefined' ? window.innerWidth : 1024;
+  const h = typeof window !== 'undefined' ? window.innerHeight : 768;
+  const reduced = typeof window !== 'undefined' && window.matchMedia(REDUCED_MOTION_QUERY).matches;
+  return Array.from({ length: LOBBY_SCALING_DICE_COUNT }, () => {
+    if (reduced) {
+      return {
+        x: w * (0.06 + Math.random() * 0.88),
+        y: h * (0.38 + Math.random() * 0.48),
+        vx: 0,
+        vy: 0,
+        rot: Math.random() * 360,
+        vr: 0,
+        size: Math.round((12 + Math.random() * 8) * (1.8 + Math.random() * 1.4)),
+      };
+    }
+    return {
+      x: w * (0.05 + Math.random() * 0.9),
+      y: h * (-0.08 - Math.random() * 0.45),
+      vx: (Math.random() - 0.5) * 7,
+      vy: 1.2 + Math.random() * 5,
+      rot: Math.random() * 360,
+      vr: (Math.random() - 0.5) * 10,
+      size: randomLobbyDiceSizePx(),
+    };
+  });
+}
+
+function applyScaleImpulseToDice(dice, deltaFit) {
+  const mag = Math.abs(deltaFit) * 220;
+  if (mag < 0.02) return;
+  for (let i = 0; i < dice.length; i += 1) {
+    const d = dice[i];
+    const spread = 0.65 + (i % 7) * 0.05;
+    d.vx += (Math.random() - 0.5) * mag * spread;
+    d.vy += (Math.random() - 0.45) * mag * 0.5 * spread;
+    d.vr += (Math.random() - 0.5) * mag * 0.12;
+  }
+}
+
+function applyWidthImpulseToDice(dice, deltaWidthPx) {
+  if (Math.abs(deltaWidthPx) < LOBBY_SCALING_WIDTH_EPS_PX) return;
+  const mag = Math.abs(deltaWidthPx) * 0.42;
+  const wSign = Math.sign(deltaWidthPx) || (Math.random() > 0.5 ? 1 : -1);
+  for (let i = 0; i < dice.length; i += 1) {
+    const d = dice[i];
+    const spread = 0.65 + (i % 7) * 0.05;
+    d.vx += wSign * mag * (0.35 + Math.random() * 0.45) * spread;
+    d.vy += (Math.random() - 0.52) * mag * 0.28 * spread;
+    d.vr += (Math.random() - 0.5) * mag * 0.09;
+  }
+}
+
+/** Full-screen black overlay while lobby hero rescales: many dice “spilled” and jostled by scale changes. */
+function ScalingDiceOverlay({ fading, fitScale, innerWidth }) {
+  const diceRef = useRef(createLobbyScalingDiceBodies());
+  const wrapRefs = useRef([]);
+  const videoRefs = useRef([]);
+  const lastFitScaleRef = useRef(fitScale);
+  const lastInnerWidthRef = useRef(null);
+  const reducedMotionRef = useRef(false);
+
+  useLayoutEffect(() => {
+    if (typeof window === 'undefined') return undefined;
+    const mql = window.matchMedia(REDUCED_MOTION_QUERY);
+    reducedMotionRef.current = mql.matches;
+    const onChange = (e) => { reducedMotionRef.current = e.matches; };
+    mql.addEventListener('change', onChange);
+    return () => mql.removeEventListener('change', onChange);
+  }, []);
+
+  useLayoutEffect(() => {
+    const dice = diceRef.current;
+    for (let i = 0; i < dice.length; i += 1) {
+      const el = wrapRefs.current[i];
+      if (!el) continue;
+      const d = dice[i];
+      el.style.transform = `translate3d(${d.x - d.size / 2}px, ${d.y - d.size / 2}px, 0) rotate(${d.rot}deg)`;
+    }
+    const vids = videoRefs.current;
+    for (let i = 0; i < vids.length; i += 1) {
+      const v = vids[i];
+      if (!v) continue;
+      v.playbackRate = 0.78 + (i % 6) * 0.07;
+    }
+  }, []);
+
+  useEffect(() => {
+    const prev = lastFitScaleRef.current;
+    lastFitScaleRef.current = fitScale;
+    if (prev == null || Math.abs(prev - fitScale) < 1e-6) return;
+    applyScaleImpulseToDice(diceRef.current, fitScale - prev);
+  }, [fitScale]);
+
+  useEffect(() => {
+    if (innerWidth <= 0) return;
+    const prev = lastInnerWidthRef.current;
+    lastInnerWidthRef.current = innerWidth;
+    if (prev == null) return;
+    if (Math.abs(innerWidth - prev) < LOBBY_SCALING_WIDTH_EPS_PX) return;
+    applyWidthImpulseToDice(diceRef.current, innerWidth - prev);
+  }, [innerWidth]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || reducedMotionRef.current) return undefined;
+
+    const dice = diceRef.current;
+    let rafId = 0;
+    let running = true;
+
+    const step = () => {
+      if (!running) return;
+      const w = window.innerWidth;
+      const h = window.innerHeight;
+      const floorY = h - 6;
+
+      for (let i = 0; i < dice.length; i += 1) {
+        const d = dice[i];
+        d.vy += 0.42;
+        d.x += d.vx;
+        d.y += d.vy;
+        d.rot += d.vr;
+
+        d.vx *= 0.997;
+        d.vy *= 0.9985;
+        d.vr *= 0.998;
+
+        const half = d.size * 0.5;
+        if (d.x < half) {
+          d.x = half;
+          d.vx *= -0.62;
+          d.vr += (Math.random() - 0.5) * 6;
+        } else if (d.x > w - half) {
+          d.x = w - half;
+          d.vx *= -0.62;
+          d.vr += (Math.random() - 0.5) * 6;
+        }
+
+        if (d.y > floorY - half) {
+          d.y = floorY - half;
+          if (d.vy > 0.35) {
+            d.vy *= -0.38;
+            d.vx *= 0.9;
+            d.vr += (Math.random() - 0.5) * 8;
+          } else {
+            d.vy = 0;
+            d.vx *= 0.94;
+            d.vr *= 0.92;
+          }
+        }
+
+        const el = wrapRefs.current[i];
+        if (el) {
+          el.style.transform = `translate3d(${d.x - d.size / 2}px, ${d.y - d.size / 2}px, 0) rotate(${d.rot}deg)`;
+        }
+      }
+
+      rafId = requestAnimationFrame(step);
+    };
+
+    rafId = requestAnimationFrame(step);
+    return () => {
+      running = false;
+      cancelAnimationFrame(rafId);
+    };
+  }, []);
+
+  return (
+    <div
+      className={`pointer-events-none fixed inset-0 z-[60] bg-black transition-opacity duration-300 ease-out ${fading ? 'opacity-0' : 'opacity-100'}`}
+      aria-hidden="true"
+    >
+      {diceRef.current.map((d, i) => (
+        <div
+          key={i}
+          ref={(el) => { wrapRefs.current[i] = el; }}
+          className="absolute left-0 top-0 will-change-transform"
+          style={{ width: d.size, height: d.size }}
+        >
+          <video
+            ref={(el) => { videoRefs.current[i] = el; }}
+            src="/video/dice.webm"
+            className="h-full w-full object-contain opacity-[0.92] drop-shadow-[0_2px_6px_rgba(255,255,255,0.12)]"
+            autoPlay
+            loop
+            muted
+            playsInline
+          />
+        </div>
+      ))}
+    </div>
+  );
+}
 
 function FloatingRune({ delay, className }) {
   return (
@@ -146,6 +355,19 @@ export default function LobbyPage() {
   const [libraryCharacter, setLibraryCharacter] = useState(undefined);
   const [campaignNotFound, setCampaignNotFound] = useState(false);
   const [loadingCampaignId, setLoadingCampaignId] = useState(null);
+  const [scalingOverlay, setScalingOverlay] = useState({ visible: false, fading: false });
+  const [innerWidth, setInnerWidth] = useState(() => (typeof window !== 'undefined' ? window.innerWidth : 0));
+  const previousFitScaleRef = useRef(null);
+  const previousInnerWidthForOverlayRef = useRef(null);
+  const scalingFadeTimerRef = useRef(null);
+  const scalingRemoveTimerRef = useRef(null);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return undefined;
+    const onResize = () => setInnerWidth(window.innerWidth);
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, []);
 
   useEffect(() => {
     if (location.state?.campaignNotFound) {
@@ -382,6 +604,18 @@ export default function LobbyPage() {
   const hasServerAi = hasApiKey('openai') || hasApiKey('anthropic');
   const isLoggedIn = !!backendUser;
   const hasCampaigns = campaigns.length > 0;
+  const [isLowDesktopViewport, setIsLowDesktopViewport] = useState(false);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return undefined;
+
+    const media = window.matchMedia('(min-width: 1024px) and (max-height: 899px)');
+    const update = () => setIsLowDesktopViewport(media.matches);
+
+    update();
+    media.addEventListener('change', update);
+    return () => media.removeEventListener('change', update);
+  }, []);
 
   const RECENT_COUNT = 3;
   const recentCampaigns = campaigns.slice(0, RECENT_COUNT);
@@ -400,12 +634,51 @@ export default function LobbyPage() {
     lobbyRootEl,
     heroSlotEl,
   });
+  const useCompactGuestHero = !isLoggedIn && isLowDesktopViewport;
+
+  const bumpScalingOverlayLayout = useCallback(() => {
+    if (scalingFadeTimerRef.current) clearTimeout(scalingFadeTimerRef.current);
+    if (scalingRemoveTimerRef.current) clearTimeout(scalingRemoveTimerRef.current);
+    setScalingOverlay({ visible: true, fading: false });
+    scalingFadeTimerRef.current = setTimeout(() => {
+      setScalingOverlay((current) => (
+        current.visible ? { visible: true, fading: true } : current
+      ));
+      scalingRemoveTimerRef.current = setTimeout(() => {
+        setScalingOverlay({ visible: false, fading: false });
+      }, LOBBY_SCALING_OVERLAY_FADE_MS);
+    }, LOBBY_SCALING_OVERLAY_HOLD_MS);
+  }, []);
+
+  useEffect(() => {
+    const previousFitScale = previousFitScaleRef.current;
+    previousFitScaleRef.current = fitScale;
+    if (previousFitScale == null || Math.abs(previousFitScale - fitScale) < 0.001) return;
+    bumpScalingOverlayLayout();
+  }, [fitScale, bumpScalingOverlayLayout]);
+
+  useEffect(() => {
+    if (innerWidth <= 0) return;
+    const prev = previousInnerWidthForOverlayRef.current;
+    previousInnerWidthForOverlayRef.current = innerWidth;
+    if (prev == null) return;
+    if (Math.abs(innerWidth - prev) < LOBBY_SCALING_WIDTH_EPS_PX) return;
+    bumpScalingOverlayLayout();
+  }, [innerWidth, bumpScalingOverlayLayout]);
+
+  useEffect(() => () => {
+    if (scalingFadeTimerRef.current) clearTimeout(scalingFadeTimerRef.current);
+    if (scalingRemoveTimerRef.current) clearTimeout(scalingRemoveTimerRef.current);
+  }, []);
 
   return (
     <>
     <IntroOverlay onVideoEnded={handleVideoEnded} />
     <VideoBackground src="/video/bg_video_1.mp4" />
-    <div ref={setLobbyRootEl} className="flex flex-col items-center min-h-[calc(100dvh-4rem)] px-6 py-6 relative z-10 overflow-hidden w-full">
+    {scalingOverlay.visible && (
+      <ScalingDiceOverlay fading={scalingOverlay.fading} fitScale={fitScale} innerWidth={innerWidth} />
+    )}
+    <div ref={setLobbyRootEl} className="flex flex-col items-center min-h-[calc(100dvh-10rem)] lg:min-h-[calc(100dvh-4rem)] px-6 py-6 relative z-10 overflow-hidden w-full">
       {campaignNotFound && (
         <div className="fixed top-20 left-1/2 -translate-x-1/2 z-50 flex items-center gap-3 px-5 py-3 rounded-lg bg-error/15 border border-error/30 text-error text-sm font-label shadow-lg backdrop-blur-sm animate-slide-up">
           <span className="material-symbols-outlined text-base">error</span>
@@ -475,7 +748,9 @@ export default function LobbyPage() {
         >
           <div
             ref={innerRef}
-            className="flex flex-col items-center w-full max-w-full gap-6"
+            className={useCompactGuestHero
+              ? 'grid w-full max-w-4xl grid-cols-[minmax(0,1fr)_minmax(20rem,24rem)] items-center gap-x-10 gap-y-3'
+              : 'flex flex-col items-center w-full max-w-full gap-6'}
             style={{
               transform: `scale(${fitScale})`,
               transformOrigin: 'top center',
@@ -487,7 +762,7 @@ export default function LobbyPage() {
               alt={t('lobby.title')}
               className={isLoggedIn
                 ? 'h-auto w-auto max-w-full object-contain drop-shadow-2xl'
-                : 'h-60 md:h-80 lg:h-[22rem] w-auto drop-shadow-2xl'}
+                : `h-60 md:h-80 w-auto drop-shadow-2xl ${useCompactGuestHero ? 'lg:h-72 justify-self-center self-end' : 'lg:h-[22rem]'}`}
               style={
                 isLoggedIn && logoMaxHeightPx != null
                   ? {
@@ -503,7 +778,7 @@ export default function LobbyPage() {
             {!isLoggedIn && (
               <>
                 <div
-                  className="flex items-center gap-3"
+                  className={`hidden sm:flex items-center gap-3 ${useCompactGuestHero ? 'justify-self-center' : ''}`}
                   style={{ opacity: logoVisible ? 1 : 0, transition: 'opacity 2s ease-in' }}
                 >
                   <div className="h-px w-12 bg-gradient-to-r from-transparent to-primary/40" />
@@ -512,7 +787,7 @@ export default function LobbyPage() {
                 </div>
 
                 <p
-                  className="text-on-surface-variant font-body text-base max-w-md leading-relaxed text-center"
+                  className={`hidden sm:block text-on-surface-variant font-body text-base max-w-md leading-relaxed text-center ${useCompactGuestHero ? 'justify-self-center self-start' : ''}`}
                   style={{ opacity: logoVisible ? 1 : 0, transition: 'opacity 2s ease-in' }}
                 >
                   {t('lobby.subtitle')}
@@ -522,7 +797,7 @@ export default function LobbyPage() {
 
             {/* Not logged in — centered auth panel */}
             {!isLoggedIn && (
-              <div className="w-full max-w-sm mt-4 sm:mt-6 lg:mt-10">
+              <div className={`w-full max-w-sm ${useCompactGuestHero ? 'col-start-2 row-start-1 row-span-3 justify-self-center self-center' : 'mt-4 sm:mt-6 lg:mt-10'}`}>
                 <AuthPanel />
               </div>
             )}

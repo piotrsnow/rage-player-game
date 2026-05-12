@@ -20,6 +20,8 @@ import {
   surrenderMultiplayerCombat,
   forceTruceMultiplayerCombat,
   moveCombatant,
+  getRemainingMovementPoints,
+  placeBeerDuelVomitPatch,
   isInMeleeRange,
   getDistance,
   computeAttackPreview,
@@ -505,12 +507,56 @@ export default function CombatPanel({
       }
     }
 
+    let payload = updated;
+    if (
+      updated.mode === SKIRMISH_MODE_BEER_DUEL
+      && !isCombatOver(updated)
+      && actor
+      && !actor.bonusTurn
+      && getRemainingMovementPoints(actor) <= 0
+    ) {
+      payload = advanceTurn(updated);
+      flushRoundEffectEvents(payload);
+      addLogEntry({
+        type: 'info',
+        actor: actor?.name || '?',
+        action: t('combat.turnEndedNoMovement', 'ends turn (out of movement)'),
+        target: '',
+        actorColor: '#94a3b8',
+        id: `turn_end_move_${uid}`,
+      });
+    }
+
+    if (isMultiplayer) {
+      onHostResolve?.(payload);
+    } else {
+      dispatch({ type: 'UPDATE_COMBAT', payload });
+    }
+  }, [combat, isMyTurn, combatOver, isMultiplayer, myPlayerId, dispatch, onHostResolve, t, addLogEntry, scheduleTokenAnim, flushRoundEffectEvents]);
+
+  const handlePlaceBeerDuelVomit = useCallback((targetCell) => {
+    if (!isMyTurn || combatOver || !isBeerDuel) return;
+    const actorId = isMultiplayer ? myPlayerId : 'player';
+    const { combat: updated, placed } = placeBeerDuelVomitPatch(combat, actorId, targetCell);
+    if (!placed) return;
+
+    const actor = updated.combatants.find((c) => c.id === actorId);
+    const uid = shortId(4);
+    addLogEntry({
+      type: 'info',
+      actor: actor?.name || '?',
+      action: t('combat.belchtajPlacedLog', 'spluł wymiociny na pole ({{x}},{{y}})', { x: targetCell.x, y: targetCell.y }),
+      target: '',
+      actorColor: '#84cc16',
+      id: `vomit_${uid}`,
+    });
+
     if (isMultiplayer) {
       onHostResolve?.(updated);
     } else {
       dispatch({ type: 'UPDATE_COMBAT', payload: updated });
     }
-  }, [combat, isMyTurn, combatOver, isMultiplayer, myPlayerId, dispatch, onHostResolve, t, addLogEntry, scheduleTokenAnim]);
+  }, [combat, isMyTurn, combatOver, isBeerDuel, isMultiplayer, myPlayerId, dispatch, onHostResolve, t, addLogEntry]);
 
   const handleSkipTurn = useCallback(() => {
     if (!isMyTurn || combatOver) return;
@@ -909,6 +955,7 @@ export default function CombatPanel({
           onSelectTarget={setSelectedTarget}
           onHoverCombatant={() => {}}
           onMoveToPosition={handleMoveToPosition}
+          onPlaceBeerDuelVomit={handlePlaceBeerDuelVomit}
           combatOver={combatOver}
           isMyTurn={isMyTurn && !actionAnim && !projectileAnim}
           myCombatantId={myCombatant?.id}
@@ -972,6 +1019,7 @@ export default function CombatPanel({
               onSelectTarget={setSelectedTarget}
               onHoverCombatant={() => {}}
               onMoveToPosition={handleMoveToPosition}
+              onPlaceBeerDuelVomit={handlePlaceBeerDuelVomit}
               combatOver={combatOver}
               isMyTurn={isMyTurn && !actionAnim && !projectileAnim}
               myCombatantId={myCombatant?.id}

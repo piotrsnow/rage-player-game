@@ -42,6 +42,7 @@ import {
   generateYassatoCameoScene,
 } from './yassatoCameo.js';
 import { detectMagicExposure } from './magicExposure.js';
+import { loadQuestsForReconcile } from '../campaignSync.js';
 
 const log = childLogger({ module: 'sceneGenerator' });
 
@@ -732,6 +733,13 @@ export async function generateSceneStream(campaignId, playerAction, options = {}
     );
 
     // 10. Complete — emit immediately so frontend can render the scene
+    let authoritativeQuests = null;
+    try {
+      authoritativeQuests = await loadQuestsForReconcile(campaignId);
+    } catch (err) {
+      log.warn({ err: err?.message, campaignId }, 'loadQuestsForReconcile failed (non-fatal)');
+    }
+
     onEvent({
       type: 'complete',
       data: {
@@ -739,6 +747,7 @@ export async function generateSceneStream(campaignId, playerAction, options = {}
         sceneIndex: newSceneIndex,
         sceneId: savedScene.id,
         character: updatedCharacter,
+        quests: authoritativeQuests,
         newlyUnlockedAchievements,
         updatedAchievementState,
       },

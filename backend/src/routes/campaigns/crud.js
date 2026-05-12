@@ -509,7 +509,7 @@ export async function crudCampaignRoutes(app) {
 
     if (rawCoreState !== undefined) {
       const parsed = typeof rawCoreState === 'object' ? rawCoreState : JSON.parse(rawCoreState || '{}');
-      const { slim, npcs, knowledgeEvents, knowledgeDecisions, quests } =
+      const { slim, npcs, knowledgeEvents, knowledgeDecisions } =
         stripNormalizedFromCoreState(parsed);
 
       updateData.coreState = slim;
@@ -523,7 +523,7 @@ export async function crudCampaignRoutes(app) {
       // first auto-save. We drop the FE-driven update entirely; on next GET
       // `reconstructFromNormalized` re-injects the BE name into coreState.
 
-      pendingSync = { campaignId: request.params.id, npcs, knowledgeEvents, knowledgeDecisions, quests };
+      pendingSync = { campaignId: request.params.id, npcs, knowledgeEvents, knowledgeDecisions };
     }
 
     // One tx so a partial save can't leave campaign.name out of sync with
@@ -556,10 +556,9 @@ export async function crudCampaignRoutes(app) {
     const [campaign] = await withRetry(() => prisma.$transaction(txOps));
 
     if (pendingSync) {
-      const { campaignId, npcs, knowledgeEvents, knowledgeDecisions, quests } = pendingSync;
+      const { campaignId, npcs, knowledgeEvents, knowledgeDecisions } = pendingSync;
       await syncNPCsToNormalized(campaignId, npcs).catch((err) => log.error({ err, campaignId }, 'NPC sync wrapper failed'));
       await syncKnowledgeToNormalized(campaignId, knowledgeEvents, knowledgeDecisions).catch((err) => log.error({ err, campaignId }, 'Knowledge sync wrapper failed'));
-      await syncQuestsToNormalized(campaignId, quests).catch((err) => log.error({ err, campaignId }, 'Quest sync wrapper failed'));
     }
 
     const characterIds = await getCampaignCharacterIds(request.params.id);

@@ -4,6 +4,7 @@ import { useSettings } from '../../contexts/SettingsContext';
 import { useModalA11y } from '../../hooks/useModalA11y';
 import AiProviderSection from './keys/AiProviderSection';
 import ApiKeysStatusPanel from './keys/ApiKeysStatusPanel';
+import ApiKeyOverridesSection from './keys/ApiKeyOverridesSection';
 import ModelOverridesSection from './keys/ModelOverridesSection';
 import LLMTimeoutSection from './sections/LLMTimeoutSection';
 
@@ -15,7 +16,7 @@ const TABS = [
 export default function KeysModal({ onClose }) {
   const { t } = useTranslation();
   const modalRef = useModalA11y(onClose);
-  const { settings, updateSettings, updateDMSettings, backendKeys, backendUser } = useSettings();
+  const { settings, updateSettings, updateDMSettings, backendKeys, backendKeyOverrides, backendUser, saveApiKeyOverrides } = useSettings();
   const [activeTab, setActiveTab] = useState('keys');
 
   return (
@@ -73,6 +74,16 @@ export default function KeysModal({ onClose }) {
                 <section className="animate-fade-in mb-8">
                   <ApiKeysStatusPanel backendKeys={backendKeys} />
                 </section>
+
+                {backendUser?.isAdmin && (
+                  <section className="animate-fade-in mb-8">
+                    <ApiKeyOverridesSection
+                      backendKeys={backendKeys}
+                      backendKeyOverrides={backendKeyOverrides}
+                      onSave={saveApiKeyOverrides}
+                    />
+                  </section>
+                )}
 
                 {backendUser?.isAdmin && (
                   <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 animate-fade-in">

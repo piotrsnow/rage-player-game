@@ -105,16 +105,12 @@ export const config = {
   // to nano + deterministic code assembly — the premium model's job is
   // creative writing + structured JSON streaming, not reasoning.
   //
-  // Anthropic premium is Sonnet 4.0 (sonnet-4-20250514) instead of 4.6
-  // because 4.6 is ~2x more verbose for the same structured JSON output
-  // at identical per-token pricing — effectively 2x the cost per request
-  // with marginal quality gains for our schema-driven prompts. Flip to
-  // `claude-sonnet-4-6` via AI_MODEL_PREMIUM_ANTHROPIC if a specific
-  // quality issue actually justifies the cost hit.
+  // Anthropic premium is Sonnet 4.6. Previous default (Sonnet 4.0) is
+  // deprecated and retiring 2026-06-15.
   aiModels: {
     premium: {
       openai: process.env.AI_MODEL_PREMIUM_OPENAI || 'gpt-4.1',
-      anthropic: process.env.AI_MODEL_PREMIUM_ANTHROPIC || 'claude-sonnet-4-20250514',
+      anthropic: process.env.AI_MODEL_PREMIUM_ANTHROPIC || 'claude-sonnet-4-6',
     },
     standard: {
       // Non-reasoner — shortcuts.js uses it for 2-3 sentence fast-path

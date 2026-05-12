@@ -42,6 +42,8 @@ function titleByOutcome(outcome, t) {
 
 const PREROLL_HOLD_MS = 1800;
 const RESULT_REVEAL_DELAY_MS = 600;
+/** ~7× default overlay speed so the throw reads clearly; stable `diceRoll` ref avoids effect resets mid-roll */
+const INVENT_SPELL_DICE_DURATION_MULT = 7.7;
 
 export default function InventSpellModal({ campaignId, character = null, dispatch, onClose, onCorrectionsApplied }) {
   const { t } = useTranslation();
@@ -61,6 +63,11 @@ export default function InventSpellModal({ campaignId, character = null, dispatc
   );
   const powerTier = result?.powerTier
     || (result?.powerRoll != null ? resolvePowerTier(result.powerRoll) : 'cantrip');
+
+  const inventSpellDiceRoll = useMemo(
+    () => (result?.successRoll != null ? { roll: result.successRoll } : null),
+    [result?.successRoll],
+  );
 
   useEffect(() => {
     if (!result || !success || refetchTriggered) return;
@@ -297,13 +304,15 @@ export default function InventSpellModal({ campaignId, character = null, dispatc
               </div>
               <div className="relative w-[280px] h-[200px] mx-auto">
                 <DiceRoller
-                  diceRoll={{ roll: result.successRoll }}
+                  diceRoll={inventSpellDiceRoll}
                   onComplete={handleDiceRollComplete}
                   showOverlayResult={false}
                   sizeMultiplier={2.2}
-                  durationMultiplier={1.1}
+                  durationMultiplier={INVENT_SPELL_DICE_DURATION_MULT}
                   variant="overlay"
                   isVisible
+                  skipOnClick
+                  skipOnClickTitle={t('gameplay.inventSpellSkipDice', 'Kliknij, aby zakończyć animację')}
                 />
               </div>
             </div>

@@ -76,6 +76,7 @@ export default function ActionPanel({
 }) {
   const [customAction, setCustomAction] = useState('');
   const [combatPickerOpen, setCombatPickerOpen] = useState(false);
+  const [beerDuelPickerOpen, setBeerDuelPickerOpen] = useState(false);
   const [tradePickerOpen, setTradePickerOpen] = useState(false);
   const [trainerPickerOpen, setTrainerPickerOpen] = useState(false);
   const [recruitPickerOpen, setRecruitPickerOpen] = useState(false);
@@ -279,6 +280,7 @@ export default function ActionPanel({
 
   const handleInitiateCombat = () => {
     setCombatPickerOpen(false);
+    setBeerDuelPickerOpen(false);
     if (isMultiplayer) {
       mp.soloAction('[INITIATE COMBAT]', true, settings.language || 'en', settings.dmSettings);
     } else {
@@ -286,13 +288,30 @@ export default function ActionPanel({
     }
   };
 
-  const handleInitiateBeerDuel = () => {
-    if (isMultiplayer) return;
+  const handleBeerDuelGeneral = () => {
+    setBeerDuelPickerOpen(false);
     onAction('[INITIATE BEER DUEL]', true);
   };
 
+  const handleBeerDuelVsNpc = (npcName) => {
+    setBeerDuelPickerOpen(false);
+    onAction(`[INITIATE BEER DUEL:${npcName}]`, true);
+  };
+
+  const toggleCombatPicker = useCallback(() => {
+    setBeerDuelPickerOpen(false);
+    setCombatPickerOpen((v) => !v);
+  }, []);
+
+  const toggleBeerDuelPicker = useCallback(() => {
+    if (isMultiplayer) return;
+    setCombatPickerOpen(false);
+    setBeerDuelPickerOpen((v) => !v);
+  }, [isMultiplayer]);
+
   const handleAttackNpc = (npcName) => {
     setCombatPickerOpen(false);
+    setBeerDuelPickerOpen(false);
     if (isMultiplayer) {
       mp.soloAction(`[ATTACK: ${npcName}]`, true, settings.language || 'en', settings.dmSettings);
     } else {
@@ -459,9 +478,21 @@ export default function ActionPanel({
             <CombatTargetPicker
               npcs={npcs}
               disabled={disabled}
-              onInitiateCombat={handleInitiateCombat}
-              onAttackNpc={handleAttackNpc}
+              variant="combat"
+              onGeneral={handleInitiateCombat}
+              onVsNpc={handleAttackNpc}
               onCancel={() => setCombatPickerOpen(false)}
+            />
+          )}
+
+          {beerDuelPickerOpen && !isMultiplayer && (
+            <CombatTargetPicker
+              npcs={npcs}
+              disabled={disabled}
+              variant="beer_duel"
+              onGeneral={handleBeerDuelGeneral}
+              onVsNpc={handleBeerDuelVsNpc}
+              onCancel={() => setBeerDuelPickerOpen(false)}
             />
           )}
 
@@ -578,8 +609,8 @@ export default function ActionPanel({
             character={character}
             needsSystemEnabled={settings.needsSystemEnabled}
             onSuggestedAction={handleSuggestedAction}
-            onToggleCombatPicker={() => setCombatPickerOpen((v) => !v)}
-            onInitiateBeerDuel={handleInitiateBeerDuel}
+            onToggleCombatPicker={toggleCombatPicker}
+            onToggleBeerDuelPicker={toggleBeerDuelPicker}
             isMultiplayer={isMultiplayer}
             onToggleTradePicker={() => setTradePickerOpen((v) => !v)}
             onToggleTrainerPicker={() => setTrainerPickerOpen((v) => !v)}

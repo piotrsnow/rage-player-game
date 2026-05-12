@@ -323,6 +323,18 @@ export default function QuestDetailPanel({ selected, findNpc, onVerifyObjective,
               </p>
             </div>
           )}
+          {/* STUCK hint — no pending objectives visible, but hidden steps remain */}
+          {pending.length === 0 && hiddenCount > 0 && questStatus === 'active' && (
+            <div className="flex items-center gap-2 py-1.5 px-2 mt-1 bg-amber-500/5 border border-amber-500/15 rounded-sm">
+              <span className="material-symbols-outlined text-sm text-amber-400">tips_and_updates</span>
+              <p className="text-xs text-amber-300/80">
+                {selected.questGiverId
+                  ? t('quests.stuckHint', { npc: findNpc(selected.questGiverId)?.name || selected.questGiverId })
+                  : t('quests.stuckHintGeneric')
+                }
+              </p>
+            </div>
+          )}
           {verifyResult && (
             <div className={`mt-2 px-3 py-2 rounded-sm text-xs leading-relaxed border ${
               verifyResult.fulfilled

@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { CrossLinkChip, EmptyState, findNpcByRef } from './shared';
+import { getVisibleObjectives } from '../../character/quest/helpers';
 
 const TYPE_COLORS = {
   main: 'bg-tertiary/15 text-tertiary',
@@ -63,24 +64,57 @@ export default function QuestsTab({ quests, npcs, navigateTo, t }) {
       )}
 
       {quest.objectives?.length > 0 && (() => {
-        const visible = [];
-        let foundFirst = false;
-        for (const obj of quest.objectives) {
-          if (obj.completed) visible.push(obj);
-          else if (!foundFirst) { visible.push(obj); foundFirst = true; }
-        }
-        const hiddenCount = quest.objectives.length - visible.length;
+        const { done, pending, locked, failed, hiddenCount } = isCompleted
+          ? { done: quest.objectives, pending: [], locked: [], failed: [], hiddenCount: 0 }
+          : getVisibleObjectives(quest.objectives);
         return (
         <div className="mb-2">
           <div className="text-xs text-outline uppercase tracking-wider mb-1">{t('worldState.objectives')}</div>
-          {visible.map((obj) => (
-            <div key={obj.id} className="flex items-start gap-1.5 text-sm text-on-surface-variant">
-              <span className={`material-symbols-outlined text-sm mt-0.5 ${obj.completed ? 'text-primary' : 'text-outline'}`}>
-                {obj.completed ? 'check_circle' : 'radio_button_unchecked'}
+          {done.map((obj) => (
+            <div key={obj.id || obj.nodeKey} className="flex items-start gap-1.5 text-sm text-on-surface-variant">
+              <span className="material-symbols-outlined text-sm mt-0.5 text-primary">check_circle</span>
+              <span className="line-through text-outline">
+                {obj.objectiveType && (
+                  <span className={`inline-block text-[10px] font-bold uppercase tracking-wider px-1.5 py-px rounded mr-1.5 align-middle no-underline ${OBJECTIVE_TYPE_COLORS[obj.objectiveType] || 'bg-outline/20 text-outline'}`}>
+                    {t(`quests.objectiveTypes.${obj.objectiveType}`)}
+                  </span>
+                )}
+                {obj.description}
               </span>
-              <span className={obj.completed ? 'line-through text-outline' : ''}>
+            </div>
+          ))}
+          {pending.map((obj) => (
+            <div key={obj.id || obj.nodeKey} className="flex items-start gap-1.5 text-sm text-on-surface-variant">
+              <span className="material-symbols-outlined text-sm mt-0.5 text-outline">radio_button_unchecked</span>
+              <span>
                 {obj.objectiveType && (
                   <span className={`inline-block text-[10px] font-bold uppercase tracking-wider px-1.5 py-px rounded mr-1.5 align-middle ${OBJECTIVE_TYPE_COLORS[obj.objectiveType] || 'bg-outline/20 text-outline'}`}>
+                    {t(`quests.objectiveTypes.${obj.objectiveType}`)}
+                  </span>
+                )}
+                {obj.description}
+              </span>
+            </div>
+          ))}
+          {locked.map((obj) => (
+            <div key={obj.id || obj.nodeKey} className="flex items-start gap-1.5 text-sm text-outline/40 italic">
+              <span className="material-symbols-outlined text-sm mt-0.5">lock</span>
+              <span>
+                {obj.objectiveType && (
+                  <span className={`inline-block text-[10px] font-bold uppercase tracking-wider px-1.5 py-px rounded mr-1.5 align-middle ${OBJECTIVE_TYPE_COLORS[obj.objectiveType] || 'bg-outline/20 text-outline'}`}>
+                    {t(`quests.objectiveTypes.${obj.objectiveType}`)}
+                  </span>
+                )}
+                {obj.description}
+              </span>
+            </div>
+          ))}
+          {failed.map((obj) => (
+            <div key={obj.id || obj.nodeKey} className="flex items-start gap-1.5 text-sm text-rose-300/80">
+              <span className="material-symbols-outlined text-sm mt-0.5 text-rose-400">cancel</span>
+              <span className="line-through">
+                {obj.objectiveType && (
+                  <span className={`inline-block text-[10px] font-bold uppercase tracking-wider px-1.5 py-px rounded mr-1.5 align-middle no-underline ${OBJECTIVE_TYPE_COLORS[obj.objectiveType] || 'bg-outline/20 text-outline'}`}>
                     {t(`quests.objectiveTypes.${obj.objectiveType}`)}
                   </span>
                 )}
@@ -92,6 +126,15 @@ export default function QuestsTab({ quests, npcs, navigateTo, t }) {
             <div className="flex items-center gap-1.5 text-sm text-outline/40 italic mt-0.5">
               <span className="material-symbols-outlined text-sm">lock</span>
               {t('quests.hiddenObjectives', { count: hiddenCount })}
+            </div>
+          )}
+          {pending.length === 0 && hiddenCount > 0 && (
+            <div className="flex items-center gap-1.5 text-sm text-amber-300/70 mt-1">
+              <span className="material-symbols-outlined text-sm">tips_and_updates</span>
+              <span>{quest.questGiverId
+                ? t('quests.stuckHint', { npc: quest.questGiverId })
+                : t('quests.stuckHintGeneric')
+              }</span>
             </div>
           )}
         </div>

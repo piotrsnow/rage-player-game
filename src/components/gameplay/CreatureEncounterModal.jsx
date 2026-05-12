@@ -59,9 +59,18 @@ export default function CreatureEncounterModal({
           <span className="material-symbols-outlined text-3xl text-sky-300 drop-shadow-[0_0_6px_rgba(125,211,252,0.35)]">
             {encounter.icon || 'pets'}
           </span>
-          <h2 className="text-xl font-headline text-violet-100 drop-shadow-[0_0_8px_rgba(167,139,250,0.25)]">
-            {encounter.creatureName}
-          </h2>
+          <div className="min-w-0 flex-1">
+            <h2 className="text-xl font-headline text-violet-100 drop-shadow-[0_0_8px_rgba(167,139,250,0.25)]">
+              {encounter.creatureName}
+            </h2>
+            {encounter.encounterKind === 'magical' || encounter.encounterKind === 'animal' ? (
+              <p className="text-xs text-on-surface-variant/90 mt-0.5">
+                {encounter.encounterKind === 'animal'
+                  ? t('creatureEncounter.kindAnimal')
+                  : t('creatureEncounter.kindMagical')}
+              </p>
+            ) : null}
+          </div>
         </div>
 
         <div className="relative mb-6">

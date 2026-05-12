@@ -8,8 +8,7 @@ const SettingsContext = (import.meta.hot?.data?.SettingsContext) || createContex
 if (import.meta.hot) import.meta.hot.data.SettingsContext = SettingsContext;
 
 // `backendKeys[provider]` is an availability descriptor coming from
-// GET /v1/auth/api-keys. Keys are env-only on the server now — the FE
-// never stores or sends secrets; it just renders status.
+// GET /v1/auth/api-keys. Merged view: env OR user-override → configured.
 const EMPTY_BACKEND_KEYS = {
   openai: { configured: false },
   anthropic: { configured: false },
@@ -201,6 +200,7 @@ export function SettingsProvider({ children }) {
   });
 
   const [backendKeys, setBackendKeys] = useState(EMPTY_BACKEND_KEYS);
+  const [backendKeyOverrides, setBackendKeyOverrides] = useState({});
   const [globalVoiceConfig, setGlobalVoiceConfig] = useState({});
   const [sceneModelConfig, setSceneModelConfig] = useState({});
   const [taskModelConfig, setTaskModelConfig] = useState({ models: {}, defaults: {} });
@@ -288,24 +288,41 @@ export function SettingsProvider({ children }) {
   const fetchBackendKeys = useCallback(async () => {
     if (!apiClient.isConnected()) {
       setBackendKeys(EMPTY_BACKEND_KEYS);
+      setBackendKeyOverrides({});
       return;
     }
     try {
-      const keys = await apiClient.get('/auth/api-keys');
-      // Backend returns `{ provider: { configured, masked? } }`. Merge with
-      // defaults so callers can safely read `backendKeys.foo.configured`
-      // for any known provider without null-guarding.
+      const data = await apiClient.get('/auth/api-keys');
+      const envKeys = data?.env || data || {};
+      const overrides = data?.userOverrides || {};
+
+      // Merged view: provider is "configured" if env OR user-override has it.
+      // User-override mask takes precedence (that's what will actually be used).
       const normalized = { ...EMPTY_BACKEND_KEYS };
-      for (const [provider, value] of Object.entries(keys || {})) {
+      for (const [provider, value] of Object.entries(envKeys)) {
         if (value && typeof value === 'object') {
-          normalized[provider] = { configured: !!value.configured, masked: value.masked };
+          const ov = overrides[provider];
+          normalized[provider] = {
+            configured: !!value.configured || !!ov?.configured,
+            masked: ov?.masked || value.masked,
+            envConfigured: !!value.configured,
+            overrideConfigured: !!ov?.configured,
+          };
         }
       }
       setBackendKeys(normalized);
+      setBackendKeyOverrides(overrides);
     } catch {
       setBackendKeys(EMPTY_BACKEND_KEYS);
+      setBackendKeyOverrides({});
     }
   }, []);
+
+  const saveApiKeyOverrides = useCallback(async (keys) => {
+    const result = await apiClient.put('/auth/api-keys', { keys });
+    await fetchBackendKeys();
+    return result;
+  }, [fetchBackendKeys]);
 
   const fetchGlobalVoiceConfig = useCallback(async () => {
     if (!apiClient.isConnected()) {
@@ -635,7 +652,9 @@ export function SettingsProvider({ children }) {
     getApiKey,
     hasApiKey,
     backendKeys,
+    backendKeyOverrides,
     fetchBackendKeys,
+    saveApiKeyOverrides,
     globalVoiceConfig,
     fetchGlobalVoiceConfig,
     updateGlobalVoiceConfig,

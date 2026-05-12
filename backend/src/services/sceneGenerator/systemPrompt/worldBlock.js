@@ -269,6 +269,17 @@ function buildGraphActiveQuestsBlock(active, { heading = true } = {}) {
     if (undiscoveredCount > 0) {
       lines.push(`  Hidden objectives: ${undiscoveredCount} (player sees as "???" — emit objectiveReveals only when narrative justifies it)`);
     }
+
+    // Detect STUCK state: all discovered objectives are done but undiscovered
+    // steps remain — the player has no visible next step.
+    const discoveredPending = objectives.filter((obj) => {
+      const s = obj.status || (obj.completed ? 'done' : 'pending');
+      const d = obj.discovered !== false;
+      return d && s === 'pending';
+    });
+    if (discoveredPending.length === 0 && undiscoveredCount > 0) {
+      lines.push(`  ⚠ STUCK: player completed all visible objectives but hidden steps remain — narrative must reveal the next step this scene (emit objectiveReveals).`);
+    }
   }
   return lines.join('\n');
 }

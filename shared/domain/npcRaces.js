@@ -3,7 +3,7 @@
  * and frontend (World State UI, chat mini-card).
  *
  * Only four races are valid for regular NPCs. Story creatures (zjawy, sfinksy,
- * demony, itd.) use `creatureKind` instead of `race` — see npcCharacterSheet.js.
+ * demony, itd.) use `creatureKind` instead of `race` — see shared/domain/npcCharacterSheet.js.
  *
  * Elf is intentionally absent: playable elves are disabled for now, and NPC
  * elves are likewise suppressed so the world feels consistent.

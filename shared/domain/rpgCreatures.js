@@ -153,6 +153,160 @@ export const MAGICAL_CREATURES = [
   },
 ];
 
+/** Mundane wildlife for idle encounters (no magic). Same shape as `MAGICAL_CREATURES`. */
+export const ANIMALS = [
+  {
+    id: 'sarna',
+    namePl: 'Sarna',
+    temperament: 'gentle',
+    size: 'medium',
+    environments: ['las', 'pole'],
+    fleePenalty: 2,
+    behaviorHints: ['zastyga z wypatrzonymi uszami', 'odsuwa się ostrożnie w zarośla', 'wącha powietrze i oddala się skokami'],
+    icon: 'pets',
+  },
+  {
+    id: 'dzik',
+    namePl: 'Dzik',
+    temperament: 'aggressive',
+    size: 'medium',
+    environments: ['las', 'pole'],
+    fleePenalty: -5,
+    behaviorHints: ['chrumka groźnie i kopie racicą', 'szczecie się i rusza w twoją stronę', 'ryje ziemię i patrzy spod kłów'],
+    icon: 'pets',
+  },
+  {
+    id: 'lis',
+    namePl: 'Lis',
+    temperament: 'neutral',
+    size: 'small',
+    environments: ['las', 'pole'],
+    fleePenalty: 1,
+    behaviorHints: ['przemyka cicho między pniami', 'zatrzymuje się i obserwuje spod płonącej sierści', 'chowa się za pierwszym lepszym kamieniem'],
+    icon: 'pets',
+  },
+  {
+    id: 'zajac_polny',
+    namePl: 'Zając polny',
+    temperament: 'gentle',
+    size: 'small',
+    environments: ['las', 'pole', 'droga'],
+    fleePenalty: 4,
+    behaviorHints: ['strzyże uszami i w mgnieniu oka znika za pagórkiem', 'pędzi zygzakiem przez trawę', 'wpatruje się, po czym odbija w drugą stronę'],
+    icon: 'pets',
+  },
+  {
+    id: 'bocian',
+    namePl: 'Bocian',
+    temperament: 'neutral',
+    size: 'medium',
+    environments: ['pole', 'wybrzeze'],
+    fleePenalty: 2,
+    behaviorHints: ['stąpa powoli po żerdzie', 'klekocze dziobem i rozprostowuje skrzydła', 'wzbija się ciężko w powietrze'],
+    icon: 'pets',
+  },
+  {
+    id: 'wilk_szary',
+    namePl: 'Wilk szary',
+    temperament: 'aggressive',
+    size: 'medium',
+    environments: ['las', 'gory'],
+    fleePenalty: -6,
+    behaviorHints: ['obchodzi z dołu, trzymając kontakt wzrokowy', 'waruje nisko i pokazuje kły', 'szarpie pyskiem w stronę zapachu'],
+    icon: 'pets',
+  },
+  {
+    id: 'sowa',
+    namePl: 'Sowa',
+    temperament: 'neutral',
+    size: 'small',
+    environments: ['las', 'ruiny'],
+    fleePenalty: 2,
+    behaviorHints: ['obraca głowę o sto osiemdziesiąt stopni', 'frunie bezszelestnie między gałęziami', 'wpatruje się żółtymi oczami z wysokiego konaru'],
+    icon: 'pets',
+  },
+  {
+    id: 'kozica',
+    namePl: 'Kozica',
+    temperament: 'neutral',
+    size: 'small',
+    environments: ['gory'],
+    fleePenalty: 3,
+    behaviorHints: ['stoi na urwisku jak na podium', 'skacze po skale z niewiarygodną lekkością', 'ostrzeżeniowo tupie kopytkiem'],
+    icon: 'landscape',
+  },
+  {
+    id: 'nietoperz',
+    namePl: 'Nietoperz',
+    temperament: 'neutral',
+    size: 'tiny',
+    environments: ['jaskinia', 'ruiny'],
+    fleePenalty: 2,
+    behaviorHints: ['krąży pod sufitem jaskini', 'mignie i znika w szczelinie', 'piski echują w mroku'],
+    icon: 'dark_mode',
+  },
+  {
+    id: 'zaba',
+    namePl: 'Żaba',
+    temperament: 'gentle',
+    size: 'tiny',
+    environments: ['bagno'],
+    fleePenalty: 4,
+    behaviorHints: ['kwacze i wpada do kałuży', 'siedzi nieruchomo jak kamyk', 'dmie w gardziel na błocie'],
+    icon: 'pets',
+  },
+  {
+    id: 'wez_wodny',
+    namePl: 'Wąż wodny',
+    temperament: 'neutral',
+    size: 'small',
+    environments: ['bagno', 'wybrzeze'],
+    fleePenalty: 0,
+    behaviorHints: ['sunie po powierzchni trzciny', 'zanurza się z cichym pluskiem', 'leży zwinięty na pniu nad wodą'],
+    icon: 'pets',
+  },
+  {
+    id: 'mewa',
+    namePl: 'Mewa',
+    temperament: 'unpredictable',
+    size: 'small',
+    environments: ['wybrzeze', 'droga'],
+    fleePenalty: 3,
+    behaviorHints: ['krąży nad głową krzycząc', 'wpatruje się w ewentualny prowiant', 'spuszcza się nisko i odlatuje z podmuchiem wiatru'],
+    icon: 'pets',
+  },
+  {
+    id: 'szczur',
+    namePl: 'Szczur',
+    temperament: 'neutral',
+    size: 'tiny',
+    environments: ['ruiny', 'droga', 'jaskinia'],
+    fleePenalty: 5,
+    behaviorHints: ['mignie w szczelinie muru', 'czochra wąsy i znika w cieniu', 'syczy cicho zza gruzu'],
+    icon: 'pets',
+  },
+  {
+    id: 'jelen_lesny',
+    namePl: 'Jeleń',
+    temperament: 'gentle',
+    size: 'large',
+    environments: ['las', 'gory'],
+    fleePenalty: 1,
+    behaviorHints: ['unosi głowę z wielkim porożem', 'stąpa ostrożnie po ściółce', 'prycha i oddala się majestatycznym truchtem'],
+    icon: 'forest',
+  },
+  {
+    id: 'kruk',
+    namePl: 'Kruk',
+    temperament: 'unpredictable',
+    size: 'small',
+    environments: ['pole', 'ruiny', 'droga'],
+    fleePenalty: 2,
+    behaviorHints: ['kracze z gałęzi jak na sygnale', 'podskakuje z ciekawością', 'odlatuje z czarnym błyskiem piór'],
+    icon: 'pets',
+  },
+];
+
 /**
  * Pick a random creature matching the current location environment.
  * Falls back to a fully random pick if no creature matches.
@@ -164,4 +318,34 @@ export function pickCreature(currentLocation) {
     : [];
   const pool = matched.length > 0 ? matched : MAGICAL_CREATURES;
   return pool[Math.floor(Math.random() * pool.length)];
+}
+
+/**
+ * Same as `pickCreature`, for entries in `ANIMALS`.
+ */
+export function pickAnimal(currentLocation) {
+  const loc = (currentLocation || '').toLowerCase().trim();
+  const matched = loc ? ANIMALS.filter((c) => c.environments.includes(loc)) : [];
+  const pool = matched.length > 0 ? matched : ANIMALS;
+  return pool[Math.floor(Math.random() * pool.length)];
+}
+
+/**
+ * Idle encounter split: d100 1–3 → magical catalog, 4–100 → animals.
+ * `typeRoll` must be an integer in 1..100 (caller rolls once).
+ */
+export function pickEncounterSubject({ currentLocation, typeRoll }) {
+  const roll = Math.min(100, Math.max(1, Math.floor(Number(typeRoll)) || 1));
+  if (roll <= 3) {
+    return { kind: 'magical', creature: pickCreature(currentLocation) };
+  }
+  return { kind: 'animal', creature: pickAnimal(currentLocation) };
+}
+
+/** Resolve a catalog entry by id from either magical or mundane lists. */
+export function findCreatureById(creatureId) {
+  if (!creatureId || typeof creatureId !== 'string') return null;
+  return (
+    MAGICAL_CREATURES.find((c) => c.id === creatureId) || ANIMALS.find((c) => c.id === creatureId) || null
+  );
 }

@@ -313,6 +313,7 @@ export const aiService = {
         sceneIndex: result.sceneIndex,
         sceneId: result.sceneId,
         character: result.character || null,
+        quests: result.quests || null,
         newlyUnlockedAchievements: result.newlyUnlockedAchievements || [],
         updatedAchievementState: result.updatedAchievementState || null,
       };

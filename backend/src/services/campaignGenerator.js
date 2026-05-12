@@ -223,7 +223,7 @@ async function callAnthropicStreaming(systemPrompt, userPrompt, { model, maxToke
 // Medium mirrors the values the prompt used before the slider was wired in.
 const LENGTH_PARAMS = {
   Short: {
-    objectives: '5-7',
+    objectives: '4-5',
     npcs: '3-5',
     questItems: '2-3',
     worldFacts: '3-5',
