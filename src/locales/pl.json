@@ -633,7 +633,11 @@
       "aggressive": "Agresywne",
       "neutral": "Neutralne",
       "conciliatory": "Ugodowe",
+<<<<<<< Updated upstream
       "sleazy": "Obrzydliwe",
+=======
+      "sleazy": "Obleśne",
+>>>>>>> Stashed changes
       "empathetic": "Empatyczne"
     },
     "forceRoll": {

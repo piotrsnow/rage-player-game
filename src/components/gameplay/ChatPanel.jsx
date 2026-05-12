@@ -114,12 +114,22 @@ export default function ChatPanel({
       {/* Header */}
       <div className="px-4 py-2 shrink-0">
         <div className="flex items-center gap-2 flex-wrap justify-end">
+<<<<<<< Updated upstream
           <Tooltip content={t('chat.totalPlayTime')} placement="bottom" variant="compact" asChild>
             <span className="flex items-center gap-1.5 px-2 py-0.5 rounded-sm text-xs bg-on-surface/5 border border-outline-variant/20 text-on-surface-variant/60 tabular-nums">
               <span className="material-symbols-outlined text-sm">timer</span>
               {formatDuration(totalPlayTime)}
             </span>
           </Tooltip>
+=======
+          <span
+            className="flex items-center gap-1.5 px-2 py-0.5 rounded-sm text-xs bg-on-surface/5 border border-outline-variant/20 text-on-surface-variant/60 tabular-nums"
+            title={t('chat.totalPlayTime')}
+          >
+            <span className="material-symbols-outlined text-sm">timer</span>
+            {formatDuration(totalPlayTime)}
+          </span>
+>>>>>>> Stashed changes
           {narrationTime > 0 && (
             <Tooltip content={t('chat.narrationTime')} placement="bottom" variant="compact" asChild>
               <span className="flex items-center gap-1.5 px-2 py-0.5 rounded-sm text-xs bg-on-surface/5 border border-outline-variant/20 text-on-surface-variant/60 tabular-nums">

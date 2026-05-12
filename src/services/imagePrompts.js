@@ -556,10 +556,10 @@ export function buildItemImagePrompt(item, { genre = 'Fantasy', tone = 'Epic', p
   const traitsClause = traitParts ? ` Visual traits: ${traitParts}.` : '';
 
   if (isGemini) {
-    return `Generate an image in this EXACT art style: ${styleDirective}.${darkDirective}${seriousnessDirective} A single "${itemName}" (${itemType}) on a solid BLACK background.${traitsClause} One object only, centered, clean silhouette, no characters, no hands, no scene, no text, no UI, no watermark.`;
+    return `Generate an image in this EXACT art style: ${styleDirective}.${darkDirective}${seriousnessDirective} Product-shot style showcase of a single "${itemName}" (${itemType}), presented alone on a solid BLACK background as if displayed in a catalog.${traitsClause} Exactly one isolated object, centered in frame, clean silhouette, no other objects, no characters, no hands, no scene, no environment, no text, no UI, no watermark.`;
   }
 
-  return `ART STYLE: ${styleDirective}.${darkDirective}${seriousnessDirective} A single "${itemName}" (${itemType}) on a solid BLACK background.${traitsClause} One object only, centered, clean silhouette, no characters, no hands, no scene, no text, no UI, no watermark.`;
+  return `ART STYLE: ${styleDirective}.${darkDirective}${seriousnessDirective} Product-shot style showcase of a single "${itemName}" (${itemType}), presented alone on a solid BLACK background as if displayed in a catalog.${traitsClause} Exactly one isolated object, centered in frame, clean silhouette, no other objects, no characters, no hands, no scene, no environment, no text, no UI, no watermark.`;
 }
 
 export function buildSpellImagePrompt(spell, { genre = 'Fantasy', tone = 'Epic', provider = 'dalle', imageStyle = 'painting', darkPalette = false, seriousness = null, sdModel = null } = {}) {

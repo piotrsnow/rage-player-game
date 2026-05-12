@@ -591,6 +591,7 @@ export async function processStateChanges(campaignId, stateChanges, { prevLoc = 
   // and the single-active fallback in completedQuests could wrongly close
   // the wrong quest.
   let totalQuestXpDelta = 0;
+  let totalQuestMoney = null;
   if (stateChanges.completedQuests?.length) {
     const { resolvedIds, questXpDelta } = await processQuestStatusChange(
       campaignId, stateChanges.completedQuests, 'completed',
@@ -645,7 +646,7 @@ export async function processStateChanges(campaignId, stateChanges, { prevLoc = 
       for (const id of autoCompleted) {
         if (!stateChanges.completedQuests.includes(id)) stateChanges.completedQuests.push(id);
       }
-      // Auto-completed quests also earn their completion bonus.
+      // Auto-completed quests also earn their completion bonus (XP + money).
       for (const questId of autoCompleted) {
         try {
           const quest = await prisma.campaignQuest.findFirst({
@@ -659,9 +660,16 @@ export async function processStateChanges(campaignId, stateChanges, { prevLoc = 
               const bonus = Math.max(0, rewardXp - sumAwarded);
               if (bonus > 0) totalQuestXpDelta += bonus;
             }
+            const rm = quest.reward?.money;
+            if (rm?.gold || rm?.silver || rm?.copper) {
+              if (!totalQuestMoney) totalQuestMoney = { gold: 0, silver: 0, copper: 0 };
+              totalQuestMoney.gold += rm.gold || 0;
+              totalQuestMoney.silver += rm.silver || 0;
+              totalQuestMoney.copper += rm.copper || 0;
+            }
           }
         } catch (err) {
-          log.warn({ err: err?.message, campaignId, questId }, 'Auto-complete bonus XP calc failed (non-fatal)');
+          log.warn({ err: err?.message, campaignId, questId }, 'Auto-complete bonus XP/money calc failed (non-fatal)');
         }
       }
     }
@@ -669,6 +677,9 @@ export async function processStateChanges(campaignId, stateChanges, { prevLoc = 
 
   if (totalQuestXpDelta > 0) {
     stateChanges.questXpDelta = totalQuestXpDelta;
+  }
+  if (totalQuestMoney) {
+    stateChanges.questMoneyDelta = totalQuestMoney;
   }
 
   // ── Oś 4 — explicit quest mutations (rare, narrative override) ──────

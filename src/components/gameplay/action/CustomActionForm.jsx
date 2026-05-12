@@ -13,6 +13,7 @@ export default function CustomActionForm({
   quickBeatStreak = 0,
   quickBeatLimit = 5,
   isQuickBeatLocked = false,
+  isQuickBeatPending = false,
   disabled,
   autoPlayerTypingText,
   listening,
@@ -224,17 +225,23 @@ export default function CustomActionForm({
             type="button"
             data-testid="quick-beat-button"
             onClick={handleQuickBeatClick}
-            disabled={!customAction.trim() || disabled || isQuickBeatLocked}
-            title={isQuickBeatLocked
-              ? t('gameplay.quickBeatLocked', { defaultValue: 'Limit małych akcji osiągnięty — wyślij pełną akcję' })
-              : t('gameplay.quickBeatTooltip', { defaultValue: 'Mała akcja · Shift+Enter (drobny RP-beat, bez nowej sceny). Pozostało: {{remaining}}/{{limit}}', remaining: quickBeatRemaining, limit: quickBeatLimit })}
-            className={`shrink-0 flex items-center justify-center w-9 h-9 rounded-sm transition-all duration-300 disabled:opacity-30 disabled:cursor-not-allowed ${
-              quickBeatHinted
-                ? 'text-amber-200 bg-amber-400/15 border border-amber-400/30 shadow-[0_0_8px_rgba(251,191,36,0.15)]'
-                : 'text-on-surface-variant/70 hover:text-amber-200 hover:bg-amber-400/10 border border-outline-variant/20'
-            }`}
+            disabled={!customAction.trim() || disabled || isQuickBeatLocked || isQuickBeatPending}
+            title={isQuickBeatPending
+              ? t('gameplay.quickBeatPending', { defaultValue: 'Mała akcja w toku…' })
+              : isQuickBeatLocked
+                ? t('gameplay.quickBeatLocked', { defaultValue: 'Limit małych akcji osiągnięty — wyślij pełną akcję' })
+                : t('gameplay.quickBeatTooltip', { defaultValue: 'Mała akcja · Shift+Enter (drobny RP-beat, bez nowej sceny). Pozostało: {{remaining}}/{{limit}}', remaining: quickBeatRemaining, limit: quickBeatLimit })}
+            className={`shrink-0 flex items-center justify-center w-9 h-9 rounded-sm transition-all duration-300 disabled:cursor-not-allowed ${
+              isQuickBeatPending
+                ? 'text-amber-300 bg-amber-400/20 border border-amber-400/40 animate-pulse'
+                : quickBeatHinted
+                  ? 'text-amber-200 bg-amber-400/15 border border-amber-400/30 shadow-[0_0_8px_rgba(251,191,36,0.15)]'
+                  : 'text-on-surface-variant/70 hover:text-amber-200 hover:bg-amber-400/10 border border-outline-variant/20'
+            } ${!isQuickBeatPending ? 'disabled:opacity-30' : ''}`}
           >
-            <span className="material-symbols-outlined text-[18px]">flash_on</span>
+            <span className={`material-symbols-outlined text-[18px] ${isQuickBeatPending ? 'animate-spin' : ''}`}>
+              {isQuickBeatPending ? 'progress_activity' : 'flash_on'}
+            </span>
           </button>
         )}
         <button
@@ -248,7 +255,12 @@ export default function CustomActionForm({
           <span className="material-symbols-outlined text-[22px]">send</span>
         </button>
       </div>
-      {quickBeatAvailable && quickBeatHinted && !isQuickBeatLocked && (
+      {quickBeatAvailable && isQuickBeatPending && (
+        <span className="text-[10px] font-label uppercase tracking-widest text-amber-300/80 animate-pulse mt-1 block">
+          {t('gameplay.quickBeatPending', { defaultValue: 'Mała akcja w toku…' })}
+        </span>
+      )}
+      {quickBeatAvailable && quickBeatHinted && !isQuickBeatLocked && !isQuickBeatPending && (
         <span className="text-[10px] font-label uppercase tracking-widest text-amber-200/80 mt-1 block">
           {t('gameplay.quickBeatHint', { defaultValue: 'Wygląda na małą akcję — kliknij ⚡ lub Shift+Enter' })}
         </span>

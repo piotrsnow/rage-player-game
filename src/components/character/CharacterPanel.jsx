@@ -614,6 +614,14 @@ function SpellsGrid({
                       <span className="text-xs text-outline font-bold">
                         {spell.manaCost} {t('magic.manaShort', 'many')}
                       </span>
+<<<<<<< Updated upstream
+=======
+                      {spell.uses > 0 && (
+                        <span className="text-xs text-primary/80 font-bold">
+                          ×{spell.uses}
+                        </span>
+                      )}
+>>>>>>> Stashed changes
                     </div>
                   </div>
                 </button>

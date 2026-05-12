@@ -18,7 +18,10 @@ export default function GraphToolbar({
   snapToGrid, onToggleSnap, onResetLayout,
   spriteJob,
   bulkImageGen,
+<<<<<<< Updated upstream
   revision,
+=======
+>>>>>>> Stashed changes
   showOrphans = false, onToggleOrphans,
 }) {
   const { t } = useTranslation();
@@ -180,6 +183,7 @@ export default function GraphToolbar({
           <BulkImageGenControls bulkImageGen={bulkImageGen} t={t} />
         </>
       )}
+<<<<<<< Updated upstream
 
       {revision && (
         <>
@@ -187,6 +191,8 @@ export default function GraphToolbar({
           <RevisionControls revision={revision} t={t} />
         </>
       )}
+=======
+>>>>>>> Stashed changes
     </div>
   );
 }
@@ -252,11 +258,23 @@ function SpriteJobControls({ spriteJob, t }) {
 
 const BULK_PROVIDER_OPTIONS = [
   { id: 'pixellab', label: 'PixelLab' },
+<<<<<<< Updated upstream
   { id: 'standard', label: 'Standard' },
 ];
 
 function BulkImageGenControls({ bulkImageGen, t }) {
   const { startPixelLab, startStandard, cancel, clearProgress, isActive, progress, nodes } = bulkImageGen;
+=======
+  { id: 'dalle', label: 'DALL-E' },
+  { id: 'gpt-image', label: 'GPT Image' },
+  { id: 'stability', label: 'Stability' },
+  { id: 'gemini', label: 'Gemini' },
+  { id: 'sd-webui', label: 'SD-WebUI' },
+];
+
+function BulkImageGenControls({ bulkImageGen, t }) {
+  const { startPixelLab, startStandard, cancel, clearProgress, isActive, progress, nodes, stdProvider } = bulkImageGen;
+>>>>>>> Stashed changes
   const [showMenu, setShowMenu] = useState(false);
 
   if (isActive && progress) {
@@ -313,6 +331,7 @@ function BulkImageGenControls({ bulkImageGen, t }) {
         <>
           <div className="fixed inset-0 z-40" onClick={() => setShowMenu(false)} />
           <div className="absolute bottom-full left-0 mb-1 bg-surface-container-highest border border-outline-variant/20 rounded-sm shadow-xl py-1 min-w-[160px] z-50">
+<<<<<<< Updated upstream
             {BULK_PROVIDER_OPTIONS.map((opt) => (
               <button
                 key={opt.id}
@@ -331,12 +350,36 @@ function BulkImageGenControls({ bulkImageGen, t }) {
                 {opt.label}
               </button>
             ))}
+=======
+            {BULK_PROVIDER_OPTIONS.map((opt) => {
+              const isPixel = opt.id === 'pixellab';
+              return (
+                <button
+                  key={opt.id}
+                  type="button"
+                  onClick={() => {
+                    setShowMenu(false);
+                    if (isPixel) {
+                      startPixelLab?.();
+                    } else {
+                      startStandard?.(opt.id);
+                    }
+                  }}
+                  className="w-full text-left px-3 py-1.5 text-xs hover:bg-white/10 text-on-surface transition-colors flex items-center gap-2"
+                >
+                  <span className="material-symbols-outlined text-sm">{isPixel ? 'auto_fix_high' : 'image'}</span>
+                  {opt.label}
+                </button>
+              );
+            })}
+>>>>>>> Stashed changes
           </div>
         </>
       )}
     </div>
   );
 }
+<<<<<<< Updated upstream
 
 function RevisionControls({ revision, t }) {
   const { revise, revising, totalPatches, result, clearResult } = revision;
@@ -393,3 +436,5 @@ function RevisionControls({ revision, t }) {
     </button>
   );
 }
+=======
+>>>>>>> Stashed changes

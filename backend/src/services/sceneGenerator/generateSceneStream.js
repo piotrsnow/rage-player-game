@@ -625,6 +625,25 @@ export async function generateSceneStream(campaignId, playerAction, options = {}
       log.warn({ err: err?.message }, 'quest wrap-up fallback failed (non-fatal)');
     }
 
+    // 7g. Merge quest-reward money into stateChanges.moneyChange so the
+    // character snapshot sent to FE (via RECONCILE) already includes it.
+    // Without this, FE applies reward money in APPLY_STATE_CHANGES but
+    // RECONCILE_CHARACTER_FROM_BACKEND immediately overwrites the character.
+    if (sceneResult.stateChanges?.completedQuests?.length && Array.isArray(dbQuests)) {
+      const completedIds = new Set(sceneResult.stateChanges.completedQuests);
+      for (const q of dbQuests) {
+        if (!completedIds.has(q.questId)) continue;
+        const m = q.reward?.money;
+        if (!m) continue;
+        if (!sceneResult.stateChanges.moneyChange) {
+          sceneResult.stateChanges.moneyChange = { gold: 0, silver: 0, copper: 0 };
+        }
+        sceneResult.stateChanges.moneyChange.gold += m.gold || 0;
+        sceneResult.stateChanges.moneyChange.silver += m.silver || 0;
+        sceneResult.stateChanges.moneyChange.copper += m.copper || 0;
+      }
+    }
+
     // 8. Apply character state changes + achievements (pure), then persist
     // scene + character in one tx so a half-saved scene can never reference
     // a character row that doesn't reflect its stateChanges.

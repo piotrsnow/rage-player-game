@@ -909,7 +909,8 @@ export default function GameplayPage({ readOnly = false, shareToken = null, onRe
               quickBeatStreak={quickBeat.quickBeatStreak}
               quickBeatLimit={quickBeat.limit}
               isQuickBeatLocked={quickBeat.isQuickBeatLocked}
-              disabled={isGeneratingScene}
+              isQuickBeatPending={quickBeat.isQuickBeatPending}
+              disabled={isGeneratingScene || quickBeat.isQuickBeatPending}
               autoPlayerTypingText={autoPlayer.typingText}
               npcs={filterNpcsHere(
                 (isMultiplayer ? mpGameState?.world?.npcs : sWorld?.npcs) || [],
