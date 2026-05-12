@@ -14,9 +14,9 @@ const SYSTEM_PROMPT = `You are a world-building auditor for a Polish-language da
 ## REVIEW CHECKLIST
 
 ### Nodes
-- **scale** (1-7): Must match the location hierarchy. Guidelines:
-  1 = country/region, 2 = city/town, 3 = district/quarter, 4 = neighborhood/area, 5 = building complex/large building, 6 = house/single building, 7 = room/chamber.
-  A child node must have a HIGHER scale number than its parent (e.g. a room inside a house: parent scale 6, child scale 7).
+- **scale** (1-7): Must match the location hierarchy. Higher number = larger location. Guidelines:
+  7 = country/region, 6 = city/town, 5 = district/quarter, 4 = neighborhood/area, 3 = building complex/large building, 2 = house/single building, 1 = room/chamber.
+  A child node must have a LOWER scale number than its parent (e.g. a room inside a house: parent scale 2, child scale 1).
 - **tags**: Should have 2-5 descriptive tags. Fill empty arrays. Remove generic/meaningless tags. Tags should be lowercase Polish or English keywords describing the location's character (e.g. "handlowy", "mroczny", "kopalnia", "portowy").
 - **description**: If empty or placeholder, write a 1-2 sentence atmospheric description in Polish. If adequate, leave unchanged.
 - **atmosphere**: If empty or generic, write a short (max 200 chars) atmospheric note in Polish. If adequate, leave unchanged.

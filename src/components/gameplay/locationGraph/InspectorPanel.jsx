@@ -302,12 +302,16 @@ function NodeInspector({ node, occupants = [], onUpdate, onDelete, mode, campaig
 
         <Field label={t('locationGraph.inspector.scale')}>
           <input
-            type="range" min={0} max={7} step={1}
+            type="range" min={1} max={7} step={1}
             className="w-full"
             value={localScale}
             onChange={handleScaleChange}
           />
-          <span className="text-xs text-outline">{localScale}</span>
+          <div className="flex justify-between text-[10px] text-outline">
+            <span>{t('locationGraph.inspector.scaleSmall', { defaultValue: 'pomieszczenie' })}</span>
+            <span className="text-xs text-on-surface-variant">{localScale}</span>
+            <span>{t('locationGraph.inspector.scaleLarge', { defaultValue: 'kraj' })}</span>
+          </div>
         </Field>
 
         <Field label={t('locationGraph.inspector.shape', { defaultValue: 'Kształt' })}>

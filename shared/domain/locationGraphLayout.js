@@ -4,8 +4,8 @@
  * lengthKm: edge length in kilometers (world scale).
  */
 
-/** km for step between adjacent scale levels: scale 1↔2 … 6↔7 */
-export const SCALE_STEP_KM = [150, 60, 20, 6, 1.5, 0.3];
+/** km for step between adjacent scale levels: scale 1↔2 … 6↔7. Index = lower scale - 1. */
+export const SCALE_STEP_KM = [0.3, 1.5, 6, 20, 60, 150];
 
 const GOLDEN_ANGLE_DEG = 137.508;
 

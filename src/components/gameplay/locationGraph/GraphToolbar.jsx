@@ -29,7 +29,7 @@ export default function GraphToolbar({
       <div className="flex items-center gap-2" title={t('locationGraph.tooltips.scale')}>
         <span className="text-outline uppercase tracking-widest">{t('locationGraph.toolbar.scale')}</span>
         <input
-          type="range" min={0} max={7} step={1}
+          type="range" min={1} max={7} step={1}
           value={scaleFilter}
           onChange={(e) => onScaleChange(Number(e.target.value))}
           className="w-24 h-1.5"
