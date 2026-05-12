@@ -29,6 +29,8 @@ import {
   detectDungeonNavigateIntent,
 } from '../intentClassifier.js';
 import { loadCampaignState } from './campaignLoader.js';
+import { applyCharacterStateChanges } from '../characterMutations.js';
+import { loadCharacterSnapshotById, persistCharacterSnapshot } from '../characterRelations.js';
 
 const log = childLogger({ module: 'quickBeat' });
 
@@ -122,7 +124,9 @@ function buildQuickBeatPrompt({
 3. NIE wprowadzaj nowych lokacji, NIE rozpoczynaj walki/handlu/podróży, NIE oferuj questów, NIE zmieniaj stanu fabuły.
 4. ŻADNYCH rzutów kostką — to jest mała akcja, nie test umiejętności.
 5. timeAdvance: 0 (akcja niemal natychmiastowa) albo 0.05-0.25 (krótkie czynności typu wypicie kufla, rozglądnięcie się).
-6. newItems: jeśli gracz przeszukuje ciała, otwiera skrzynię, podnosi przedmiot lub lootuje — możesz dodać 1-3 drobne przedmioty. Nie dawaj potężnych ani magicznych przedmiotów. Null jeśli nic nie znajduje.
+6. newItems: jeśli gracz przeszukuje ciała, otwiera skrzynię, podnosi przedmiot, lootuje, bierze coś, lub w narracji zyskuje nazwany przedmiot — MUSISZ dodać 1-3 drobne przedmioty do newItems. Nie dawaj potężnych ani magicznych przedmiotów. Null TYLKO jeśli gracz nie zyskuje żadnego przedmiotu.
+   ZASADA SPÓJNOŚCI: jeśli narracja opisuje że postać bierze/podnosi/otrzymuje coś — newItems MUSI to zawierać. Żaden opis zdobycia przedmiotu nie może istnieć bez wpisu w newItems.
+   Przykład: akcja "podnoszę kartkę ze stołu" → newItems: [{"name":"Pożółkła kartka","type":"misc","quantity":1,"description":"Zapisana drżącą ręką notatka znaleziona na stole"}]
 7. Output: TYLKO valid JSON o schemacie poniżej. Bez prefiksów, bez markdown.
 
 SCHEMA:
@@ -338,22 +342,33 @@ export async function runQuickBeat(campaignId, playerAction, options = {}, onEve
       if (newItems.length === 0) newItems = null;
     }
 
-    // timeAdvance is applied client-side via the existing reducer
-    // (applyStateChangesHandler/timeAndNeeds.js writes draft.world.timeState).
-    // We just persist + return it; FE dispatches { timeAdvance: { hoursElapsed } }
-    // when handling the ADD_QUICK_BEAT message.
+    const effectiveCharacterId = characterId || activeCharacterId || null;
+
     const saved = await prisma.campaignQuickBeat.create({
       data: {
         campaignId,
         parentSceneIndex,
-        characterId: characterId || activeCharacterId || null,
+        characterId: effectiveCharacterId,
         playerAction,
         narrationText,
         npcSpeaker,
         npcReply,
         timeAdvance: timeAdvance || null,
+        newItems: newItems || undefined,
       },
     });
+
+    if (newItems && effectiveCharacterId) {
+      try {
+        const snapshot = await loadCharacterSnapshotById(effectiveCharacterId);
+        if (snapshot) {
+          const updated = applyCharacterStateChanges(snapshot, { newItems });
+          await persistCharacterSnapshot(effectiveCharacterId, updated);
+        }
+      } catch (err) {
+        log.warn({ err, campaignId, characterId: effectiveCharacterId }, 'Failed to persist quick-beat items to character');
+      }
+    }
 
     onEvent({
       type: 'complete',

@@ -150,6 +150,7 @@ export async function crudCampaignRoutes(app) {
           npcSpeaker: true,
           npcReply: true,
           timeAdvance: true,
+          newItems: true,
           createdAt: true,
         },
       }),

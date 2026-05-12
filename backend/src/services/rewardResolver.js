@@ -189,6 +189,24 @@ function resolvePotion(descriptor, rarity) {
   };
 }
 
+function resolveFallbackMisc(descriptor, rarity) {
+  const name = typeof descriptor.name === 'string' && descriptor.name.trim()
+    ? descriptor.name.trim()
+    : `Przedmiot (${descriptor.type || 'misc'})`;
+  const description = typeof descriptor.description === 'string' && descriptor.description.trim()
+    ? descriptor.description.trim()
+    : '';
+  return {
+    newItems: [{
+      id: prefixedId('reward', 4),
+      name,
+      type: 'misc',
+      rarity: rarity || 'common',
+      description,
+    }],
+  };
+}
+
 // ── Main resolver ──
 
 /**
@@ -228,7 +246,8 @@ export function resolveRewards(rewards, { sceneCount = 0, difficultyTier = 'medi
         resolved = resolvePotion(desc, rarity);
         break;
       default:
-        continue;
+        resolved = resolveFallbackMisc(desc, rarity);
+        break;
     }
 
     if (resolved.newItems) result.newItems.push(...resolved.newItems);
