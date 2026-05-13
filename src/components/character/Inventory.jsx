@@ -31,6 +31,8 @@ export default function Inventory({
   materialBag = [],
   selectedItemId = null,
   onSelectItem,
+  onMoveToInventory,
+  moveDisabled,
 }) {
   const { t } = useTranslation();
   const [showMaterialBag, setShowMaterialBag] = useState(false);
@@ -60,7 +62,7 @@ export default function Inventory({
   }, [page, totalPages]);
 
   if (showMaterialBag) {
-    return <MaterialBagPanel materials={materialBag} onClose={() => setShowMaterialBag(false)} />;
+    return <MaterialBagPanel materials={materialBag} onClose={() => setShowMaterialBag(false)} onMoveToInventory={onMoveToInventory} moveDisabled={moveDisabled} />;
   }
 
   return (

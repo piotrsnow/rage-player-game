@@ -996,6 +996,8 @@
     "count": "{{count}} items",
     "all": "All",
     "empty": "No materials collected yet.",
+    "moveToItems": "Move to items",
+    "backpackFull": "Backpack full",
     "catMetal": "Metal",
     "catWood": "Wood",
     "catFabric": "Fabric",

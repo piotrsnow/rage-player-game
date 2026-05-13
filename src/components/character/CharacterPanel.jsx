@@ -864,6 +864,27 @@ export default function CharacterPanel({
     dispatch({ type: 'UNEQUIP_ITEM', payload: { slot } });
     if (autoSave) autoSave();
   };
+  const handleMoveMaterialToInventory = (mat) => {
+    if (!dispatch || isMultiplayer) return;
+    const MAX_SLOTS = 40;
+    if (inventoryItems.length >= MAX_SLOTS) return;
+    const item = {
+      name: mat.name,
+      type: 'misc',
+      rarity: mat.availability || 'common',
+      quantity: 1,
+      weight: mat.weight || 0,
+    };
+    dispatch({
+      type: 'APPLY_STATE_CHANGES',
+      payload: {
+        newItems: [item],
+        removeItemsByName: [{ name: mat.name, quantity: 1 }],
+      },
+    });
+    if (autoSave) autoSave();
+  };
+  const moveMaterialDisabled = !dispatch || isMultiplayer || inventoryItems.length >= 40;
   const handleUseManaCrystal = (itemId, choice) => {
     dispatch({ type: 'USE_MANA_CRYSTAL', payload: { itemId, choice } });
     if (autoSave) autoSave();
@@ -1119,6 +1140,8 @@ export default function CharacterPanel({
             onUnequipItem={handleUnequipItem}
             selectedItemId={selectedItemId}
             onSelectItem={setSelectedItemId}
+            onMoveToInventory={dispatch && !isMultiplayer ? handleMoveMaterialToInventory : undefined}
+            moveDisabled={moveMaterialDisabled}
           />
         </div>
 

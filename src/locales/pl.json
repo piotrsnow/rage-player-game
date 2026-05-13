@@ -990,6 +990,8 @@
     "count": "{{count}} szt.",
     "all": "Wszystkie",
     "empty": "Brak zebranych materiałów.",
+    "moveToItems": "Przenieś do ekwipunku",
+    "backpackFull": "Plecak pełny",
     "catMetal": "Metal",
     "catWood": "Drewno",
     "catFabric": "Tkaniny",

@@ -1,6 +1,7 @@
 import { useState, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { gameData } from '../../services/gameDataService.js';
+import Tooltip from '../ui/Tooltip';
 
 const CATEGORY_CONFIG = {
   metal: { icon: 'hardware', label: 'materialBag.catMetal' },
@@ -17,7 +18,7 @@ const AVAILABILITY_COLORS = {
   rare: 'text-tertiary-dim',
 };
 
-export default function MaterialBagPanel({ materials = [], onClose }) {
+export default function MaterialBagPanel({ materials = [], onClose, onMoveToInventory, moveDisabled }) {
   const { t } = useTranslation();
   const [filterCategory, setFilterCategory] = useState(null);
 
@@ -35,6 +36,7 @@ export default function MaterialBagPanel({ materials = [], onClose }) {
     materials.map((m) => {
       const cat = catalogMap[(m.name || '').toLowerCase()];
       return {
+        id: m.id,
         name: m.name,
         quantity: m.quantity || 1,
         category: cat?.category || 'misc',
@@ -145,7 +147,7 @@ export default function MaterialBagPanel({ materials = [], onClose }) {
                 const price = mat.price || {};
                 return (
                   <div
-                    key={mat.name}
+                    key={mat.id ?? mat.name}
                     className="flex items-center justify-between px-2 py-1.5 rounded-sm hover:bg-surface-container/30 transition-colors"
                   >
                     <div className="flex items-center gap-2 min-w-0">
@@ -158,6 +160,22 @@ export default function MaterialBagPanel({ materials = [], onClose }) {
                         {price.silver > 0 && `${price.silver}s `}
                         {price.copper > 0 && `${price.copper}c`}
                       </span>
+                      {onMoveToInventory && (
+                        <Tooltip
+                          content={moveDisabled
+                            ? t('materialBag.backpackFull', 'Backpack full')
+                            : t('materialBag.moveToItems', 'Move to items')}
+                          variant="compact"
+                        >
+                          <button
+                            disabled={moveDisabled}
+                            onClick={() => onMoveToInventory(mat)}
+                            className="p-1 rounded-sm border border-primary/20 bg-primary/10 text-primary hover:bg-primary/20 hover:border-primary/30 transition-colors disabled:opacity-40 disabled:pointer-events-none"
+                          >
+                            <span className="material-symbols-outlined text-[12px]">swap_horiz</span>
+                          </button>
+                        </Tooltip>
+                      )}
                       {/* Quantity badge */}
                       <span className="inline-flex items-center justify-center min-w-[24px] h-5 px-1.5 text-[10px] font-bold font-label bg-primary/15 text-primary border border-primary/20 rounded-sm">
                         x{mat.quantity || 1}
