@@ -123,8 +123,14 @@ export function updateStats(achievementState, event) {
       break;
     }
     case 'location_visited': {
-      const raw = payload.locationId ?? payload.location ?? payload.id ?? '';
-      const token = normalizeLocationId(raw);
+      // Faza 3c — preferuj composite ref ("kind:id" stable token).
+      let token = '';
+      if (payload.locationRef && payload.locationRef.kind && payload.locationRef.id) {
+        token = `${payload.locationRef.kind}:${payload.locationRef.id}`;
+      } else {
+        const raw = payload.locationId ?? payload.location ?? payload.id ?? '';
+        token = normalizeLocationId(raw);
+      }
       if (token && !stats.locationsVisited.includes(token)) {
         stats.locationsVisited.push(token);
       }
@@ -203,7 +209,14 @@ function extractAchievementEventsFromStateChanges(stateChanges, gameState) {
     events.push({ type: 'scene_completed', payload: {} });
   }
 
-  if (stateChanges.currentLocation) {
+  // Faza 3c — preferuj composite ref, fallback do legacy string.
+  // `location_visited` payload akceptuje `locationRef` (composite) ALBO `location`/`locationId`.
+  if (stateChanges.currentLocationRef) {
+    events.push({
+      type: 'location_visited',
+      payload: { locationRef: stateChanges.currentLocationRef, location: stateChanges.currentLocation || null },
+    });
+  } else if (stateChanges.currentLocation) {
     events.push({ type: 'location_visited', payload: { location: stateChanges.currentLocation } });
   }
 

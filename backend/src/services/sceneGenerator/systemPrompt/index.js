@@ -8,6 +8,7 @@
  */
 
 import {
+  executionOrderBlock,
   coreRulesBlock,
   scenePacingBlock,
   narrativeRulesBlock,
@@ -29,6 +30,8 @@ import {
   buildCodexSummaryBlock,
   buildNeedsCrisisBlock,
   buildActiveQuestsBlock,
+  buildNpcRelationshipsBlock,
+  buildPendingQuestHooksBlock,
   buildRecentContextBlock,
   buildRecentLocationTrailBlock,
   deriveScenePhase,
@@ -64,7 +67,10 @@ export function buildLeanSystemPrompt(coreState, recentScenes, language = 'pl', 
   sceneCount = 0,
   intentResult = {},
   livingWorldEnabled = false,
+  questGraphEnabled = false,
   questGiverHint = null,
+  magicExposure = null,
+  playerAction = '',
 } = {}) {
   const cs = coreState;
   const intent = intentResult._intent || 'freeform';
@@ -80,17 +86,22 @@ export function buildLeanSystemPrompt(coreState, recentScenes, language = 'pl', 
   // Placed FIRST so both Anthropic (explicit cache_control) and OpenAI
   // (automatic prefix caching) can cache this prefix.
   // ═══════════════════════════════════════════════════════════════
+  // ORDER: critical behavioral rules first (strongest recall at prompt start),
+  // mechanics in the middle, output format last (strongest recall at prompt end).
+  // itemCombinationBlock is now conditional — injected only when playerAction
+  // matches combination patterns (see conditionalRules.js).
   const staticSections = [
+    playerInputPolicyBlock(),
+    executionOrderBlock(),
+    stateChangesRulesBlock(),
     coreRulesBlock(),
+    actionRulesBlock(),
     scenePacingBlock(),
     narrativeRulesBlock(),
     dialogueFormatBlock(),
     suggestedActionsBlock(language),
-    stateChangesRulesBlock(),
-    actionRulesBlock(),
-    playerInputPolicyBlock(),
-    responseFormatBlock(language),
     worldSettingBlock(campaign),
+    responseFormatBlock(language),
   ];
 
   // Living World static-content blocks. Item attribution + dungeon-flow hints
@@ -113,7 +124,7 @@ export function buildLeanSystemPrompt(coreState, recentScenes, language = 'pl', 
   // ═══════════════════════════════════════════════════════════════
   const dynamicSections = [];
 
-  const conditionalRules = buildConditionalRules({ intent, coreState: cs, scenePhase, livingWorldEnabled });
+  const conditionalRules = buildConditionalRules({ intent, coreState: cs, scenePhase, livingWorldEnabled, magicExposure, playerAction });
   if (conditionalRules.length > 0) {
     dynamicSections.push(`Conditional rules:\n${conditionalRules.join('\n')}`);
   }
@@ -138,8 +149,23 @@ export function buildLeanSystemPrompt(coreState, recentScenes, language = 'pl', 
   const needsCrisis = buildNeedsCrisisBlock({ needsSystemEnabled, characterNeeds });
   if (needsCrisis) dynamicSections.push(needsCrisis);
 
-  const activeQuests = buildActiveQuestsBlock(quests);
+  const activeQuests = buildActiveQuestsBlock(quests, { questGraphEnabled });
   if (activeQuests) dynamicSections.push(activeQuests);
+
+  // Oś 2 — relacje NPC obecnych w scenie. Niezależne od questGraphEnabled —
+  // ripple service działa też dla legacy kampanii (NPC relations są
+  // zawsze obecne w `world.npcs[].relationships`).
+  if (livingWorldEnabled) {
+    const relBlock = buildNpcRelationshipsBlock(world);
+    if (relBlock) dynamicSections.push(relBlock);
+  }
+
+  // Oś 3 — pending quest opportunities z npcAgentLoop. Tylko dla
+  // questGraphEnabled (graf wymagany do branchy w emergent questOffers).
+  if (livingWorldEnabled && questGraphEnabled) {
+    const hooksBlock = buildPendingQuestHooksBlock(world);
+    if (hooksBlock) dynamicSections.push(hooksBlock);
+  }
 
   const recentContext = buildRecentContextBlock({
     recentScenes,

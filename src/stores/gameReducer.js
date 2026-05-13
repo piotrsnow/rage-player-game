@@ -15,7 +15,6 @@ import { uiHandlers } from './handlers/uiHandlers';
 import { combatHandlers } from './handlers/combatHandlers';
 import { tradeCraftAlchemyHandlers } from './handlers/tradeCraftAlchemyHandlers';
 import { partyHandlers } from './handlers/partyHandlers';
-import { fieldMapHandlers } from './handlers/fieldMapHandlers';
 import { applyStateChangesHandler } from './handlers/applyStateChangesHandler';
 
 /**
@@ -34,7 +33,6 @@ const HANDLERS = {
   ...combatHandlers,
   ...tradeCraftAlchemyHandlers,
   ...partyHandlers,
-  ...fieldMapHandlers,
   APPLY_STATE_CHANGES: applyStateChangesHandler,
 };
 

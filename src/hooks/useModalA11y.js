@@ -4,12 +4,14 @@ const FOCUSABLE_SELECTOR = 'a[href], button:not([disabled]), textarea:not([disab
 
 export function useModalA11y(onClose) {
   const containerRef = useRef(null);
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
 
   useEffect(() => {
     const handleKeyDown = (e) => {
       if (e.key === 'Escape') {
         e.stopPropagation();
-        onClose();
+        onCloseRef.current();
         return;
       }
 
@@ -48,7 +50,10 @@ export function useModalA11y(onClose) {
         prev.focus();
       }
     };
-  }, [onClose]);
+    // Intentionally empty: initial focus + listeners must not re-run when the
+    // parent passes an unstable inline `onClose` (would steal focus from inputs
+    // on every parent re-render). Escape always calls the latest handler via ref.
+  }, []);
 
   return containerRef;
 }

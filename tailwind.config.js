@@ -58,11 +58,27 @@ export default {
         'surface-container-low': '#1b1b1e',
         'skill-rose': '#e879a0',
       },
+      fontSize: {
+        xs:   ['calc(0.75rem * var(--_fs-mult, 1))',   { lineHeight: 'calc(1rem * var(--_fs-mult, 1))' }],
+        sm:   ['calc(0.875rem * var(--_fs-mult, 1))',  { lineHeight: 'calc(1.25rem * var(--_fs-mult, 1))' }],
+        base: ['calc(1rem * var(--_fs-mult, 1))',      { lineHeight: 'calc(1.5rem * var(--_fs-mult, 1))' }],
+        lg:   ['calc(1.125rem * var(--_fs-mult, 1))',  { lineHeight: 'calc(1.75rem * var(--_fs-mult, 1))' }],
+        xl:   ['calc(1.25rem * var(--_fs-mult, 1))',   { lineHeight: 'calc(1.75rem * var(--_fs-mult, 1))' }],
+        '2xl': ['calc(1.5rem * var(--_fs-mult, 1))',   { lineHeight: 'calc(2rem * var(--_fs-mult, 1))' }],
+        '3xl': ['calc(1.875rem * var(--_fs-mult, 1))', { lineHeight: 'calc(2.25rem * var(--_fs-mult, 1))' }],
+        '4xl': ['calc(2.25rem * var(--_fs-mult, 1))',  { lineHeight: 'calc(2.5rem * var(--_fs-mult, 1))' }],
+        '5xl': ['calc(3rem * var(--_fs-mult, 1))',     { lineHeight: '1' }],
+        '6xl': ['calc(3.75rem * var(--_fs-mult, 1))',  { lineHeight: '1' }],
+        '7xl': ['calc(4.5rem * var(--_fs-mult, 1))',   { lineHeight: '1' }],
+        '8xl': ['calc(6rem * var(--_fs-mult, 1))',     { lineHeight: '1' }],
+        '9xl': ['calc(8rem * var(--_fs-mult, 1))',     { lineHeight: '1' }],
+      },
       fontFamily: {
-        headline: ['Noto Serif', 'serif'],
-        body: ['Manrope', 'sans-serif'],
-        label: ['Manrope', 'sans-serif'],
-        medieval: ['Amita', 'cursive'],
+        body: ['var(--font-body)', 'cursive'],
+        headline: ['var(--font-headline)', 'cursive'],
+        label: ['var(--font-body)', 'cursive'],
+        accent: ['var(--font-accent)', 'sans-serif'],
+        mono: ['var(--font-mono)', 'monospace'],
       },
       borderRadius: {
         DEFAULT: '0.125rem',
@@ -75,9 +91,57 @@ export default {
           '0%, 100%': { opacity: '0.55', filter: 'blur(1px)', transform: 'scale(1)' },
           '50%': { opacity: '0.85', filter: 'blur(0.5px)', transform: 'scale(1.02)' },
         },
+        'intuition-pulse': {
+          '0%, 100%': { boxShadow: '0 0 0 0 rgba(251,191,36,0)', transform: 'scale(1)' },
+          '50%': { boxShadow: '0 0 8px 2px rgba(251,191,36,0.15)', transform: 'scale(1.04)' },
+        },
+        'intuition-flash': {
+          '0%': { opacity: '0', transform: 'scale(0.7)' },
+          '20%': { opacity: '1', transform: 'scale(1.1)' },
+          '40%': { opacity: '1', transform: 'scale(1)' },
+          '100%': { opacity: '1', transform: 'scale(1)' },
+        },
+        /** Play-route campaign logo: dark metallic drift + hue; 0%/100% match → no loop seam. */
+        'campaign-logo-holo': {
+          '0%, 100%': {
+            backgroundPosition: '22% 50%',
+            filter: 'hue-rotate(0deg) saturate(1.08) brightness(0.75) contrast(1.24)',
+          },
+          '25%': {
+            backgroundPosition: '62% 48%',
+            filter: 'hue-rotate(28deg) saturate(1.1) brightness(0.8) contrast(1.26)',
+          },
+          '50%': {
+            backgroundPosition: '54% 58%',
+            filter: 'hue-rotate(52deg) saturate(1.09) brightness(0.82) contrast(1.27)',
+          },
+          '75%': {
+            backgroundPosition: '38% 47%',
+            filter: 'hue-rotate(88deg) saturate(1.09) brightness(0.78) contrast(1.25)',
+          },
+        },
+        /** Pendulum sway — use origin-top in Header: sign hung from left+right chains, bottom swings wider. */
+        'campaign-logo-float': {
+          '0%, 100%': {
+            transform: 'rotate(-4deg) translateX(3px) translateY(0)',
+          },
+          '25%': {
+            transform: 'rotate(3.5deg) translateX(-3px) translateY(2px)',
+          },
+          '50%': {
+            transform: 'rotate(-3deg) translateX(2px) translateY(-1.5px)',
+          },
+          '75%': {
+            transform: 'rotate(3.5deg) translateX(-2px) translateY(1.5px)',
+          },
+        },
       },
       animation: {
         'target-shimmer': 'target-shimmer 3.5s ease-in-out infinite',
+        'intuition-pulse': 'intuition-pulse 2.5s ease-in-out infinite',
+        'intuition-flash': 'intuition-flash 150ms ease-out forwards',
+        'campaign-logo-holo': 'campaign-logo-holo 6.5s linear infinite',
+        'campaign-logo-float': 'campaign-logo-float 6.8s cubic-bezier(0.38, 0.02, 0.62, 0.98) infinite',
       },
     },
   },

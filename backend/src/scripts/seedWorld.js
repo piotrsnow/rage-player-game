@@ -34,8 +34,12 @@ import { upsertEdge } from '../services/livingWorld/travelGraph.js';
 import { getTemplate } from '../services/livingWorld/settlementTemplates.js';
 import { batchBackfillMissing } from '../services/livingWorld/ragService.js';
 import { buildNPCEmbeddingText, buildLocationEmbeddingText } from '../services/embeddingService.js';
+import { seedCanonicalEdges } from './seedWorldEdges.js';
 
 const log = childLogger({ module: 'seedWorld' });
+
+// Bump this whenever seed data changes (arrays, lore, edges, NPCs, etc.).
+const SEED_VERSION = '2026-05-08a';
 
 const REGION = 'heartland';
 const CAPITAL_NAME = 'Yeralden';
@@ -1090,15 +1094,15 @@ async function backfillRagEmbeddings(locationByName) {
 }
 
 export async function seedWorld() {
-  // Cold-start guard. The seed is idempotent (upserts) but still does ~O(100)
-  // Mongo round-trips per boot. On Cloud Run revisions 2+ the canonical world
-  // is already present and re-running adds ~1s to cold start for no change.
-  // Set SKIP_WORLD_SEED=true on any revision where the schema hasn't added
-  // new seed content since the last successful seed. Leave unset (or explicit
-  // "false") on the first deploy of new seed data.
   if (String(process.env.SKIP_WORLD_SEED || '').toLowerCase() === 'true') {
     log.info('SKIP_WORLD_SEED=true — skipping world seed');
     return { skipped: true };
+  }
+
+  const meta = await prisma.systemMeta.findUnique({ where: { key: 'worldSeedVersion' } });
+  if (meta?.value === SEED_VERSION) {
+    log.info({ version: SEED_VERSION }, 'World seed up-to-date — skipping');
+    return { skipped: true, reason: 'version-match' };
   }
 
   try {
@@ -1187,6 +1191,9 @@ export async function seedWorld() {
       if (result) roadsUpserted += 1;
     }
 
+    // Seed canonical LocationEdge rows (adjacent, visible, audible, etc.)
+    const edgeStats = await seedCanonicalEdges(locationByName);
+
     const loreSection = await upsertMainLoreSection();
 
     // Round E Phase 9 — index canonical NPCs + locations into the RAG store.
@@ -1195,8 +1202,15 @@ export async function seedWorld() {
     // workflows without LLM keys still get a working seed, just no RAG).
     const ragStats = await backfillRagEmbeddings(locationByName);
 
+    await prisma.systemMeta.upsert({
+      where: { key: 'worldSeedVersion' },
+      update: { value: SEED_VERSION },
+      create: { key: 'worldSeedVersion', value: SEED_VERSION },
+    });
+
     log.info(
       {
+        version: SEED_VERSION,
         capital: CAPITAL_NAME,
         sublocations: SUBLOCATIONS.length,
         npcs: npcsUpserted,
@@ -1206,6 +1220,7 @@ export async function seedWorld() {
         wildLocations: WILD_LOCATIONS.length,
         npcKnowledgeUpdated,
         roads: roadsUpserted,
+        graphEdges: edgeStats.edgesCreated,
         loreSectionId: loreSection.id,
         rag: ragStats,
       },
@@ -1220,6 +1235,7 @@ export async function seedWorld() {
       wildLocationIds: wildRows.map((w) => w.id),
       npcKnowledgeUpdated,
       roadsUpserted,
+      graphEdges: edgeStats.edgesCreated,
       rag: ragStats,
     };
   } catch (err) {

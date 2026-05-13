@@ -261,6 +261,8 @@ export async function generateYassatoCameoScene({
       maxTokens: 500,
       temperature: 1.0,
       userApiKeys,
+      taskType: 'yassato-cameo',
+      taskLabel: 'Yassato cameo',
     });
     const timeoutPromise = new Promise((_, reject) =>
       setTimeout(() => reject(new Error('yassato nano timeout')), llmNanoTimeoutMs),

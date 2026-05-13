@@ -101,9 +101,9 @@ export default function ForceRollButton({
         onDoubleClick={handleDoubleClick}
         onContextMenu={handleContextMenu}
         disabled={disabled}
-        className={`relative shrink-0 inline-flex items-center justify-center w-9 h-9 border rounded-sm transition-all duration-200 hover:-translate-y-px hover:shadow-[0_10px_24px_rgba(0,0,0,0.3)] disabled:opacity-30 disabled:cursor-not-allowed ${STATE_STYLES[stateKey]}`}
+        className={`relative shrink-0 inline-flex items-center justify-center w-11 h-11 border rounded-sm transition-all duration-200 hover:-translate-y-px hover:shadow-[0_10px_24px_rgba(0,0,0,0.3)] disabled:opacity-30 disabled:cursor-not-allowed ${STATE_STYLES[stateKey]}`}
       >
-        <span className="material-symbols-outlined text-[18px] leading-none">casino</span>
+        <span className="material-symbols-outlined text-[22px] leading-none">casino</span>
         {stateKey === 'bonus' && (
           <span className="absolute -top-1 -right-1 text-[9px] font-bold leading-none px-1 py-0.5 rounded-full bg-emerald-500/90 text-black">
             +

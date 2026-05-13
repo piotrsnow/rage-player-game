@@ -9,6 +9,8 @@ import { canAfford, applyDiscount, formatCoinPrice } from '../../../shared/domai
 import { gameData } from '../../services/gameDataService.js';
 import { formatMoney } from '../../services/gameState.js';
 import { getSkillLevel } from '../../data/rpgSystem.js';
+import { generateStateChangeMessages } from '../../services/stateChangeMessages.js';
+import { getGameState } from '../../stores/gameStore.js';
 
 export default function TradePanel({ trade, character, world, dispatch, onHaggle, disabled }) {
   const { t } = useTranslation();
@@ -77,8 +79,12 @@ export default function TradePanel({ trade, character, world, dispatch, onHaggle
     const price = item.haggledPrice || item.buyPrice;
     if (!canAfford(money, price)) return;
 
+    const preState = getGameState();
     const changes = executeBuy(item, price);
     dispatch({ type: 'APPLY_STATE_CHANGES', payload: changes });
+    for (const msg of generateStateChangeMessages(changes, preState, t)) {
+      dispatch({ type: 'ADD_CHAT_MESSAGE', payload: msg });
+    }
 
     // Remove bought item from shop
     dispatch({
@@ -90,12 +96,16 @@ export default function TradePanel({ trade, character, world, dispatch, onHaggle
 
     setSelectedItem(null);
     setHaggleResult(null);
-  }, [money, trade?.shopItems, dispatch]);
+  }, [money, trade?.shopItems, dispatch, t]);
 
   const handleSell = useCallback((item) => {
+    const preState = getGameState();
     const changes = executeSell(item, item.sellPrice);
     dispatch({ type: 'APPLY_STATE_CHANGES', payload: changes });
-  }, [dispatch]);
+    for (const msg of generateStateChangeMessages(changes, preState, t)) {
+      dispatch({ type: 'ADD_CHAT_MESSAGE', payload: msg });
+    }
+  }, [dispatch, t]);
 
   const handleHaggle = useCallback((item) => {
     if ((trade?.haggleAttempts || 0) >= (trade?.maxHaggle || 3)) return;

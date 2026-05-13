@@ -6,6 +6,7 @@ import SceneVisualizationSection from './sections/SceneVisualizationSection';
 import ImagePromptLlmSection from './sections/ImagePromptLlmSection';
 import ImagePlaygroundSection from './sections/ImagePlaygroundSection';
 import EffectIntensitySection from './sections/EffectIntensitySection';
+import IpAdapterSection from './sections/IpAdapterSection';
 import Toggle from '../ui/Toggle';
 
 const IMAGE_PROVIDERS = [
@@ -66,6 +67,13 @@ export default function ImageConfigModal({ onClose }) {
                 updateSettings={updateSettings}
                 updateDMSettings={updateDMSettings}
               />
+
+              {showImageProvider && settings.imageProvider === 'sd-webui' && (
+                <IpAdapterSection
+                  settings={settings}
+                  updateSettings={updateSettings}
+                />
+              )}
 
               {showImageProvider && isAdmin && (
                 <div className="relative bg-[#1a0c1e]/80 rounded-sm ring-1 ring-[#4a1838]/40">

@@ -7,6 +7,7 @@ import { requireServerApiKey } from '../apiKeyService.js';
 import {
   resolveBackendDiceRollWithPreRoll,
   generatePreRolls,
+  inferForcedRollSkill,
   CREATIVITY_BONUS_MAX,
 } from '../diceResolver.js';
 import { resolveAndApplyRewards } from '../rewardResolver.js';
@@ -40,6 +41,7 @@ import {
   isYassatoCameoOnCooldown,
   generateYassatoCameoScene,
 } from './yassatoCameo.js';
+import { detectMagicExposure } from './magicExposure.js';
 
 const log = childLogger({ module: 'sceneGenerator' });
 
@@ -64,7 +66,9 @@ export async function generateSceneStream(campaignId, playerAction, options = {}
     userApiKeys = null,
     combatResult = null,
     forceRoll = null,
+    entityTags = null,
     achievementState = null,
+    travelFailureReason = null,
     userId = null,
   } = options;
   let resolvedMechanics = resolvedMechanicsOpt;
@@ -90,7 +94,10 @@ export async function generateSceneStream(campaignId, playerAction, options = {}
       dbQuests,
       dbCodex,
       livingWorldEnabled,
+      questGraphEnabled,
       currentRef,
+      pendingSlip,
+      pendingProvidence,
     } = await loadCampaignState(campaignId);
     let activeCurrentRef = currentRef;
 
@@ -130,6 +137,7 @@ export async function generateSceneStream(campaignId, playerAction, options = {}
         isFirstScene,
         provider,
         timeoutMs: llmNanoTimeoutMs,
+        entityTags,
       },
     );
     onEvent({ type: 'intent', data: {
@@ -166,22 +174,32 @@ export async function generateSceneStream(campaignId, playerAction, options = {}
     const preRolls = generatePreRolls(characterForRoll);
     let serverDiceRoll = null;
 
-    if (!resolvedMechanics?.diceRoll && intentResult.roll_skill && !isFirstScene) {
-      // ForceRoll bypasses the testsFrequency RNG gate — the player
-      // explicitly asked for a roll this turn, so fire every time nano
-      // picked a skill.
-      const testsFrequency = dmSettings?.testsFrequency ?? 50;
+    if (!resolvedMechanics?.diceRoll && !isFirstScene) {
       const forceRollActive = forceRoll?.enabled === true;
-      if (forceRollActive || Math.random() * 100 < testsFrequency) {
-        serverDiceRoll = resolveBackendDiceRollWithPreRoll(
-          characterForRoll,
-          intentResult.roll_skill,
-          intentResult.roll_difficulty || 'medium',
-          preRolls[0].d50,
-          preRolls[0].luckySuccess,
-        );
-        if (serverDiceRoll) {
-          resolvedMechanics = { diceRoll: serverDiceRoll };
+
+      let rollSkill = intentResult.roll_skill || null;
+      let rollDifficulty = intentResult.roll_difficulty || 'medium';
+
+      // When the player forced a roll but nano didn't pick a skill,
+      // use action-text heuristics to choose one deterministically.
+      if (!rollSkill && forceRollActive) {
+        rollSkill = inferForcedRollSkill(playerAction, characterForRoll);
+        rollDifficulty = 'medium';
+      }
+
+      if (rollSkill) {
+        const testsFrequency = dmSettings?.testsFrequency ?? 50;
+        if (forceRollActive || Math.random() * 100 < testsFrequency) {
+          serverDiceRoll = resolveBackendDiceRollWithPreRoll(
+            characterForRoll,
+            rollSkill,
+            rollDifficulty,
+            preRolls[0].d50,
+            preRolls[0].luckySuccess,
+          );
+          if (serverDiceRoll) {
+            resolvedMechanics = { diceRoll: serverDiceRoll };
+          }
         }
       }
     }
@@ -217,6 +235,9 @@ export async function generateSceneStream(campaignId, playerAction, options = {}
       campaignId, intentResult, currentLocation, inlineKeys,
       { provider, timeoutMs: llmNanoTimeoutMs, playerAction },
     );
+    if (travelFailureReason) {
+      contextBlocks.travelFailure = { reason: travelFailureReason };
+    }
     onEvent({ type: 'context_ready' });
 
     // 3b. Phase D — if nano flagged a quest offer AND the world is getting
@@ -251,6 +272,8 @@ export async function generateSceneStream(campaignId, playerAction, options = {}
     });
     recentScenes.reverse();
 
+    const magicExposure = detectMagicExposure(recentScenes, coreState.character);
+
     const systemPromptParts = buildLeanSystemPrompt(coreState, recentScenes, language, {
       dmSettings,
       needsSystemEnabled,
@@ -258,7 +281,10 @@ export async function generateSceneStream(campaignId, playerAction, options = {}
       sceneCount,
       intentResult,
       livingWorldEnabled,
+      questGraphEnabled,
       questGiverHint,
+      magicExposure,
+      playerAction,
     });
 
     const userPrompt = buildUserPrompt(playerAction, {
@@ -271,7 +297,24 @@ export async function generateSceneStream(campaignId, playerAction, options = {}
       preRolls,
       creativityEligible,
       forceRoll,
+      pendingSlip,
+      pendingProvidence,
+      entityTags,
     });
+
+    // One-shot incident-system payloads — clear them as soon as the prompt
+    // is built so a retry/idle event doesn't re-inject them. Best-effort:
+    // a failure here just leaves a stale flag for one extra scene.
+    if (pendingSlip || pendingProvidence) {
+      const clearData = {};
+      if (pendingSlip) clearData.pendingSlip = null;
+      if (pendingProvidence) clearData.pendingProvidence = null;
+      try {
+        await prisma.campaign.update({ where: { id: campaignId }, data: clearData });
+      } catch {
+        // non-fatal — flag will simply re-fire next scene
+      }
+    }
 
     // 5. Streaming AI call
     const providerApiKey = requireServerApiKey(
@@ -467,6 +510,9 @@ export async function generateSceneStream(campaignId, playerAction, options = {}
       // ("Took 7 wounds") back as woundsChange, which would double-count.
       if (typeof combatResult.woundsChange === 'number') {
         sceneResult.stateChanges.woundsChange = combatResult.woundsChange;
+      }
+      if (typeof combatResult.manaChange === 'number' && combatResult.manaChange !== 0) {
+        sceneResult.stateChanges.manaChange = combatResult.manaChange;
       }
       if (combatResult.skillProgress && typeof combatResult.skillProgress === 'object') {
         sceneResult.stateChanges.skillProgress = {

@@ -43,12 +43,12 @@ export default function GMOverviewTab({ gameState }) {
         <div className="p-4 rounded-sm bg-surface-container/40 border border-outline-variant/10">
           <div className="flex items-center gap-2 mb-3">
             <span className="material-symbols-outlined text-primary">auto_stories</span>
-            <h3 className="text-sm font-bold text-on-surface">{campaign.name}</h3>
-            <span className={`text-[9px] font-bold uppercase px-1.5 py-0.5 rounded-sm ${
+            <h3 className="text-base font-bold text-on-surface">{campaign.name}</h3>
+            <span className={`text-[10px] font-bold uppercase px-1.5 py-0.5 rounded-sm ${
               campaign.status === 'active' ? 'bg-primary/15 text-primary' : 'bg-outline/10 text-outline'
             }`}>{campaign.status || 'active'}</span>
           </div>
-          <div className="grid gap-2 sm:grid-cols-2 text-[11px] text-on-surface-variant">
+          <div className="grid gap-2 sm:grid-cols-2 text-sm text-on-surface-variant">
             {campaign.genre && <Field label={t('gmModal.overview.genre')} value={campaign.genre} />}
             {campaign.tone && <Field label={t('gmModal.overview.tone')} value={campaign.tone} />}
             {campaign.style && <Field label={t('gmModal.overview.style')} value={campaign.style} />}
@@ -56,13 +56,13 @@ export default function GMOverviewTab({ gameState }) {
             {campaign.length && <Field label={t('gmModal.overview.length')} value={campaign.length} />}
           </div>
           {campaign.worldDescription && (
-            <p className="text-[10px] text-outline mt-2 pt-2 border-t border-outline-variant/10 leading-relaxed">
+            <p className="text-xs text-outline mt-2 pt-2 border-t border-outline-variant/10 leading-relaxed">
               {campaign.worldDescription}
             </p>
           )}
           {campaign.structure?.acts && (
             <div className="mt-3 pt-2 border-t border-outline-variant/10">
-              <div className="text-[10px] text-outline mb-2">
+              <div className="text-xs text-outline mb-2">
                 {t('gmModal.overview.act')} {campaign.structure.currentAct || 1} / {campaign.structure.acts.length}
               </div>
               <div className="flex gap-1">
@@ -103,17 +103,17 @@ export default function GMOverviewTab({ gameState }) {
         {timeState.day && (
           <div className="p-3 rounded-sm bg-surface-container/40 border border-outline-variant/10">
             <div className="flex items-center gap-2 mb-2">
-              <span className="material-symbols-outlined text-sm text-primary">{timeIcons[timeState.timeOfDay] || 'schedule'}</span>
-              <span className="text-[10px] font-label uppercase tracking-widest text-on-surface-variant">{t('gmModal.overview.time')}</span>
+              <span className="material-symbols-outlined text-base text-primary">{timeIcons[timeState.timeOfDay] || 'schedule'}</span>
+              <span className="text-xs font-label uppercase tracking-widest text-on-surface-variant">{t('gmModal.overview.time')}</span>
             </div>
-            <div className="text-[11px] text-on-surface-variant space-y-1">
+            <div className="text-sm text-on-surface-variant space-y-1">
               <div>{t('gmModal.overview.day')} {timeState.day} &mdash; <span className="capitalize">{t(`worldState.periods.${timeState.timeOfDay}`, timeState.timeOfDay)}</span></div>
               {timeState.hour != null && (
                 <div className="text-lg font-headline text-primary tabular-nums">
                   {Math.floor(timeState.hour).toString().padStart(2, '0')}:{Math.round((timeState.hour % 1) * 60).toString().padStart(2, '0')}
                 </div>
               )}
-              {timeState.season && <div className="text-[10px] text-outline capitalize">{t(`worldState.seasons.${timeState.season}`, timeState.season)}</div>}
+              {timeState.season && <div className="text-xs text-outline capitalize">{t(`worldState.seasons.${timeState.season}`, timeState.season)}</div>}
             </div>
           </div>
         )}
@@ -123,10 +123,10 @@ export default function GMOverviewTab({ gameState }) {
       {character && (
         <div className="p-3 rounded-sm bg-surface-container/40 border border-outline-variant/10">
           <div className="flex items-center gap-2 mb-3">
-            <span className="material-symbols-outlined text-sm text-primary">person</span>
-            <span className="text-[10px] font-label uppercase tracking-widest text-on-surface-variant">{t('gmModal.overview.character')}</span>
+            <span className="material-symbols-outlined text-base text-primary">person</span>
+            <span className="text-xs font-label uppercase tracking-widest text-on-surface-variant">{t('gmModal.overview.character')}</span>
           </div>
-          <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3 text-[11px] text-on-surface-variant">
+          <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3 text-sm text-on-surface-variant">
             <Field label={t('gmModal.detail.species')} value={character.species} />
             <Field label={t('gmModal.detail.wounds')} value={`${character.wounds} / ${character.maxWounds}`} />
             <Field label="Mana" value={`${character.mana?.current ?? 0} / ${character.mana?.max ?? 0}`} />
@@ -139,8 +139,8 @@ export default function GMOverviewTab({ gameState }) {
       {Object.keys(factions).length > 0 && (
         <div>
           <div className="flex items-center gap-2 mb-3">
-            <span className="material-symbols-outlined text-sm text-primary">shield</span>
-            <span className="text-[10px] font-label uppercase tracking-widest text-on-surface-variant">{t('gmModal.overview.factionStandings')}</span>
+            <span className="material-symbols-outlined text-base text-primary">shield</span>
+            <span className="text-xs font-label uppercase tracking-widest text-on-surface-variant">{t('gmModal.overview.factionStandings')}</span>
           </div>
           <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
             {Object.entries(factions).map(([id, rep]) => {
@@ -153,10 +153,10 @@ export default function GMOverviewTab({ gameState }) {
               return (
                 <div key={id} className="flex items-center justify-between p-2 rounded-sm bg-surface-container/30 border border-outline-variant/5">
                   <div className="flex items-center gap-1.5 min-w-0">
-                    <span className={`material-symbols-outlined text-xs ${colorClass}`}>{def?.icon || 'shield'}</span>
-                    <span className="text-[10px] text-on-surface truncate">{def?.name || id}</span>
+                    <span className={`material-symbols-outlined text-sm ${colorClass}`}>{def?.icon || 'shield'}</span>
+                    <span className="text-xs text-on-surface truncate">{def?.name || id}</span>
                   </div>
-                  <span className={`text-[10px] font-bold tabular-nums shrink-0 ${colorClass}`}>
+                  <span className={`text-xs font-bold tabular-nums shrink-0 ${colorClass}`}>
                     {rep > 0 ? '+' : ''}{rep}
                   </span>
                 </div>
@@ -170,10 +170,10 @@ export default function GMOverviewTab({ gameState }) {
       {aiCosts.total > 0 && (
         <div className="p-3 rounded-sm bg-surface-container/40 border border-outline-variant/10">
           <div className="flex items-center gap-2 mb-2">
-            <span className="material-symbols-outlined text-sm text-outline">payments</span>
-            <span className="text-[10px] font-label uppercase tracking-widest text-on-surface-variant">{t('gmModal.overview.aiCosts')}</span>
+            <span className="material-symbols-outlined text-base text-outline">payments</span>
+            <span className="text-xs font-label uppercase tracking-widest text-on-surface-variant">{t('gmModal.overview.aiCosts')}</span>
           </div>
-          <div className="flex items-center gap-4 text-[11px]">
+          <div className="flex items-center gap-4 text-sm">
             <span className="font-bold text-on-surface">${aiCosts.total.toFixed(4)}</span>
             {Object.entries(aiCosts.breakdown || {}).map(([key, val]) =>
               val > 0 ? (
@@ -193,11 +193,11 @@ function StatCard({ icon, label, value, sub, highlight }) {
   return (
     <div className={`p-3 rounded-sm border ${highlight ? 'bg-error/10 border-error/20' : 'bg-surface-container/40 border-outline-variant/10'}`}>
       <div className="flex items-center gap-2 mb-1">
-        <span className={`material-symbols-outlined text-sm ${highlight ? 'text-error' : 'text-primary'}`}>{icon}</span>
-        <span className="text-[10px] font-label uppercase tracking-widest text-outline">{label}</span>
+        <span className={`material-symbols-outlined text-base ${highlight ? 'text-error' : 'text-primary'}`}>{icon}</span>
+        <span className="text-xs font-label uppercase tracking-widest text-outline">{label}</span>
       </div>
       <div className={`text-lg font-bold tabular-nums ${highlight ? 'text-error' : 'text-on-surface'}`}>{value}</div>
-      {sub && <div className="text-[10px] text-outline">{sub}</div>}
+      {sub && <div className="text-xs text-outline">{sub}</div>}
     </div>
   );
 }

@@ -6,6 +6,22 @@ function truncate(text, max = NARRATIVE_TRUNCATE) {
   return text.slice(0, max).replace(/\s+\S*$/, '') + '…';
 }
 
+/**
+ * Walks scenes from newest to oldest; returns the last non-null dice roll
+ * (uses `diceRolls` last entry when present, else `diceRoll`).
+ */
+export function findLastDiceRollInScenes(scenes = []) {
+  if (!Array.isArray(scenes) || scenes.length === 0) return null;
+  for (let i = scenes.length - 1; i >= 0; i--) {
+    const s = scenes[i];
+    const list = Array.isArray(s?.diceRolls) && s.diceRolls.length > 0
+      ? s.diceRolls
+      : (s?.diceRoll ? [s.diceRoll] : []);
+    if (list.length) return list[list.length - 1] || null;
+  }
+  return null;
+}
+
 export function buildHistorySummary(scenes = []) {
   const totalScenes = scenes.length;
   let diceRolls = 0;

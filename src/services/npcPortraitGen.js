@@ -1,15 +1,21 @@
 import { imageService } from './imageGen';
+import { buildNpcPortraitSubject } from './npcPortraitPromptLlm';
 import { apiClient } from './apiClient';
 
 function ageGuess(npc) {
   if (typeof npc?.age === 'number' && Number.isFinite(npc.age)) return npc.age;
   if (typeof npc?.stats?.age === 'number' && Number.isFinite(npc.stats.age)) return npc.stats.age;
+  if (npc?.age != null && npc.age !== '') {
+    const n = Number(String(npc.age).trim());
+    if (Number.isFinite(n)) return n;
+  }
   return 35;
 }
 
 function genderGuess(npc) {
-  const g = String(npc?.gender || '').toLowerCase();
-  if (g === 'female' || g === 'kobieta' || g === 'k') return 'female';
+  const g = String(npc?.gender || '').toLowerCase().trim();
+  if (g === 'female' || g === 'kobieta' || g === 'k' || g === 'ż') return 'female';
+  if (g === 'male' || g === 'mężczyzna' || g === 'm') return 'male';
   return 'male';
 }
 
@@ -18,13 +24,19 @@ function careerGuess(npc) {
 }
 
 function speciesGuess(npc) {
-  const raw = String(npc?.race || npc?.creatureKind || '').toLowerCase();
+  const original = String(npc?.race || npc?.creatureKind || '').trim();
+  const raw = original.toLowerCase();
   if (raw.includes('dwarf') || raw.includes('krasnolud')) return 'Dwarf';
-  if (raw.includes('halfling') || raw.includes('hobbit') || raw.includes('niziolek')) return 'Halfling';
+  if (raw.includes('halfling') || raw.includes('hobbit') || raw.includes('niziolek') || raw.includes('niziołek')) return 'Halfling';
   if (raw.includes('high elf')) return 'High Elf';
   if (raw.includes('wood elf')) return 'Wood Elf';
   if (raw.includes('elf')) return 'High Elf';
-  return 'Human';
+  if (raw.includes('human') || raw.includes('człowiek') || raw.includes('czlowiek')) return 'Human';
+  // Non-humanoid race ("legendarny ptak", "smok", "wilkołak"): pass the raw
+  // string through. buildPortraitPrompt detects unknown species and switches
+  // into creature mode (no gender / clothing). Translation to English happens
+  // downstream in imageService.generatePortrait via ensureEnglish.
+  return original || 'Human';
 }
 
 export function buildNpcPortraitSpec(npc, genre) {
@@ -80,9 +92,26 @@ export async function generateNpcPortrait(npc, options = {}) {
     seriousness = null,
     sdModel = null,
     sdSeed = null,
+    forcePromptRefresh = false,
   } = options;
+  // Lazy backfill: dla legacy NPC bez canonical `appearance` poprosimy backend
+  // o jego dogenerowanie. Działa równolegle z subjectOverride — appearance jest
+  // stabilnym opisem z DB, subjectOverride to świeżo zbudowany przez nano-LLM
+  // angielski subject. Łącząc oba, retry produkuje ten sam wygląd.
   const enriched = await ensureNpcAppearance(npc);
-  const spec = buildNpcPortraitSpec(enriched, genre);
+
+  // Ask the nano LLM for a polished English subject built from the full NPC
+  // card (race, creatureKind, role, personality, gender, age, level). When
+  // it succeeds we skip the heuristic species/career templating downstream
+  // and feed the subject straight into buildPortraitPrompt. When it fails
+  // we fall back to the deterministic spec — image generation never blocks
+  // on the prompt LLM.
+  const subjectOverride = await buildNpcPortraitSubject(enriched, { force: forcePromptRefresh });
+
+  const spec = subjectOverride
+    ? { ...buildNpcPortraitSpec(enriched, genre), subjectOverride }
+    : buildNpcPortraitSpec(enriched, genre);
+
   return imageService.generatePortrait(
     null,
     spec,

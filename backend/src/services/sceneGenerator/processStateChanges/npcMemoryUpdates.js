@@ -19,6 +19,7 @@ import { prisma } from '../../../lib/prisma.js';
 import { childLogger } from '../../../lib/logger.js';
 import { parseNpcMemoryUpdates } from './schemas.js';
 import * as ragService from '../../livingWorld/ragService.js';
+import { propagateRelationshipRipple } from '../../livingWorld/relationshipRippleService.js';
 
 const log = childLogger({ module: 'sceneGenerator' });
 
@@ -194,6 +195,33 @@ export async function processNpcMemoryUpdates(campaignId, rawUpdates) {
       pushFor(target.npcId, mirror);
       mirrored += 1;
     }
+  }
+
+  // ── Oś 2 — actionType ripple (kierunkowe akcje wzmacniają propagację)
+  // Gdy memory niesie `actionType` (killed/saved/betrayed/etc), wywołaj
+  // ripple service z tym actionType. To DRUGI hop ripple — pierwszy idzie
+  // z npcs.js dispositionChange. Łączą się addytywnie: dispositionChange
+  // produkuje base ripple, actionType dorzuca akcent kierunkowy. Anti-loop:
+  // ripple writes nie wpadają z powrotem do tego pathu.
+  const actionRippleTasks = updates
+    .filter((u) => u.actionType && u.npcName)
+    .map(async (u) => {
+      try {
+        const sourceNpcId = npcNameToId(u.npcName);
+        const cn = byNpcIdRow.get(sourceNpcId);
+        if (!cn?.id) return;
+        await propagateRelationshipRipple(campaignId, cn.id, {
+          dispositionDelta: 0,           // już zaaplikowane via npcs.js — nie dublujemy
+          alive: u.actionType !== 'killed' ? true : false,
+          actionType: u.actionType,
+          sourceName: cn.name,
+        });
+      } catch (err) {
+        log.warn({ err: err?.message, npcName: u.npcName, campaignId }, 'actionType ripple failed (non-fatal)');
+      }
+    });
+  if (actionRippleTasks.length > 0) {
+    await Promise.allSettled(actionRippleTasks);
   }
 
   if (entriesByNpcId.size === 0) {

@@ -19,9 +19,23 @@ const EMPTY_BACKEND_KEYS = {
   meshy: { configured: false },
   'sd-webui': { configured: false },
   xtts: { configured: false },
+  pixellab: { configured: false },
 };
 
-const LOCAL_ONLY_KEYS = ['backendUrl', 'useBackend'];
+const LOCAL_ONLY_KEYS = ['backendUrl', 'useBackend', 'appZoom'];
+
+function inferWeight(filename) {
+  const lower = filename.toLowerCase();
+  if (lower.includes('thin')) return 100;
+  if (lower.includes('extralight')) return 200;
+  if (lower.includes('light')) return 300;
+  if (lower.includes('medium')) return 500;
+  if (lower.includes('semibold')) return 600;
+  if (lower.includes('extrabold')) return 800;
+  if (lower.includes('black')) return 900;
+  if (lower.includes('bold')) return 700;
+  return 400;
+}
 
 function clampCombatCommentaryFrequency(value) {
   const numeric = Number(value);
@@ -97,6 +111,7 @@ function shouldCheckBackendSession(settings) {
 }
 
 const defaultSettings = {
+  appZoom: 100,
   aiProvider: 'openai',
   sceneVisualization: 'image',
   imageProvider: 'dalle',
@@ -104,6 +119,11 @@ const defaultSettings = {
   // null = random seed per request; number = fixed (reproducible, cacheable).
   // Toggled from SdWebuiModelPicker via double-click on the seed field.
   sdWebuiSeed: null,
+  sdWebuiIpaMode: 'balanced',
+  sdWebuiIpaEnabled: true,
+  sdWebuiQualityPreset: 'balanced',
+  imageResolutionPreset: 'base',
+  imageResolutionMultiplier: 1,
   imagePromptLlmEnabled: false,
   imagePromptLlmProvider: 'openai',
   imagePromptLlmModel: '',
@@ -118,8 +138,10 @@ const defaultSettings = {
   effectIntensity: 'medium',
   sfxEnabled: true,
   sfxVolume: 70,
+  dialogueVolume: 80,
   musicVolume: 40,
   localMusicEnabled: true,
+  typewriterMode: 'fullscreen',
   needsSystemEnabled: false,
   backendUrl: 'http://localhost:3001',
   useBackend: false,
@@ -179,6 +201,8 @@ export function SettingsProvider({ children }) {
   const [backendKeys, setBackendKeys] = useState(EMPTY_BACKEND_KEYS);
   const [globalVoiceConfig, setGlobalVoiceConfig] = useState({});
   const [sceneModelConfig, setSceneModelConfig] = useState({});
+  const [taskModelConfig, setTaskModelConfig] = useState({ models: {}, defaults: {} });
+  const [fontConfig, setFontConfig] = useState(null);
   const [backendUser, setBackendUser] = useState(null);
   const [backendAuthChecking, setBackendAuthChecking] = useState(() => shouldCheckBackendSession(settings));
   const syncingFromBackendRef = useRef(false);
@@ -188,14 +212,15 @@ export function SettingsProvider({ children }) {
   // the file, so we forward through a ref to dodge the temporal-dead-zone.
   const loadFromAccountRef = useRef(null);
 
-  // Mirror only the server-coordinates locally so a refresh remembers which
-  // backend to talk to. Everything else is account-scoped.
+  // Mirror only the server-coordinates + device-local prefs so a refresh
+  // remembers which backend to talk to and the UI zoom level.
   useEffect(() => {
     storage.writeLocalOnlySettings({
       backendUrl: settings.backendUrl,
       useBackend: settings.useBackend,
+      appZoom: settings.appZoom,
     });
-  }, [settings.backendUrl, settings.useBackend]);
+  }, [settings.backendUrl, settings.useBackend, settings.appZoom]);
 
   useEffect(() => {
     if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
@@ -318,11 +343,118 @@ export function SettingsProvider({ children }) {
     return result;
   }, []);
 
+  const fetchTaskModelConfig = useCallback(async () => {
+    if (!apiClient.isConnected()) {
+      setTaskModelConfig({ models: {}, defaults: {} });
+      return;
+    }
+    try {
+      const config = await apiClient.get('/ai/model-config');
+      setTaskModelConfig(config || { models: {}, defaults: {} });
+    } catch {
+      setTaskModelConfig({ models: {}, defaults: {} });
+    }
+  }, []);
+
+  const resolveTaskModel = useCallback((taskCategory) => {
+    const provider = settings.aiProvider || 'openai';
+    const override = taskModelConfig.models?.[taskCategory]?.[provider];
+    if (override) return override;
+    const tierMap = {
+      sceneGeneration: 'premium',
+      campaignGeneration: 'premium',
+      intentClassification: 'nano',
+      memoryExtraction: 'nanoReasoning',
+      imagePrompt: 'nano',
+      auxiliary: 'standard',
+    };
+    const tier = tierMap[taskCategory] || 'premium';
+    return taskModelConfig.defaults?.[tier]?.[provider] || null;
+  }, [settings.aiProvider, taskModelConfig]);
+
+  const fetchFontConfig = useCallback(async () => {
+    if (!apiClient.isConnected()) return;
+    try {
+      const config = await apiClient.get('/font-config');
+      setFontConfig(config || null);
+    } catch {
+      // silent — defaults from CSS :root remain active
+    }
+  }, []);
+
+  function buildFontShadowCss(data) {
+    if (!data.shadowColor || (!data.shadowBlur && !data.shadowX && !data.shadowY && !data.shadowSpread)) return 'none';
+    const spread = data.shadowSpread || 0;
+    const bx = data.shadowX ?? 0, by = data.shadowY ?? 0, blur = data.shadowBlur ?? 0;
+    if (spread <= 0) return `${bx}px ${by}px ${blur}px ${data.shadowColor}`;
+    const layers = [];
+    const s = Math.ceil(spread);
+    for (let dx = -s; dx <= s; dx++) {
+      for (let dy = -s; dy <= s; dy++) {
+        if (dx * dx + dy * dy > spread * spread) continue;
+        layers.push(`${bx + dx}px ${by + dy}px ${blur}px ${data.shadowColor}`);
+      }
+    }
+    return layers.join(', ');
+  }
+
+  useEffect(() => {
+    if (!fontConfig) return;
+    const FALLBACKS = { body: 'cursive', headline: 'cursive', accent: 'sans-serif', mono: 'monospace' };
+    const root = document.documentElement;
+    const style = document.getElementById('dynamic-fonts') || (() => {
+      const el = document.createElement('style');
+      el.id = 'dynamic-fonts';
+      document.head.appendChild(el);
+      return el;
+    })();
+
+    const faces = [];
+    const fontNames = new Set();
+    for (const [, data] of Object.entries(fontConfig)) {
+      if (!data?.font || !data?.files?.length) continue;
+      const familyName = data.font;
+      fontNames.add(familyName);
+      for (const file of data.files) {
+        const weight = inferWeight(file);
+        const isItalic = /cursive|italic/i.test(file);
+        faces.push(
+          `@font-face { font-family: '${familyName}'; src: url('/fonts/${familyName}/${file}') format('truetype'); font-weight: ${weight}; font-style: ${isItalic ? 'italic' : 'normal'}; font-display: swap; }`
+        );
+      }
+    }
+    style.textContent = faces.join('\n');
+
+    const loadPromises = [...fontNames].map((name) =>
+      document.fonts.load(`400 16px '${name}'`).catch(() => {})
+    );
+
+    Promise.all(loadPromises).then(() => {
+      for (const [role, data] of Object.entries(fontConfig)) {
+        if (!data?.font) continue;
+        const fallback = FALLBACKS[role] || 'sans-serif';
+        root.style.setProperty(`--font-${role}`, `'${data.font}', ${fallback}`);
+        root.style.setProperty(`--font-${role}-color`, data.color || '');
+        root.style.setProperty(`--font-${role}-size`, String(data.sizeMultiplier ?? 1));
+        root.style.setProperty(`--font-${role}-letter-spacing`, data.letterSpacing ? `${data.letterSpacing}px` : 'normal');
+        root.style.setProperty(`--font-${role}-stretch`, data.fontStretch && data.fontStretch !== 100 ? `${data.fontStretch}%` : 'normal');
+        const shadow = buildFontShadowCss(data);
+        root.style.setProperty(`--font-${role}-shadow`, shadow);
+        const outline = (data.outlineWidth > 0 && data.outlineColor)
+          ? `${data.outlineWidth}px ${data.outlineColor}`
+          : '0';
+        root.style.setProperty(`--font-${role}-outline`, outline);
+      }
+    });
+  }, [fontConfig]);
+
   useEffect(() => {
     if (settings.backendUrl && settings.useBackend && backendUser) {
       fetchBackendKeys();
       fetchGlobalVoiceConfig();
       fetchSceneModelConfig();
+      fetchTaskModelConfig();
+      fetchFontConfig();
       // Hydrate account settings whenever a user lands on this provider — on
       // cookie-bootstrap, login, and register. backendLogin/Register also
       // call this directly (after legacy migration); the duplicate is cheap
@@ -330,7 +462,7 @@ export function SettingsProvider({ children }) {
       loadFromAccountRef.current?.();
       gameData.loadAll().catch((err) => console.warn('[settings] Game data preload failed:', err.message));
     }
-  }, [settings.backendUrl, settings.useBackend, backendUser, fetchBackendKeys, fetchGlobalVoiceConfig, fetchSceneModelConfig]);
+  }, [settings.backendUrl, settings.useBackend, backendUser, fetchBackendKeys, fetchGlobalVoiceConfig, fetchSceneModelConfig, fetchTaskModelConfig, fetchFontConfig]);
 
   useEffect(() => {
     if (settings.language && i18n.language !== settings.language) {
@@ -338,6 +470,11 @@ export function SettingsProvider({ children }) {
     }
     document.documentElement.lang = settings.language || 'en';
   }, [settings.language, i18n]);
+
+  useEffect(() => {
+    const zoom = settings.appZoom ?? 100;
+    document.documentElement.style.zoom = `${zoom}%`;
+  }, [settings.appZoom]);
 
   const loadBackendUser = useCallback(async () => {
     if (!apiClient.isConnected()) {
@@ -486,6 +623,10 @@ export function SettingsProvider({ children }) {
     sceneModelConfig,
     fetchSceneModelConfig,
     updateSceneModelConfig,
+    resolveTaskModel,
+    fetchTaskModelConfig,
+    fontConfig,
+    fetchFontConfig,
     loadFromAccount,
     backendUser,
     backendAuthChecking,

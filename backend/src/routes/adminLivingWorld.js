@@ -10,6 +10,9 @@
 //   - Audit trail UI (WorldNpcAttribution browsing)
 //   - Cost/analytics dashboard
 
+import { readdirSync, statSync } from 'node:fs';
+import { resolve, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { prisma } from '../lib/prisma.js';
 import { childLogger } from '../lib/logger.js';
 import { leaveParty } from '../services/livingWorld/companionService.js';
@@ -19,7 +22,12 @@ import { runPostCampaignWorldWriteback } from '../services/livingWorld/postCampa
 import { applyApprovedPendingChange } from '../services/livingWorld/postCampaignWorldChanges.js';
 import { promoteCampaignNpcToWorld } from '../services/livingWorld/postCampaignPromotion.js';
 import { promoteWorldLocationToCanonical } from '../services/livingWorld/postCampaignLocationPromotion.js';
+import { migrateExistingCampaignGraph, runGraphConsistencyCheck, loadCampaignGraph, createEdge } from '../services/locationGraph/index.js';
+import { getExtractionStats } from '../services/locationGraph/graphExtractor.js';
+import { LOCATION_KIND_WORLD, LOCATION_KIND_CAMPAIGN } from '../services/locationRefs.js';
 import { getModelOverrides, setModelOverrides, TASK_CATEGORIES } from '../services/serverConfig.js';
+import { config } from '../config.js';
+import { ensureCharacterSpritesBatch, MAX_CHARACTER_SPRITE_BATCH } from '../services/characterSpriteService.js';
 
 const log = childLogger({ module: 'adminLivingWorld' });
 
@@ -84,11 +92,69 @@ export async function adminLivingWorldRoutes(fastify) {
           activeGoal: true,
           lastTickAt: true,
           updatedAt: true,
+          spriteUrl: true,
+          category: true,
         },
       }),
     ]);
 
     return { total, rows };
+  });
+
+  // POST /character-sprites/generate — admin PixelLab batch for canonical NPC / character tokens
+  fastify.post('/character-sprites/generate', guard({
+    schema: {
+      body: {
+        type: 'object',
+        required: ['items'],
+        additionalProperties: false,
+        properties: {
+          force: { type: 'boolean' },
+          items: {
+            type: 'array',
+            maxItems: MAX_CHARACTER_SPRITE_BATCH,
+            items: {
+              type: 'object',
+              required: ['kind', 'id'],
+              additionalProperties: false,
+              properties: {
+                kind: { type: 'string', enum: ['world-npc', 'campaign-npc', 'character'] },
+                id: { type: 'string', format: 'uuid' },
+              },
+            },
+          },
+        },
+      },
+    },
+  }), async (request, reply) => {
+    if (!config.pixellabApiKey) {
+      return reply.code(503).send({ error: 'PIXELLAB_API_KEY not configured' });
+    }
+
+    const { items, force } = request.body;
+    const userId = request.user.id;
+
+    const validated = [];
+    for (const item of items) {
+      if (item.kind === 'world-npc') {
+        const row = await prisma.worldNPC.findUnique({ where: { id: item.id }, select: { id: true } });
+        if (row) validated.push(item);
+      } else if (item.kind === 'campaign-npc') {
+        const row = await prisma.campaignNPC.findUnique({ where: { id: item.id }, select: { id: true } });
+        if (row) validated.push(item);
+      } else if (item.kind === 'character') {
+        const row = await prisma.character.findUnique({ where: { id: item.id }, select: { id: true } });
+        if (row) validated.push(item);
+      }
+    }
+
+    const sprites = await ensureCharacterSpritesBatch(validated, {
+      userId,
+      campaignId: null,
+      force: !!force,
+    });
+
+    return { sprites };
   });
 
   fastify.get('/npcs/:id', guard(), async (request, reply) => {
@@ -462,6 +528,7 @@ export async function adminLivingWorldRoutes(fastify) {
           id: true, canonicalId: true, name: true, role: true, category: true,
           keyNpc: true, alive: true,
           currentLocationId: true, homeLocationId: true,
+          spriteUrl: true,
         },
       }),
     ]);
@@ -494,6 +561,7 @@ export async function adminLivingWorldRoutes(fastify) {
       alive: n.alive !== false,
       homeLocationId: n.homeLocationId || null,
       currentLocationId: n.currentLocationId || null,
+      spriteUrl: n.spriteUrl || null,
     }));
 
     return {
@@ -1030,6 +1098,461 @@ export async function adminLivingWorldRoutes(fastify) {
     }
   });
 
+  // ── Location Graph migration + validation ────────────────────────────
+
+  fastify.post('/campaigns/:id/migrate-graph', guard({
+    config: { rateLimit: { max: 10, timeWindow: '1 minute' } },
+  }), async (request, reply) => {
+    const { id } = request.params;
+    try {
+      const campaign = await prisma.campaign.findUnique({
+        where: { id },
+        select: { id: true, name: true },
+      });
+      if (!campaign) return reply.code(404).send({ error: 'campaign not found' });
+      const result = await migrateExistingCampaignGraph(id);
+      log.info({ campaignId: id, triggeredBy: request.user?.email || request.user?.id }, 'Admin-triggered graph migration');
+      return { ok: true, campaign, result };
+    } catch (err) {
+      log.error({ err, campaignId: id }, 'migrate-graph failed');
+      return reply.code(500).send({ error: err.message });
+    }
+  });
+
+  fastify.get('/campaigns/:id/graph-health', guard(), async (request, reply) => {
+    const { id } = request.params;
+    try {
+      const campaign = await prisma.campaign.findUnique({
+        where: { id },
+        select: { id: true, name: true },
+      });
+      if (!campaign) return reply.code(404).send({ error: 'campaign not found' });
+      const report = await runGraphConsistencyCheck(id);
+      const extractionStats = getExtractionStats();
+      return { ok: true, campaign, report, extractionStats };
+    } catch (err) {
+      log.error({ err, campaignId: id }, 'graph-health failed');
+      return reply.code(500).send({ error: err.message });
+    }
+  });
+
+  // ── Graph Export/Import ─────────────────────────────────────────────
+
+  fastify.get('/campaigns/:id/export-graph', guard(), async (request, reply) => {
+    const { id } = request.params;
+    try {
+      const campaign = await prisma.campaign.findUnique({
+        where: { id },
+        select: { id: true, name: true },
+      });
+      if (!campaign) return reply.code(404).send({ error: 'campaign not found' });
+
+      const { nodes, edges } = await loadCampaignGraph(id);
+      const npcs = await prisma.campaignNPC.findMany({
+        where: { campaignId: id },
+        select: { id: true, name: true, lastLocationKind: true, lastLocationId: true },
+      });
+
+      const nodeList = [];
+      for (const [key, node] of nodes) {
+        nodeList.push({
+          id: node.id,
+          kind: node._kind,
+          name: node.canonicalName || node.displayName || node.name,
+          type: node.locationType || 'generic',
+          scale: node.scale ?? 5,
+          tags: node.tags || [],
+          atmosphere: node.atmosphere || null,
+          regionX: node.regionX ?? 0,
+          regionY: node.regionY ?? 0,
+        });
+      }
+
+      const edgeList = edges.map((e) => ({
+        id: e.id,
+        fromKind: e.fromKind,
+        fromId: e.fromId,
+        toKind: e.toKind,
+        toId: e.toId,
+        edgeType: e.edgeType,
+        category: e.category,
+        bidirectional: e.bidirectional,
+        weight: e.weight,
+        metadata: e.metadata,
+        discoveryState: e.discoveryState,
+        createdBy: e.createdBy,
+        campaignId: e.campaignId,
+      }));
+
+      return reply.send({
+        exportedAt: new Date().toISOString(),
+        campaignId: id,
+        campaignName: campaign.name,
+        nodes: nodeList,
+        edges: edgeList,
+        npcPositions: npcs.map((n) => ({
+          npcId: n.id,
+          npcName: n.name,
+          locationKind: n.lastLocationKind,
+          locationId: n.lastLocationId,
+        })),
+      });
+    } catch (err) {
+      log.error({ err, campaignId: id }, 'export-graph failed');
+      return reply.code(500).send({ error: err.message });
+    }
+  });
+
+  fastify.post('/campaigns/:id/import-graph', guard({
+    schema: {
+      body: {
+        type: 'object',
+        required: ['edges'],
+        properties: {
+          nodes: { type: 'array', maxItems: 500 },
+          edges: { type: 'array', maxItems: 2000 },
+          npcPositions: { type: 'array', maxItems: 200 },
+        },
+      },
+    },
+  }), async (request, reply) => {
+    const { id } = request.params;
+    try {
+      const campaign = await prisma.campaign.findUnique({
+        where: { id },
+        select: { id: true },
+      });
+      if (!campaign) return reply.code(404).send({ error: 'campaign not found' });
+
+      const { nodes = [], edges = [], npcPositions = [] } = request.body;
+      const result = { nodesCreated: 0, edgesCreated: 0, npcsMoved: 0, errors: [] };
+
+      // Upsert nodes as CampaignLocation
+      const nameToId = new Map();
+      for (const node of nodes) {
+        if (node.kind === 'world') {
+          nameToId.set(node.id, { kind: LOCATION_KIND_WORLD, id: node.id });
+          continue;
+        }
+        try {
+          const existing = await prisma.campaignLocation.findFirst({
+            where: { campaignId: id, name: node.name },
+          });
+          if (existing) {
+            nameToId.set(node.id, { kind: LOCATION_KIND_CAMPAIGN, id: existing.id });
+          } else {
+            const row = await prisma.campaignLocation.create({
+              data: {
+                campaignId: id,
+                name: node.name,
+                description: '',
+                locationType: node.type || 'generic',
+                tags: node.tags || [],
+                scale: node.scale ?? 5,
+                regionX: node.regionX ?? 0,
+                regionY: node.regionY ?? 0,
+              },
+            });
+            nameToId.set(node.id, { kind: LOCATION_KIND_CAMPAIGN, id: row.id });
+            result.nodesCreated++;
+          }
+        } catch (err) {
+          result.errors.push(`Node "${node.name}": ${err.message}`);
+        }
+      }
+
+      // Create edges
+      for (const edge of edges) {
+        const from = nameToId.get(edge.fromId) || { kind: edge.fromKind, id: edge.fromId };
+        const to = nameToId.get(edge.toId) || { kind: edge.toKind, id: edge.toId };
+        if (!from.id || !to.id) { result.errors.push(`Edge missing endpoint`); continue; }
+
+        try {
+          const exists = await prisma.locationEdge.findFirst({
+            where: {
+              fromKind: from.kind, fromId: from.id,
+              toKind: to.kind, toId: to.id,
+              edgeType: edge.edgeType, isActive: true,
+            },
+          });
+          if (!exists) {
+            await createEdge({
+              fromKind: from.kind, fromId: from.id,
+              toKind: to.kind, toId: to.id,
+              edgeType: edge.edgeType,
+              category: edge.category || 'movement',
+              bidirectional: edge.bidirectional ?? true,
+              weight: edge.weight ?? 1.0,
+              metadata: edge.metadata || {},
+              discoveryState: edge.discoveryState || 'known',
+              campaignId: id,
+              createdBy: 'admin',
+            });
+            result.edgesCreated++;
+          }
+        } catch (err) {
+          result.errors.push(`Edge ${edge.edgeType}: ${err.message}`);
+        }
+      }
+
+      // Move NPCs
+      for (const pos of npcPositions) {
+        if (!pos.npcId || !pos.locationId) continue;
+        try {
+          await prisma.campaignNPC.updateMany({
+            where: { id: pos.npcId, campaignId: id },
+            data: { lastLocationKind: pos.locationKind || LOCATION_KIND_WORLD, lastLocationId: pos.locationId },
+          });
+          result.npcsMoved++;
+        } catch (err) {
+          result.errors.push(`NPC ${pos.npcId}: ${err.message}`);
+        }
+      }
+
+      log.info({ campaignId: id, ...result, errors: result.errors.length }, 'Graph imported');
+      return reply.send({ ok: true, result });
+    } catch (err) {
+      log.error({ err, campaignId: id }, 'import-graph failed');
+      return reply.code(500).send({ error: err.message });
+    }
+  });
+
+  // ── Entity Browser (unified listing + cascade delete) ─────────────
+  // Admin tool: query across all 8 entity tables in parallel, merge into
+  // a unified shape for the entity browser UI. Single-entity + bulk delete
+  // with FK cascade.
+
+  const ENTITY_TYPES = [
+    'WorldNPC', 'WorldLocation', 'Road',
+    'CampaignNPC', 'CampaignLocation', 'CampaignEdge', 'CampaignQuest', 'Character',
+  ];
+
+  fastify.get('/entities', guard({
+    schema: {
+      querystring: {
+        type: 'object',
+        additionalProperties: false,
+        properties: {
+          type: { type: 'string', enum: ENTITY_TYPES },
+          search: { type: 'string', maxLength: 200 },
+          campaignId: ID_STRING,
+          page: { type: 'integer', minimum: 1, default: 1 },
+          limit: { type: 'integer', minimum: 1, maximum: 200, default: 50 },
+        },
+      },
+    },
+  }), async (request) => {
+    const { type, search, campaignId, page, limit } = request.query;
+    const skip = ((page || 1) - 1) * limit;
+    const searchFilter = search ? { contains: search, mode: 'insensitive' } : undefined;
+
+    const typesToQuery = type ? [type] : ENTITY_TYPES;
+    const queries = {};
+
+    if (typesToQuery.includes('WorldNPC')) {
+      const where = {};
+      if (searchFilter) where.name = searchFilter;
+      queries.WorldNPC = prisma.worldNPC.findMany({
+        where, take: limit, skip, orderBy: { updatedAt: 'desc' },
+        select: { id: true, name: true, role: true, alive: true, category: true, currentLocationId: true, updatedAt: true },
+      });
+    }
+    if (typesToQuery.includes('WorldLocation')) {
+      const where = {};
+      if (searchFilter) where.canonicalName = searchFilter;
+      queries.WorldLocation = prisma.worldLocation.findMany({
+        where, take: limit, skip, orderBy: { updatedAt: 'desc' },
+        select: { id: true, canonicalName: true, locationType: true, region: true, parentLocationId: true, updatedAt: true },
+      });
+    }
+    if (typesToQuery.includes('Road')) {
+      const where = {};
+      queries.Road = prisma.road.findMany({
+        where, take: limit, skip, orderBy: { createdAt: 'desc' },
+        select: {
+          id: true, distance: true, terrainType: true, difficulty: true,
+          from: { select: { canonicalName: true } },
+          to: { select: { canonicalName: true } },
+          createdAt: true,
+        },
+      });
+    }
+    if (typesToQuery.includes('CampaignNPC')) {
+      const where = {};
+      if (searchFilter) where.name = searchFilter;
+      if (campaignId) where.campaignId = campaignId;
+      queries.CampaignNPC = prisma.campaignNPC.findMany({
+        where, take: limit, skip, orderBy: { updatedAt: 'desc' },
+        select: {
+          id: true, name: true, campaignId: true, alive: true, worldNpcId: true,
+          campaign: { select: { name: true } },
+          updatedAt: true,
+        },
+      });
+    }
+    if (typesToQuery.includes('CampaignLocation')) {
+      const where = {};
+      if (searchFilter) where.name = searchFilter;
+      if (campaignId) where.campaignId = campaignId;
+      queries.CampaignLocation = prisma.campaignLocation.findMany({
+        where, take: limit, skip, orderBy: { createdAt: 'desc' },
+        select: {
+          id: true, name: true, locationType: true, campaignId: true,
+          campaign: { select: { name: true } },
+          createdAt: true,
+        },
+      });
+    }
+    if (typesToQuery.includes('CampaignEdge')) {
+      const where = {};
+      if (campaignId) where.campaignId = campaignId;
+      queries.CampaignEdge = prisma.campaignEdge.findMany({
+        where, take: limit, skip, orderBy: { createdAt: 'desc' },
+        select: {
+          id: true, campaignId: true, relationType: true, fromKind: true, fromId: true,
+          toKind: true, toId: true, distance: true, visibility: true,
+          campaign: { select: { name: true } },
+          createdAt: true,
+        },
+      });
+    }
+    if (typesToQuery.includes('CampaignQuest')) {
+      const where = {};
+      if (searchFilter) where.name = searchFilter;
+      if (campaignId) where.campaignId = campaignId;
+      queries.CampaignQuest = prisma.campaignQuest.findMany({
+        where, take: limit, skip, orderBy: { updatedAt: 'desc' },
+        select: {
+          id: true, name: true, type: true, status: true, campaignId: true,
+          campaign: { select: { name: true } },
+          updatedAt: true,
+        },
+      });
+    }
+    if (typesToQuery.includes('Character')) {
+      const where = {};
+      if (searchFilter) where.name = searchFilter;
+      queries.Character = prisma.character.findMany({
+        where, take: limit, skip, orderBy: { updatedAt: 'desc' },
+        select: {
+          id: true, name: true, species: true, characterLevel: true,
+          lockedCampaignId: true, lockedCampaignName: true,
+          updatedAt: true,
+        },
+      });
+    }
+
+    // Sidebar counts must NOT depend on the active `type` filter — otherwise
+    // clicking a type zeros out every other counter. They DO honor scope
+    // filters (search + campaignId) so the sidebar tracks the search results.
+    const countWhere = {
+      WorldNPC: searchFilter ? { name: searchFilter } : {},
+      WorldLocation: searchFilter ? { canonicalName: searchFilter } : {},
+      Road: {},
+      CampaignNPC: {
+        ...(searchFilter ? { name: searchFilter } : {}),
+        ...(campaignId ? { campaignId } : {}),
+      },
+      CampaignLocation: {
+        ...(searchFilter ? { name: searchFilter } : {}),
+        ...(campaignId ? { campaignId } : {}),
+      },
+      CampaignEdge: campaignId ? { campaignId } : {},
+      CampaignQuest: {
+        ...(searchFilter ? { name: searchFilter } : {}),
+        ...(campaignId ? { campaignId } : {}),
+      },
+      Character: searchFilter ? { name: searchFilter } : {},
+    };
+
+    const countQueries = ENTITY_TYPES.map((t) =>
+      prisma[prismaModelName(t)].count({ where: countWhere[t] }),
+    );
+
+    const queryKeys = Object.keys(queries);
+    const queryValues = Object.values(queries);
+
+    const [countsArr, ...rowResults] = await Promise.all([
+      Promise.all(countQueries),
+      ...queryValues,
+    ]);
+
+    const counts = {};
+    ENTITY_TYPES.forEach((t, i) => { counts[t] = countsArr[i]; });
+
+    const resultByType = {};
+    queryKeys.forEach((k, i) => { resultByType[k] = rowResults[i]; });
+
+    const entities = [];
+    for (const t of ENTITY_TYPES) {
+      const rows = resultByType[t] || [];
+      for (const row of rows) {
+        entities.push(normalizeEntity(t, row));
+      }
+    }
+
+    return { entities, counts, total: entities.length };
+  });
+
+  fastify.delete('/entities/:type/:id', guard(), async (request, reply) => {
+    const { type, id } = request.params;
+    if (!ENTITY_TYPES.includes(type)) {
+      return reply.code(400).send({ error: `Invalid entity type: ${type}` });
+    }
+    try {
+      const modelName = prismaModelName(type);
+      await prisma[modelName].delete({ where: { id } });
+      return { deleted: true, type, id };
+    } catch (err) {
+      if (err?.code === 'P2025') return reply.code(404).send({ error: 'Entity not found' });
+      log.error({ err, type, id }, 'entity delete failed');
+      return reply.code(500).send({ error: err.message });
+    }
+  });
+
+  fastify.delete('/entities/bulk', guard({
+    schema: {
+      body: {
+        type: 'object',
+        required: ['items'],
+        properties: {
+          items: {
+            type: 'array',
+            maxItems: 50,
+            items: {
+              type: 'object',
+              required: ['type', 'id'],
+              properties: {
+                type: { type: 'string' },
+                id: { type: 'string' },
+              },
+            },
+          },
+        },
+      },
+    },
+  }), async (request, reply) => {
+    const { items } = request.body;
+    const invalid = items.filter((i) => !ENTITY_TYPES.includes(i.type));
+    if (invalid.length) {
+      return reply.code(400).send({ error: `Invalid types: ${invalid.map((i) => i.type).join(', ')}` });
+    }
+    const deleted = [];
+    const errors = [];
+    await prisma.$transaction(async (tx) => {
+      for (const { type: t, id } of items) {
+        try {
+          const modelName = prismaModelName(t);
+          await tx[modelName].delete({ where: { id } });
+          deleted.push({ type: t, id });
+        } catch (err) {
+          errors.push({ type: t, id, error: err?.code === 'P2025' ? 'not_found' : err.message });
+        }
+      }
+    });
+    return { deleted, errors };
+  });
+
   // ── Model overrides (global admin config) ──
 
   fastify.get('/model-overrides', guard(), async () => {
@@ -1060,6 +1583,51 @@ export async function adminLivingWorldRoutes(fastify) {
     await setModelOverrides(overrides);
     return { ok: true, overrides };
   });
+
+  // ── Available fonts (scan public/fonts/) ──
+
+  const __dirnameLW = fileURLToPath(new URL('.', import.meta.url));
+  const FONTS_DIR = findFontsDir(__dirnameLW);
+
+  fastify.get('/available-fonts', guard(), async () => {
+    let entries;
+    try {
+      entries = readdirSync(FONTS_DIR);
+    } catch {
+      return [];
+    }
+    const results = [];
+    for (const entry of entries) {
+      const entryPath = join(FONTS_DIR, entry);
+      if (!statSync(entryPath).isDirectory()) continue;
+      const files = collectTtfFiles(entryPath, entry);
+      if (files.length > 0) results.push({ name: entry, files });
+    }
+    return results;
+  });
+}
+
+function collectTtfFiles(dir, baseName, prefix = '') {
+  const results = [];
+  for (const item of readdirSync(dir)) {
+    const full = join(dir, item);
+    if (statSync(full).isDirectory()) {
+      results.push(...collectTtfFiles(full, baseName, prefix ? `${prefix}/${item}` : item));
+    } else if (item.endsWith('.ttf')) {
+      results.push(prefix ? `${prefix}/${item}` : item);
+    }
+  }
+  return results;
+}
+
+function findFontsDir(fromDir) {
+  // Docker/prod: fonts baked into public/dist/fonts by Vite build
+  const dockerPath = resolve(fromDir, '..', '..', 'public', 'dist', 'fonts');
+  // Host dev: repo root public/fonts
+  const hostPath = resolve(fromDir, '..', '..', '..', 'public', 'fonts');
+  try { statSync(dockerPath); return dockerPath; } catch { /* noop */ }
+  try { statSync(hostPath); return hostPath; } catch { /* noop */ }
+  return hostPath;
 }
 
 async function nextLoreOrder() {
@@ -1078,4 +1646,41 @@ function safeJson(s) {
   if (!s) return null;
   if (typeof s === 'object') return s;
   try { return JSON.parse(s); } catch { return null; }
+}
+
+function prismaModelName(entityType) {
+  const map = {
+    WorldNPC: 'worldNPC',
+    WorldLocation: 'worldLocation',
+    Road: 'road',
+    CampaignNPC: 'campaignNPC',
+    CampaignLocation: 'campaignLocation',
+    CampaignEdge: 'campaignEdge',
+    CampaignQuest: 'campaignQuest',
+    Character: 'character',
+  };
+  return map[entityType] || entityType;
+}
+
+function normalizeEntity(type, row) {
+  switch (type) {
+    case 'WorldNPC':
+      return { id: row.id, type, name: row.name, status: row.alive ? 'alive' : 'dead', details: row.role || '', source: 'world', campaignName: null };
+    case 'WorldLocation':
+      return { id: row.id, type, name: row.canonicalName, status: row.locationType, details: row.region || '', source: 'world', campaignName: null, parentId: row.parentLocationId };
+    case 'Road':
+      return { id: row.id, type, name: `${row.from?.canonicalName || '?'} ↔ ${row.to?.canonicalName || '?'}`, status: row.terrainType, details: `${row.distance || '?'} km`, source: 'world', campaignName: null };
+    case 'CampaignNPC':
+      return { id: row.id, type, name: row.name, status: row.alive ? 'alive' : 'dead', details: row.worldNpcId ? 'linked' : 'ephemeral', source: 'campaign', campaignId: row.campaignId, campaignName: row.campaign?.name || null };
+    case 'CampaignLocation':
+      return { id: row.id, type, name: row.name, status: row.locationType, details: '', source: 'campaign', campaignId: row.campaignId, campaignName: row.campaign?.name || null };
+    case 'CampaignEdge':
+      return { id: row.id, type, name: `${row.fromKind}:${row.fromId} ↔ ${row.toKind}:${row.toId}`, status: row.relationType, details: row.distance ? `${row.distance} km` : row.visibility, source: 'campaign', campaignId: row.campaignId, campaignName: row.campaign?.name || null };
+    case 'CampaignQuest':
+      return { id: row.id, type, name: row.name, status: row.status, details: row.type || '', source: 'campaign', campaignId: row.campaignId, campaignName: row.campaign?.name || null };
+    case 'Character':
+      return { id: row.id, type, name: row.name, status: `Lv.${row.characterLevel || 1}`, details: row.species || '', source: 'world', campaignName: row.lockedCampaignName || null };
+    default:
+      return { id: row.id, type, name: row.name || row.id, status: '', details: '', source: 'unknown', campaignName: null };
+  }
 }

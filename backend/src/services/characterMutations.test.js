@@ -247,4 +247,35 @@ describe('applyCharacterStateChanges', () => {
       expect(result.materialBag[0].quantity).toBe(3);
     });
   });
+
+  describe('skillProgress normalization', () => {
+    it('maps diacritic skill name to canonical key (Spostrzegawczość → Spostrzegawczosc)', () => {
+      const c = baseCharacter({ skills: { Spostrzegawczosc: { level: 2, xp: 0, cap: 10 } } });
+      const result = applyCharacterStateChanges(c, {
+        skillProgress: { 'Spostrzegawczość': 10 },
+      });
+      expect(result.skills.Spostrzegawczosc.xp).toBe(10);
+      expect(result.skills.Spostrzegawczosc.level).toBe(2);
+      expect(result.skills['Spostrzegawczość']).toBeUndefined();
+      expect(result.skillBadges || []).toHaveLength(0);
+    });
+
+    it('maps case-insensitive skill name to canonical key', () => {
+      const c = baseCharacter({ skills: { Perswazja: { level: 1, xp: 0, cap: 10 } } });
+      const result = applyCharacterStateChanges(c, {
+        skillProgress: { 'perswazja': 5 },
+      });
+      expect(result.skills.Perswazja.xp).toBe(5);
+      expect(result.skills['perswazja']).toBeUndefined();
+    });
+
+    it('still creates badge for truly unknown skill names', () => {
+      const c = baseCharacter();
+      const result = applyCharacterStateChanges(c, {
+        skillProgress: { 'Latanie na miotle': 10 },
+      });
+      expect(result.skillBadges).toHaveLength(1);
+      expect(result.skillBadges[0].name).toBe('Latanie na miotle');
+    });
+  });
 });

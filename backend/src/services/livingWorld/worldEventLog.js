@@ -121,3 +121,118 @@ export async function forNpc({ worldNpcId, campaignId = null, sinceTimestamp = n
 export function parseEventPayload(event) {
   return (event?.payload && typeof event.payload === 'object') ? event.payload : {};
 }
+
+// ── Oś 3 — quest emergence: hook'i z npcAgentLoop ─────────────────────
+//
+// `appendQuestOpportunity` zapisuje hook gdy NPC w agent loop wybierze
+// `needs_player_help`. To NIE jest jeszcze quest — tylko sygnał dla scene
+// generator-a. Materializacja w `CampaignQuest` dzieje się przy emit
+// `questOffers` przez LLM (po widzeniu hook-a w prompcie).
+//
+// `forLocationOpportunities(locationKind, locationId, sinceDays)` zwraca
+// hook-i powiązane z lokacją. Phase 1 — używamy `worldLocationId` (gdy
+// hook był wystawiony przy WorldNPC w canonical lokacji); CampaignLocation
+// hook-i mają campaignId+locationName w payloadzie i są filtrowane lokalnie.
+
+export async function appendQuestOpportunity({
+  worldNpcId = null,
+  worldLocationId = null,
+  campaignId = null,
+  questGiverName,
+  locationName = null,
+  pitch,
+  type = 'side',
+  involvedNpcs = [],
+  goalContext = null,
+  gameTime = null,
+}) {
+  if (!questGiverName || !pitch) {
+    log.warn({ questGiverName: !!questGiverName, pitch: !!pitch }, 'appendQuestOpportunity called without required fields');
+    return null;
+  }
+  return appendEvent({
+    worldNpcId,
+    worldLocationId,
+    campaignId,
+    eventType: 'quest_opportunity',
+    payload: {
+      questGiverName,
+      locationName,
+      pitch,
+      type,
+      involvedNpcs: Array.isArray(involvedNpcs) ? involvedNpcs.slice(0, 6) : [],
+      goalContext,
+      // materializedAs: jest dopisywane do payloadu w `processQuestOffers`
+      // gdy LLM wybierze materializację. Dopóki null/undefined — hook jest
+      // "live" (warto pokazać LLM-owi w pendingHooks).
+    },
+    visibility: 'campaign',
+    gameTime,
+  });
+}
+
+/**
+ * Hook-i live (jeszcze nie zmaterializowane) per lokacja. Filtr wiek-u w
+ * dniach gry — domyślnie 7 (cap kampanii). Zwraca tablicę payload-ów +
+ * meta `{ hookId, gameTime, payload }` dla łatwego rendering w prompcie.
+ */
+export async function forLocationOpportunities({ campaignId, worldLocationId = null, locationName = null, sinceTimestamp = null, limit = 5 }) {
+  if (!campaignId) return [];
+  try {
+    const where = {
+      campaignId,
+      eventType: 'quest_opportunity',
+    };
+    if (worldLocationId) where.worldLocationId = worldLocationId;
+    if (sinceTimestamp) where.gameTime = { gte: sinceTimestamp };
+
+    const events = await prisma.worldEvent.findMany({
+      where,
+      orderBy: { gameTime: 'desc' },
+      take: limit * 2,  // overfetch — filtrujemy materializedAs po stronie JS
+    });
+    const results = [];
+    for (const ev of events) {
+      const payload = parseEventPayload(ev);
+      if (payload.materializedAs) continue;  // już zmateralizowane
+      // Filtr nazwy lokacji jeśli worldLocationId nie był przekazany
+      if (!worldLocationId && locationName && payload.locationName && payload.locationName !== locationName) {
+        continue;
+      }
+      results.push({
+        hookId: ev.id,
+        worldNpcId: ev.worldNpcId,
+        gameTime: ev.gameTime,
+        payload,
+      });
+      if (results.length >= limit) break;
+    }
+    return results;
+  } catch (err) {
+    log.error({ err, campaignId, worldLocationId }, 'forLocationOpportunities query failed');
+    return [];
+  }
+}
+
+/**
+ * Mark a quest_opportunity event as materialized (when LLM emits questOffer
+ * with `relatedHookId`). Update payload.materializedAs = questId — ledger
+ * pozostaje append-only (nie usuwamy), ale follow-up queries pomijają go.
+ */
+export async function markQuestOpportunityMaterialized(hookId, questId) {
+  if (!hookId || !questId) return false;
+  try {
+    const ev = await prisma.worldEvent.findUnique({ where: { id: hookId } });
+    if (!ev) return false;
+    const payload = parseEventPayload(ev);
+    payload.materializedAs = questId;
+    await prisma.worldEvent.update({
+      where: { id: hookId },
+      data: { payload },
+    });
+    return true;
+  } catch (err) {
+    log.warn({ err: err?.message, hookId, questId }, 'markQuestOpportunityMaterialized failed (non-fatal)');
+    return false;
+  }
+}

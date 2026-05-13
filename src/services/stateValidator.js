@@ -16,7 +16,7 @@ const DEFAULTS = { ...STATE_CHANGE_LIMITS };
 
 const RARITY_GATES = { common: 0, uncommon: 0, rare: 16, exotic: 31 };
 
-export function validateStateChanges(stateChanges, currentState, config = {}) {
+export function validateStateChanges(stateChanges, currentState, config = {}, context = {}) {
   if (!stateChanges || typeof stateChanges !== 'object') {
     return { validated: stateChanges, warnings: [], corrections: [] };
   }
@@ -26,6 +26,8 @@ export function validateStateChanges(stateChanges, currentState, config = {}) {
   const corrections = [];
   const validated = { ...stateChanges };
   const character = currentState?.character;
+  const badgeCampaignId = context?.campaignId ?? null;
+  const badgeSceneIndex = Number.isInteger(context?.sceneIndex) ? context.sceneIndex : null;
   coerceItemAliases(validated);
 
   if (validated.xp !== undefined && validated.xp !== null) {
@@ -54,6 +56,22 @@ export function validateStateChanges(stateChanges, currentState, config = {}) {
     }
     if (Math.abs(validated.woundsChange) > limits.maxWoundsDelta) {
       warnings.push(`Large wounds delta: ${validated.woundsChange}`);
+    }
+  }
+
+  // manaChange safeguard — gdy AI/pipeline emituje NaN/Infinity/0, traktuj
+  // jako zepsutą próbę regeneracji i normalizuj do +1. Wartości ujemne to
+  // legalne koszty zaklęć (passthrough). Zapis do corrections[] daje toast
+  // validation_warning i ślad w devLog — safeguard nie znika cicho.
+  if (validated.manaChange !== undefined && validated.manaChange !== null) {
+    if (!Number.isFinite(validated.manaChange) || validated.manaChange === 0) {
+      // eslint-disable-next-line no-console
+      console.warn('[safeguard] manaChange normalized to +1', {
+        original: validated.manaChange,
+        stateChangeKeys: Object.keys(stateChanges || {}),
+      });
+      corrections.push(`manaChange ${validated.manaChange} normalized to +1`);
+      validated.manaChange = 1;
     }
   }
 
@@ -117,10 +135,17 @@ export function validateStateChanges(stateChanges, currentState, config = {}) {
   if (validated.skillProgress && typeof validated.skillProgress === 'object') {
     const maxSkillXpPerScene = 500; // max for a single boss kill
     const rebuilt = {};
+    const badges = [];
     for (const [skillName, xpVal] of Object.entries(validated.skillProgress)) {
       const canon = normalizeSkillName(skillName);
       if (!canon) {
-        warnings.push(`Unknown skill: "${skillName}"`);
+        badges.push({
+          name: skillName,
+          earnedAt: new Date().toISOString(),
+          redeemed: false,
+          campaignId: badgeCampaignId,
+          sceneIndex: badgeSceneIndex,
+        });
         continue;
       }
       if (typeof xpVal !== 'number' || xpVal <= 0) {
@@ -136,6 +161,9 @@ export function validateStateChanges(stateChanges, currentState, config = {}) {
       rebuilt[canon] = (rebuilt[canon] || 0) + finalXp;
     }
     validated.skillProgress = rebuilt;
+    if (badges.length > 0) {
+      validated.skillBadges = [...(validated.skillBadges || []), ...badges];
+    }
   }
 
   if (validated.removeItems && Array.isArray(validated.removeItems) && character?.inventory) {

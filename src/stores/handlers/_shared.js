@@ -1,8 +1,23 @@
+// DEPRECATION NOTE: The following world-state fields are DEPRECATED as
+// independent mutable state — reads are proxied from the location graph API:
+//   - world.mapState         → graph nodes query
+//   - world.mapConnections   → graph movement edges
+//   - world.exploredLocations → DiscoveryState = visited on graph nodes
+//   - world.currentLocation (string) → world.currentLocationRef ({ kind, id })
+//   - world.knowledgeBase.locations → graph node metadata (visitCount, npcsEncountered)
+//   - npc.lastLocation (string) → npc.locationRef ({ kind, id })
+// They remain populated for backward-compat reads but are no longer the
+// source of truth. The LocationEdge table + graphExtractor pipeline owns
+// spatial connectivity. See backend/src/services/locationGraph/.
+// Faza 3a — wprowadzone composite refs jako nowy primary path; legacy stringi
+// zachowane do czasu Fazy 8 cleanup.
+
 import { calculateMaxWounds } from '../../services/gameState';
 import { DEFAULT_CHARACTER_AGE, normalizeCharacterAge } from '../../services/characterAge';
 import { createStartingSkills } from '../../data/rpgSystem';
 import { shortId } from '../../utils/ids';
 import { slugifyItemName } from '../../../shared/domain/itemKeys.js';
+import { sanitizeMana } from '../../../shared/domain/mana.js';
 
 export function createDefaultNeeds() {
   return { hunger: 100, thirst: 100, bladder: 100, hygiene: 100, rest: 100 };
@@ -83,6 +98,7 @@ export function createDefaultCharacter() {
     inventory: [],
     materialBag: [],
     statuses: [],
+    activeEffects: [],
     backstory: '',
     customAttackPresets: [],
     equipped: { mainHand: null, offHand: null, armour: null },
@@ -99,10 +115,11 @@ export function normalizeCharacter(character) {
     ...character,
     age: normalizeCharacterAge(character.age),
     attributes: character.attributes || { sila: 10, inteligencja: 10, charyzma: 10, zrecznosc: 10, wytrzymalosc: 10, szczescie: 5 },
-    mana: character.mana || { current: 0, max: 0 },
+    mana: sanitizeMana(character.mana),
     spells: character.spells || { known: [], usageCounts: {}, scrolls: [] },
     equipped: character.equipped || { mainHand: null, offHand: null, armour: null },
     materialBag: character.materialBag || [],
+    activeEffects: character.activeEffects || [],
   };
 }
 
@@ -157,6 +174,9 @@ export const initialState = {
     mapState: [],
     mapConnections: [],
     currentLocation: '',
+    // Faza 3a — composite ref do node grafu lokacji ({ kind: 'world'|'campaign', id: UUID } | null).
+    // Preferowany primary path; `currentLocation` (string) zachowane jako legacy do Fazy 8.
+    currentLocationRef: null,
     timeState: { day: 1, timeOfDay: 'morning', hour: 6, season: 'unknown' },
     activeEffects: [],
     compressedHistory: '',

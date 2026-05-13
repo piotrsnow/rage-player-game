@@ -106,13 +106,28 @@ export function buildNeedsCrisisBlock({ needsSystemEnabled, characterNeeds }) {
 Narrate crisis effects (weakness, funny walk, stench, drowsiness). Apply -10 to related tests. At least 1 suggestedAction must address the most urgent need.`;
 }
 
-export function buildActiveQuestsBlock(quests) {
-  // Tylko main questy — side/personal/faction są wyłączone w tym buildzie
-  // (do wdrożenia jako system między-kampaniami). Patrz
-  // knowledge/ideas/side-quests-between-campaigns.md.
+/**
+ * Active quests rendered for the LLM. Two modes:
+ *  - questGraphEnabled=false (default, legacy): liniowa lista objectives,
+ *    pojedynczy ▶ NEXT marker, identyczne renderowanie jak przed osią 1.
+ *  - questGraphEnabled=true (oś 1+5): pełen graf z [nodeKey] markerami,
+ *    statusami DISCOVERED/UNDISCOVERED, BRANCHES, [STALLED] dla osi 4.
+ *
+ * Filter: tylko main questy. Side/personal w wodlu osi 3 (emergence) ale
+ * render w prompcie nadal trzymamy main-only — side questy wyciekają
+ * uwagę modelu od głównej fabuły.
+ */
+export function buildActiveQuestsBlock(quests, { questGraphEnabled = false } = {}) {
   const active = (quests.active || []).filter((q) => q.type === 'main');
   if (active.length === 0) return null;
 
+  if (!questGraphEnabled) {
+    return buildLegacyActiveQuestsBlock(active);
+  }
+  return buildGraphActiveQuestsBlock(active);
+}
+
+function buildLegacyActiveQuestsBlock(active) {
   const lines = ['Active Quests (use id=... for completedQuests; for questUpdates.objectiveId pass the number shown before the objective):'];
   for (const q of active.slice(0, 5)) {
     let line = `- ${q.name} (id=${q.id}) [${q.type || 'side'}]: ${q.description || ''}`;
@@ -137,6 +152,190 @@ export function buildActiveQuestsBlock(quests) {
     }
     lines.push(line);
   }
+  return lines.join('\n');
+}
+
+function statusLabel(status) {
+  switch (status) {
+    case 'done': return 'DONE';
+    case 'pending': return 'PENDING';
+    case 'locked': return 'LOCKED';
+    case 'skipped': return 'SKIPPED';
+    case 'failed': return 'FAILED';
+    default: return String(status || 'pending').toUpperCase();
+  }
+}
+
+function buildGraphActiveQuestsBlock(active) {
+  const lines = ['Active Quests (graph-aware — emit questUpdates.nodeKey, branchChoice, objectiveReveals, branchGroupReveals):'];
+  for (const q of active.slice(0, 5)) {
+    let header = `- ${q.name} (id=${q.id}) [${q.type || 'side'}]`;
+    if (q.status === 'stalled') header += ' [STALLED]';
+    if (q.status === 'failed') header += ' [FAILED]';
+    if (q.description) header += `: ${q.description}`;
+    if (q.completionCondition) header += ` | Goal: ${q.completionCondition}`;
+    if (q.questGiverId) header += ` | Giver: ${q.questGiverId}`;
+    const turnIn = q.turnInNpcId || q.questGiverId;
+    if (turnIn && turnIn !== q.questGiverId) header += ` | Turn in: ${turnIn}`;
+    lines.push(header);
+
+    if (Array.isArray(q.mutationLog) && q.mutationLog.length > 0) {
+      const last = q.mutationLog[q.mutationLog.length - 1];
+      lines.push(`  Mutation: ${last.mutation} — ${last.reason || '(no reason)'} `);
+    }
+
+    const objectives = Array.isArray(q.objectives) ? q.objectives : [];
+    if (objectives.length === 0) continue;
+
+    let undiscoveredCount = 0;
+    const branchGroups = new Map(); // group → { discoveredKeys[], totalKeys[] }
+    for (const obj of objectives) {
+      const nk = obj.nodeKey || `(no_key_${obj.description?.slice(0, 12) || ''})`;
+      const status = obj.status || (obj.completed ? 'done' : 'pending');
+      const discovered = obj.discovered !== false;
+      const tag = discovered ? 'DISCOVERED' : 'UNDISCOVERED';
+      const isReachable = status === 'pending' || status === 'locked';
+      if (!discovered && isReachable) undiscoveredCount += 1;
+
+      let line = `  • [${nk}] ${tag}, ${statusLabel(status)}`;
+      if (status === 'pending' && discovered) line += ' ← NEXT (player knows)';
+      if (status === 'locked' && discovered) line += ' ← visible-locked (player aware, needs parents)';
+      if (discovered) {
+        line += ` — ${obj.description || ''}`;
+      } else {
+        line += ' — (player sees as ???)';
+      }
+      const meta = [];
+      if (Array.isArray(obj.parents) && obj.parents.length > 0) meta.push(`parents: ${obj.parents.join(',')}`);
+      if (obj.branchGroup) meta.push(`branchGroup: ${obj.branchGroup}`);
+      if (obj.branchType) meta.push(`branchType: ${obj.branchType}`);
+      if (obj.choiceLabel) meta.push(`choice: "${obj.choiceLabel}"`);
+      if (obj.failsOn?.npcDead?.length) meta.push(`failsOn.npcDead: ${obj.failsOn.npcDead.join(',')}`);
+      if (obj.failsOn?.deadline) meta.push(`deadline: ${obj.failsOn.deadline}`);
+      if (meta.length > 0) line += `   {${meta.join(' | ')}}`;
+      lines.push(line);
+
+      if (obj.branchGroup) {
+        if (!branchGroups.has(obj.branchGroup)) branchGroups.set(obj.branchGroup, { discovered: [], all: [] });
+        const g = branchGroups.get(obj.branchGroup);
+        g.all.push(obj.nodeKey);
+        if (discovered) g.discovered.push(obj.nodeKey);
+      }
+    }
+
+    if (branchGroups.size > 0) {
+      const groupLines = [];
+      for (const [group, info] of branchGroups.entries()) {
+        const discovered = info.discovered.filter(Boolean);
+        if (discovered.length === 0) continue;
+        groupLines.push(`${group} (player can choose: ${discovered.join(' | ')})`);
+      }
+      if (groupLines.length > 0) {
+        lines.push(`  Branches active: ${groupLines.join('; ')}`);
+      }
+    }
+
+    if (undiscoveredCount > 0) {
+      lines.push(`  Hidden objectives: ${undiscoveredCount} (player sees as "???" — emit objectiveReveals only when narrative justifies it)`);
+    }
+  }
+  return lines.join('\n');
+}
+
+/**
+ * Oś 2 — relacje NPC obecnych w scenie. Pokazuje top-15 najsilniejszych
+ * relacji (po |strength|) dla NPC obecnych w `currentLocation`. Pomaga
+ * LLM-owi pisać narrację konsekwentną z istniejącymi powiązaniami i
+ * zachęca do emitowania `actionType` w `npcMemoryUpdates` gdy player robi
+ * coś z bohaterem powiązanym (działający przez ripple service na stronie BE).
+ *
+ * Renderuje dwukierunkowo (NPC A → NPC B i A→B w odwrotnym sensie) tylko
+ * jeśli oba NPC są w lokacji — inaczej tylko strona z source-em obecnym.
+ */
+export function buildNpcRelationshipsBlock(world) {
+  const npcs = world.npcs || [];
+  const currentLoc = world.currentLocation || '';
+  if (npcs.length === 0 || !currentLoc) return null;
+
+  const npcsHere = npcs.filter(
+    (n) => n.alive !== false && n.lastLocation && currentLoc && n.lastLocation.toLowerCase() === currentLoc.toLowerCase(),
+  );
+  if (npcsHere.length === 0) return null;
+
+  const here = new Set(npcsHere.map((n) => (n.name || '').toLowerCase()));
+  const edges = [];
+  for (const src of npcsHere) {
+    const rels = Array.isArray(src.relationships) ? src.relationships : [];
+    for (const r of rels) {
+      if (!r?.npcName || !r?.type) continue;
+      const targetLower = String(r.npcName).toLowerCase();
+      const inScene = here.has(targetLower);
+      const strength = typeof r.strength === 'number' ? r.strength : 0;
+      const ripple = typeof r.rippleStrength === 'number' ? r.rippleStrength : 50;
+      edges.push({
+        sourceName: src.name,
+        targetName: r.npcName,
+        targetType: r.targetType || 'npc',
+        relation: r.type,
+        strength,
+        rippleStrength: ripple,
+        bothInScene: inScene,
+      });
+    }
+  }
+  if (edges.length === 0) return null;
+
+  edges.sort((a, b) => Math.abs(b.strength) - Math.abs(a.strength));
+  const top = edges.slice(0, 15);
+  const lines = [
+    'NPC Relationships (active — use to motivate ripple effects via npcMemoryUpdates.actionType):',
+  ];
+  for (const e of top) {
+    const arrow = e.bothInScene ? '<->' : '-->';
+    lines.push(
+      `- ${e.sourceName} ${arrow} ${e.targetName} | ${e.relation} (strength: ${e.strength}, ripple: ${e.rippleStrength}${e.targetType !== 'npc' ? `, ${e.targetType}` : ''})`,
+    );
+  }
+  lines.push(
+    'When the player aids/harms one NPC, emit `npcMemoryUpdates` with `actionType` (killed|saved|betrayed|aided|insulted|broke_promise|kept_promise) — backend will propagate disposition to related NPC automatically. Reference relationships in dialog ("Słyszałem co zrobiłeś z moim bratem...").',
+  );
+  return lines.join('\n');
+}
+
+/**
+ * Oś 3 — pending quest opportunities (hook'i z npcAgentLoop). Renderowane
+ * w prompcie kiedy gracz jest w lokacji w której agent NPC zostawił hook
+ * `needs_player_help`. LLM decyduje narracyjnie czy emit `questOffers` w
+ * tej scenie. Dane są wypełniane w Etapie D — tutaj sygnatura + format
+ * gotowe na wpięcie.
+ *
+ * `world.pendingHooks: { questGiverName, locationName, pitch, type, involvedNpcs[],
+ *                         relations[], gameTimeAgoLabel, hookId }[]`
+ */
+export function buildPendingQuestHooksBlock(world) {
+  const hooks = Array.isArray(world?.pendingHooks) ? world.pendingHooks : [];
+  if (hooks.length === 0) return null;
+
+  const lines = ['Pending quest opportunities (offscreen NPC agency — materialize via questOffers when narrative permits):'];
+  for (const h of hooks.slice(0, 5)) {
+    let line = `- ${h.questGiverName || '?'} (questGiver`;
+    if (h.locationName) line += `, found at ${h.locationName}`;
+    line += '): ';
+    line += h.pitch || '(no pitch)';
+    if (h.type) line += ` [${h.type}]`;
+    if (Array.isArray(h.involvedNpcs) && h.involvedNpcs.length > 0) {
+      line += ` | involved: ${h.involvedNpcs.join(', ')}`;
+    }
+    if (Array.isArray(h.relations) && h.relations.length > 0) {
+      line += ` | relations: ${h.relations.join('; ')}`;
+    }
+    if (h.gameTimeAgoLabel) line += ` [${h.gameTimeAgoLabel}]`;
+    if (h.hookId) line += ` (hookId=${h.hookId})`;
+    lines.push(line);
+  }
+  lines.push(
+    'Materialize at most one per scene. When emitting questOffers, copy questGiverId from the hook + include relatedHookId. Side/personal quests in living-world MUST have ≥2 objectives + ≥1 branchGroup (XOR moral choice) when relations contradict.',
+  );
   return lines.join('\n');
 }
 

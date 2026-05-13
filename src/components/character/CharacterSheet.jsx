@@ -8,9 +8,11 @@ import {
   useGameSlice,
   useGameDispatch,
   useGameAutoSave,
+  useGameWorld,
 } from '../../stores/gameSelectors';
 import { useSettings } from '../../contexts/SettingsContext';
 import { useMultiplayer } from '../../contexts/MultiplayerContext';
+import { useModals } from '../../contexts/ModalContext';
 import { useModalA11y } from '../../hooks/useModalA11y';
 import { useAI } from '../../hooks/useAI';
 import { storage } from '../../services/storage';
@@ -28,10 +30,12 @@ export default function CharacterSheet({ onClose }) {
   const soloCharacter = useGameCharacter();
   const soloCampaign = useGameCampaign();
   const soloScenes = useGameScenes();
+  const soloWorld = useGameWorld();
   const characterVoiceMap = useGameSlice((s) => s.characterVoiceMap);
   const { settings, voicePools } = useSettings();
   const mp = useMultiplayer();
   const { ensureMissingInventoryImages } = useAI();
+  const { playerActionHandlerRef } = useModals();
 
   const isMultiplayer = mp.state.isMultiplayer && mp.state.phase === 'playing';
   const mpGameState = mp.state.gameState;
@@ -106,6 +110,21 @@ export default function CharacterSheet({ onClose }) {
     : myCharacter;
 
   const attrPoints = displayCharacter?.attributePoints || 0;
+
+  const activeWorld = isMultiplayer ? mpGameState?.world : soloWorld;
+  const currentLocation = activeWorld?.currentLocation;
+  const npcsInScene = (activeWorld?.npcs || []).filter(
+    (n) => n.alive !== false && n.lastLocation === currentLocation
+  );
+
+  const isViewingOwnCharacter = !isMultiplayer || (displayCharacter && displayCharacter.odId === mp.state.myOdId);
+  const onItemAction = (hasActiveGame && isViewingOwnCharacter && playerActionHandlerRef?.current)
+    ? (actionText) => {
+        const handler = playerActionHandlerRef.current;
+        onClose();
+        if (handler) handler(actionText, true, false);
+      }
+    : null;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4" role="dialog" aria-modal="true" aria-label={t('nav.characterSheet')} onClick={onClose}>
@@ -262,6 +281,8 @@ export default function CharacterSheet({ onClose }) {
                 isMultiplayer={isMultiplayer}
                 campaign={campaign}
                 scenes={isMultiplayer ? mpGameState?.scenes : soloScenes}
+                onItemAction={onItemAction}
+                npcsInScene={npcsInScene}
                 onPortraitChange={(url) => {
                   dispatch({ type: 'UPDATE_CHARACTER', payload: { portraitUrl: url } });
                   autoSave();

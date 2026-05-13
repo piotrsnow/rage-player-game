@@ -8,7 +8,7 @@
 // a new import pattern.
 
 import { getCampaigns, loadCampaign, deleteCampaign } from './campaignLoad.js';
-import { saveCampaign } from './campaignSave.js';
+import { saveCampaign, saveSceneImageUpdate } from './campaignSave.js';
 import { markSceneSavedRemotely } from './campaignParse.js';
 import {
   saveLocalSnapshot,
@@ -50,6 +50,7 @@ export const storage = {
   deleteCampaign,
   // Campaign save
   saveCampaign,
+  saveSceneImageUpdate,
   markSceneSavedRemotely,
   // Local snapshot
   saveLocalSnapshot,

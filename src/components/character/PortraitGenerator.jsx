@@ -6,11 +6,6 @@ import { apiClient, toCanonicalStoragePath } from '../../services/apiClient';
 import { imageService } from '../../services/imageGen';
 import WebcamCapture from '../ui/WebcamCapture';
 
-// Raised across the board: with plain img2img (no ControlNet/IP-Adapter) the
-// reference photo dominates at low denoise — you get "me in a filter" instead
-// of a fantasy portrait. Sweet spot for "fantasy character with my face" on
-// SDXL img2img is 0.7–0.85; below 0.5 the original photo bleeds through too
-// much (modern clothes, indoor bg, phone-photo lighting).
 const STRENGTH_PRESETS = [
   { value: 0.55, labelKey: 'charCreator.strengthSubtle' },
   { value: 0.7, labelKey: 'charCreator.strengthBalanced' },
@@ -33,7 +28,7 @@ const EMOTIONS_DEFAULT = Object.freeze({
   nostalgia: 23,
 });
 const EMOTIONS_MAX_SUM = 200;
-const LIKENESS_DEFAULT = 25;
+const LIKENESS_DEFAULT = 60;
 
 // Proportional rebalance: when a single slider is raised past the headroom,
 // shrink every other slider by the same ratio so the combined sum stays <= 200.
@@ -169,6 +164,7 @@ export default function PortraitGenerator({ species, age, gender, careerName, ge
     abortRef.current = false;
 
     try {
+      const ipaWeight = isSdWebui && photoBlob ? (likeness / 100) * 1.2 : undefined;
       const result = await imageService.generatePortrait(
         canUseReferenceImage ? photoBlob : null,
         { species, age, gender, careerName, genre },
@@ -179,7 +175,7 @@ export default function PortraitGenerator({ species, age, gender, careerName, ge
         settings.dmSettings?.darkPalette || false,
         settings.dmSettings?.narratorSeriousness ?? null,
         settings.sdWebuiModel || null,
-        { likeness, emotions },
+        { likeness, emotions, ipaWeight },
         Number.isInteger(settings.sdWebuiSeed) ? settings.sdWebuiSeed : null,
       );
       if (!abortRef.current) {
@@ -240,46 +236,44 @@ export default function PortraitGenerator({ species, age, gender, careerName, ge
     const resolvedSrc = apiClient.resolveMediaUrl(generatedUrl);
     return (
       <div className="flex flex-col items-center gap-3">
-        <button
-          type="button"
-          onClick={() => setLightboxOpen(true)}
-          aria-label={t('charCreator.zoomInPortrait', 'Powiększ portret')}
-          className="group relative w-full max-w-[220px] aspect-[3/4] rounded-sm overflow-hidden border border-primary/30 shadow-[0_0_20px_rgba(197,154,255,0.15)] cursor-zoom-in focus:outline-none focus:ring-2 focus:ring-primary/50"
-        >
-          <img
-            src={resolvedSrc}
-            alt="Fantasy portrait"
-            className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-[1.03]"
-            onError={() => { setGeneratedUrl(null); setShowCapture(canUseReferenceImage); }}
-          />
-          <div className="absolute top-1.5 right-1.5">
-            <span className="material-symbols-outlined text-sm text-primary drop-shadow-lg">auto_awesome</span>
-          </div>
-          <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors flex items-center justify-center opacity-0 group-hover:opacity-100">
-            <span className="material-symbols-outlined text-3xl text-white drop-shadow-lg">zoom_in</span>
-          </div>
-        </button>
-        {portraitPrompt && (
-          <div className="w-full max-w-[220px] mt-1">
-            {!promptExpanded ? (
+        <div className="relative w-full max-w-[220px]">
+          <button
+            type="button"
+            onClick={() => setLightboxOpen(true)}
+            aria-label={t('charCreator.zoomInPortrait', 'Powiększ portret')}
+            className="group relative block w-full aspect-[3/4] rounded-sm overflow-hidden border border-primary/30 shadow-[0_0_20px_rgba(197,154,255,0.15)] cursor-zoom-in focus:outline-none focus:ring-2 focus:ring-primary/50"
+          >
+            <img
+              src={resolvedSrc}
+              alt="Fantasy portrait"
+              className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-[1.03]"
+              onError={() => { setGeneratedUrl(null); setShowCapture(canUseReferenceImage); }}
+            />
+            <div className="absolute top-1.5 right-1.5">
+              <span className="material-symbols-outlined text-sm text-primary drop-shadow-lg">auto_awesome</span>
+            </div>
+            <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors flex items-center justify-center opacity-0 group-hover:opacity-100">
+              <span className="material-symbols-outlined text-3xl text-white drop-shadow-lg">zoom_in</span>
+            </div>
+          </button>
+          {portraitPrompt && (
+            !promptExpanded ? (
               <button
                 type="button"
                 onClick={() => setPromptExpanded(true)}
                 aria-label={t('charCreator.portraitPromptTooltip', 'Prompt portretu')}
-                className="flex items-center gap-1 px-2 py-1 rounded-sm bg-surface-container-highest/60 border border-outline-variant/25 text-on-surface-variant hover:text-primary hover:border-primary/40 transition-all text-[10px] font-label"
+                className="absolute left-2 bottom-2 z-10 flex items-center gap-1 px-2 h-7 rounded-sm bg-surface-container-highest/80 backdrop-blur-md border border-outline-variant/30 text-on-surface-variant hover:text-primary hover:border-primary/50 transition-all text-[10px] font-label shadow-[0_4px_16px_rgba(0,0,0,0.45)]"
               >
-                <span className="material-symbols-outlined text-[16px]">history_edu</span>
-                <span className="uppercase tracking-widest truncate">
-                  {t('charCreator.portraitPromptTooltip', 'Prompt portretu')}
-                </span>
+                <span className="material-symbols-outlined text-[15px]">history_edu</span>
+                <span className="uppercase tracking-widest">Prompt</span>
               </button>
             ) : (
-              <div className="rounded-sm bg-surface-container-highest/70 backdrop-blur-md border border-outline-variant/25 shadow-[0_4px_24px_rgba(0,0,0,0.6)]">
-                <div className="flex items-center justify-between gap-2 px-3 py-2 border-b border-outline-variant/15">
+              <div className="absolute left-2 right-2 bottom-2 z-10 rounded-sm bg-surface-container-highest/85 backdrop-blur-md border border-outline-variant/30 shadow-[0_4px_24px_rgba(0,0,0,0.6)]">
+                <div className="flex items-center justify-between gap-2 px-2 py-1.5 border-b border-outline-variant/15">
                   <div className="flex items-center gap-1.5 min-w-0">
-                    <span className="material-symbols-outlined text-[16px] text-on-surface-variant">history_edu</span>
+                    <span className="material-symbols-outlined text-[15px] text-on-surface-variant">history_edu</span>
                     <span className="text-[10px] font-label uppercase tracking-widest text-on-surface-variant truncate">
-                      {t('charCreator.portraitPromptTooltip', 'Prompt portretu')}
+                      Prompt
                     </span>
                   </div>
                   <div className="flex items-center gap-1 shrink-0">
@@ -287,7 +281,7 @@ export default function PortraitGenerator({ species, age, gender, careerName, ge
                       type="button"
                       onClick={handleCopyPrompt}
                       aria-label={t('charCreator.copyPortraitPrompt', 'Skopiuj prompt')}
-                      className={`flex items-center gap-1 px-2 h-7 rounded-sm border transition-all ${
+                      className={`flex items-center justify-center w-7 h-7 rounded-sm border transition-all ${
                         promptCopied
                           ? 'bg-success/15 border-success/40 text-success'
                           : 'bg-surface-container-highest/60 border-outline-variant/25 text-on-surface-variant hover:text-primary hover:border-primary/40'
@@ -295,11 +289,6 @@ export default function PortraitGenerator({ species, age, gender, careerName, ge
                     >
                       <span className="material-symbols-outlined text-[14px]">
                         {promptCopied ? 'check' : 'content_copy'}
-                      </span>
-                      <span className="text-[10px] font-label uppercase tracking-widest">
-                        {promptCopied
-                          ? t('charCreator.portraitPromptCopied', 'Skopiowano!')
-                          : t('charCreator.copyPortraitPrompt', 'Skopiuj prompt')}
                       </span>
                     </button>
                     <button
@@ -312,15 +301,15 @@ export default function PortraitGenerator({ species, age, gender, careerName, ge
                     </button>
                   </div>
                 </div>
-                <div className="px-3 py-2 max-h-32 overflow-y-auto">
-                  <p className="text-[11px] leading-relaxed text-on-surface-variant whitespace-pre-wrap break-words">
+                <div className="px-2 py-1.5 max-h-28 overflow-y-auto">
+                  <p className="text-[10px] leading-relaxed text-on-surface-variant whitespace-pre-wrap break-words">
                     {portraitPrompt}
                   </p>
                 </div>
               </div>
-            )}
-          </div>
-        )}
+            )
+          )}
+        </div>
         {lightboxOpen && createPortal(
           <div
             role="dialog"
@@ -346,11 +335,11 @@ export default function PortraitGenerator({ species, age, gender, careerName, ge
           </div>,
           document.body,
         )}
-        <div className="flex gap-2">
+        <div className="grid w-full max-w-[220px] grid-cols-[1fr_40px_40px] gap-2">
           <button
             type="button"
             onClick={handleAccept}
-            className="flex items-center gap-1.5 px-4 py-2 bg-surface-tint text-on-primary text-xs font-label font-bold rounded-sm border border-primary shadow-[0_0_15px_rgba(197,154,255,0.3)] hover:shadow-[0_0_25px_rgba(197,154,255,0.5)] transition-all"
+            className="flex items-center justify-center gap-1.5 px-3 py-2 bg-surface-tint text-on-primary text-xs font-label font-bold rounded-sm border border-primary shadow-[0_0_15px_rgba(197,154,255,0.3)] hover:shadow-[0_0_25px_rgba(197,154,255,0.5)] transition-all"
           >
             <span className="material-symbols-outlined text-sm">check</span>
             {t('charCreator.acceptPortrait')}
@@ -359,18 +348,19 @@ export default function PortraitGenerator({ species, age, gender, careerName, ge
             type="button"
             onClick={handleRetry}
             disabled={generating}
-            className="flex items-center gap-1.5 px-3 py-2 text-xs font-label text-tertiary hover:text-primary border border-outline-variant/15 hover:border-primary/30 rounded-sm transition-all hover:bg-surface-tint/10 disabled:opacity-50 disabled:cursor-not-allowed"
+            aria-label={t('charCreator.retryPortrait')}
+            className="flex items-center justify-center h-full min-h-9 text-xs font-label text-tertiary hover:text-primary border border-outline-variant/15 hover:border-primary/30 rounded-sm transition-all hover:bg-surface-tint/10 disabled:opacity-50 disabled:cursor-not-allowed"
           >
             <span className={`material-symbols-outlined text-sm ${generating ? 'animate-spin' : ''}`}>
               {generating ? 'progress_activity' : 'restart_alt'}
             </span>
-            {t('charCreator.retryPortrait')}
           </button>
           <button
             type="button"
             onClick={handleRemove}
             disabled={generating}
-            className="px-3 py-2 text-xs font-label text-on-surface-variant hover:text-error transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            aria-label={t('common.delete', 'Usuń')}
+            className="flex items-center justify-center h-full min-h-9 rounded-sm border border-outline-variant/15 text-on-surface-variant hover:text-error hover:border-error/35 hover:bg-error/10 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
           >
             <span className="material-symbols-outlined text-sm">delete</span>
           </button>
@@ -454,7 +444,7 @@ export default function PortraitGenerator({ species, age, gender, careerName, ge
 
       {(photoBlob || !requiresReferenceImage) && (
         <div className="w-full max-w-[280px] space-y-3">
-          {requiresReferenceImage && (
+          {requiresReferenceImage && !isSdWebui && (
             <div>
               <div className="flex items-center justify-between mb-1.5">
                 <span className="text-[10px] font-label uppercase tracking-wider text-on-surface-variant">

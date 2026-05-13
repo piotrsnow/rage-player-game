@@ -5,6 +5,7 @@ import { useMediaCacheStats } from '../../hooks/useMediaCacheStats';
 import BackendServerSection from './sections/BackendServerSection';
 import SceneCostSection from './sections/SceneCostSection';
 import CreditsSection from './sections/CreditsSection';
+import AdminBillingSection from './sections/AdminBillingSection';
 
 export default function UserProfileModal({ onClose }) {
   const { t } = useTranslation();
@@ -56,6 +57,7 @@ export default function UserProfileModal({ onClose }) {
           <div className="px-6 lg:px-12 py-8">
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
               <section className="space-y-6">
+                {backendUser?.isAdmin && <AdminBillingSection />}
                 <BackendServerSection
                   backendAuthChecking={backendAuthChecking}
                   backendUser={backendUser}

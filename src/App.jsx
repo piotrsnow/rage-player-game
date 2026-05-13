@@ -10,12 +10,12 @@ const GameplayPage = lazy(() => import('./components/gameplay/GameplayPage'));
 const JoinRoomPage = lazy(() => import('./components/multiplayer/JoinRoomPage'));
 const GalleryPage = lazy(() => import('./components/gallery/GalleryPage'));
 const CampaignViewerPage = lazy(() => import('./components/viewer/CampaignViewerPage'));
-const AdminLivingWorldPage = lazy(() => import('./components/admin/AdminLivingWorldPage'));
+const AdminPanelPage = lazy(() => import('./components/admin/panel/AdminPanelPage'));
 
 function RouteFallback() {
   return (
-    <div className="flex items-center justify-center min-h-[60vh]">
-      <LoadingSpinner size="lg" />
+    <div className="flex items-center justify-center min-h-[calc(100dvh-4rem)] select-none cursor-default">
+      <LoadingSpinner size="lg" text="Mistrz Gry właśnie siada do stołu..." />
     </div>
   );
 }
@@ -75,10 +75,26 @@ export default function App() {
             }
           />
           <Route
-            path="/admin/living-world"
+            path="/admin"
             element={
               <Suspense fallback={<RouteFallback />}>
-                <AdminLivingWorldPage />
+                <AdminPanelPage />
+              </Suspense>
+            }
+          />
+          <Route
+            path="/admin/campaigns/:campaignId"
+            element={
+              <Suspense fallback={<RouteFallback />}>
+                <AdminPanelPage />
+              </Suspense>
+            }
+          />
+          <Route
+            path="/admin/campaigns/:campaignId/:tab"
+            element={
+              <Suspense fallback={<RouteFallback />}>
+                <AdminPanelPage />
               </Suspense>
             }
           />

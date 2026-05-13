@@ -145,6 +145,8 @@ export async function generateWrapupFallback({
       maxTokens: 250,
       temperature: 0.7,
       userApiKeys,
+      taskType: 'quest-wrapup',
+      taskLabel: 'Quest wrapup narration',
     });
     const timeoutPromise = new Promise((_, reject) =>
       setTimeout(() => reject(new Error('nano wrap-up timeout')), timeoutMs)

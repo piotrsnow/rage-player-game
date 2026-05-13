@@ -83,6 +83,9 @@ const NpcChangeSchema = z.object({
     npcName: z.string().min(1).max(120),
     type: z.string().max(60).optional(),
     strength: z.number().optional(),
+    // rippleStrength (oś 2) — 0..100, jak mocno ten NPC reaguje na zmiany
+    // u target. Optional — gdy pominięte, BE liczy z |strength| heurystycznie.
+    rippleStrength: z.number().int().min(0).max(100).optional(),
   }).passthrough()).optional(),
   // NPC character card — regular NPCs get one of NPC_RACES, story creatures
   // (zjawy, sfinksy, demony, ...) use a free-text creatureKind tag instead.
@@ -93,6 +96,7 @@ const NpcChangeSchema = z.object({
   creatureKind: z.string().trim().max(60).nullable().optional(),
   level: z.number().int().min(1).max(30).optional(),
   keyNpc: z.boolean().optional(),
+  joinParty: z.boolean().optional(),
   statsOverride: z.object({
     attributes: z.record(z.number()).optional(),
     skills: z.record(z.number()).optional(),
@@ -116,13 +120,113 @@ export const NpcChangesSchema = z.array(NpcChangeSchema).max(30);
 // at apply-time if LLM omits it.
 const MAX_NPC_MEMORY_UPDATES = 20;
 
+// `actionType` (oś 2) — opcjonalny semantyczny tag akcji. Gdy obecny,
+// `relationshipRippleService` używa go do propagacji disposition na
+// powiązane NPC (brat, kochanek, rywal). Pominięcie = brak ripple,
+// zapisuje się tylko zwykły wpis pamięci.
+export const NPC_ACTION_TYPES = [
+  'killed', 'saved', 'betrayed', 'aided', 'insulted',
+  'broke_promise', 'kept_promise',
+];
+
 const NpcMemoryUpdateSchema = z.object({
   npcName: z.string().trim().min(1).max(120),
   memory: z.string().trim().min(1).max(300),
   importance: z.enum(['minor', 'major']).optional(),
+  actionType: z.enum(NPC_ACTION_TYPES).nullable().optional(),
 }).passthrough();
 
 export const NpcMemoryUpdatesSchema = z.array(NpcMemoryUpdateSchema).max(MAX_NPC_MEMORY_UPDATES);
+
+// ── Quest graph (oś 1) — branching, parents, branchChoice ──────────────
+//
+// Quest update — oprócz legacy `objectiveId` (numeric index string) i
+// `completed`/`addProgress` dodajemy `nodeKey` (preferred) i `branchChoice`
+// (XOR lock-in). Resolver w processQuestObjectiveUpdates próbuje nodeKey
+// pierwsze, fallback do objectiveId.
+const NODE_KEY_RE = /^[a-z0-9_]{1,40}$/;
+const NodeKeySchema = z.string().regex(NODE_KEY_RE, 'nodeKey must match [a-z0-9_]{1,40}');
+
+const BranchChoiceSchema = z.object({
+  group: z.string().trim().min(1).max(60),
+  chosen: NodeKeySchema,
+}).passthrough();
+
+const QuestUpdateSchema = z.object({
+  questId: z.string().trim().min(1).max(120),
+  nodeKey: NodeKeySchema.optional(),
+  objectiveId: z.union([z.string(), z.number()]).optional(),
+  completed: z.boolean().optional(),
+  addProgress: z.number().optional(),
+  branchChoice: BranchChoiceSchema.optional(),
+}).passthrough();
+
+export const QuestUpdatesSchema = z.array(QuestUpdateSchema).max(20);
+
+// Quest objective shape w questOffers — pełny graf node-a.
+const QuestObjectiveOfferSchema = z.object({
+  nodeKey: NodeKeySchema,
+  description: z.string().trim().min(1).max(400),
+  parents: z.array(NodeKeySchema).max(8).optional(),
+  unlocks: z.array(NodeKeySchema).max(8).optional(),
+  branchType: z.enum(['and', 'path', 'or']).optional(),
+  branchGroup: z.string().trim().min(1).max(60).optional(),
+  choiceLabel: z.string().trim().max(120).optional(),
+  placeholderHint: z.string().trim().max(120).optional(),
+  failsOn: z.object({
+    npcDead: z.array(z.string().trim().max(120)).max(8).optional(),
+    locationDestroyed: z.array(z.string().trim().max(200)).max(4).optional(),
+    deadline: z.string().trim().max(40).nullable().optional(),  // ISO game time
+  }).passthrough().optional(),
+  // metadata.discovered jest ZAWSZE false dla nowo materializowanych nodes —
+  // BE ustawia explicit. LLM nie kontroluje tego pola w questOffers.
+}).passthrough();
+
+const QuestOfferSchema = z.object({
+  id: z.string().trim().min(1).max(120),
+  name: z.string().trim().min(1).max(200),
+  description: z.string().trim().max(800).optional().default(''),
+  type: z.enum(['main', 'side', 'personal']).optional().default('side'),
+  questGiverId: z.string().trim().max(120).nullable().optional(),
+  turnInNpcId: z.string().trim().max(120).nullable().optional(),
+  relatedHookId: z.string().trim().max(120).nullable().optional(),
+  relatedNpcRefs: z.array(z.string().trim().max(120)).max(8).optional(),
+  completionCondition: z.string().trim().max(400).nullable().optional(),
+  reward: z.record(z.unknown()).nullable().optional(),
+  objectives: z.array(QuestObjectiveOfferSchema).min(1).max(12),
+}).passthrough();
+
+export const QuestOffersSchema = z.array(QuestOfferSchema).max(5);
+
+// Quest mutation (oś 4) — explicit override z narracji. Zwykle quest
+// dynamics service to robi automatycznie po world tickach; LLM emituje
+// tylko gdy narracja ostro przerywa quest (śmierć questgivera on-screen).
+const QuestMutationSchema = z.object({
+  questId: z.string().trim().min(1).max(120),
+  mutation: z.enum(['stall', 'fail', 'reroute']),
+  reason: z.string().trim().min(1).max(300),
+}).passthrough();
+
+export const QuestMutationsSchema = z.array(QuestMutationSchema).max(10);
+
+// Diegetic discovery (oś 5) — explicit reveal sparowany z wydarzeniem
+// narracyjnym. revealSource jest opcjonalny ale silnie zalecany (audit).
+const ObjectiveRevealSchema = z.object({
+  questId: z.string().trim().min(1).max(120),
+  nodeKey: NodeKeySchema,
+  revealSource: z.string().trim().max(300).optional(),
+}).passthrough();
+
+export const ObjectiveRevealsSchema = z.array(ObjectiveRevealSchema).max(20);
+
+const BranchGroupRevealSchema = z.object({
+  questId: z.string().trim().min(1).max(120),
+  branchGroup: z.string().trim().min(1).max(60),
+  revealedNodeKeys: z.array(NodeKeySchema).min(1).max(8),
+  revealSource: z.string().trim().max(300).optional(),
+}).passthrough();
+
+export const BranchGroupRevealsSchema = z.array(BranchGroupRevealSchema).max(10);
 
 /**
  * Safe parse helpers. Each returns `{ ok, data, error }`. Handlers use these
@@ -175,3 +279,8 @@ export const parseDungeonRoomFlags = (input) => safeParse(DungeonRoomFlagsSchema
 export const parseNpcMemoryUpdates = (input) => safeParse(NpcMemoryUpdatesSchema, input);
 export const parseNpcChanges = (input) => safeParse(NpcChangesSchema, input);
 export const parseGraphUpdates = (input) => safeParse(GraphUpdatesSchema, input);
+export const parseQuestUpdates = (input) => safeParse(QuestUpdatesSchema, input);
+export const parseQuestOffers = (input) => safeParse(QuestOffersSchema, input);
+export const parseQuestMutations = (input) => safeParse(QuestMutationsSchema, input);
+export const parseObjectiveReveals = (input) => safeParse(ObjectiveRevealsSchema, input);
+export const parseBranchGroupReveals = (input) => safeParse(BranchGroupRevealsSchema, input);

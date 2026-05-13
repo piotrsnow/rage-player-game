@@ -5,15 +5,35 @@ import { applyDungeonRoomState } from '../../livingWorld/dungeonEntry.js';
 import { auditQuestWorldImpact } from '../../livingWorld/questAudit.js';
 import { applyFameFromEvent } from '../../livingWorld/fameService.js';
 import { appendEvent } from '../../livingWorld/worldEventLog.js';
-import { resolveWorldLocation, walkUpAncestors, resolveLocationByName } from '../../livingWorld/worldStateService.js';
+import {
+  resolveWorldLocation,
+  walkUpAncestors,
+  resolveLocationByName,
+  findOrCreateCampaignLocation,
+} from '../../livingWorld/worldStateService.js';
 import { LOCATION_KIND_WORLD, LOCATION_KIND_CAMPAIGN, lookupLocationByKindId } from '../../locationRefs.js';
 
 import { generateSceneEmbedding } from './sceneEmbedding.js';
 import { processNpcChanges, processItemAttributions } from './npcs.js';
 import { processNpcMemoryUpdates } from './npcMemoryUpdates.js';
-import { parseNpcChanges } from './schemas.js';
+import { evaluateQuestGraphForCampaign } from '../../livingWorld/questDynamicsService.js';
+import {
+  parseNpcChanges,
+  parseObjectiveReveals,
+  parseBranchGroupReveals,
+  parseQuestMutations,
+  parseQuestUpdates,
+  parseQuestOffers,
+} from './schemas.js';
 import { processKnowledgeUpdates, processCodexUpdates } from './knowledgeCodex.js';
-import { processQuestObjectiveUpdates, processQuestStatusChange } from './quests.js';
+import {
+  processQuestObjectiveUpdates,
+  processQuestStatusChange,
+  processObjectiveReveals,
+  processBranchGroupReveals,
+  processQuestMutations,
+  processQuestOffers,
+} from './quests.js';
 import { processLocationChanges } from './locations.js';
 import {
   shouldPromoteToGlobal,
@@ -21,6 +41,9 @@ import {
   processWorldImpactEvent,
   processCampaignComplete,
 } from './livingWorld.js';
+import { createEdge } from '../../locationGraph/graphService.js';
+import { findSimilarNodeImage } from '../../locationGraph/imageMatcher.js';
+import { markLocationEdgeTraversed, markLocationDiscovered } from '../../livingWorld/userDiscoveryService.js';
 
 // Re-exported so existing test file processStateChanges.test.js keeps
 // working via `import { shouldPromoteToGlobal } from './processStateChanges.js'`.
@@ -31,12 +54,8 @@ const log = childLogger({ module: 'sceneGenerator' });
 // Match-or-drop resolver for AI-emitted `stateChanges.currentLocation`.
 // Returns `{ kind, id, name }` when the target name resolves to an existing
 // canonical WorldLocation OR per-campaign CampaignLocation in this campaign's
-// fog. Returns null on miss — caller drops the emission, player stays put.
-//
-// AI never creates locations mid-play (per `knowledge/concepts/scene-generation.md`
-// and `hearsay-and-ai-locations.md`). The `findOrCreateCampaignLocation` path
-// is reserved for sublocation entries (`stateChanges.newLocations` with
-// `parentLocationName` set) and creation-time `initialLocationsResolver`.
+// fog. Returns null on miss — caller decides whether to create-on-miss
+// (with guards) or drop.
 async function resolveCurrentLocationTarget(campaignId, targetName) {
   const ref = await resolveLocationByName(targetName, { campaignId }).catch(() => null);
   if (!ref?.row?.id) return null;
@@ -44,6 +63,81 @@ async function resolveCurrentLocationTarget(campaignId, targetName) {
     ? (ref.row.canonicalName || targetName)
     : (ref.row.name || targetName);
   return { kind: ref.kind, id: ref.row.id, name };
+}
+
+// Create the bidirectional movement edge between two location nodes if it
+// doesn't already exist, then mark it traversed for the current scene.
+// Used by every code path that transitions the player between two resolved
+// nodes (anchor, retry-after-subloc-create, auto-promote, create-on-miss).
+async function ensureMovementEdge({ from, to, sceneIndex, campaignId }) {
+  if (!from?.kind || !from?.id || !to?.kind || !to?.id) return;
+  const fromKey = `${from.kind}:${from.id}`;
+  const toKey = `${to.kind}:${to.id}`;
+  if (fromKey === toKey) return;
+  try {
+    const existing = await prisma.locationEdge.findFirst({
+      where: {
+        fromKind: from.kind, fromId: from.id,
+        toKind: to.kind, toId: to.id,
+        category: 'movement', isActive: true,
+        OR: [{ campaignId: null }, { campaignId }],
+      },
+    });
+    if (!existing) {
+      await createEdge({
+        fromKind: from.kind,
+        fromId: from.id,
+        toKind: to.kind,
+        toId: to.id,
+        edgeType: 'path_to',
+        category: 'movement',
+        bidirectional: true,
+        weight: 1.0,
+        metadata: { autoCreated: true },
+        discoveryState: 'visited',
+        campaignId,
+        createdBy: 'system',
+      });
+    }
+    await markLocationEdgeTraversed({
+      fromKind: from.kind,
+      fromId: from.id,
+      toKind: to.kind,
+      toId: to.id,
+      sceneIndex,
+      campaignId,
+    });
+  } catch (edgeErr) {
+    log.debug({ err: edgeErr?.message, campaignId, fromKey, toKey }, 'ensureMovementEdge failed (non-fatal)');
+  }
+}
+
+// Generic-terrain blacklist for create-on-miss guard. AI emits these as
+// "I am in <generic terrain>" but they're not POI — they describe the
+// patch the player is wandering across. Keep wandering (flavor name +
+// coords) instead of materializing a CampaignLocation.
+const GENERIC_TERRAIN_TOKENS = new Set([
+  'las', 'lasu', 'lasie',
+  'polana', 'polanie', 'polany',
+  'łąka', 'łąki', 'łące',
+  'błota', 'bagno', 'bagna',
+  'dolina', 'doliny', 'dolinie',
+  'góry', 'górach', 'wzgórza', 'wzgórze',
+  'rzeka', 'rzeki', 'rzece',
+  'droga', 'drogi', 'drodze', 'trakt', 'traktu',
+  'pole', 'pola',
+  'pustkowie', 'pustkowia',
+]);
+
+function isGenericTerrainName(name) {
+  const lower = String(name || '').toLowerCase().trim();
+  if (!lower) return true;
+  const tokens = lower.split(/\s+/);
+  // If every token is a stopword/adjective + a generic-terrain noun ("stary
+  // las", "głęboka dolina"), treat as generic. We don't enumerate adjectives
+  // — just check whether ANY token is a known generic-terrain noun. AI-named
+  // POI like "Magowa Wieża" / "Karczma Pod Wilkiem" don't share these tokens.
+  return tokens.some((t) => GENERIC_TERRAIN_TOKENS.has(t));
 }
 
 export async function processStateChanges(campaignId, stateChanges, { prevLoc = null, sceneIndex = null, currentRef = null } = {}) {
@@ -96,6 +190,19 @@ export async function processStateChanges(campaignId, stateChanges, { prevLoc = 
     await processNpcMemoryUpdates(campaignId, stateChanges.npcMemoryUpdates);
   }
 
+  // ── Oś 3 — materialize questOffers (graph-aware) ────────────────────
+  // PO processNpcChanges aby questGiverId/turnInNpcId mogli mieć już
+  // CampaignNPC row utworzony w tej samej scenie. Walidacja grafu po
+  // stronie processQuestOffers (validateGraphIntegrity).
+  if (Array.isArray(stateChanges.questOffers) && stateChanges.questOffers.length > 0) {
+    const parsed = parseQuestOffers(stateChanges.questOffers);
+    if (parsed.ok) {
+      await processQuestOffers(campaignId, parsed.data);
+    } else {
+      log.warn({ campaignId, issues: parsed.error?.issues?.slice(0, 5) }, 'stateChanges.questOffers failed schema validation — skipped');
+    }
+  }
+
   // Campaign completion → global WorldEvent (user's explicit requirement:
   // "zakończenie kampanii musi być zapisane globalnie").
   if (livingWorldEnabled && stateChanges.campaignComplete) {
@@ -142,12 +249,14 @@ export async function processStateChanges(campaignId, stateChanges, { prevLoc = 
     : null;
   const hasCoords = aiX !== null && aiY !== null;
 
+  let aiNameResolved = false;
   if (aiName || hasCoords) {
     try {
       let updates = null;
       if (aiName) {
         const resolved = await resolveCurrentLocationTarget(campaignId, aiName);
         if (resolved) {
+          aiNameResolved = true;
           const coords = await lookupLocationByKindId({
             prisma,
             kind: resolved.kind,
@@ -162,6 +271,93 @@ export async function processStateChanges(campaignId, stateChanges, { prevLoc = 
             currentY: coords?.regionY ?? null,
           };
           log.info({ campaignId, name: resolved.name, kind: resolved.kind, x: updates.currentX, y: updates.currentY }, 'currentLocation updated (anchored at POI)');
+        } else if (
+          // Create-on-miss with guards. AI emitted a name that doesn't resolve
+          // to any known POI — but if it's a plausible POI label (≥2 words, not
+          // generic terrain) AND the player has a known prevLoc to anchor from,
+          // materialize a CampaignLocation node + a movement edge + transition.
+          // Coords inherited from prevLoc when AI didn't supply them; smart
+          // placer is intentionally NOT used here (we'd need direction/distance
+          // hints AI doesn't reliably emit on plain currentLocation switches).
+          livingWorldEnabled
+          && currentRef?.kind && currentRef?.id
+          && aiName.trim().split(/\s+/).length >= 2
+          && !isGenericTerrainName(aiName)
+        ) {
+          const anchorRow = await lookupLocationByKindId({
+            prisma,
+            kind: currentRef.kind,
+            id: currentRef.id,
+            select: { regionX: true, regionY: true, region: true },
+          }).catch(() => null);
+          const newRegionX = aiX ?? anchorRow?.regionX ?? 0;
+          const newRegionY = aiY ?? anchorRow?.regionY ?? 0;
+          const created = await findOrCreateCampaignLocation(aiName, {
+            campaignId,
+            description: '',
+            locationType: 'campaignPlace',
+            category: 'campaignPlace',
+            region: anchorRow?.region || null,
+            regionX: newRegionX,
+            regionY: newRegionY,
+            positionConfidence: aiX != null ? 0.7 : 0.4,
+            dangerLevel: 'safe',
+          }).catch((err) => {
+            log.warn({ err: err?.message, campaignId, aiName }, 'create-on-miss findOrCreateCampaignLocation failed (non-fatal)');
+            return null;
+          });
+          if (created) {
+            aiNameResolved = true;
+            updates = {
+              currentLocationName: created.name,
+              currentLocationKind: LOCATION_KIND_CAMPAIGN,
+              currentLocationId: created.id,
+              currentX: created.regionX ?? newRegionX,
+              currentY: created.regionY ?? newRegionY,
+            };
+            log.info(
+              { campaignId, name: created.name, id: created.id, regionX: updates.currentX, regionY: updates.currentY },
+              'currentLocation create-on-miss — new CampaignLocation materialized',
+            );
+            // Best-effort node image inheritance — same pattern as
+            // processSublocationEntry.
+            if (!created.nodeImageUrl) {
+              try {
+                const matchedUrl = await findSimilarNodeImage({
+                  locationType: 'campaignPlace',
+                  biome: null,
+                  tags: [],
+                });
+                if (matchedUrl) {
+                  await prisma.campaignLocation.update({ where: { id: created.id }, data: { nodeImageUrl: matchedUrl } });
+                }
+              } catch { /* non-fatal */ }
+            }
+            // Mark as visited for the player's fog-of-war so the new node
+            // shows up in the FE graph immediately (player-mode + GM-mode).
+            if (ownerUserId) {
+              try {
+                await markLocationDiscovered({
+                  userId: ownerUserId,
+                  locationKind: LOCATION_KIND_CAMPAIGN,
+                  locationId: created.id,
+                  campaignId,
+                });
+              } catch (err) {
+                log.debug({ err: err?.message, campaignId, locId: created.id }, 'create-on-miss markLocationDiscovered failed (non-fatal)');
+              }
+            }
+          } else if (hasCoords) {
+            // Fall back to wandering if creation failed.
+            updates = {
+              currentLocationName: aiName,
+              currentLocationKind: null,
+              currentLocationId: null,
+              currentX: aiX,
+              currentY: aiY,
+            };
+            log.info({ campaignId, flavorName: aiName, x: aiX, y: aiY }, 'currentLocation updated (wandering — create-on-miss failed, fallback)');
+          }
         } else if (hasCoords) {
           updates = {
             currentLocationName: aiName,
@@ -174,7 +370,7 @@ export async function processStateChanges(campaignId, stateChanges, { prevLoc = 
         } else {
           log.warn(
             { campaignId, ignored: aiName },
-            'AI emitted stateChanges.currentLocation but name did not resolve and no currentX/Y given — dropped',
+            'AI emitted stateChanges.currentLocation but name did not resolve, guards failed, and no currentX/Y given — dropped',
           );
         }
       } else {
@@ -189,6 +385,15 @@ export async function processStateChanges(campaignId, stateChanges, { prevLoc = 
       }
       if (updates) {
         await prisma.campaign.update({ where: { id: campaignId }, data: updates });
+
+        if (updates.currentLocationKind && updates.currentLocationId) {
+          await ensureMovementEdge({
+            from: currentRef,
+            to: { kind: updates.currentLocationKind, id: updates.currentLocationId },
+            sceneIndex,
+            campaignId,
+          });
+        }
       }
     } catch (err) {
       log.warn({ err: err?.message, campaignId, aiName, aiX, aiY }, 'currentLocation resolve/update failed');
@@ -200,6 +405,45 @@ export async function processStateChanges(campaignId, stateChanges, { prevLoc = 
     locResult = await processLocationChanges(campaignId, stateChanges.newLocations, { prevLoc }) || { createdSublocs: [] };
   }
 
+  // Retry: initial aiName resolution failed (sublocation didn't exist yet),
+  // but newLocations just created a matching row. Re-resolve and anchor.
+  if (aiName && !aiNameResolved && locResult.createdSublocs.length > 0) {
+    try {
+      const retryResolved = await resolveCurrentLocationTarget(campaignId, aiName);
+      if (retryResolved) {
+        const retryCoords = await lookupLocationByKindId({
+          prisma,
+          kind: retryResolved.kind,
+          id: retryResolved.id,
+          select: { regionX: true, regionY: true },
+        }).catch(() => null);
+        await prisma.campaign.update({
+          where: { id: campaignId },
+          data: {
+            currentLocationName: retryResolved.name,
+            currentLocationKind: retryResolved.kind,
+            currentLocationId: retryResolved.id,
+            currentX: retryCoords?.regionX ?? null,
+            currentY: retryCoords?.regionY ?? null,
+          },
+        });
+        aiNameResolved = true;
+        log.info(
+          { campaignId, name: retryResolved.name, kind: retryResolved.kind },
+          'currentLocation resolved on retry (sublocation created by newLocations in same scene)',
+        );
+        await ensureMovementEdge({
+          from: currentRef,
+          to: { kind: retryResolved.kind, id: retryResolved.id },
+          sceneIndex,
+          campaignId,
+        });
+      }
+    } catch (err) {
+      log.warn({ err: err?.message, campaignId, aiName }, 'currentLocation retry-resolve failed (non-fatal)');
+    }
+  }
+
   // Auto-promote: AI emitted exactly one new sublocation whose parent is in
   // the player's walk-up ancestor chain → set it as currentLocation. Covers
   // intra-settlement (gracz wchodzi do nowej tawerny), inter-subloc within
@@ -207,28 +451,45 @@ export async function processStateChanges(campaignId, stateChanges, { prevLoc = 
   // and child-of-canonical-subloc (Wieża Maga → Pracownia). Multi-subloc
   // emission (AI mentions kilka budynków) does NOT auto-promote — only one
   // is the player's actual destination, and we'd guess wrong.
-  if (livingWorldEnabled && locResult.createdSublocs.length === 1 && currentRef) {
+  // Skip if retry-resolve already anchored the player (aiNameResolved=true).
+  if (livingWorldEnabled && locResult.createdSublocs.length === 1 && !aiNameResolved) {
     try {
       const created = locResult.createdSublocs[0];
-      const parentKey = `${created.row.parentLocationKind}:${created.row.parentLocationId}`;
-      const ancestors = await walkUpAncestors(currentRef);
-      if (ancestors.has(parentKey)) {
+      let shouldPromote = false;
+
+      if (currentRef) {
+        // Normal path: verify parent is in the ancestor chain of current location.
+        const parentKey = `${created.row.parentLocationKind}:${created.row.parentLocationId}`;
+        const ancestors = await walkUpAncestors(currentRef);
+        shouldPromote = ancestors.has(parentKey);
+      } else {
+        // Wandering: no currentRef — promote unconditionally. The player
+        // explicitly walked into this sublocation (AI emitted exactly one).
+        shouldPromote = true;
+      }
+
+      if (shouldPromote) {
         await prisma.campaign.update({
           where: { id: campaignId },
           data: {
             currentLocationName: created.row.name,
             currentLocationKind: created.kind,
             currentLocationId: created.row.id,
-            // F5d — keep continuous coords in sync with the new anchor so the
-            // player marker on the map jumps with the auto-promoted subloc.
             currentX: typeof created.row.regionX === 'number' ? created.row.regionX : null,
             currentY: typeof created.row.regionY === 'number' ? created.row.regionY : null,
           },
         });
         log.info(
-          { campaignId, sublocId: created.row.id, sublocName: created.row.name },
-          'Auto-promoted new sublocation to currentLocation (parent in walk-up chain)',
+          { campaignId, sublocId: created.row.id, sublocName: created.row.name, hadCurrentRef: !!currentRef },
+          'Auto-promoted new sublocation to currentLocation',
         );
+
+        await ensureMovementEdge({
+          from: currentRef,
+          to: { kind: created.kind, id: created.row.id },
+          sceneIndex,
+          campaignId,
+        });
       }
     } catch (err) {
       log.warn({ err: err?.message, campaignId }, 'auto-promote sublocation → currentLocation failed (non-fatal)');
@@ -286,15 +547,54 @@ export async function processStateChanges(campaignId, stateChanges, { prevLoc = 
     );
   }
 
+  // ── Oś 5 — diegetic discovery: reveals BEFORE quest updates ────────
+  // LLM emituje reveals gdy NPC powiedział o kolejnym kroku. Reveals są
+  // sticky i mogą wyprzedzić unlock — locked node z discovered=true jest
+  // visible w UI z markerem 🔒. Aplikujemy PRZED questUpdates aby reveal
+  // status był spójny w tej samej scenie z `done` na rodzeństwie.
+  if (Array.isArray(stateChanges.objectiveReveals) && stateChanges.objectiveReveals.length > 0) {
+    const parsed = parseObjectiveReveals(stateChanges.objectiveReveals);
+    if (parsed.ok) {
+      await processObjectiveReveals(campaignId, parsed.data);
+    } else {
+      log.warn({ campaignId, issues: parsed.error?.issues?.slice(0, 5) }, 'stateChanges.objectiveReveals failed schema validation — skipped');
+    }
+  }
+  if (Array.isArray(stateChanges.branchGroupReveals) && stateChanges.branchGroupReveals.length > 0) {
+    const parsed = parseBranchGroupReveals(stateChanges.branchGroupReveals);
+    if (parsed.ok) {
+      await processBranchGroupReveals(campaignId, parsed.data);
+    } else {
+      log.warn({ campaignId, issues: parsed.error?.issues?.slice(0, 5) }, 'stateChanges.branchGroupReveals failed schema validation — skipped');
+    }
+  }
+
   if (stateChanges.questUpdates?.length) {
+    const parsed = parseQuestUpdates(stateChanges.questUpdates);
+    const updates = parsed.ok ? parsed.data : null;
+    if (!parsed.ok) {
+      log.warn({ campaignId, issues: parsed.error?.issues?.slice(0, 5) }, 'stateChanges.questUpdates failed schema validation — passing through unchanged for legacy compat');
+    }
     const autoCompleted = await processQuestObjectiveUpdates(
-      campaignId, stateChanges.questUpdates, stateChanges.completedQuests || [],
+      campaignId,
+      updates || stateChanges.questUpdates,
+      stateChanges.completedQuests || [],
     );
     if (autoCompleted.length > 0) {
       if (!Array.isArray(stateChanges.completedQuests)) stateChanges.completedQuests = [];
       for (const id of autoCompleted) {
         if (!stateChanges.completedQuests.includes(id)) stateChanges.completedQuests.push(id);
       }
+    }
+  }
+
+  // ── Oś 4 — explicit quest mutations (rare, narrative override) ──────
+  if (Array.isArray(stateChanges.questMutations) && stateChanges.questMutations.length > 0) {
+    const parsed = parseQuestMutations(stateChanges.questMutations);
+    if (parsed.ok) {
+      await processQuestMutations(campaignId, parsed.data, sceneIndex);
+    } else {
+      log.warn({ campaignId, issues: parsed.error?.issues?.slice(0, 5) }, 'stateChanges.questMutations failed schema validation — skipped');
     }
   }
 
@@ -396,4 +696,20 @@ export async function processStateChanges(campaignId, stateChanges, { prevLoc = 
     });
   }
 
+  // ── Oś 4 — reactive quest dynamics evaluation ──────────────────────
+  // Na końcu, po wszystkich mutacjach NPC/quest/location: sprawdzamy czy
+  // któryś active/stalled quest w tej kampanii ma `failsOn` matched przez
+  // zmiany w tej scenie (npcDead, deadline). Mutuje na stalled/failed +
+  // appenduje do mutationLog. Best-effort, nie blokuje commit-u sceny.
+  if (livingWorldEnabled) {
+    try {
+      await evaluateQuestGraphForCampaign(campaignId, {
+        changedNpcs: Array.isArray(stateChanges.npcs) ? stateChanges.npcs : [],
+        sceneIndex,
+        sceneGameTime,
+      });
+    } catch (err) {
+      log.warn({ err: err?.message, campaignId }, 'evaluateQuestGraphForCampaign failed (non-fatal)');
+    }
+  }
 }

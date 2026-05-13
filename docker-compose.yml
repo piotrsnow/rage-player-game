@@ -65,6 +65,7 @@ services:
       STABILITY_API_KEY: "${STABILITY_API_KEY:-}"
       GEMINI_API_KEY: "${GEMINI_API_KEY:-}"
       MESHY_API_KEY: "${MESHY_API_KEY:-}"
+      PIXELLAB_API_KEY: "${PIXELLAB_API_KEY:-}"
       # Bootstrap admin email — auto-promotes matching user to isAdmin
       ADMIN_EMAIL: "${ADMIN_EMAIL:-}"
       # Stable Diffusion WebUI (Automatic1111) — local REST. From inside the
@@ -79,6 +80,7 @@ services:
       SD_WEBUI_HIRES_FIX: "${SD_WEBUI_HIRES_FIX:-}"
       SD_WEBUI_SCENE_WIDTH: "${SD_WEBUI_SCENE_WIDTH:-}"
       SD_WEBUI_SCENE_HEIGHT: "${SD_WEBUI_SCENE_HEIGHT:-}"
+      SD_WEBUI_IPA_MODEL: "${SD_WEBUI_IPA_MODEL:-}"
       # XTTS Voice Studio — local TTS. From inside the container use
       # http://xtts:5050 (when xtts service is running) or
       # http://host.docker.internal:5050 (when running natively on host).
@@ -103,10 +105,6 @@ services:
           path: ./backend/package.json
         - action: rebuild
           path: ./backend/prisma
-        - action: rebuild
-          path: ./src
-        - action: rebuild
-          path: ./package.json
 
   # XTTS Voice Studio — standalone voice manager + TTS server.
   # Requires NVIDIA GPU; skip with `docker compose up backend` if no GPU.

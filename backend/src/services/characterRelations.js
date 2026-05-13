@@ -14,6 +14,7 @@
 
 import { prisma } from '../lib/prisma.js';
 import { slugifyItemName } from '../../../shared/domain/itemKeys.js';
+import { sanitizeMana } from '../../../shared/domain/mana.js';
 import { toCanonicalStoragePath } from './urlCanonical.js';
 
 // Mirror of cumulativeCharXpThreshold from src/data/rpgSystem.js — needed for
@@ -39,9 +40,9 @@ const CHARACTER_INCLUDE = {
 
 const SCALAR_FIELDS = [
   'name', 'age', 'gender', 'species',
-  'wounds', 'maxWounds', 'movement',
+  'wounds', 'maxWounds', 'bonusMaxWounds', 'movement',
   'characterLevel', 'characterXp', 'attributePoints',
-  'backstory', 'portraitUrl', 'voiceId', 'voiceName',
+  'backstory', 'portraitUrl', 'spriteUrl', 'voiceId', 'voiceName',
   'campaignCount', 'fame', 'infamy', 'status',
   'lockedCampaignId', 'lockedCampaignName', 'lockedLocation',
   'equippedMainHand', 'equippedOffHand', 'equippedArmour',
@@ -49,7 +50,7 @@ const SCALAR_FIELDS = [
 
 const JSON_FIELDS = [
   'attributes', 'mana', 'spells', 'money', 'statuses', 'needs',
-  'customAttackPresets', 'knownTitles', 'activeDungeonState',
+  'customAttackPresets', 'knownTitles', 'activeDungeonState', 'skillBadges',
 ];
 
 // ── Shape conversion ──
@@ -69,6 +70,9 @@ export function reconstructCharacterSnapshot(row) {
   // FE canonical paths so `apiClient.resolveMediaUrl` can freshly hydrate.
   if (snapshot.portraitUrl) {
     snapshot.portraitUrl = toCanonicalStoragePath(snapshot.portraitUrl);
+  }
+  if (snapshot.spriteUrl) {
+    snapshot.spriteUrl = toCanonicalStoragePath(snapshot.spriteUrl);
   }
 
   // Lazy backfill: historically `characterXp` stored "XP since last level-up"
@@ -123,6 +127,8 @@ export function reconstructCharacterSnapshot(row) {
   delete snapshot.equippedOffHand;
   delete snapshot.equippedArmour;
 
+  snapshot.mana = sanitizeMana(snapshot.mana);
+
   return snapshot;
 }
 
@@ -150,6 +156,9 @@ export function splitCharacterSnapshot(snapshot) {
   if (typeof scalars.portraitUrl === 'string' && scalars.portraitUrl) {
     scalars.portraitUrl = toCanonicalStoragePath(scalars.portraitUrl);
   }
+  if (typeof scalars.spriteUrl === 'string' && scalars.spriteUrl) {
+    scalars.spriteUrl = toCanonicalStoragePath(scalars.spriteUrl);
+  }
   const equipped = snapshot.equipped || {};
   if (equipped.mainHand !== undefined) scalars.equippedMainHand = equipped.mainHand || null;
   if (equipped.offHand !== undefined) scalars.equippedOffHand = equipped.offHand || null;
@@ -166,6 +175,40 @@ export function splitCharacterSnapshot(snapshot) {
   const materialRows = stackMaterialRows(snapshot.materialBag || []);
 
   return { scalars, skillRows, inventoryRows, materialRows };
+}
+
+/**
+ * Shallow merge: `overlay` keys only replace when the value is not `undefined`.
+ * (Explicit `null` is kept — e.g. cleared status / lock fields.)
+ */
+function overlaySnapshotBaseline(base, overlay) {
+  const out = { ...base };
+  if (!overlay) return out;
+  for (const [k, v] of Object.entries(overlay)) {
+    if (v !== undefined) out[k] = v;
+  }
+  return out;
+}
+
+/**
+ * `persistCharacterSnapshot` replaces child tables from the snapshot. If the
+ * caller passes a partial object (multiplayer wire, or any path that dropped a
+ * scalar like `wounds`), omitting a field would either wipe relations or omit
+ * required Prisma update args — merge with the current DB row first.
+ */
+function snapshotNeedsDbBaseline(snapshot) {
+  if (!snapshot) return true;
+  for (const key of SCALAR_FIELDS) {
+    if (snapshot[key] === undefined) return true;
+  }
+  for (const key of JSON_FIELDS) {
+    if (snapshot[key] === undefined) return true;
+  }
+  if (snapshot.skills === undefined) return true;
+  if (snapshot.inventory === undefined) return true;
+  if (snapshot.materialBag === undefined) return true;
+  if (snapshot.equipped === undefined) return true;
+  return false;
 }
 
 /**
@@ -271,8 +314,13 @@ export async function loadCharacterSnapshotById(id, client = prisma) {
  */
 export async function persistCharacterSnapshot(characterId, snapshot, client = prisma) {
   if (!characterId || !snapshot) return null;
-  clearStaleEquipped(snapshot);
-  const { scalars, skillRows, inventoryRows, materialRows } = splitCharacterSnapshot(snapshot);
+  let merged = snapshot;
+  if (snapshotNeedsDbBaseline(snapshot)) {
+    const baseline = await loadCharacterSnapshot({ id: characterId }, client);
+    if (baseline) merged = overlaySnapshotBaseline(baseline, snapshot);
+  }
+  clearStaleEquipped(merged);
+  const { scalars, skillRows, inventoryRows, materialRows } = splitCharacterSnapshot(merged);
 
   const ops = async (tx) => {
     if (Object.keys(scalars).length > 0) {

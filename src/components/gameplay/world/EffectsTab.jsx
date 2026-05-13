@@ -9,13 +9,13 @@ export default function EffectsTab({ effects, t }) {
       {effects.map((fx) => (
         <div key={fx.id} className="p-3 rounded-sm bg-surface-container/40 border border-outline-variant/10">
           <div className="flex items-center gap-2 mb-1">
-            <span className="material-symbols-outlined text-sm text-tertiary">{
+            <span className="material-symbols-outlined text-base text-tertiary">{
               fx.type === 'trap' ? 'warning' : fx.type === 'spell' ? 'auto_awesome' : 'eco'
             }</span>
-            <span className="text-[10px] font-label uppercase tracking-wider text-tertiary">{fx.type}</span>
+            <span className="text-xs font-label uppercase tracking-wider text-tertiary">{fx.type}</span>
           </div>
-          <p className="text-sm text-on-surface">{fx.description}</p>
-          <div className="text-[10px] text-outline mt-1 space-x-3">
+          <p className="text-base text-on-surface">{fx.description}</p>
+          <div className="text-xs text-outline mt-1 space-x-3">
             {fx.location && <span>{t('worldState.location')}: {fx.location}</span>}
             {fx.placedBy && <span>{t('worldState.placedBy')}: {fx.placedBy}</span>}
           </div>

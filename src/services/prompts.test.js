@@ -35,6 +35,62 @@ describe('image prompt age integration', () => {
 
     expect(prompt).toContain('approximately 23 years old');
   });
+
+  it('prefixes explicit gender and age when subjectOverride is used (LLM NPC portrait path)', () => {
+    const override = 'silent herbalist hermit with herbs and candlelight';
+    const female = buildPortraitPrompt(
+      null,
+      'female',
+      68,
+      null,
+      'Fantasy',
+      'stability',
+      'painting',
+      false,
+      false,
+      null,
+      {},
+      null,
+      override,
+    );
+    expect(female).toContain('Close-up portrait of female, approximately 68 years old, ');
+    expect(female).toContain(override);
+
+    const sdWebui = buildPortraitPrompt(
+      null,
+      'female',
+      68,
+      null,
+      'Fantasy',
+      'sd-webui',
+      'painting',
+      false,
+      false,
+      null,
+      {},
+      'asgardSDXLHybrid_v12FP32MainModel',
+      override,
+    );
+    expect(sdWebui.startsWith('close-up portrait of female, approximately 68 years old, ')).toBe(true);
+    expect(sdWebui).toContain(override);
+
+    const ageOnly = buildPortraitPrompt(
+      null,
+      null,
+      42,
+      null,
+      'Fantasy',
+      'stability',
+      'painting',
+      false,
+      false,
+      null,
+      {},
+      null,
+      override,
+    );
+    expect(ageOnly).toContain('Close-up portrait of approximately 42 years old, ');
+  });
 });
 
 describe('SDXL per-model presets', () => {

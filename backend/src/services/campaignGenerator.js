@@ -2,13 +2,13 @@ import { requireServerApiKey } from './apiKeyService.js';
 import { parseProviderError } from './aiErrors.js';
 import { config } from '../config.js';
 import { resolveModelForTask } from './serverConfig.js';
-import { pickStartSpawn } from './livingWorld/startSpawnPicker.js';
+import { pickStartSpawn, loadRoadNeighborsForSettlement } from './livingWorld/startSpawnPicker.js';
 import { rememberStartSpawn, attachInitialLocations } from './livingWorld/startSpawnCache.js';
 
 export async function generateCampaignStream(settings, { provider = 'openai', model = null, language = 'en', userApiKeys = null, userId = null } = {}, onEvent) {
   const resolvedProvider = provider === 'anthropic' ? 'anthropic' : 'openai';
   const apiKey = requireServerApiKey(resolvedProvider, userApiKeys, resolvedProvider === 'anthropic' ? 'Anthropic' : 'OpenAI');
-  const resolvedModel = model || await resolveModelForTask('campaignGeneration', resolvedProvider) || config.aiModels.premium[resolvedProvider];
+  const resolvedModel = await resolveModelForTask('campaignGeneration', resolvedProvider) || model || config.aiModels.premium[resolvedProvider];
 
   // Round B (Phase 3) — pick a canonical start-spawn trio BEFORE prompt
   // assembly. The picker returns null when no canonical world is seeded
@@ -22,7 +22,9 @@ export async function generateCampaignStream(settings, { provider = 'openai', mo
     if (userId) {
       rememberStartSpawn(userId, {
         settlementName: startSpawn.settlement.canonicalName,
+        settlementId: startSpawn.settlement.id,
         sublocationName: startSpawn.sublocation.canonicalName,
+        sublocationId: startSpawn.sublocation.id,
         npcName: startSpawn.npc.name,
         npcCanonicalId: startSpawn.npc.canonicalId,
         npcCurrentLocationId: startSpawn.npc.currentLocationId || null,
@@ -37,8 +39,15 @@ export async function generateCampaignStream(settings, { provider = 'openai', mo
     } });
   }
 
+  // Load 1-hop Road neighbors of the starting settlement so the prompt
+  // can reference real canonical places when building the quest narrative.
+  let worldNeighborhood = [];
+  if (startSpawn?.settlement?.id) {
+    worldNeighborhood = await loadRoadNeighborsForSettlement(startSpawn.settlement.id).catch(() => []);
+  }
+
   const systemPrompt = 'You are a master RPG campaign designer. Create rich, immersive campaign foundations that draw players into the story. Always respond with valid JSON only.';
-  const userPrompt = buildCampaignCreationPrompt(settings, language, { startSpawn });
+  const userPrompt = buildCampaignCreationPrompt(settings, language, { startSpawn, worldNeighborhood });
 
   try {
     const streamFn = resolvedProvider === 'anthropic' ? callAnthropicStreaming : callOpenAIStreaming;
@@ -254,7 +263,7 @@ const LENGTH_PARAMS = {
   },
 };
 
-function buildCampaignCreationPrompt(settings, language = 'en', { startSpawn = null } = {}) {
+function buildCampaignCreationPrompt(settings, language = 'en', { startSpawn = null, worldNeighborhood = [] } = {}) {
   const lp = LENGTH_PARAMS[settings.length] || LENGTH_PARAMS.Medium;
 
   const langInstruction = language === 'pl'
@@ -329,6 +338,21 @@ STARTING LOCATION + QUEST-GIVER (HARD BIND — DO NOT DEVIATE):
 `
     : '';
 
+  // World neighborhood — nearby canonical settlements connected by Road.
+  // Helps the AI weave existing places into quest objectives and NPC dialog.
+  const neighborhoodBlock = startSpawn && worldNeighborhood.length > 0
+    ? `
+
+WORLD NEIGHBORHOOD (canonical places near ${startSpawn.settlement.canonicalName} — reference these, DO NOT invent duplicates):
+${worldNeighborhood.map((n) => {
+    const dist = n.distance ? `~${n.distance} km` : '';
+    const dir = n.direction || '';
+    const suffix = [dist, dir].filter(Boolean).join(' ');
+    return `  · ${n.name} (${n.type}${suffix ? ', ' + suffix : ''})`;
+  }).join('\n')}
+`
+    : '';
+
   // Thematic anchor for the AI: the starter NPC's lived knowledge + the
   // canonical locations they can reference. Quest content + new locations
   // (`initialLocations`) MUST stay inside this surface so the player meets
@@ -369,7 +393,7 @@ ${knownLocs.length ? knownLocs.map((l) => `  · ${l.canonicalName}${l.locationTy
 ${characterNameLine}
 ${speciesLine}
 - Player's story idea: "${settings.storyPrompt}"
-${langInstruction}${existingCharNote}${humorousToneGuidance}${starterBindBlock}${npcKnowledgeBlock}
+${langInstruction}${existingCharNote}${humorousToneGuidance}${starterBindBlock}${neighborhoodBlock}${npcKnowledgeBlock}
 
 Generate the campaign foundation. The game uses the RPGon custom RPG system with 6 attributes (scale 1-25): Sila (Strength), Inteligencja (Intelligence), Charyzma (Charisma), Zrecznosc (Dexterity), Wytrzymalosc (Endurance), Szczescie (Luck). Plus Mana as a magic resource.
 

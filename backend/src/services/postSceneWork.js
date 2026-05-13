@@ -1,7 +1,7 @@
 import { prisma } from '../lib/prisma.js';
 import { childLogger } from '../lib/logger.js';
 import { generateSceneEmbedding, processStateChanges } from './sceneGenerator/processStateChanges.js';
-import { compressSceneToSummary, generateLocationSummary } from './memoryCompressor.js';
+import { compressSceneToSummary, generateLocationSummary, appendSceneDigest } from './memoryCompressor.js';
 import { pauseNpcsAtLocation, resumeNpcsAtLocation } from './livingWorld/npcLifecycle.js';
 import { applyCompanionTravel } from './livingWorld/companionService.js';
 import { handleNpcKills } from './livingWorld/reputationHook.js';
@@ -14,6 +14,8 @@ import { resolveLocationByName } from './livingWorld/worldStateService.js';
 import { markEdgeDiscovered } from './livingWorld/travelGraph.js';
 import { listLocationsForCampaign } from './livingWorld/locationQueries.js';
 import { LOCATION_KIND_WORLD } from './locationRefs.js';
+import { extractGraphUpdate, validateGraphUpdate, applyGraphUpdate } from './locationGraph/index.js';
+import { setLlmCallUserId } from './llmCallLogger.js';
 
 const log = childLogger({ module: 'postSceneWork' });
 
@@ -41,6 +43,7 @@ export async function handlePostSceneWork({
     log.warn({ sceneId }, 'Scene not found — skipping post-scene work');
     return;
   }
+  if (campaign?.userId) setLlmCallUserId(campaign.userId);
 
   const stateChanges = scene.stateChanges || null;
 
@@ -105,6 +108,12 @@ export async function handlePostSceneWork({
     const currentRef = campaign?.currentLocationKind && campaign?.currentLocationId
       ? { kind: campaign.currentLocationKind, id: campaign.currentLocationId, name: campaign.currentLocationName || null }
       : null;
+    // Oś 3 — questOffers żyją na top-level scene-a (zgodnie z response
+    // template), ale processStateChanges materializuje quest grafy z
+    // jednego miejsca. Squash do stateChanges.questOffers przed wywołaniem.
+    if (Array.isArray(scene.questOffers) && scene.questOffers.length > 0 && !stateChanges.questOffers) {
+      stateChanges.questOffers = scene.questOffers;
+    }
     phase1Tasks.push(processStateChanges(campaignId, stateChanges, {
       prevLoc, sceneIndex: scene.sceneIndex, currentRef,
     }));
@@ -230,6 +239,40 @@ export async function handlePostSceneWork({
     log.warn({ err: err?.message, sceneId }, '_locationSnapshot write failed (non-fatal)');
   }
 
+  // Location Graph — extract spatial/structural updates from the scene
+  // narrative and apply them to the graph. Async + best-effort; never blocks
+  // the main post-scene pipeline. Runs after Phase 1 so currentLocation FK
+  // is already set on the campaign row.
+  if (campaign?.livingWorldEnabled && sceneTranscript) {
+    try {
+      const locKind = campaign.currentLocationKind || null;
+      const locId = campaign.currentLocationId || null;
+      if (locKind && locId) {
+        const graphUpdate = await extractGraphUpdate({
+          sceneText: sceneTranscript,
+          playerAction,
+          stateChanges,
+          campaignId,
+          locationId: locId,
+          locationKind: locKind,
+          provider,
+          timeoutMs: llmNanoTimeoutMs,
+        });
+        if (graphUpdate) {
+          const { valid, warnings } = validateGraphUpdate(graphUpdate);
+          if (warnings.length > 0) {
+            log.debug({ warnings, campaignId }, 'Graph update validation warnings');
+          }
+          if (valid) {
+            await applyGraphUpdate(graphUpdate, { campaignId });
+          }
+        }
+      }
+    } catch (err) {
+      log.warn({ err: err?.message, campaignId }, 'Graph extraction/apply failed (non-fatal)');
+    }
+  }
+
   // Living World Phase 3 — reputation hook. Runs after Phase 1 so CampaignNPC
   // promotion + worldNpcId linkage is in place. Best-effort — never blocks.
   // `judgeKill` reads scene text to decide whether the kill was justified;
@@ -308,6 +351,27 @@ export async function handlePostSceneWork({
       );
     }
   }
+  // Location History Digest — append a one-line digest to the current
+  // location's ring buffer so return-to-location scenes get grounded context.
+  // Uses the first major memory entry from the compress result as the digest
+  // text; falls back to the player action if compress was skipped/failed.
+  const digestLocationName = newLoc || prevLoc;
+  if (digestLocationName) {
+    let digestText = playerAction || '';
+    if (compressResult?.status === 'fulfilled' && compressResult.value) {
+      const nano = compressResult.value;
+      const majorFact = nano._majorMemoryText;
+      if (majorFact) digestText = majorFact;
+    }
+    if (digestText) {
+      try {
+        await appendSceneDigest(campaignId, digestLocationName, scene.sceneIndex, digestText);
+      } catch (err) {
+        log.warn({ err: err?.message, campaignId }, 'Scene digest append failed (non-fatal)');
+      }
+    }
+  }
+
   const failures = results.filter((r) => r.status === 'rejected');
   if (failures.length > 0) {
     log.error(

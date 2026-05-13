@@ -1,9 +1,16 @@
 import { useMemo } from 'react';
 
+function formatWoundsText(wc) {
+  if (!wc) return '';
+  if (wc < 0) return ` Took ${Math.abs(wc)} wounds.`;
+  return ` Healed ${wc} wounds.`;
+}
+
 function buildCombatResult(summary) {
   return {
     outcome: summary.outcome || (summary.playerSurvived ? 'victory' : 'defeat'),
     woundsChange: summary.woundsChange || 0,
+    manaChange: summary.manaChange || 0,
     skillProgress: summary.skillProgress || null,
     combatStats: summary.combatStats || null,
     enemiesDefeated: summary.enemiesDefeated || 0,
@@ -54,7 +61,7 @@ export function buildCombatResolutionHandlers({
     dispatch({ type: 'END_COMBAT' });
 
     const combatJournal = summary.playerSurvived
-      ? `Combat: Victory — ${summary.enemiesDefeated}/${summary.totalEnemies} enemies defeated in ${summary.rounds} rounds.${summary.woundsChange ? ` Took ${Math.abs(summary.woundsChange)} wounds.` : ''}`
+      ? `Combat: Victory — ${summary.enemiesDefeated}/${summary.totalEnemies} enemies defeated in ${summary.rounds} rounds.${formatWoundsText(summary.woundsChange)}`
       : `Combat: Defeat — fell after ${summary.rounds} rounds against ${summary.totalEnemies} enemies.`;
 
     const isDead = !summary.playerSurvived;
@@ -84,7 +91,7 @@ export function buildCombatResolutionHandlers({
     }
 
     const combatResult = buildCombatResult(summary);
-    const combatActionText = `[Combat resolved: defeated ${summary.enemiesDefeated}/${summary.totalEnemies} enemies in ${summary.rounds} rounds.${summary.woundsChange ? ` Took ${Math.abs(summary.woundsChange)} wounds.` : ' Unscathed.'}]`;
+    const combatActionText = `[Combat resolved: defeated ${summary.enemiesDefeated}/${summary.totalEnemies} enemies in ${summary.rounds} rounds.${formatWoundsText(summary.woundsChange) || ' Unscathed.'}]`;
 
     generateScene(combatActionText, false, false, false, { combatResult }).catch(() => {});
   };
@@ -93,7 +100,7 @@ export function buildCombatResolutionHandlers({
     dispatch({ type: 'END_COMBAT' });
 
     const remainingList = formatRemainingEnemies(summary.remainingEnemies);
-    const combatJournal = `Combat: Surrender — yielded after ${summary.rounds} rounds. ${summary.enemiesDefeated}/${summary.totalEnemies} enemies defeated. Remaining enemies: ${remainingList}.${summary.woundsChange ? ` Took ${Math.abs(summary.woundsChange)} wounds.` : ''}`;
+    const combatJournal = `Combat: Surrender — yielded after ${summary.rounds} rounds. ${summary.enemiesDefeated}/${summary.totalEnemies} enemies defeated. Remaining enemies: ${remainingList}.${formatWoundsText(summary.woundsChange)}`;
 
     dispatch({ type: 'APPLY_STATE_CHANGES', payload: { journalEntries: [combatJournal] } });
 
@@ -110,7 +117,7 @@ export function buildCombatResolutionHandlers({
     autoSave();
 
     const combatResult = { ...buildCombatResult(summary), outcome: 'surrender' };
-    const combatActionText = `[Combat resolved: player surrendered after ${summary.rounds} rounds. ${summary.enemiesDefeated}/${summary.totalEnemies} enemies defeated. Remaining enemies: ${remainingList}. Reason for combat: ${summary.reason || 'unknown'}.${summary.woundsChange ? ` Player took ${Math.abs(summary.woundsChange)} wounds.` : ' Player unscathed.'}]`;
+    const combatActionText = `[Combat resolved: player surrendered after ${summary.rounds} rounds. ${summary.enemiesDefeated}/${summary.totalEnemies} enemies defeated. Remaining enemies: ${remainingList}. Reason for combat: ${summary.reason || 'unknown'}.${formatWoundsText(summary.woundsChange) || ' Player unscathed.'}]`;
     generateScene(combatActionText, false, false, false, { combatResult }).catch(() => {});
   };
 
@@ -118,7 +125,7 @@ export function buildCombatResolutionHandlers({
     dispatch({ type: 'END_COMBAT' });
 
     const remainingList = formatRemainingEnemies(summary.remainingEnemies);
-    const combatJournal = `Combat: Truce — forced a truce after ${summary.rounds} rounds. ${summary.enemiesDefeated}/${summary.totalEnemies} enemies defeated. Remaining enemies: ${remainingList}.${summary.woundsChange ? ` Took ${Math.abs(summary.woundsChange)} wounds.` : ''}`;
+    const combatJournal = `Combat: Truce — forced a truce after ${summary.rounds} rounds. ${summary.enemiesDefeated}/${summary.totalEnemies} enemies defeated. Remaining enemies: ${remainingList}.${formatWoundsText(summary.woundsChange)}`;
 
     dispatch({ type: 'APPLY_STATE_CHANGES', payload: { journalEntries: [combatJournal] } });
 
@@ -135,7 +142,7 @@ export function buildCombatResolutionHandlers({
     autoSave();
 
     const combatResult = { ...buildCombatResult(summary), outcome: 'truce' };
-    const combatActionText = `[Combat resolved: player forced a truce after ${summary.rounds} rounds. ${summary.enemiesDefeated}/${summary.totalEnemies} enemies defeated. Remaining enemies: ${remainingList}. The player had the upper hand and demanded the enemies stand down. Reason for combat: ${summary.reason || 'unknown'}.${summary.woundsChange ? ` Player took ${Math.abs(summary.woundsChange)} wounds.` : ' Player unscathed.'}]`;
+    const combatActionText = `[Combat resolved: player forced a truce after ${summary.rounds} rounds. ${summary.enemiesDefeated}/${summary.totalEnemies} enemies defeated. Remaining enemies: ${remainingList}. The player had the upper hand and demanded the enemies stand down. Reason for combat: ${summary.reason || 'unknown'}.${formatWoundsText(summary.woundsChange) || ' Player unscathed.'}]`;
     generateScene(combatActionText, false, false, false, { combatResult }).catch(() => {});
   };
 

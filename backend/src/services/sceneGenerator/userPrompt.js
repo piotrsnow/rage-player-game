@@ -5,15 +5,7 @@ const BESTIARY_RACES_STR = BESTIARY_RACES.join(', ');
 const BESTIARY_LOCATIONS_STR = BESTIARY_LOCATIONS.join(', ');
 
 function buildPreRollInstructions() {
-  return `To resolve a non-lucky check:
-1. Pick skill name from PC Skills (e.g. Skradanie:4 → skill_level=4). If not in list → skill_level=0.
-2. Find linked attribute from PC Attributes (see mapping in CORE RULES, e.g. Skradanie→ZRC:13 → attr=13).
-3. total = base + attr + skill_level + creativityBonus (the top-level bonus you are awarding this scene — already factored into the result below)
-4. Compare vs threshold: easy=20, medium=35, hard=50, veryHard=65, extreme=80
-5. margin = total - threshold. success = margin >= 0.
-LUCKY SUCCESS rolls: skip all calculation, auto-success. Narrate fortunate twist.
-IMPORTANT: Decide creativityBonus FIRST, then calculate result, then narrate accordingly. Do not narrate success if the roll fails.
-Include in TOP-LEVEL diceRolls field (NOT nested in stateChanges): [{skill, difficulty, success}]. Use only as many rolls as genuinely needed.`;
+  return `Resolve per CORE RULES. Thresholds: easy=20, medium=35, hard=50, veryHard=65, extreme=80. Lucky success → auto-success. Include in TOP-LEVEL diceRolls [{skill, difficulty, success}].`;
 }
 
 export function buildUserPrompt(playerAction, {
@@ -26,6 +18,9 @@ export function buildUserPrompt(playerAction, {
   sceneCount = 0,
   creativityEligible = false,
   forceRoll = null,
+  pendingSlip = null,
+  pendingProvidence = null,
+  entityTags = null,
 } = {}) {
   if (isFirstScene) {
     return `Generate the opening scene. Set the stage with an atmospheric description. Introduce the setting, hint at adventure hooks, and include at least one NPC who speaks in direct dialogue. This is scene 1 — keep it concise (1-2 short paragraphs).
@@ -41,6 +36,11 @@ Include stateChanges: timeAdvance, currentLocation, npcs (introduce at least 1),
     ? 'player_input_kind=custom — gracz wpisał WŁASNĄ akcję. Oceń kreatywność i zwróć creativityBonus 0-10 zgodnie z regułami w CORE RULES.'
     : 'player_input_kind=suggested_or_auto — gracz NIE wpisał własnej akcji (clicked suggested / autoplayer / akcja systemowa). creativityBonus MUSI być 0.');
 
+  // Incident system — humorous penalty for unfounded complaint
+  if (pendingSlip) {
+    parts.push(`MANDATORY NARRATIVE EVENT: The character slips, stumbles, or trips on something in this scene. Weave it naturally into the narrative as a minor comedic moment — e.g. steps on a slippery fish, trips over a loose cobblestone, stumbles on a tree root. This is NOT a combat event, no damage, just a brief humorous moment. Reason (internal, do not reveal to player): ${pendingSlip}`);
+  }
+
   // Needs crisis reminder
   if (needsSystemEnabled && characterNeeds) {
     const critNeeds = ['hunger','thirst','bladder','hygiene','rest'].filter(k => (characterNeeds[k] ?? 100) < 10);
@@ -51,6 +51,7 @@ Include stateChanges: timeAdvance, currentLocation, npcs (introduce at least 1),
 
   // Special action types
   const isIdleWorldEvent = playerAction?.startsWith('[IDLE_WORLD_EVENT');
+  const isProvidenceAfterIncident = playerAction === '[PROVIDENCE_AFTER_INCIDENT]';
   const isContinue = playerAction === '[CONTINUE]';
   const isWait = playerAction === '[WAIT]';
   const isPostCombat = playerAction?.startsWith('[Combat resolved:');
@@ -62,7 +63,20 @@ Include stateChanges: timeAdvance, currentLocation, npcs (introduce at least 1),
   const talkNpcMatch = playerAction?.match(/^\[TALK:\s*(.+?)\]$/);
 
   // Action block
-  if (isIdleWorldEvent) {
+  if (isProvidenceAfterIncident) {
+    const summaryArr = Array.isArray(pendingProvidence?.summary) ? pendingProvidence.summary : [];
+    const summaryLine = summaryArr.length > 0 ? summaryArr.join('; ') : '(no specific corrections recorded)';
+    const narratorLine = pendingProvidence?.narrativeComment
+      ? String(pendingProvidence.narrativeComment).replace(/\s+/g, ' ').trim()
+      : '';
+    parts.push(`PROVIDENCE EVENT — last scene the player flagged a continuity error and the judge ruled in their favour. The world has been silently corrected. Now weave a SHORT (1-2 paragraphs) atmospheric scene where the correction manifests through a fitting in-world mechanism — adapt the flavour to the campaign's genre and tone:
+  • fantasy / mythic     → providence, fate, omen, divine whim
+  • sci-fi / cyberpunk   → quirk of probability, glitch, lucky data drop
+  • horror / gothic      → uncanny synchronicity, half-seen pattern
+  • grounded / realistic → coincidence, overlooked detail surfacing, stroke of luck
+No combat. Minimal stateChanges (mostly timeAdvance ~0.25h). Narrative MUST naturally reference the corrections: ${summaryLine}.${narratorLine ? `\nNarrator's prior comment was: "${narratorLine}".` : ''}
+Do NOT re-emit the same questUpdates / npcs / location changes — they're already applied. Focus purely on the in-world flavour of "fate aligning".`);
+  } else if (isIdleWorldEvent) {
     parts.push(`IDLE WORLD EVENT — no player action. Something happens in the world: atmospheric event, NPC activity, overheard rumor, or foreshadowing. Keep SHORT (1-2 para). No combat. Minimal stateChanges. timeAdvance 0.25-0.5h.`);
   } else if (isWait) {
     parts.push(`PLAYER WAITS — passive observation. Do not narrate player initiative. Something develops: NPCs act, news arrives, opportunity/threat emerges. Include modest timeAdvance.`);
@@ -97,14 +111,28 @@ Include stateChanges: timeAdvance, currentLocation, npcs (introduce at least 1),
     parts.push(`Player wants to talk to "${talkNpcMatch[1]}". Narrate the conversation normally with dialogue segments for each NPC line.`);
   }
 
+  // Structured entity references selected by the player
+  if (Array.isArray(entityTags) && entityTags.length > 0) {
+    const tagLines = entityTags.map((tag) => {
+      const extras = [];
+      if (tag.meta?.tree) extras.push(`drzewo: ${tag.meta.tree}`);
+      if (tag.meta?.manaCost != null) extras.push(`koszt: ${tag.meta.manaCost} many`);
+      if (tag.meta?.role) extras.push(tag.meta.role);
+      if (tag.meta?.locationType) extras.push(tag.meta.locationType);
+      const suffix = extras.length > 0 ? ` (${extras.join(', ')})` : '';
+      return `- ${tag.kind}: ${tag.name}${suffix}`;
+    });
+    parts.push(`## Entity references (player-selected)\n${tagLines.join('\n')}`);
+  }
+
   // Combat intent
-  if (!isPostCombat && !isIdleWorldEvent && !isWait) {
+  if (!isPostCombat && !isIdleWorldEvent && !isWait && !isProvidenceAfterIncident) {
     if (isGeneralCombatInitiation) {
       parts.push(`COMBAT INITIATED. MUST include combatUpdate. PREFERRED: use enemyHints {location, budget, maxDifficulty, count, race} — engine selects from bestiary. Available races: ${BESTIARY_RACES_STR}. Available locations: ${BESTIARY_LOCATIONS_STR}.`);
     } else if (attackNpcMatch) {
       parts.push(`PLAYER ATTACKS "${attackNpcMatch[1]}". MUST include combatUpdate. Use enemyHints with appropriate budget/maxDifficulty/count. If tension should build first, use pendingThreat instead.`);
     } else if (detectCombatIntent(playerAction)) {
-      parts.push(`COMBAT INTENT DETECTED. MUST include combatUpdate with enemyHints {location, budget, maxDifficulty, count}. Available races: ${BESTIARY_RACES_STR}.`);
+      parts.push(`COMBAT INTENT DETECTED. MUST include combatUpdate with enemyHints {location, budget, maxDifficulty, count, race}.`);
     }
   }
 
@@ -139,25 +167,16 @@ ${rollLines.join('\n')}
 Each ADDITIONAL roll MUST be on a DIFFERENT skill than the engine-resolved one (${r.skill}). Never roll twice for the same skill in one scene — collapse multiple uses of ${r.skill} into the resolved check above.
 ${buildPreRollInstructions()}`);
     }
-  } else if (!isPostCombat && !isIdleWorldEvent) {
+  } else if (!isPostCombat && !isIdleWorldEvent && !isProvidenceAfterIncident) {
     if (preRolls && preRolls.length > 0) {
       const rollLines = preRolls.map((pr, i) => {
         if (pr.luckySuccess) return `  Roll ${i + 1}: LUCKY SUCCESS — auto-success, narrate fortunate twist. No calculation needed.`;
         return `  Roll ${i + 1}: base=${pr.base} (d50=${pr.d50}+momentum=${pr.momentum}). Add attribute + skill_level, compare vs threshold.`;
       });
-      if (forceRoll?.enabled) {
-        const modNote = forceRoll.modifier
-          ? ` A ${forceRoll.modifier > 0 ? '+' : ''}${forceRoll.modifier} circumstance modifier will be added to the roll post-hoc — narrate accordingly (${forceRoll.modifier > 0 ? 'favorable circumstance helping the character' : 'unfavorable circumstance hindering the character'}).`
-          : '';
-        parts.push(`PLAYER DEMANDED A ROLL — you MUST include exactly one entry in the top-level diceRolls field this scene, picking the skill that best fits the action. Trivial or absurd actions (e.g. "I try to levitate", "I flirt with a rock") ARE acceptable to roll for — the player wants to see the mechanical outcome anyway. Use Roll 1 from the pre-rolls below.${modNote}
-${rollLines.join('\n')}
-${buildPreRollInstructions()}`);
-      } else {
-        parts.push(`No skill check was pre-resolved.
+      parts.push(`No skill check was pre-resolved.
 If you determine this action requires skill checks (genuine risk/uncertainty), use IN ORDER:
 ${rollLines.join('\n')}
 ${buildPreRollInstructions()}`);
-      }
     } else {
       parts.push('No skill check for this action.');
     }

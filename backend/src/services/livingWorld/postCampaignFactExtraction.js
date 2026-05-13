@@ -183,6 +183,8 @@ export async function extractWorldFacts({
       maxTokens,
       temperature: 0,
       userApiKeys,
+      taskType: 'fact-extraction',
+      taskLabel: 'Post-campaign fact extraction',
     });
   } catch (err) {
     log.warn({ campaignId, err: err?.message }, 'extractWorldFacts: provider call failed');

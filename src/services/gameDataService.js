@@ -71,15 +71,27 @@ export const gameData = {
   },
 
   get MELEE_RANGE() {
-    return _combatData?.constants?.MELEE_RANGE ?? 2;
+    return _combatData?.constants?.MELEE_RANGE ?? 4;
   },
 
-  get BATTLEFIELD_MAX() {
-    return _combatData?.constants?.BATTLEFIELD_MAX ?? 20;
+  get BATTLEFIELD_WIDTH() {
+    return _combatData?.constants?.BATTLEFIELD_WIDTH ?? 16;
+  },
+
+  get BATTLEFIELD_HEIGHT() {
+    return _combatData?.constants?.BATTLEFIELD_HEIGHT ?? 9;
   },
 
   get DEFAULT_MOVEMENT() {
-    return _combatData?.constants?.DEFAULT_MOVEMENT ?? 4;
+    return _combatData?.constants?.DEFAULT_MOVEMENT ?? 8;
+  },
+
+  get terrainTiles() {
+    return _combatData?.terrainTiles || {};
+  },
+
+  get terrainSpawnConfig() {
+    return _combatData?.terrainSpawnConfig || { minCount: 5, maxCount: 8, spawnMarginCols: 4 };
   },
 
   get bestiary() {

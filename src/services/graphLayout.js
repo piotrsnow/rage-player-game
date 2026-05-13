@@ -1,3 +1,85 @@
+/** All nodes share the same world point — caller should use force layout instead. */
+const GEO_DEGENERATE_EPS = 1e-5;
+
+/** Must match GraphCanvas LAYOUT_W / LAYOUT_H / padding used with geoProjectLayout. */
+export const GRAPH_LAYOUT_W = 1200;
+export const GRAPH_LAYOUT_H = 900;
+export const GRAPH_LAYOUT_PAD = 60;
+
+/**
+ * Bbox + scale for geo projection (forward and inverse canvas ↔ region km).
+ *
+ * @param {Array<{ id: string, regionX?: number, regionY?: number }>} nodes
+ * @param {{ width?: number, height?: number, pad?: number }} [opts]
+ * @returns {{ minX: number, maxX: number, minY: number, maxY: number, scale: number, offsetX: number, offsetY: number } | null}
+ */
+export function getGeoProjectionParams(nodes, { width = GRAPH_LAYOUT_W, height = GRAPH_LAYOUT_H, pad = GRAPH_LAYOUT_PAD } = {}) {
+  if (!nodes?.length) return null;
+
+  let minX = Infinity;
+  let maxX = -Infinity;
+  let minY = Infinity;
+  let maxY = -Infinity;
+  for (const n of nodes) {
+    const x = Number(n.regionX) || 0;
+    const y = Number(n.regionY) || 0;
+    if (x < minX) minX = x;
+    if (x > maxX) maxX = x;
+    if (y < minY) minY = y;
+    if (y > maxY) maxY = y;
+  }
+
+  const rawRX = maxX - minX;
+  const rawRY = maxY - minY;
+  if (rawRX < GEO_DEGENERATE_EPS && rawRY < GEO_DEGENERATE_EPS) return null;
+
+  const innerW = width - 2 * pad;
+  const innerH = height - 2 * pad;
+  const scale = Math.min(
+    innerW / Math.max(rawRX, 1e-9),
+    innerH / Math.max(rawRY, 1e-9),
+  );
+  const offsetX = pad + (innerW - scale * rawRX) / 2;
+  const offsetY = pad + (innerH - scale * rawRY) / 2;
+
+  return { minX, maxX, minY, maxY, scale, offsetX, offsetY };
+}
+
+/** Inverse of geoProjectLayout pixel coords → region km (same projection as getGeoProjectionParams). */
+export function layoutPxToRegion(px, py, params) {
+  if (!params) return null;
+  const { minX, maxY, scale, offsetX, offsetY } = params;
+  return {
+    regionX: minX + (px - offsetX) / scale,
+    regionY: maxY - (py - offsetY) / scale,
+  };
+}
+
+/**
+ * Map location graph nodes (regionX/regionY in km) to canvas coordinates.
+ * Matches admin CanonGraphTab projection: bbox fit, uniform scale, Y inverted (north-up).
+ *
+ * @param {Array<{ id: string, regionX?: number, regionY?: number }>} nodes
+ * @param {{ width?: number, height?: number, pad?: number }} [opts]
+ * @returns {Map<string, { x: number, y: number }> | null} null if degenerate (no spatial spread)
+ */
+export function geoProjectLayout(nodes, opts = {}) {
+  const params = getGeoProjectionParams(nodes, opts);
+  if (!params) return null;
+  const { minX, maxY, scale, offsetX, offsetY } = params;
+
+  const result = new Map();
+  for (const n of nodes) {
+    const x = Number(n.regionX) || 0;
+    const y = Number(n.regionY) || 0;
+    result.set(n.id, {
+      x: offsetX + (x - minX) * scale,
+      y: offsetY + (maxY - y) * scale,
+    });
+  }
+  return result;
+}
+
 /**
  * Minimal force-directed graph layout.
  *

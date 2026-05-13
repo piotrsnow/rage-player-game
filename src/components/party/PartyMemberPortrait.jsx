@@ -24,7 +24,7 @@ export default function PartyMemberPortrait({ member, selected = false, onClick 
       onClick={onClick}
       title={tooltip}
       aria-label={tooltip}
-      className={`relative aspect-square w-full rounded-sm overflow-hidden bg-surface-container border ${ringClass} transition-all hover:border-primary/60 group`}
+      className={`relative aspect-[3/4] w-full rounded-sm overflow-hidden bg-surface-container border ${ringClass} transition-all hover:border-primary/60 group`}
     >
       {portraitUrl ? (
         <img

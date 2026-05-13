@@ -55,7 +55,7 @@ export const ATTRIBUTE_SCALE = {
 // ── SKILL SYSTEM ──
 
 export const SKILL_CAPS = {
-  basic: 10,
+  basic: 15,
   max: 25,
 };
 
@@ -255,7 +255,7 @@ export const SPECIES = {
     nameEN: 'Human',
     attributes: { sila: 1, inteligencja: 1, charyzma: 1, zrecznosc: 1, wytrzymalosc: 1, szczescie: 0 },
     startingMana: 0,
-    movement: 4,
+    movement: 8,
     skills: ['Perswazja', 'Handel', 'Wiedza ogolna', 'Walka bronia jednoręczna'],
     description: 'Wszechstronni i adaptacyjni. Bonus do wszystkich cech oprocz szczescia.',
   },
@@ -264,7 +264,7 @@ export const SPECIES = {
     nameEN: 'Halfling',
     attributes: { sila: 0, inteligencja: 0, charyzma: 2, zrecznosc: 3, wytrzymalosc: 0, szczescie: 0 },
     startingMana: 0,
-    movement: 3,
+    movement: 6,
     skills: ['Handel', 'Hazard', 'Skradanie', 'Wystepy'],
     description: 'Mali ale sprytni. Wysoka charyzma i zrecznosc.',
   },
@@ -273,7 +273,7 @@ export const SPECIES = {
     nameEN: 'Dwarf',
     attributes: { sila: 2, inteligencja: 0, charyzma: 0, zrecznosc: 0, wytrzymalosc: 3, szczescie: 0 },
     startingMana: 0,
-    movement: 3,
+    movement: 6,
     skills: ['Rzemioslo', 'Odpornosc', 'Walka bronia jednoręczna', 'Handel'],
     description: 'Twardziele. Wysoka wytrzymalosc i sila.',
   },
@@ -282,11 +282,9 @@ export const SPECIES = {
     nameEN: 'Elf',
     attributes: { sila: 0, inteligencja: 2, charyzma: 1, zrecznosc: 2, wytrzymalosc: 0, szczescie: 0 },
     startingMana: 2,
-    movement: 5,
+    movement: 10,
     skills: ['Spostrzegawczosc', 'Strzelectwo', 'Wiedza o naturze', 'Wystepy'],
     description: 'Zwinni i inteligentni, z naturalna predyspozycja do magii.',
-    // Elf playable disabled for now — still kept in SPECIES because NPC sheet
-    // generation and any legacy elf PCs need to resolve racial modifiers.
     playable: false,
   },
   Orc: {
@@ -294,7 +292,7 @@ export const SPECIES = {
     nameEN: 'Orc',
     attributes: { sila: 3, inteligencja: -1, charyzma: -1, zrecznosc: 0, wytrzymalosc: 2, szczescie: 0 },
     startingMana: 0,
-    movement: 4,
+    movement: 8,
     skills: ['Zastraszanie', 'Walka wrecz', 'Odpornosc', 'Przetrwanie'],
     description: 'Silni i wytrzymali wojownicy. Niska inteligencja i charyzma, za to potezna sila i twardosc.',
   },
@@ -327,7 +325,7 @@ export const CREATION_LIMITS = {
   szczesciePointCost: 3, // each point of Szczescie costs 3 from the attribute pool
   startingSkillPoints: 15, // points to distribute among ANY skills
   racialSkillLevel: 5, // species skills start at this level (free, not from pool)
-  // No maxPerSkillAtCreation — SKILL_CAPS.basic (10) is the only limit
+  // No maxPerSkillAtCreation — SKILL_CAPS.basic (15) is the only limit
 };
 
 // ── HELPER FUNCTIONS ──

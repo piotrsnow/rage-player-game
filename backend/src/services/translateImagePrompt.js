@@ -82,6 +82,8 @@ export async function translateImagePromptToEnglish({ text, userApiKeys = null }
       maxTokens: 400,
       temperature: 0,
       userApiKeys,
+      taskType: 'translate-prompt',
+      taskLabel: `Translate: ${trimmed.slice(0, 60)}`,
     }),
     TRANSLATE_TIMEOUT_MS,
   );

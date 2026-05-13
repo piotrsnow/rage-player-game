@@ -18,6 +18,7 @@ Also determine if a skill check (dice roll) is needed and which skill to test.
 Only select items that are RELEVANT to the player's action. Do not select everything.
 Return ONLY valid JSON matching this schema:
 {
+  "_reasoning": "1-2 sentences: what the player wants and which data will help",
   "expand_npcs": ["NPC names from the list"],
   "expand_quests": ["quest names from the list"],
   "expand_location": true/false,

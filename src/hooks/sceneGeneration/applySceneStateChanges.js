@@ -5,6 +5,7 @@ import { detectCombatIntent } from '../../../shared/domain/combatIntent.js';
 import { gameData } from '../../services/gameDataService';
 import { getGameState } from '../../stores/gameStore';
 import { shortId } from '../../utils/ids';
+import { devLog } from '../../stores/devEventLogStore';
 
 /**
  * Build a combat-enemy payload from a full NPC sheet (shape from
@@ -42,8 +43,13 @@ export function injectCombatFallback(result, state, playerAction, isFirstScene, 
   if (hasCombatUpdate) return;
 
   const currentLocation = state.world?.currentLocation || '';
+  const currentRef = state.world?.currentLocationRef || null;
   const fallbackNpc = (state.world?.npcs || []).find((npc) => {
     if (!npc?.name || npc.alive === false) return false;
+    // Faza 3a — preferuj match po composite ref. Fallback: string.
+    if (currentRef && npc.locationRef) {
+      return npc.locationRef.kind === currentRef.kind && npc.locationRef.id === currentRef.id;
+    }
     if (!currentLocation) return true;
     return String(npc.lastLocation || '').trim().toLowerCase() === String(currentLocation).trim().toLowerCase();
   });
@@ -141,12 +147,14 @@ export function applyNeedsAndRest(result, resolved, needsSystemEnabled) {
       ...(result.stateChanges?.needsChanges || {}),
       ...(resolved.restRecovery.needsChanges || {}),
     };
+    const restMana = resolved.restRecovery.manaChange;
     result.stateChanges = {
       ...(result.stateChanges || {}),
       ...(resolved.restRecovery.woundsChange !== undefined
         ? { woundsChange: resolved.restRecovery.woundsChange }
         : {}),
       ...(Object.keys(mergedNeedsChanges).length > 0 ? { needsChanges: mergedNeedsChanges } : {}),
+      ...(restMana != null ? { manaChange: restMana } : {}),
     };
   }
 }
@@ -155,22 +163,25 @@ export function applySceneStateChanges({
   result, state, dispatch,
   authoritativeCharacterSnapshot, ensureMissingInventoryImages, ensureMissingNpcPortraits, t,
   newlyUnlockedAchievements = [], updatedAchievementState = null,
+  campaignId = null, sceneIndex = null,
 }) {
   if (!result.stateChanges || Object.keys(result.stateChanges).length === 0) return;
 
-  const introducedNpcNames = new Set(
+  const updatedNpcNames = new Set(
     (Array.isArray(result.stateChanges.npcs) ? result.stateChanges.npcs : [])
-      .filter((n) => n?.action === 'introduce' && typeof n?.name === 'string')
+      .filter((n) => n?.action === 'update' && typeof n?.name === 'string')
       .map((n) => n.name.toLowerCase()),
   );
-  const existingNpcNames = new Set(
-    (state.world?.npcs || [])
-      .map((n) => (typeof n?.name === 'string' ? n.name.toLowerCase() : null))
-      .filter(Boolean),
-  );
-  const newlyIntroducedNames = [...introducedNpcNames].filter((name) => !existingNpcNames.has(name));
 
-  const { validated, warnings, corrections } = validateStateChanges(result.stateChanges, state);
+  const { validated, warnings, corrections } = validateStateChanges(
+    result.stateChanges,
+    state,
+    {},
+    { campaignId, sceneIndex },
+  );
+  if (warnings.length > 0 || corrections.length > 0) {
+    devLog.emit({ category: 'validation', type: 'state_validation', label: `Validation: ${warnings.length} warnings, ${corrections.length} corrections`, severity: warnings.length > 0 ? 'warn' : 'info', data: { warnings, corrections } });
+  }
   result.stateChanges = validated;
 
   const previousFactions = { ...(state.world?.factions || {}) };
@@ -183,11 +194,10 @@ export function applySceneStateChanges({
   if (Array.isArray(validated.newItems) && validated.newItems.length > 0) {
     void ensureMissingInventoryImages(validated.newItems, { emitWarning: false });
   }
-  if (newlyIntroducedNames.length > 0 && typeof ensureMissingNpcPortraits === 'function') {
+  if (updatedNpcNames.size > 0 && typeof ensureMissingNpcPortraits === 'function') {
     setTimeout(() => {
-      const nameSet = new Set(newlyIntroducedNames);
       const fresh = (getGameState()?.world?.npcs || [])
-        .filter((n) => n?.name && nameSet.has(n.name.toLowerCase()) && !n.portraitUrl);
+        .filter((n) => n?.name && updatedNpcNames.has(n.name.toLowerCase()) && !n.portraitUrl);
       if (fresh.length > 0) void ensureMissingNpcPortraits(fresh);
     }, 0);
   }
@@ -199,6 +209,7 @@ export function applySceneStateChanges({
   const consistency = checkWorldConsistency(postState, previousFactions);
   const patches = applyConsistencyPatches(postState, consistency.statePatches);
   if (patches) {
+    devLog.emit({ category: 'validation', type: 'consistency_patch', label: `Consistency patches applied`, data: { hasNpcPatch: !!patches.npcs, worldFacts: patches.newWorldFacts?.length || 0 } });
     if (patches.npcs) dispatch({ type: 'UPDATE_WORLD', payload: { npcs: patches.npcs } });
     if (patches.newWorldFacts?.length > 0) dispatch({ type: 'APPLY_STATE_CHANGES', payload: { worldFacts: patches.newWorldFacts } });
   }
@@ -226,9 +237,26 @@ export function applySceneStateChanges({
   if (updatedAchievementState) {
     dispatch({ type: 'UPDATE_ACHIEVEMENTS', payload: updatedAchievementState });
   }
+  if (newlyUnlockedAchievements.length > 0) {
+    devLog.emit({ category: 'state', type: 'achievements_unlocked', label: `Achievements: ${newlyUnlockedAchievements.map((a) => a.name).join(', ')}`, data: newlyUnlockedAchievements });
+  }
   for (const ach of newlyUnlockedAchievements) {
     if (ach.grantsTitle && state.character) {
       dispatch({ type: 'ADD_TITLE', payload: { ...ach.grantsTitle, sourceAchievementId: ach.id } });
     }
+    const xpPart = ach.xpReward ? ` — +${ach.xpReward} XP` : '';
+    dispatch({
+      type: 'ADD_CHAT_MESSAGE',
+      payload: {
+        id: `msg_${Date.now()}_ach_${shortId(3)}`,
+        role: 'system',
+        subtype: 'achievement_unlock',
+        content: `${ach.name}${xpPart}`,
+        achievementIcon: ach.icon || 'emoji_events',
+        achievementRarity: ach.rarity || 'common',
+        achievementDescription: ach.description || '',
+        timestamp: Date.now(),
+      },
+    });
   }
 }

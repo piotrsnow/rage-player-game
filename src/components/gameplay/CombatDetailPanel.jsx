@@ -1,6 +1,7 @@
 import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { getDistance } from '../../services/combatEngine';
+import ActiveEffectsRow from '../ui/ActiveEffectsRow';
 
 function ConditionBadge({ condition }) {
   const icons = {
@@ -112,7 +113,7 @@ export default function CombatDetailPanel({ combatant, myCombatant, allCombatant
         {combatant.position != null && (
           <div className="flex items-center gap-1">
             <span className="text-on-surface-variant">{t('combat.position', 'Pos')}</span>
-            <span className="text-on-surface font-bold">{combatant.position}y</span>
+            <span className="text-on-surface font-bold">[{typeof combatant.position === 'object' ? `${combatant.position.x},${combatant.position.y}` : combatant.position}]</span>
           </div>
         )}
         {combatant.movementAllowance > 0 && !combatant.isDefeated && (
@@ -130,6 +131,13 @@ export default function CombatDetailPanel({ combatant, myCombatant, allCombatant
           {activeConditions.map((cond, i) => (
             <ConditionBadge key={`${cond}_${i}`} condition={cond} />
           ))}
+        </div>
+      )}
+
+      {(combatant.activeEffects || []).length > 0 && (
+        <div className="pt-1 border-t border-outline-variant/10">
+          <div className="text-[9px] text-on-surface-variant uppercase tracking-wider mb-1">Effects</div>
+          <ActiveEffectsRow effects={combatant.activeEffects} maxVisible={8} />
         </div>
       )}
 

@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useGameCharacter, useGameDispatch, useGameAutoSave } from '../../stores/gameSelectors';
 import { useModalA11y } from '../../hooks/useModalA11y';
@@ -10,6 +10,7 @@ import {
 import { SPELL_TREES } from '../../data/rpgMagic';
 import { getSpellProgressionStatus } from '../../services/magicEngine';
 import { translateSkill, translateAttribute } from '../../utils/rpgTranslate';
+import SkillGainHistory from './SkillGainHistory';
 
 const TABS = ['attributes', 'skills', 'spellTrees'];
 
@@ -79,6 +80,13 @@ function AttributesTab({ character, dispatch }) {
 function SkillsTab({ character }) {
   const { t } = useTranslation();
   const skills = character.skills || {};
+  const [expandedSkill, setExpandedSkill] = useState(null);
+
+  const characterId = character.backendId || character.id;
+
+  const toggleSkill = useCallback((name) => {
+    setExpandedSkill((prev) => (prev === name ? null : name));
+  }, []);
 
   const sortedSkills = useMemo(() => {
     return Object.entries(skills)
@@ -106,34 +114,51 @@ function SkillsTab({ character }) {
         const needed = xpForSkillLevel(level + 1);
         const xpPct = needed > 0 && level < cap ? Math.min(100, (xp / needed) * 100) : (level >= cap ? 100 : 0);
         const atCap = level >= cap;
+        const isExpanded = expandedSkill === name;
 
         return (
-          <div
-            key={name}
-            className={`flex items-center justify-between px-3 py-1.5 rounded-sm text-sm ${
-              level > 0 ? 'bg-primary/5' : ''
-            }`}
-          >
-            <div className="flex items-center gap-2 min-w-0">
-              {level > 0 && <span className="w-1.5 h-1.5 bg-primary rounded-full shrink-0" />}
-              <span className="text-on-surface-variant truncate">{translateSkill(name, t)}</span>
-              <span className="text-[9px] text-outline uppercase">({t(`rpgAttributeShort.${attribute}`)})</span>
-            </div>
-            <div className="flex items-center gap-6 shrink-0">
-              <span className="text-tertiary font-headline text-sm w-10 text-center">{level}</span>
-              <div className="w-20 flex flex-col items-center gap-0.5">
-                <div className="w-full h-1.5 bg-surface-container-high/60 rounded-full overflow-hidden">
-                  <div
-                    className={`h-full rounded-full transition-all ${atCap ? 'bg-tertiary' : 'bg-primary'}`}
-                    style={{ width: `${xpPct}%` }}
-                  />
-                </div>
-                {!atCap && needed > 0 && (
-                  <span className="text-[8px] text-outline tabular-nums">{xp}/{needed}</span>
-                )}
+          <div key={name}>
+            <button
+              type="button"
+              onClick={() => toggleSkill(name)}
+              className={`w-full flex items-center justify-between px-3 py-1.5 rounded-sm text-sm transition-colors ${
+                isExpanded
+                  ? 'bg-primary/10 border border-primary/20'
+                  : level > 0 ? 'bg-primary/5 hover:bg-primary/8' : 'hover:bg-surface-container-high/40'
+              }`}
+            >
+              <div className="flex items-center gap-2 min-w-0">
+                {level > 0 && <span className="w-1.5 h-1.5 bg-primary rounded-full shrink-0" />}
+                <span className="text-on-surface-variant truncate text-left">{translateSkill(name, t)}</span>
+                <span className="text-[9px] text-outline uppercase">({t(`rpgAttributeShort.${attribute}`)})</span>
+                <span className={`material-symbols-outlined text-[10px] text-outline/40 transition-transform ${isExpanded ? 'rotate-180' : ''}`}>
+                  expand_more
+                </span>
               </div>
-              <span className="text-[10px] text-outline w-10 text-center">{cap}</span>
-            </div>
+              <div className="flex items-center gap-6 shrink-0">
+                <span className="text-tertiary font-headline text-sm w-10 text-center">{level}</span>
+                <div className="w-20 flex flex-col items-center gap-0.5">
+                  <div className="w-full h-1.5 bg-surface-container-high/60 rounded-full overflow-hidden">
+                    <div
+                      className={`h-full rounded-full transition-all ${atCap ? 'bg-tertiary' : 'bg-primary'}`}
+                      style={{ width: `${xpPct}%` }}
+                    />
+                  </div>
+                  {!atCap && needed > 0 && (
+                    <span className="text-[8px] text-outline tabular-nums">{xp}/{needed}</span>
+                  )}
+                </div>
+                <span className="text-[10px] text-outline w-10 text-center">{cap}</span>
+              </div>
+            </button>
+            {isExpanded && characterId && (
+              <div className="ml-4 mt-1 mb-2 border-l-2 border-primary/20">
+                <div className="px-3 py-1 text-[9px] font-label uppercase tracking-widest text-on-surface-variant/70">
+                  {t('advancement.skillHistory', 'Historia rozwoju')}
+                </div>
+                <SkillGainHistory characterId={characterId} skillName={name} />
+              </div>
+            )}
           </div>
         );
       })}
@@ -249,12 +274,17 @@ function SpellTreesTab({ character }) {
                       <span className={`material-symbols-outlined text-sm mt-0.5 shrink-0 ${
                         isKnown ? 'text-green-400' : isUnlocked ? 'text-tertiary' : 'text-outline/40'
                       }`}>
-                        {isKnown ? 'check_circle' : isUnlocked ? 'lock_open' : 'lock'}
+                        {spell.icon || tree.icon}
                       </span>
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center justify-between gap-2">
-                          <span className={`font-bold ${isKnown ? 'text-primary' : 'text-on-surface'}`}>
+                          <span className={`flex items-center gap-1.5 font-bold ${isKnown ? 'text-primary' : 'text-on-surface'}`}>
                             {spell.name}
+                            <span className={`material-symbols-outlined text-[11px] ${
+                              isKnown ? 'text-green-400' : isUnlocked ? 'text-tertiary/80' : 'text-outline/50'
+                            }`}>
+                              {isKnown ? 'check_circle' : isUnlocked ? 'lock_open' : 'lock'}
+                            </span>
                           </span>
                           <span className="text-on-surface-variant tabular-nums shrink-0">
                             {spell.manaCost} many · lv.{spell.level}

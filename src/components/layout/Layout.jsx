@@ -1,21 +1,24 @@
-import { useEffect } from 'react';
+import { useEffect, lazy, Suspense } from 'react';
 import { Outlet, useLocation } from 'react-router-dom';
 import Header from './Header';
 import Sidebar from './Sidebar';
 import MobileNav from './MobileNav';
+import { useUltrawideBonus } from '../../hooks/useUltrawideBonus';
 import { MusicProvider } from '../../contexts/MusicContext';
 import { ModalProvider, useModals } from '../../contexts/ModalContext';
+import { DictationProvider } from '../../contexts/DictationContext';
 import {
   useGameWorld,
   useGameQuests,
   useGameSlice,
   useGameDispatch,
   useGameAutoSave,
+  useGameCampaign,
 } from '../../stores/gameSelectors';
 import { useMultiplayer } from '../../contexts/MultiplayerContext';
 import { useSettings } from '../../contexts/SettingsContext';
 import ErrorBoundary from '../ui/ErrorBoundary';
-import VersionBadge from '../ui/VersionBadge';
+import DevEventLogPanel from '../admin/DevEventLogPanel';
 import CharacterSheet from '../character/CharacterSheet';
 import DMSettingsPage from '../settings/DMSettingsPage';
 import KeysModal from '../settings/KeysModal';
@@ -26,6 +29,9 @@ import UserManagementModal from '../admin/UserManagementModal';
 import PrivacyPolicyModal from '../settings/PrivacyPolicyModal';
 import WorldStateModal from '../gameplay/WorldStateModal';
 import TasksInfoModal from '../gameplay/TasksInfoModal';
+
+const LocationGraphModal = lazy(() => import('../gameplay/locationGraph/LocationGraphModal'));
+const GMModal = lazy(() => import('../gameplay/gm/GMModal'));
 
 function ModalLayer() {
   const {
@@ -47,9 +53,15 @@ function ModalLayer() {
     closeProfile,
     adminUsersOpen,
     closeAdminUsers,
+    locationGraphOpen,
+    locationGraphRefreshKey,
+    closeLocationGraph,
+    gmModalOpen,
+    closeGmModal,
     privacyOpen,
     closePrivacy,
   } = useModals();
+  const campaign = useGameCampaign();
   const soloWorld = useGameWorld();
   const soloQuests = useGameQuests();
   const characterVoiceMap = useGameSlice((s) => s.characterVoiceMap);
@@ -92,6 +104,20 @@ function ModalLayer() {
       {profileOpen && <UserProfileModal onClose={closeProfile} />}
       {adminUsersOpen && <UserManagementModal onClose={closeAdminUsers} />}
       {privacyOpen && <PrivacyPolicyModal onClose={closePrivacy} />}
+      {locationGraphOpen && campaign?.backendId && (
+        <Suspense fallback={null}>
+          <LocationGraphModal
+            campaignId={campaign.backendId}
+            openGeneration={locationGraphRefreshKey}
+            onClose={closeLocationGraph}
+          />
+        </Suspense>
+      )}
+      {gmModalOpen && (
+        <Suspense fallback={null}>
+          <GMModal onClose={closeGmModal} />
+        </Suspense>
+      )}
     </>
   );
 }
@@ -99,26 +125,61 @@ function ModalLayer() {
 export default function Layout() {
   const location = useLocation();
   const isPlaying = location.pathname.startsWith('/play');
+  const uwBonus = useUltrawideBonus();
+
+  useEffect(() => {
+    if (!isPlaying) return;
+    const html = document.documentElement;
+    const body = document.body;
+    const prev = {
+      htmlOverflow: html.style.overflow,
+      htmlOverscroll: html.style.overscrollBehaviorY,
+      bodyOverflow: body.style.overflow,
+      bodyOverscroll: body.style.overscrollBehaviorY,
+    };
+    // Avoid html/body height:100% — it breaks the normal flow chain and can leave the
+    // layout visually offset (“stuck scrolled down”). Overflow-only lock is enough.
+    html.style.overflow = 'hidden';
+    html.style.overscrollBehaviorY = 'none';
+    body.style.overflow = 'hidden';
+    body.style.overscrollBehaviorY = 'none';
+    window.scrollTo(0, 0);
+    html.scrollTop = 0;
+    body.scrollTop = 0;
+    return () => {
+      html.style.overflow = prev.htmlOverflow;
+      html.style.overscrollBehaviorY = prev.htmlOverscroll;
+      body.style.overflow = prev.bodyOverflow;
+      body.style.overscrollBehaviorY = prev.bodyOverscroll;
+    };
+  }, [isPlaying, location.pathname]);
 
   return (
     <MusicProvider>
+      <DictationProvider>
       <ModalProvider>
-        <div className="min-h-screen bg-surface-dim">
+        <div className={`min-h-screen bg-surface-dim ${isPlaying ? 'overflow-x-hidden overflow-y-hidden overscroll-y-none' : ''}`}>
           <Header />
           <Sidebar />
-          <main className={`pt-16 pb-24 lg:pb-0 min-h-screen ${isPlaying ? 'lg:pl-64' : ''}`}>
+          <main
+            className={`pt-16 pb-24 lg:pb-0 min-h-screen ${isPlaying
+              ? 'overflow-x-hidden overflow-y-hidden overscroll-y-none lg:pl-[320px]'
+              : ''}`}
+            style={isPlaying && uwBonus.sidebar > 0 ? { paddingLeft: 320 + uwBonus.sidebar } : undefined}
+          >
             <ErrorBoundary>
               <Outlet />
             </ErrorBoundary>
           </main>
           <MobileNav />
           <ModalLayer />
-          <VersionBadge />
+          <DevEventLogPanel />
           <div className="fixed inset-0 pointer-events-none z-[100] opacity-[0.03] mix-blend-overlay">
             <div className="absolute inset-0 noise-overlay" />
           </div>
         </div>
       </ModalProvider>
+      </DictationProvider>
     </MusicProvider>
   );
 }

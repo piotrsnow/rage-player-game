@@ -1,4 +1,5 @@
 import { useState, useCallback, useMemo, useRef, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { useTranslation } from 'react-i18next';
 import { useSettings } from '../../contexts/SettingsContext';
 import { useMultiplayer } from '../../contexts/MultiplayerContext';
@@ -6,6 +7,8 @@ import { useSoloActionCooldown } from '../../hooks/useSoloActionCooldown';
 import { useActionTyping } from '../../hooks/useActionTyping';
 import PendingActions from '../multiplayer/PendingActions';
 import { TYPING_DRAFT_MAX_LENGTH } from '../../../shared/contracts/multiplayer.js';
+import { serializeTags } from '../../../shared/domain/actionTag';
+import { useActionTag } from '../../contexts/ActionTagContext';
 import CombatTargetPicker from './action/CombatTargetPicker';
 import TradeNpcPicker from './action/TradeNpcPicker';
 import TrainerNpcPicker from './action/TrainerNpcPicker';
@@ -14,6 +17,9 @@ import DilemmaPanel from './action/DilemmaPanel';
 import TeammateTypingPanels from './action/TeammateTypingPanels';
 import QuickActionsBar from './action/QuickActionsBar';
 import CustomActionForm from './action/CustomActionForm';
+import IncidentModal from './action/IncidentModal';
+import SelfQuestModal from './action/SelfQuestModal';
+import InventSpellModal from './action/InventSpellModal';
 import { useGameSlice } from '../../stores/gameSelectors';
 import {
   getRecentNpcsForRecruitment,
@@ -21,6 +27,7 @@ import {
   rollD100,
 } from '../../services/partyRecruitment';
 import { MAX_COMPANIONS } from '../../stores/handlers/partyHandlers';
+import { resolveTrailingSpellAtMention } from '../../utils/resolveSpellAtMention.js';
 
 const DICE_ANIMATION_MS = 4800;
 
@@ -58,12 +65,19 @@ export default function ActionPanel({
   typingPlayers = {},
   dispatch = null,
   dictation = null,
+  campaignId = null,
+  onIncidentCorrectionsApplied = null,
+  onProvidenceScene = null,
+  onOpenTravelMap = null,
 }) {
   const [customAction, setCustomAction] = useState('');
   const [combatPickerOpen, setCombatPickerOpen] = useState(false);
   const [tradePickerOpen, setTradePickerOpen] = useState(false);
   const [trainerPickerOpen, setTrainerPickerOpen] = useState(false);
   const [recruitPickerOpen, setRecruitPickerOpen] = useState(false);
+  const [incidentOpen, setIncidentOpen] = useState(false);
+  const [selfQuestOpen, setSelfQuestOpen] = useState(false);
+  const [inventSpellOpen, setInventSpellOpen] = useState(false);
   const [forceRoll, setForceRoll] = useState(FORCE_ROLL_INITIAL);
 
   const scenes = useGameSlice((s) => s.scenes);
@@ -78,7 +92,8 @@ export default function ActionPanel({
   const [longPressActiveIndex, setLongPressActiveIndex] = useState(null);
   const longPressTimerRef = useRef(null);
   const longPressFiredRef = useRef(false);
-  const textareaRef = useRef(null);
+  const inputRef = useRef(null);
+  const entityTagsRef = useRef([]);
   const { t } = useTranslation();
   const { settings } = useSettings();
   const mp = useMultiplayer();
@@ -108,11 +123,16 @@ export default function ActionPanel({
   const supported = dictation?.supported ?? false;
   const toggle = dictation?.toggleListening ?? (() => {});
 
-  const { handleTypingChange, emitTypingStop, cancelPendingBroadcasts, isTypingRef } = useActionTyping({
+  const { handleTypingChange: rawHandleTypingChange, emitTypingStop, cancelPendingBroadcasts, isTypingRef } = useActionTyping({
     mp,
     isMultiplayer,
     setCustomAction,
   });
+
+  const handleTypingChange = useCallback((text, tags) => {
+    if (tags) entityTagsRef.current = tags;
+    rawHandleTypingChange(text);
+  }, [rawHandleTypingChange]);
 
   useEffect(() => {
     return () => clearTimeout(longPressTimerRef.current);
@@ -122,19 +142,20 @@ export default function ActionPanel({
 
   const handleCustomSubmit = (e) => {
     e.preventDefault();
-    const action = normalizeQuotes(customAction.trim());
+    const action = normalizeQuotes(resolveTrailingSpellAtMention(customAction.trim(), character));
     if (action && !disabled) {
-      // Hands-free wants the mic to stay open across submits so the user can
-      // keep dictating without re-clicking. Manual click/Enter still toggles.
       if (listening && !dictation?.handsFree) toggle();
       cancelPendingBroadcasts();
       emitTypingStop(false);
+      const tags = serializeTags(entityTagsRef.current);
       if (isMultiplayer) {
         mp.submitAction(action, true);
       } else {
-        onAction(action, true, false, soloForceRollOpts());
+        onAction(action, true, false, { ...soloForceRollOpts(), entityTags: tags.length > 0 ? tags : undefined });
       }
       setCustomAction('');
+      entityTagsRef.current = [];
+      inputRef.current?.clear();
     }
   };
 
@@ -142,17 +163,20 @@ export default function ActionPanel({
   // and is suppressed while another writer (auto-player typewriter) is active.
   const handleAutoSubmit = useCallback(() => {
     if (disabled || isAutoTyping) return;
-    const action = normalizeQuotes(customAction.trim());
+    const action = normalizeQuotes(resolveTrailingSpellAtMention(customAction.trim(), character));
     if (!action) return;
     cancelPendingBroadcasts();
     emitTypingStop(false);
+    const tags = serializeTags(entityTagsRef.current);
     if (isMultiplayer) {
       mp.submitAction(action, true);
     } else {
-      onAction(action, true, false, forceRoll.enabled ? { forceRoll } : undefined);
+      onAction(action, true, false, { ...(forceRoll.enabled ? { forceRoll } : {}), entityTags: tags.length > 0 ? tags : undefined });
     }
     setCustomAction('');
-  }, [disabled, isAutoTyping, customAction, isMultiplayer, mp, onAction, forceRoll, cancelPendingBroadcasts, emitTypingStop]);
+    entityTagsRef.current = [];
+    inputRef.current?.clear();
+  }, [disabled, isAutoTyping, customAction, character, isMultiplayer, mp, onAction, forceRoll, cancelPendingBroadcasts, emitTypingStop]);
 
   useEffect(() => {
     if (!dictation) return undefined;
@@ -180,7 +204,7 @@ export default function ActionPanel({
       longPressFiredRef.current = true;
       setLongPressActiveIndex(null);
       setCustomAction(action);
-      textareaRef.current?.focus();
+      inputRef.current?.focus();
     }, 1000);
   }, []);
 
@@ -204,7 +228,7 @@ export default function ActionPanel({
   };
 
   const handleSoloCustomSubmit = () => {
-    const action = normalizeQuotes(customAction.trim());
+    const action = normalizeQuotes(resolveTrailingSpellAtMention(customAction.trim(), character));
     if (action) {
       if (listening && !dictation?.handsFree) toggle();
       cancelPendingBroadcasts();
@@ -219,6 +243,17 @@ export default function ActionPanel({
       mp.soloAction(myPlayer.pendingAction, false, settings.language || 'en', settings.dmSettings);
     }
   };
+
+  const insertTag = useCallback((tag) => {
+    inputRef.current?.insertTag(tag);
+    inputRef.current?.focus();
+  }, []);
+
+  const actionTagCtx = useActionTag();
+  useEffect(() => {
+    actionTagCtx?.registerInsertTag(insertTag);
+    return () => actionTagCtx?.registerInsertTag(null);
+  }, [actionTagCtx, insertTag]);
 
   const handleInitiateCombat = () => {
     setCombatPickerOpen(false);
@@ -316,7 +351,7 @@ export default function ActionPanel({
   );
 
   return (
-    <div className="space-y-2 min-h-[130px]">
+    <div className="space-y-2 min-h-0">
       {/* Multiplayer: Solo Action Cooldown Indicator */}
       {isMultiplayer && !soloAvailable && (
         <div className="flex items-center gap-2 px-2.5 py-1.5 bg-tertiary/5 border border-tertiary/15 rounded-sm">
@@ -361,7 +396,7 @@ export default function ActionPanel({
                   onPointerLeave={handleLongPressUpOrLeave}
                   onContextMenu={(e) => e.preventDefault()}
                   disabled={disabled || hasPendingAction}
-                  className="relative overflow-hidden flex-1 text-left px-3 py-2.5 bg-surface-container-high/40 hover:bg-surface-container-high border border-outline-variant/15 hover:border-primary/30 rounded-sm transition-all duration-300 group disabled:opacity-50 disabled:pointer-events-none hover:translate-y-[-1px] hover:shadow-[0_4px_16px_rgba(0,0,0,0.3)]"
+                  className="relative overflow-hidden flex-1 text-left px-4 py-3.5 min-h-[3.5rem] bg-surface-container-high/40 hover:bg-surface-container-high border border-outline-variant/15 hover:border-primary/30 rounded-sm transition-all duration-300 group disabled:opacity-50 disabled:pointer-events-none hover:translate-y-[-1px] hover:shadow-[0_4px_16px_rgba(0,0,0,0.3)]"
                 >
                   <div
                     className="absolute inset-0 bg-primary/15 pointer-events-none origin-left"
@@ -370,11 +405,11 @@ export default function ActionPanel({
                       transition: longPressActiveIndex === i ? 'transform 1s linear' : 'none',
                     }}
                   />
-                  <div className="relative flex items-center gap-2">
-                    <span className="w-5 h-5 shrink-0 flex items-center justify-center rounded-full bg-gradient-to-br from-primary-dim/20 to-primary/10 text-primary font-headline text-xs leading-none border border-primary/15 group-hover:border-primary/30 group-hover:shadow-[0_0_8px_rgba(197,154,255,0.2)] transition-all">
+                  <div className="relative flex items-center gap-3.5">
+                    <span className="w-6 h-6 shrink-0 flex items-center justify-center rounded-full bg-gradient-to-br from-primary-dim/20 to-primary/10 text-primary font-headline text-sm leading-none border border-primary/15 group-hover:border-primary/30 group-hover:shadow-[0_0_8px_rgba(197,154,255,0.2)] transition-all">
                       {i + 1}
                     </span>
-                    <p className="text-xs font-medium text-on-surface-variant group-hover:text-on-surface transition-colors leading-snug line-clamp-2">
+                    <p className="text-sm font-medium text-on-surface-variant group-hover:text-on-surface transition-colors leading-snug line-clamp-2">
                       {action}
                     </p>
                   </div>
@@ -420,13 +455,19 @@ export default function ActionPanel({
             />
           )}
 
-          {recruitPickerOpen && dispatch && (
-            <RecruitNpcPicker
-              npcs={recruitableNpcs}
-              partySize={partySize}
-              onAttempt={handleRecruitAttempt}
-              onCancel={() => setRecruitPickerOpen(false)}
-            />
+          {recruitPickerOpen && dispatch && createPortal(
+            <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
+              <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setRecruitPickerOpen(false)} />
+              <div className="relative w-full max-w-md animate-fade-in">
+                <RecruitNpcPicker
+                  npcs={recruitableNpcs}
+                  partySize={partySize}
+                  onAttempt={handleRecruitAttempt}
+                  onCancel={() => setRecruitPickerOpen(false)}
+                />
+              </div>
+            </div>,
+            document.body
           )}
         </div>
       )}
@@ -467,9 +508,40 @@ export default function ActionPanel({
         </button>
       )}
 
+      {incidentOpen && campaignId && createPortal(
+        <IncidentModal
+          campaignId={campaignId}
+          dispatch={dispatch}
+          onClose={() => setIncidentOpen(false)}
+          onCorrectionsApplied={onIncidentCorrectionsApplied}
+          onProvidenceScene={onProvidenceScene}
+        />,
+        document.body
+      )}
+
+      {selfQuestOpen && campaignId && dispatch && createPortal(
+        <SelfQuestModal
+          campaignId={campaignId}
+          onClose={() => setSelfQuestOpen(false)}
+          onQuestAccepted={(quest) => dispatch({ type: 'ADD_QUEST', payload: quest })}
+        />,
+        document.body
+      )}
+
+      {inventSpellOpen && campaignId && dispatch && createPortal(
+        <InventSpellModal
+          campaignId={campaignId}
+          character={character}
+          dispatch={dispatch}
+          onClose={() => setInventSpellOpen(false)}
+          onCorrectionsApplied={onIncidentCorrectionsApplied}
+        />,
+        document.body
+      )}
+
       {/* Row 2: Utility buttons + Input */}
       {(!hasPendingAction || !isMultiplayer) && (
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-3">
           <QuickActionsBar
             disabled={disabled}
             hasPendingAction={hasPendingAction}
@@ -483,6 +555,10 @@ export default function ActionPanel({
             onToggleTradePicker={() => setTradePickerOpen((v) => !v)}
             onToggleTrainerPicker={() => setTrainerPickerOpen((v) => !v)}
             onToggleRecruitPicker={() => setRecruitPickerOpen((v) => !v)}
+            onOpenIncident={campaignId ? () => setIncidentOpen(true) : undefined}
+            onOpenSelfQuest={campaignId && dispatch ? () => setSelfQuestOpen(true) : undefined}
+            onOpenInventSpell={campaignId && dispatch ? () => setInventSpellOpen(true) : undefined}
+            onOpenTravelMap={onOpenTravelMap}
             recruitableCount={recruitableNpcs.length}
             partyHasSlot={partyHasSlot}
             forceRollState={isMultiplayer ? null : forceRoll}
@@ -491,7 +567,7 @@ export default function ActionPanel({
             onForceRollRight={handleForceRollRight}
           />
           <CustomActionForm
-            textareaRef={textareaRef}
+            inputRef={inputRef}
             customAction={customAction}
             onTypingChange={handleTypingChange}
             onSubmit={handleCustomSubmit}

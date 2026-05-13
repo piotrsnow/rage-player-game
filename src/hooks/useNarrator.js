@@ -11,6 +11,7 @@ import {
   resolveSegmentVoice as resolveSegmentVoiceShared,
 } from '../services/characterVoiceResolver';
 import { hasNamedSpeaker } from '../services/dialogueSegments';
+import { registerMainNarratorStop, silencePeerDialogAudio } from '../utils/readAloudExclusive';
 
 const STATES = {
   IDLE: 'idle',
@@ -288,8 +289,12 @@ export function useNarrator({ viewerMode = false, shareToken = null, backendUrl 
         fullText,
       });
       const tickNoWords = () => {
-        if (!audio || audio.paused || audio.ended) {
+        if (!audio || audio.ended) {
           setHighlightInfo(null);
+          return;
+        }
+        if (audio.paused) {
+          highlightRafRef.current = requestAnimationFrame(tickNoWords);
           return;
         }
         const now = performance.now();
@@ -307,8 +312,12 @@ export function useNarrator({ viewerMode = false, shareToken = null, backendUrl 
     }
 
     const tick = () => {
-      if (!audio || audio.paused || audio.ended) {
+      if (!audio || audio.ended) {
         setHighlightInfo(null);
+        return;
+      }
+      if (audio.paused) {
+        highlightRafRef.current = requestAnimationFrame(tick);
         return;
       }
       const lastWordEnd = words.length > 0 ? Number(words[words.length - 1]?.end || 0) : 0;
@@ -394,6 +403,12 @@ export function useNarrator({ viewerMode = false, shareToken = null, backendUrl 
     return () => window.removeEventListener('beforeunload', handleUnload);
   }, []);
 
+  useEffect(() => {
+    if (audioRef.current) {
+      audioRef.current.volume = (settings.dialogueVolume ?? 80) / 100;
+    }
+  }, [settings.dialogueVolume]);
+
   const fetchTts = useCallback(async (voiceId, chunk, campaignId, pacing) => {
     if (viewerMode && backendUrl && shareToken) {
       return elevenlabsService.textToSpeechFromCache(backendUrl, shareToken, voiceId, chunk, undefined, campaignId);
@@ -472,6 +487,7 @@ export function useNarrator({ viewerMode = false, shareToken = null, backendUrl 
       }
 
       const audio = new Audio(playableAudioUrl);
+      audio.volume = (settings.dialogueVolume ?? 80) / 100;
       const baseRate = (dialogueSpeed || 100) / 100;
       const pacingMul = PACING_SPEED_MULTIPLIERS[scenePacing] || 1.0;
       const natural = clampRate(baseRate * pacingMul, 0.5, MAX_NATURAL_PLAYBACK_RATE);
@@ -519,6 +535,8 @@ export function useNarrator({ viewerMode = false, shareToken = null, backendUrl 
       setCurrentChunk(null);
       return;
     }
+
+    silencePeerDialogAudio();
 
     const item = queueRef.current[0];
     const { dialogueSegments, narrative, messageId, scenePacing, segmentPrefetchWindow } = item;
@@ -727,6 +745,7 @@ export function useNarrator({ viewerMode = false, shareToken = null, backendUrl 
             const playableAudioUrl = apiClient.resolveMediaUrl(prefetched.audioUrl);
             objectUrlsRef.current.push(playableAudioUrl);
             const audio = new Audio(playableAudioUrl);
+            audio.volume = (settings.dialogueVolume ?? 80) / 100;
             const baseRate = (dialogueSpeed || 100) / 100;
             const pacingMul = PACING_SPEED_MULTIPLIERS[scenePacing] || 1.0;
             const natural = clampRate(baseRate * pacingMul, 0.5, MAX_NATURAL_PLAYBACK_RATE);
@@ -832,7 +851,7 @@ export function useNarrator({ viewerMode = false, shareToken = null, backendUrl 
     }
   }, [playbackState]);
 
-  const stop = useCallback(() => {
+  const stopNarratorPlayback = useCallback(() => {
     generationRef.current++;
     abortRef.current = true;
     queueRef.current = [];
@@ -852,6 +871,13 @@ export function useNarrator({ viewerMode = false, shareToken = null, backendUrl 
     setHighlightInfo(null);
     setCurrentChunk(null);
   }, [cleanup]);
+
+  const stop = useCallback(() => {
+    stopNarratorPlayback();
+    silencePeerDialogAudio();
+  }, [stopNarratorPlayback]);
+
+  useEffect(() => registerMainNarratorStop(stopNarratorPlayback), [stopNarratorPlayback]);
 
   // --------------- Streaming narration ---------------
   // Allows feeding segments incrementally during AI streaming.
@@ -1040,6 +1066,7 @@ export function useNarrator({ viewerMode = false, shareToken = null, backendUrl 
         const playableAudioUrl = apiClient.resolveMediaUrl(result.audioUrl);
         objectUrlsRef.current.push(playableAudioUrl);
         const audio = new Audio(playableAudioUrl);
+        audio.volume = (settings.dialogueVolume ?? 80) / 100;
         const baseRate = (dialogueSpeed || 100) / 100;
         const pacingMul = PACING_SPEED_MULTIPLIERS[s.scenePacing] || 1.0;
         const natural = clampRate(baseRate * pacingMul, 0.5, MAX_NATURAL_PLAYBACK_RATE);
@@ -1153,7 +1180,6 @@ export function useNarrator({ viewerMode = false, shareToken = null, backendUrl 
         )
       : !!(
           settings.narratorEnabled
-          && settings.sceneTtsTier !== 'none'
           && hasApiKey(activeTtsProvider)
           && voicePools.narratorVoiceId
         ),

@@ -31,14 +31,14 @@ export default function NpcStatCard({ npc }) {
 
   return (
     <div className="mt-2 pt-2 border-t border-outline-variant/10 space-y-2">
-      <div className="flex items-center justify-between text-[11px]">
-        <div className="flex items-center gap-2">
+      <div className="flex items-center justify-between text-base">
+        <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
           <span className="text-outline">{t('worldState.race')}:</span>
           <span className="font-medium text-on-surface">{raceLabel}</span>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 shrink-0">
           <span className="text-outline">{t('worldState.level')}:</span>
-          <span className="font-bold text-primary">{stats.level ?? npc.level ?? 1}</span>
+          <span className="font-bold text-primary text-lg tabular-nums">{stats.level ?? npc.level ?? 1}</span>
         </div>
       </div>
 
@@ -49,42 +49,42 @@ export default function NpcStatCard({ npc }) {
       )}
 
       <div>
-        <div className="text-[10px] uppercase tracking-wider text-outline mb-1">{t('worldState.attributes')}</div>
+        <div className="text-sm uppercase tracking-wider text-outline mb-1.5">{t('worldState.attributes')}</div>
         <div className="grid grid-cols-6 gap-1">
           {ATTRIBUTE_KEYS.map((key) => (
-            <div key={key} className="text-center px-1 py-1 rounded-sm bg-surface-container/50 border border-outline-variant/10">
-              <div className="text-[9px] text-outline leading-tight">{ATTRIBUTE_SHORT[key]}</div>
-              <div className="text-sm font-bold text-on-surface leading-tight">{attrs[key] ?? 0}</div>
+            <div key={key} className="text-center px-1 py-1.5 rounded-sm bg-surface-container/50 border border-outline-variant/10">
+              <div className="text-[11px] sm:text-xs text-outline leading-tight">{ATTRIBUTE_SHORT[key]}</div>
+              <div className="text-base font-bold text-on-surface leading-tight tabular-nums">{attrs[key] ?? 0}</div>
             </div>
           ))}
         </div>
       </div>
 
-      <div className="grid grid-cols-2 gap-2 text-[11px]">
-        <div className="flex items-center gap-1.5 px-2 py-1 rounded-sm bg-error-container/15 border border-error/20">
-          <span className="material-symbols-outlined text-xs text-error">favorite</span>
+      <div className="grid grid-cols-2 gap-2 text-base">
+        <div className="flex flex-wrap items-center gap-1.5 px-2 py-1.5 rounded-sm bg-error-container/15 border border-error/20">
+          <span className="material-symbols-outlined text-base text-error shrink-0">favorite</span>
           <span className="text-outline">{t('worldState.wounds')}:</span>
-          <span className="font-bold text-on-surface">{wounds}/{maxWounds}</span>
+          <span className="font-bold text-on-surface tabular-nums">{wounds}/{maxWounds}</span>
         </div>
         {mana?.max > 0 && (
-          <div className="flex items-center gap-1.5 px-2 py-1 rounded-sm bg-tertiary-container/15 border border-tertiary/20">
-            <span className="material-symbols-outlined text-xs text-tertiary">auto_fix_high</span>
+          <div className="flex flex-wrap items-center gap-1.5 px-2 py-1.5 rounded-sm bg-tertiary-container/15 border border-tertiary/20">
+            <span className="material-symbols-outlined text-base text-tertiary shrink-0">auto_fix_high</span>
             <span className="text-outline">{t('worldState.mana')}:</span>
-            <span className="font-bold text-on-surface">{mana.current ?? mana.max}/{mana.max}</span>
+            <span className="font-bold text-on-surface tabular-nums">{mana.current ?? mana.max}/{mana.max}</span>
           </div>
         )}
       </div>
 
       {Object.keys(skills).length > 0 && (
         <div>
-          <div className="text-[10px] uppercase tracking-wider text-outline mb-1">{t('worldState.skills')}</div>
+          <div className="text-sm uppercase tracking-wider text-outline mb-1.5">{t('worldState.skills')}</div>
           <div className="flex flex-wrap gap-1">
             {Object.entries(skills)
               .filter(([, level]) => typeof level === 'number' && level > 0)
               .sort((a, b) => b[1] - a[1])
               .map(([name, level]) => (
-                <span key={name} className="text-[10px] px-1.5 py-0.5 rounded-sm bg-surface-container/60 border border-outline-variant/15 text-on-surface">
-                  {name} <span className="text-primary font-bold">{level}</span>
+                <span key={name} className="text-sm px-2 py-0.5 rounded-sm bg-surface-container/60 border border-outline-variant/15 text-on-surface">
+                  {name} <span className="text-primary font-bold tabular-nums">{level}</span>
                 </span>
               ))}
           </div>
@@ -92,21 +92,21 @@ export default function NpcStatCard({ npc }) {
       )}
 
       {(weapons.length > 0 || typeof stats.armourDR === 'number') && (
-        <div className="grid grid-cols-2 gap-2 text-[11px]">
+        <div className="grid grid-cols-2 gap-2 text-base">
           {weapons.length > 0 && (
             <div>
-              <div className="text-[10px] uppercase tracking-wider text-outline mb-1">{t('worldState.weapons')}</div>
+              <div className="text-sm uppercase tracking-wider text-outline mb-1.5">{t('worldState.weapons')}</div>
               <div className="flex flex-wrap gap-1">
                 {weapons.map((w, i) => (
-                  <span key={`${w}_${i}`} className="px-1.5 py-0.5 rounded-sm bg-surface-container/60 border border-outline-variant/15 text-on-surface">{w}</span>
+                  <span key={`${w}_${i}`} className="px-2 py-0.5 rounded-sm bg-surface-container/60 border border-outline-variant/15 text-on-surface text-sm">{w}</span>
                 ))}
               </div>
             </div>
           )}
           {typeof stats.armourDR === 'number' && stats.armourDR > 0 && (
             <div>
-              <div className="text-[10px] uppercase tracking-wider text-outline mb-1">{t('worldState.armour')}</div>
-              <span className="inline-block px-1.5 py-0.5 rounded-sm bg-surface-container/60 border border-outline-variant/15 text-on-surface font-bold">{stats.armourDR}</span>
+              <div className="text-sm uppercase tracking-wider text-outline mb-1.5">{t('worldState.armour')}</div>
+              <span className="inline-block px-2 py-0.5 rounded-sm bg-surface-container/60 border border-outline-variant/15 text-on-surface font-bold tabular-nums text-base">{stats.armourDR}</span>
             </div>
           )}
         </div>
@@ -114,10 +114,10 @@ export default function NpcStatCard({ npc }) {
 
       {traits.length > 0 && (
         <div>
-          <div className="text-[10px] uppercase tracking-wider text-outline mb-1">{t('worldState.traits')}</div>
+          <div className="text-sm uppercase tracking-wider text-outline mb-1.5">{t('worldState.traits')}</div>
           <div className="flex flex-wrap gap-1">
             {traits.map((trait, i) => (
-              <span key={`${trait}_${i}`} className="text-[10px] px-1.5 py-0.5 rounded-sm bg-tertiary-container/15 border border-tertiary/20 text-tertiary">{trait}</span>
+              <span key={`${trait}_${i}`} className="text-sm px-2 py-0.5 rounded-sm bg-tertiary-container/15 border border-tertiary/20 text-tertiary">{trait}</span>
             ))}
           </div>
         </div>

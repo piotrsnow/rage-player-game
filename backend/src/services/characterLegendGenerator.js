@@ -60,7 +60,7 @@ export async function generateCharacterLegend({
     resolvedProvider === 'anthropic' ? 'Anthropic' : 'OpenAI',
   );
   const overrideModel = await resolveModelForTask('auxiliary', resolvedProvider);
-  const resolvedModel = model || overrideModel || config.aiModels.standard[resolvedProvider];
+  const resolvedModel = overrideModel || model || config.aiModels.standard[resolvedProvider];
 
   const summary = summarizeCharacter(character);
   const isPolish = language === 'pl';

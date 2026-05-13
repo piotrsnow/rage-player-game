@@ -1,7 +1,9 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import DiceRoller from '../../effects/DiceRoller';
-import { translateSkill } from '../../utils/rpgTranslate';
+import { DICE_OVERLAY_INTRO_MS, DICE_OVERLAY_THROW_DELAY_MS } from '../../effects/diceOverlayIntro.js';
+import { translateSkill, translateAttribute } from '../../utils/rpgTranslate';
+import { normalizeDiceRoll } from '../../utils/normalizeDiceRoll.js';
 
 const RESULT_HOLD_MS = 4200;
 const FADE_OUT_MS = 600;
@@ -13,24 +15,24 @@ function getOutcomeLabel(dr, t) {
 }
 
 function getOutcomeColor(dr) {
-  if (dr.criticalSuccess) return 'text-amber-300';
-  if (dr.criticalFailure) return 'text-red-400';
-  return dr.success ? 'text-emerald-300' : 'text-rose-400';
+  if (dr.criticalSuccess) return 'text-pink-300';
+  if (dr.criticalFailure) return 'text-rose-500';
+  return dr.success ? 'text-sky-300' : 'text-rose-400';
 }
 
 function getOutcomeGlow(dr) {
-  if (dr.criticalSuccess) return 'rgba(251, 191, 36, 0.35)';
-  if (dr.criticalFailure) return 'rgba(239, 68, 68, 0.3)';
-  return dr.success ? 'rgba(16, 185, 129, 0.25)' : 'rgba(244, 63, 94, 0.25)';
+  if (dr.criticalSuccess) return 'rgba(249, 168, 212, 0.35)';
+  if (dr.criticalFailure) return 'rgba(190, 24, 93, 0.3)';
+  return dr.success ? 'rgba(56, 189, 248, 0.25)' : 'rgba(190, 24, 93, 0.25)';
 }
 
 function getOutcomeBorder(dr) {
-  if (dr.criticalSuccess) return 'border-amber-400/50';
-  if (dr.criticalFailure) return 'border-red-500/50';
-  return dr.success ? 'border-emerald-500/40' : 'border-rose-500/40';
+  if (dr.criticalSuccess) return 'border-pink-300/50';
+  if (dr.criticalFailure) return 'border-pink-700/50';
+  return dr.success ? 'border-sky-400/40' : 'border-pink-600/40';
 }
 
-export default function DiceRollAnimationOverlay({ diceRoll, onDismiss, holdOpen = false }) {
+export default function DiceRollAnimationOverlay({ diceRoll, onDismiss, holdOpen = false, mode = 'fullscreen' }) {
   const { t } = useTranslation();
   const [phase, setPhase] = useState('rolling');
   const onDismissRef = useRef(onDismiss);
@@ -81,34 +83,52 @@ export default function DiceRollAnimationOverlay({ diceRoll, onDismiss, holdOpen
   const dr = diceRollRef.current;
   if (!dr) return null;
 
+  const nd = normalizeDiceRoll(dr);
   const isStreaming = dr._streaming === true;
-  const target = dr.threshold ?? dr.target ?? dr.dc;
-  const skillLabel = dr.skill
-    ? translateSkill(dr.skill, t)
-    : dr.characteristic
-      ? t(`stats.${dr.characteristic}Long`)
+  const target = nd.threshold;
+  const skillLabel = nd.skill
+    ? translateSkill(nd.skill, t)
+    : nd.attributeKey
+      ? translateAttribute(nd.attributeKey, t)
       : '';
+
+  const modTags = [];
+  if (nd.attributeKey && nd.attributeValue != null) {
+    modTags.push({ label: translateAttribute(nd.attributeKey, t), value: nd.attributeValue, cls: 'text-purple-300/80' });
+  }
+  if (nd.skillLevel > 0) {
+    modTags.push({ label: translateSkill(nd.skill, t), value: nd.skillLevel, cls: 'text-emerald-300/80' });
+  }
+  if (nd.creativityBonus > 0) {
+    modTags.push({ label: t('gameplay.creativityBonus', { bonus: '' }).trim(), value: nd.creativityBonus, cls: 'text-amber-300/80' });
+  }
+
+  const isImage = mode === 'image';
 
   return (
     <div
-      className={`fixed inset-0 z-[80] pointer-events-none flex flex-col items-center justify-center transition-opacity duration-500 ${
+      className={`${isImage ? 'absolute' : 'fixed'} inset-0 ${isImage ? 'z-[12]' : 'z-[80]'} pointer-events-none flex flex-col items-center justify-center transition-opacity duration-500 ${
         phase === 'fading' ? 'opacity-0' : 'opacity-100'
       }`}
-      style={{ paddingTop: '430px' }}
+      style={{ paddingTop: isImage ? '270px' : '430px' }}
     >
       {/* 3D Dice roller area — fades out once roll completes, slightly before result card appears */}
-      <div className={`relative w-[260px] h-[200px] -mt-16 animate-dice-fly-in transition-all ease-out ${
-        phase === 'rolling'
-          ? 'opacity-100 scale-100 duration-0'
-          : 'opacity-0 scale-90 -translate-y-3 duration-[400ms]'
-      }`}>
+      <div
+        className={`relative w-[260px] h-[200px] -mt-16 animate-dice-fly-in transition-all ease-out ${
+          phase === 'rolling'
+            ? 'opacity-100 scale-100 duration-0'
+            : 'opacity-0 scale-90 -translate-y-3 duration-[400ms]'
+        }`}
+        style={{ animationDuration: `${DICE_OVERLAY_INTRO_MS}ms` }}
+      >
         <DiceRoller
           diceRoll={dr}
           onComplete={handleRollComplete}
           showOverlayResult={false}
-          sizeMultiplier={3}
-          durationMultiplier={2.6}
+          sizeMultiplier={2}
+          durationMultiplier={1.25}
           variant="overlay"
+          preRollRevealMs={DICE_OVERLAY_THROW_DELAY_MS}
           isVisible
         />
       </div>
@@ -155,7 +175,7 @@ export default function DiceRollAnimationOverlay({ diceRoll, onDismiss, holdOpen
                 className={`font-mono text-3xl font-black leading-none ${getOutcomeColor(dr)}`}
                 style={{ textShadow: `0 0 12px ${getOutcomeGlow(dr)}` }}
               >
-                {dr.roll}
+                {nd.roll}
               </span>
             </div>
 
@@ -184,13 +204,38 @@ export default function DiceRollAnimationOverlay({ diceRoll, onDismiss, holdOpen
                   {t('gameplay.margin', 'Margines')}
                 </span>
                 <span className={`font-mono text-3xl font-black leading-none ${
-                  (dr.margin ?? dr.sl) >= 0 ? 'text-emerald-300' : 'text-rose-400'
+                  (dr.margin ?? dr.sl) >= 0 ? 'text-sky-300' : 'text-rose-400'
                 }`}>
                   {(dr.margin ?? dr.sl) > 0 ? '+' : ''}{dr.margin ?? dr.sl}
                 </span>
               </div>
             )}
           </div>
+
+          {/* Modifier breakdown */}
+          {modTags.length > 0 && (
+            <div className="flex items-center justify-center gap-2 mt-2 flex-wrap">
+              {modTags.map((tag, i) => (
+                <span key={i} className={`text-[10px] font-bold ${tag.cls}`}>
+                  {tag.label} +{tag.value}
+                </span>
+              ))}
+            </div>
+          )}
+
+          {/* Situational modifier chips */}
+          {nd.thresholdBreakdown?.modifiers?.length > 0 && (
+            <div className="flex items-center justify-center gap-1.5 mt-1.5 flex-wrap">
+              {nd.thresholdBreakdown.modifiers.map((mod, i) => (
+                <span
+                  key={i}
+                  className="text-[9px] font-bold text-orange-300/80 bg-orange-400/10 border border-orange-400/20 rounded-full px-2 py-0.5"
+                >
+                  {mod.value >= 0 ? '+' : '−'}{Math.abs(mod.value)} {mod.reason}
+                </span>
+              ))}
+            </div>
+          )}
 
           {/* Outcome label */}
           <p

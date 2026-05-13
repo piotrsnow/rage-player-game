@@ -26,9 +26,9 @@ function makeCombatant(overrides = {}) {
     wounds: overrides.wounds ?? 12,
     maxWounds: overrides.maxWounds ?? 12,
     isDefeated: overrides.isDefeated ?? false,
-    position: overrides.position ?? 2,
+    position: overrides.position ?? { x: 2, y: 3 },
     movementUsed: overrides.movementUsed ?? 0,
-    movementAllowance: overrides.movementAllowance ?? 4,
+    movementAllowance: overrides.movementAllowance ?? 8,
     traits: overrides.traits || [],
     ...overrides,
   };
@@ -49,7 +49,7 @@ export function buildCombatState(overrides = {}) {
         attributes: { sila: 10, inteligencja: 8, charyzma: 6, zrecznosc: 8, wytrzymalosc: 10, szczescie: 0 },
         wounds: 10,
         maxWounds: 10,
-        position: 3,
+        position: { x: 5, y: 3 },
       }),
     ],
   };
@@ -71,7 +71,7 @@ export function buildCombatState(overrides = {}) {
           attributes: { sila: 10, inteligencja: 8, charyzma: 6, zrecznosc: 8, wytrzymalosc: 10, szczescie: 0 },
           wounds: 10,
           maxWounds: 10,
-          position: 3 + i,
+          position: { x: 5 + i, y: 3 },
           ...e,
         })
       )
@@ -85,7 +85,7 @@ export function buildCombatState(overrides = {}) {
         attributes: { sila: 10, inteligencja: 8, charyzma: 6, zrecznosc: 8, wytrzymalosc: 10, szczescie: 0 },
         wounds: 10,
         maxWounds: 10,
-        position: 3,
+        position: { x: 5, y: 3 },
       })
     );
   }

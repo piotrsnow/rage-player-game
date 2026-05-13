@@ -111,9 +111,15 @@ export const apiClient = {
   // On app boot, try to exchange the httpOnly refresh cookie for a fresh
   // access token. Called by SettingsContext; callers outside the auth flow
   // should just let the 401 retry in `request()` take care of refresh.
-  async bootstrapAuth() {
+  async bootstrapAuth({ timeoutMs = 5000 } = {}) {
     try {
-      return await this.refreshAccessToken();
+      const ctrl = new AbortController();
+      const timer = setTimeout(() => ctrl.abort(), timeoutMs);
+      try {
+        return await this.refreshAccessToken(ctrl.signal);
+      } finally {
+        clearTimeout(timer);
+      }
     } catch {
       clearAuthState();
       return null;
@@ -123,7 +129,7 @@ export const apiClient = {
   // Swap the refresh cookie for a new access token. Deduped via a shared
   // in-flight promise so React Strict Mode double-effect or two parallel
   // 401 retries only hit the backend once.
-  async refreshAccessToken() {
+  async refreshAccessToken(signal) {
     if (_refreshInFlight) return _refreshInFlight;
     _refreshInFlight = (async () => {
       try {
@@ -132,6 +138,7 @@ export const apiClient = {
           method: 'POST',
           credentials: 'include',
           headers: csrf ? { 'X-CSRF-Token': csrf } : {},
+          signal,
         });
         if (!res.ok) {
           throw new Error(`refresh failed: ${res.status}`);

@@ -18,6 +18,11 @@ const DialogueSegmentSchema = z.object({
   gender: z.string().optional(),
 }).passthrough();
 
+const DiceRollModifierSchema = z.object({
+  reason: z.string().max(40),
+  value: z.number().int().min(-10).max(15),
+}).passthrough();
+
 const DiceRollSchema = z.object({
   type: z.string().optional(),
   roll: z.number().optional(),         // d50 roll
@@ -33,6 +38,12 @@ const DiceRollSchema = z.object({
   luckySuccess: z.boolean().optional().default(false), // auto-success from Szczescie
   momentum: z.number().optional(),
   creativityBonus: z.number().optional(),
+  modifiers: z.array(DiceRollModifierSchema).max(4).optional().default([]),
+  thresholdBreakdown: z.object({
+    base: z.number(),
+    modifiers: z.array(DiceRollModifierSchema),
+    final: z.number(),
+  }).passthrough().optional(),
 }).passthrough().nullable().optional();
 
 const NpcRelationshipSchema = z.object({
@@ -151,6 +162,24 @@ const QuestDeadlineSchema = z.object({
 const QuestObjectiveSchema = z.object({
   id: z.string(),
   description: z.string(),
+  // Graph-aware fields (oś 1 + 5). Wszystkie optional + passthrough, więc
+  // legacy linear questy bez tych pól dalej walidują się czysto. BE
+  // dostarcza je gdy questGraphEnabled (nowe kampanie).
+  nodeKey: z.string().optional(),
+  status: z.enum(['pending', 'done', 'locked', 'skipped', 'failed']).optional(),
+  parents: z.array(z.string()).optional(),
+  unlocks: z.array(z.string()).optional(),
+  branchType: z.enum(['and', 'path', 'or']).optional(),
+  branchGroup: z.string().optional(),
+  choiceLabel: z.string().optional(),
+  placeholderHint: z.string().optional(),
+  discovered: z.boolean().optional(),
+  failsOn: z.object({
+    npcDead: z.array(z.string()).optional(),
+    locationDestroyed: z.array(z.string()).optional(),
+    deadline: z.string().nullable().optional(),
+  }).passthrough().optional(),
+  lastKnownLocation: z.string().nullable().optional(),
 }).passthrough();
 
 const QuestRewardSchema = z.object({
@@ -172,7 +201,22 @@ const QuestSchema = z.object({
   objectives: z.array(QuestObjectiveSchema).optional().default([]),
   questGiverId: z.string().nullable().optional(),
   turnInNpcId: z.string().nullable().optional(),
+  // Oś 4 — quest status (active|stalled|failed|completed) + mutation audit
+  // log. Optional dla zgodności wstecznej.
+  status: z.enum(['active', 'stalled', 'failed', 'completed']).optional(),
+  mutationLog: z.array(z.object({
+    ts: z.string().optional(),
+    mutation: z.enum(['stall', 'fail', 'reroute']),
+    reason: z.string().optional(),
+    sceneIndex: z.number().nullable().optional(),
+    source: z.string().optional(),
+  }).passthrough()).optional(),
+  // Faza 2 — `locationId` legacy (do Fazy 3a zachowane). `locationRef`
+  // (composite "world:UUID" / "campaign:UUID") jest preferowane; BE resolver
+  // (aiResolver.js) mapuje legacy locationId stringi na composite ref przed
+  // dispatch. Po Fazie 3a zostaje tylko `locationRef`.
   locationId: z.string().nullable().optional(),
+  locationRef: z.string().regex(/^(world|campaign):[0-9a-f-]{36}$/i).nullable().optional(),
   prerequisiteQuestIds: z.array(z.string()).optional().default([]),
   reward: QuestRewardSchema,
   type: z.enum(['main', 'side', 'personal']).optional().default('side'),
@@ -230,9 +274,34 @@ const QuestOfferSchema = QuestSchema.extend({
 
 const QuestUpdateSchema = z.object({
   questId: z.string(),
-  objectiveId: z.string(),
-  completed: z.boolean(),
-  addProgress: z.string().optional(),
+  // Graph-aware: nodeKey preferred over objectiveId (oś 1).
+  nodeKey: z.string().optional(),
+  objectiveId: z.string().optional(),
+  completed: z.boolean().optional(),
+  addProgress: z.union([z.string(), z.number()]).optional(),
+  branchChoice: z.object({
+    group: z.string(),
+    chosen: z.string(),
+  }).passthrough().optional(),
+}).passthrough();
+
+const ObjectiveRevealSchema = z.object({
+  questId: z.string(),
+  nodeKey: z.string(),
+  revealSource: z.string().optional(),
+}).passthrough();
+
+const BranchGroupRevealSchema = z.object({
+  questId: z.string(),
+  branchGroup: z.string(),
+  revealedNodeKeys: z.array(z.string()).min(1),
+  revealSource: z.string().optional(),
+}).passthrough();
+
+const QuestMutationSchema = z.object({
+  questId: z.string(),
+  mutation: z.enum(['stall', 'fail', 'reroute']),
+  reason: z.string(),
 }).passthrough();
 
 const CombatCrySchema = z.object({
@@ -254,6 +323,7 @@ const StateChangesSchema = z.object({
   skillProgress: z.record(z.string(), z.number()).nullable().optional(),
   spellUsage: z.record(z.string(), z.number()).nullable().optional(),
   learnSpell: z.string().nullable().optional(),
+  learnSpellIcon: z.string().nullable().optional(),
   consumeScroll: z.string().nullable().optional(),
   addScroll: z.string().nullable().optional(),
   newItems: z.array(InventoryItemSchema).optional().default([]),
@@ -288,15 +358,65 @@ const StateChangesSchema = z.object({
   newQuests: z.array(QuestSchema).optional().default([]),
   completedQuests: z.array(z.string()).optional().default([]),
   questUpdates: z.array(QuestUpdateSchema).optional().default([]),
+  // Oś 5 — diegetic discovery; oś 4 — explicit narrative mutations.
+  // Wszystkie optional, BE schema robi gating per-pole.
+  objectiveReveals: z.array(ObjectiveRevealSchema).optional().default([]),
+  branchGroupReveals: z.array(BranchGroupRevealSchema).optional().default([]),
+  questMutations: z.array(QuestMutationSchema).optional().default([]),
+  // npcMemoryUpdates — actionType jest dorzucony jako passthrough field;
+  // BE waliduje enum w schemas.js (NPC_ACTION_TYPES).
+  npcMemoryUpdates: z.array(z.object({
+    npcName: z.string(),
+    memory: z.string(),
+    importance: z.enum(['minor', 'major']).optional(),
+    actionType: z.enum(['killed', 'saved', 'betrayed', 'aided', 'insulted', 'broke_promise', 'kept_promise']).nullable().optional(),
+  }).passthrough()).optional().default([]),
   worldFacts: z.array(z.string()).optional().default([]),
   journalEntries: z.array(z.string()).optional().default([]),
   statuses: z.any().nullable().optional(),
+  characterEffects: z.array(z.object({
+    action: z.enum(['add', 'remove', 'tick']),
+    target: z.string().optional().default('player'),
+    name: z.string(),
+    effectId: z.string().optional(),
+    effect: z.object({
+      id: z.string().min(1),
+      name: z.string().min(1),
+      source: z.enum(['spell', 'item', 'combat', 'trap', 'environmental', 'ai']).optional().default('ai'),
+      category: z.enum(['buff', 'debuff', 'dot', 'control', 'mixed']).optional().default('debuff'),
+      duration: z.object({
+        type: z.enum(['rounds', 'scenes', 'time', 'permanent', 'until_rest', 'manual']),
+        remaining: z.number().nullable().optional().default(null),
+      }).passthrough(),
+      mechanics: z.object({
+        attributeMods: z.record(z.string(), z.number()).optional().default({}),
+        skillMods: z.record(z.string(), z.number()).optional().default({}),
+        testMod: z.number().optional().default(0),
+        damageReduction: z.number().optional().default(0),
+        dotDamage: z.number().optional().default(0),
+        dotHeal: z.number().optional().default(0),
+        movementMod: z.number().optional().default(0),
+        restrictions: z.array(z.string()).optional().default([]),
+        resistCheck: z.object({
+          attribute: z.string(),
+          threshold: z.number(),
+        }).nullable().optional().default(null),
+      }).passthrough().optional().default({}),
+      stackable: z.boolean().optional().default(false),
+      description: z.string().optional().default(''),
+    }).passthrough().optional(),
+  }).passthrough()).optional().default([]),
   npcs: z.array(NpcChangeSchema).optional().default([]),
   mapChanges: z.array(z.any()).optional().default([]),
   timeAdvance: TimeAdvanceSchema,
   activeEffects: z.array(z.any()).optional().default([]),
   moneyChange: z.any().nullable().optional(),
+  // Faza 2 — `currentLocation` (string) zachowane do Fazy 3a (legacy callsite'y).
+  // `currentLocationRef` (composite ref string) jest preferowane; BE resolver
+  // (aiResolver.js) próbuje zresolwować legacy `currentLocation` na composite
+  // ref przed dispatch state. Po Fazie 3a zostaje tylko `currentLocationRef`.
   currentLocation: z.string().nullable().optional(),
+  currentLocationRef: z.string().regex(/^(world|campaign):[0-9a-f-]{36}$/i).nullable().optional(),
   factionChanges: z.any().nullable().optional(),
   combatUpdate: z.object({
     active: z.boolean(),
@@ -313,7 +433,9 @@ const StateChangesSchema = z.object({
       weapons: z.array(z.string()).optional().default(['Hand Weapon']),
     }).passthrough()).optional().default([]),
     enemyHints: z.object({
+      // Faza 2 — `location` legacy; `locationRef` (composite) preferowane.
       location: z.string().optional(),
+      locationRef: z.string().regex(/^(world|campaign):[0-9a-f-]{36}$/i).nullable().optional(),
       budget: z.number().optional(),
       maxDifficulty: z.string().optional(),
       count: z.number().optional(),
@@ -353,6 +475,9 @@ const StateChangesSchema = z.object({
   dungeonComplete: z.object({
     name: z.string().min(1),
     summary: z.string().max(400),
+    // Faza 2 — composite ref do dungeon node (po resolve przez aiResolver).
+    // BE używa go aby ustawić `node.liberatedAt` i `WorldEvent.locationKind/Id`.
+    nodeRef: z.string().regex(/^(world|campaign):[0-9a-f-]{36}$/i).nullable().optional(),
   }).passthrough().nullable().optional(),
   // Round B (Phase 4b) — hearsay mentions. BE's `processLocationMentions`
   // enforces policy (NPC must already know the location) + caps at 20 to
@@ -360,6 +485,9 @@ const StateChangesSchema = z.object({
   // arrays before dispatch.
   locationMentioned: z.array(z.object({
     locationName: z.string().min(1),
+    // Faza 2 — composite ref po resolve przez aiResolver.resolveLocationRef
+    // (BE wstrzykuje to pole przed dispatch; AI zwykle nie wypełnia).
+    locationRef: z.string().regex(/^(world|campaign):[0-9a-f-]{36}$/i).nullable().optional(),
     byNpcId: z.string().min(1).optional(),
     npcId: z.string().min(1).optional(),
     byNpc: z.string().min(1).optional(),

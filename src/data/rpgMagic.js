@@ -16,6 +16,7 @@ export const SPELL_TREES = {
     spells: [
       {
         name: 'Iskra',
+        icon: 'local_fire_department',
         level: 1,
         manaCost: 1,
         unlockCondition: null, // starting spell
@@ -24,6 +25,7 @@ export const SPELL_TREES = {
       },
       {
         name: 'Ognisty Pocisk',
+        icon: 'whatshot',
         level: 2,
         manaCost: 2,
         unlockCondition: 'Iskra',
@@ -32,6 +34,7 @@ export const SPELL_TREES = {
       },
       {
         name: 'Kula Ognia',
+        icon: 'flare',
         level: 3,
         manaCost: 4,
         unlockCondition: 'Ognisty Pocisk',
@@ -49,6 +52,7 @@ export const SPELL_TREES = {
     spells: [
       {
         name: 'Piorun',
+        icon: 'bolt',
         level: 1,
         manaCost: 3,
         unlockCondition: null,
@@ -57,6 +61,7 @@ export const SPELL_TREES = {
       },
       {
         name: 'Lancuch Blyskawic',
+        icon: 'electric_bolt',
         level: 2,
         manaCost: 5,
         unlockCondition: 'Piorun',
@@ -74,6 +79,7 @@ export const SPELL_TREES = {
     spells: [
       {
         name: 'Ochrona',
+        icon: 'shield',
         level: 1,
         manaCost: 3,
         unlockCondition: null,
@@ -82,6 +88,7 @@ export const SPELL_TREES = {
       },
       {
         name: 'Wielka Ochrona',
+        icon: 'health_and_safety',
         level: 2,
         manaCost: 5,
         unlockCondition: 'Ochrona',
@@ -99,6 +106,7 @@ export const SPELL_TREES = {
     spells: [
       {
         name: 'Niewidzialnosc',
+        icon: 'visibility_off',
         level: 1,
         manaCost: 4,
         unlockCondition: null,
@@ -107,6 +115,7 @@ export const SPELL_TREES = {
       },
       {
         name: 'Grupowa Niewidzialnosc',
+        icon: 'group',
         level: 2,
         manaCost: 5,
         unlockCondition: 'Niewidzialnosc',
@@ -124,6 +133,7 @@ export const SPELL_TREES = {
     spells: [
       {
         name: 'Lodowy Dotyk',
+        icon: 'ac_unit',
         level: 1,
         manaCost: 2,
         unlockCondition: null,
@@ -132,6 +142,7 @@ export const SPELL_TREES = {
       },
       {
         name: 'Lodowa Bariera',
+        icon: 'severe_cold',
         level: 2,
         manaCost: 3,
         unlockCondition: 'Lodowy Dotyk',
@@ -140,6 +151,7 @@ export const SPELL_TREES = {
       },
       {
         name: 'Zamiec',
+        icon: 'weather_snowy',
         level: 3,
         manaCost: 5,
         unlockCondition: 'Lodowa Bariera',
@@ -157,6 +169,7 @@ export const SPELL_TREES = {
     spells: [
       {
         name: 'Leczenie Ran',
+        icon: 'healing',
         level: 1,
         manaCost: 2,
         unlockCondition: null,
@@ -165,6 +178,7 @@ export const SPELL_TREES = {
       },
       {
         name: 'Regeneracja',
+        icon: 'monitor_heart',
         level: 2,
         manaCost: 4,
         unlockCondition: 'Leczenie Ran',
@@ -173,6 +187,7 @@ export const SPELL_TREES = {
       },
       {
         name: 'Wskrzeszenie Iskry Zycia',
+        icon: 'favorite',
         level: 3,
         manaCost: 5,
         unlockCondition: 'Regeneracja',
@@ -190,6 +205,7 @@ export const SPELL_TREES = {
     spells: [
       {
         name: 'Telekineza',
+        icon: 'open_with',
         level: 1,
         manaCost: 3,
         unlockCondition: null,
@@ -198,6 +214,7 @@ export const SPELL_TREES = {
       },
       {
         name: 'Teleportacja',
+        icon: 'move_up',
         level: 2,
         manaCost: 5,
         unlockCondition: 'Telekineza',
@@ -215,6 +232,7 @@ export const SPELL_TREES = {
     spells: [
       {
         name: 'Strach',
+        icon: 'sentiment_very_dissatisfied',
         level: 1,
         manaCost: 2,
         unlockCondition: null,
@@ -223,6 +241,7 @@ export const SPELL_TREES = {
       },
       {
         name: 'Sen',
+        icon: 'bedtime',
         level: 2,
         manaCost: 3,
         unlockCondition: 'Strach',
@@ -240,6 +259,7 @@ export const SPELL_TREES = {
     spells: [
       {
         name: 'Wykrycie Magii',
+        icon: 'travel_explore',
         level: 1,
         manaCost: 1,
         unlockCondition: null,
@@ -248,6 +268,7 @@ export const SPELL_TREES = {
       },
       {
         name: 'Tarcza Wiatru',
+        icon: 'cyclone',
         level: 2,
         manaCost: 2,
         unlockCondition: 'Wykrycie Magii',
@@ -256,6 +277,7 @@ export const SPELL_TREES = {
       },
       {
         name: 'Rozproszenie Magii',
+        icon: 'auto_fix_off',
         level: 3,
         manaCost: 4,
         unlockCondition: 'Tarcza Wiatru',
@@ -267,6 +289,147 @@ export const SPELL_TREES = {
 };
 
 export const SPELL_TREE_LIST = Object.keys(SPELL_TREES);
+
+/**
+ * Spell → status effect mapping. When a spell hits, the corresponding effect
+ * is applied to the target (or caster for self-buffs). Only spells with
+ * mechanical effects are listed; pure-damage spells rely on the combat engine
+ * damage formula.
+ */
+export const SPELL_EFFECTS = {
+  'Lodowy Dotyk': {
+    target: 'enemy',
+    effect: {
+      name: 'Odmrożenie',
+      source: 'spell',
+      category: 'control',
+      duration: { type: 'rounds', remaining: 2 },
+      mechanics: { attributeMods: { zrecznosc: -3 }, movementMod: -1 },
+      stackable: false,
+      description: 'Mróz spowalnia ruchy i reakcje.',
+    },
+  },
+  'Zamiec': {
+    target: 'all_enemies',
+    effect: {
+      name: 'Zamrożenie',
+      source: 'spell',
+      category: 'control',
+      duration: { type: 'rounds', remaining: 2 },
+      mechanics: { attributeMods: { zrecznosc: -5 }, movementMod: -2, restrictions: ['no_movement'] },
+      stackable: false,
+      description: 'Silny mróz unieruchamia na krótki czas.',
+    },
+  },
+  'Ochrona': {
+    target: 'self',
+    effect: {
+      name: 'Magiczna ochrona',
+      source: 'spell',
+      category: 'buff',
+      duration: { type: 'rounds', remaining: 3 },
+      mechanics: { damageReduction: 3 },
+      stackable: false,
+      description: 'Magiczna tarcza pochłania część obrażeń.',
+    },
+  },
+  'Wielka Ochrona': {
+    target: 'self',
+    effect: {
+      name: 'Wielka magiczna ochrona',
+      source: 'spell',
+      category: 'buff',
+      duration: { type: 'rounds', remaining: 5 },
+      mechanics: { damageReduction: 6 },
+      stackable: false,
+      description: 'Potężna magiczna tarcza pochłania znaczną część obrażeń.',
+    },
+  },
+  'Strach': {
+    target: 'enemy',
+    effect: {
+      name: 'Przerażenie',
+      source: 'spell',
+      category: 'control',
+      duration: { type: 'rounds', remaining: 2 },
+      mechanics: { attributeMods: { charyzma: -5 }, testMod: -5, restrictions: ['no_attack'] },
+      stackable: false,
+      description: 'Strach paraliżuje — utrudnia działanie i uniemożliwia atak.',
+    },
+  },
+  'Sen': {
+    target: 'enemy',
+    effect: {
+      name: 'Uśpienie',
+      source: 'spell',
+      category: 'control',
+      duration: { type: 'rounds', remaining: 3 },
+      mechanics: { restrictions: ['skip_turn'], resistCheck: { attribute: 'wytrzymalosc', threshold: 20 } },
+      stackable: false,
+      description: 'Cel zasypia — pomija turę, chyba że uda mu się test odporności.',
+    },
+  },
+  'Tarcza Wiatru': {
+    target: 'self',
+    effect: {
+      name: 'Tarcza Wiatru',
+      source: 'spell',
+      category: 'buff',
+      duration: { type: 'rounds', remaining: 3 },
+      mechanics: { attributeMods: { zrecznosc: 3 } },
+      stackable: false,
+      description: 'Wir ochronny zwiększa zwinność.',
+    },
+  },
+  'Regeneracja': {
+    target: 'self',
+    effect: {
+      name: 'Regeneracja',
+      source: 'spell',
+      category: 'buff',
+      duration: { type: 'rounds', remaining: 4 },
+      mechanics: { dotHeal: 2 },
+      stackable: false,
+      description: 'Magiczna regeneracja przywraca zdrowie co rundę.',
+    },
+  },
+  'Iskra': {
+    target: 'enemy',
+    effect: {
+      name: 'Podpalenie',
+      source: 'spell',
+      category: 'dot',
+      duration: { type: 'rounds', remaining: 2 },
+      mechanics: { dotDamage: 1 },
+      stackable: false,
+      description: 'Ogień pali lekko przez chwilę.',
+    },
+  },
+  'Ognisty Pocisk': {
+    target: 'enemy',
+    effect: {
+      name: 'Płomienie',
+      source: 'spell',
+      category: 'dot',
+      duration: { type: 'rounds', remaining: 3 },
+      mechanics: { dotDamage: 2 },
+      stackable: false,
+      description: 'Intensywny ogień zadaje obrażenia co rundę.',
+    },
+  },
+  'Kula Ognia': {
+    target: 'all_enemies',
+    effect: {
+      name: 'Pożoga',
+      source: 'spell',
+      category: 'dot',
+      duration: { type: 'rounds', remaining: 2 },
+      mechanics: { dotDamage: 3 },
+      stackable: false,
+      description: 'Eksplozja ognia podpala wszystkich w zasięgu.',
+    },
+  },
+};
 
 // ── MANA BALANCE NOTES ──
 

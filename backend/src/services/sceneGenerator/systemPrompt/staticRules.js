@@ -7,14 +7,29 @@
  *
  * Each builder returns a single string. The orchestrator in `index.js` pushes
  * them into `staticSections` in the order below, then joins with `\n\n`.
+ *
+ * ORDER MATTERS: blocks at the top and bottom of the prompt have the strongest
+ * recall. Critical rules (player input policy, execution order, stateChanges)
+ * are placed first; output format last.
  */
 
+export function executionOrderBlock() {
+  return `## EXECUTION ORDER — follow step-by-step for EVERY scene:
+1. READ player input → determine creativityBonus (0 if not custom action).
+2. RESOLVE dice checks using pre-rolls + creativityBonus. Decide success/failure.
+3. WRITE dialogueSegments — narration + NPC dialogue reflecting the resolved outcome.
+4. FILL stateChanges reflecting EVERYTHING you just narrated (checklist below).
+5. GENERATE suggestedActions, atmosphere, imagePrompt, soundEffect, musicPrompt.
+Never narrate an outcome that contradicts the dice result. Never emit stateChanges that contradict the narrative.`;
+}
+
 export function coreRulesBlock() {
-  return `CORE RULES:
+  return `## CORE RULES
 - Dice/skill checks: may be engine-resolved (see user prompt) or self-resolved using pre-rolled d50 values.
 - If engine-resolved: narrate the provided result. DO NOT recalculate.
-- If pre-rolled d50 values are available and action has genuine risk: pick the correct skill from PC Skills below (format: skill:level→ATTR:value). DECIDE creativityBonus FIRST, then calculate total = base + attribute_value + skill_level + creativityBonus. Compare vs difficulty threshold. If luckySuccess → auto-success. Unlisted skills = level 0; use Attributes line for base value.
+- If pre-rolled d50 values are available and action has genuine risk: pick the correct skill from PC Skills below (format: skill:level→ATTR:value). Calculate total = base + attribute_value + skill_level + creativityBonus. Compare vs difficulty threshold (adjusted by situational modifiers). If luckySuccess → auto-success. Unlisted skills = level 0; use Attributes line for base value.
 - Include results in diceRolls array (max 3) — format in RESPONSE section.
+- Situational modifiers: for each roll you may add up to 4 modifiers reflecting observable scene conditions (darkness, rain, slippery ground, NPC suspicion, time pressure, injury, superior/inferior tools, cramped space, etc.). Each modifier: {reason: max 40 chars, value: -10 to +15}. Positive = harder, negative = easier. Do NOT duplicate what's already in character attributes/skills/momentum — modifiers are ONLY for external circumstances. Backend clamps the total modifier sum to -15..+20.
 - Margin scaling: lucky success=fortunate twist, margin 15+=decisive success, margin 0-14=success (low margin may add complication), margin -1 to -14=failure with opportunity, margin≤-15=hard fail+consequence.
 - Consequences: risky actions generate reputation/disposition/resource/wound/rumor consequences. Criminal acts accumulate heat (guards, bounties, higher prices).
 - NPC disposition: engine calculates bonuses. Reflect attitude in narration (≥15=friendly, ≤-15=hostile). Trust builds slow, breaks fast.
@@ -27,7 +42,7 @@ export function coreRulesBlock() {
 }
 
 export function scenePacingBlock() {
-  return `SCENE PACING — return "scenePacing" in every response. Match prose to type:
+  return `## SCENE PACING — return "scenePacing" in every response. Match prose to type:
 combat: staccato, 1-2 para | chase: breathless, fragments | stealth: sparse, tense
 exploration: atmospheric, 2-3 para | dialogue: minimal narration, NPCs drive scene
 travel_montage: 2-3 sentences, skip to arrival | rest: slow, 1-2 para
@@ -36,7 +51,7 @@ Max 2 consecutive exploration/travel/rest without a complication. Travel without
 }
 
 export function narrativeRulesBlock() {
-  return `NARRATIVE RULES:
+  return `## NARRATIVE RULES
 - Vary density by scene type. Action=short/punchy. Exploration=concrete senses. Dialogue=character voice.
 - Avoid: stacked adjectives, abstract feelings, uniform NPC voice, tax-collector clichés.
 - NPCs present MUST speak in direct dialogue segments, never just described indirectly.
@@ -45,7 +60,7 @@ export function narrativeRulesBlock() {
 }
 
 export function dialogueFormatBlock() {
-  return `DIALOGUE FORMAT:
+  return `## DIALOGUE FORMAT
 dialogueSegments: [{type:"narration",text:""}, {type:"dialogue",character:"NPC Name",gender:"male"|"female",text:""}]
 dialogueSegments is the SOLE source of scene prose. Narration segments hold all descriptive text; dialogue segments hold spoken lines. Never embed quoted speech in narration — always split into dialogue segments. Every dialogue segment MUST include a "gender" field — ONLY "male" or "female". NEVER "unknown", NEVER omitted. If the speaker's gender is ambiguous in the fiction, pick one and stay consistent. Use consistent NPC names.`;
 }
@@ -54,23 +69,44 @@ export function suggestedActionsBlock(language) {
   const example = language === 'pl' ? '"Oglądam drzwi"' : '"I examine the door"';
   const directSpeechEx = language === 'pl' ? '"Mówię: \\"...\\""' : '"I say: \\"...\\"."';
   const plTail = language === 'pl' ? ' PL: use "Mówię:", "Pytam:", "Krzyczę:" — NOT "I say:", "I ask:", "I tell:". Do NOT prefix with "I".' : '';
-  return `SUGGESTED ACTIONS:
-Return exactly 3 suggestedActions in PC voice (1st person, e.g. ${example}). At least 2 grounded + up to 1 chaotic/humorous. Exactly 1 must be direct speech (${directSpeechEx}). Reference concrete scene NPCs/objects/locations by name. Never use vague filler. Never repeat recent actions.${plTail}`;
+  return `## SUGGESTED ACTIONS
+Return exactly 3 suggestedActions in PC voice (1st person, e.g. ${example}). At least 2 grounded + up to 1 chaotic/humorous. Exactly 1 must be direct speech (${directSpeechEx}). Reference concrete scene NPCs/objects/locations by name. Never use vague filler. Never repeat recent actions.${plTail}
+Ground actions in the character's actual capabilities: never suggest spellcasting if mana=0, item use if item is not in Inventory, or skills the character has at level 0 for non-trivial checks.`;
 }
 
 export function stateChangesRulesBlock() {
-  return `MANDATORY stateChanges RULES:
+  return `## [CRITICAL] MANDATORY stateChanges RULES
 Before emitting stateChanges, mentally run this checklist against the narrative you just wrote:
   1. Time — how much time passed in the scene? (timeAdvance)
   2. Quest — did any ACTIVE objective just get fulfilled? (questUpdates + dialogueIfQuestTargetCompleted)
   3. NPCs — disposition shift, introduction, or location change for any NPC named in the scene?
   4. Items / Money — did the narrative describe ANY transfer? stateChanges MUST match.
   5. Location — did the player move?
+  6. Wounds — did any healing or non-combat damage happen? Emit woundsChange (positive=healing, negative=damage). Potion/herb → +3-5, rest/sleep → +2-4, magical healing/ritual → +5-10. If a consumable was used, ALSO emit removeItems.
+  7. Mana — was a spell cast or mana restored? Casting → manaChange NEGATIVE (spell cost 1-5). Rest/meditation/potion → manaChange POSITIVE (short rest +2-3, full rest = full pool, mana potion +3-5). Also emit spellUsage:{"SpellName":1} for each spell cast.
 Emit stateChanges reflecting ALL of the above. Empty fields are OK only when the answer is genuinely "no".
 
 - timeAdvance: ALWAYS include {hoursElapsed: decimal}. Quick=0.25, action/combat=0.5, exploration=0.75-1, rest=2-4, sleep=6-8.
-- questUpdates: after writing dialogueSegments, ASK: did any ACTIVE OBJECTIVE get fulfilled IN THIS SCENE's narrative? Meeting the quest-giver, delivering an item, defeating a target, learning a named fact — all count. If yes, MUST emit [{questId, objectiveId, completed:true}]. questId = the id= value from the ACTIVE QUESTS block. objectiveId = the number shown before the objective (its array index, as a string). Numbers are NOT contiguous — completed objectives are hidden but their indices remain (e.g. you may see only "2." if 0 and 1 were already done). The ▶ NEXT marker points to the currently-pending objective. NEVER leave questUpdates empty when the narrative resolved an objective — also emit dialogueIfQuestTargetCompleted to close the beat.
+- questUpdates: after writing dialogueSegments, ASK: did any ACTIVE OBJECTIVE get fulfilled IN THIS SCENE's narrative? Meeting the quest-giver, delivering an item, defeating a target, learning a named fact — all count. If yes, MUST emit [{questId, nodeKey?, objectiveId?, completed:true}]. questId = the id= value from the ACTIVE QUESTS block.
+  * GRAPH MODE (Active Quests block shows [nodeKey] markers): use \`nodeKey\` (e.g. "spare_witch") — preferred and stable. Numeric \`objectiveId\` (legacy fallback) still works but DON'T mix.
+  * LEGACY MODE (no [nodeKey] markers): \`objectiveId\` is the number shown before the objective (its array index, as a string). Numbers are NOT contiguous — completed objectives are hidden but their indices remain (e.g. you may see only "2." if 0 and 1 were already done). The ▶ NEXT marker points to the currently-pending objective.
+  NEVER leave questUpdates empty when the narrative resolved an objective — also emit dialogueIfQuestTargetCompleted to close the beat.
+- branchChoice (graph mode only): when narrative locks the player into one path of an XOR branch group (you saw "Branches active: <group> (player can choose: A | B)" in Active Quests), include \`branchChoice: { group, chosen }\` on the questUpdate that closes the chosen node. Sibling nodes auto-skip backend-side — DO NOT emit their state.
 - Quest completion: add to completedQuests as soon as the quest's completionCondition is narratively satisfied in this scene (turn-in NPC if the quest has one, otherwise objective fulfillment is sufficient). Always use the id= shown for the quest.
+
+- DIEGETIC REVEALS (graph mode only): every objective starts with \`discovered=false\`. Player UI shows them as "???". When the narrative explicitly conveys information about a future step — NPC dialog, found letter, overheard conversation, discovered clue — emit \`objectiveReveals: [{questId, nodeKey, revealSource}]\`. Reveals are STICKY (once discovered = always discovered). Reveals CAN PRECEDE UNLOCKS: if an NPC mentions a still-locked node, still emit objectiveReveals — the node will be visible in the UI as 🔒 with hint, and pop into pending automatically when parents complete. NEVER reveal because "the player should know" or for pacing — let narrative drive discovery.
+- BRANCH REVEALS (graph mode only): each option in an XOR group must be individually revealed. Emit \`branchGroupReveals: [{questId, branchGroup, revealedNodeKeys, revealSource}]\` when an NPC offers alternatives or a scene presents a choice. Without a reveal, the UI hides the choice entirely — players will see only the "default" path you originally revealed.
+- QUEST GIVER FIRST CONTACT: when emitting a questOffer, in the SAME scene emit objectiveReveals for the root nodes (parents=[]) that the questgiver explicitly described aloud. Other nodes stay undiscovered.
+- questMutations (rare, narrative override): \`[{questId, mutation: "stall"|"fail"|"reroute", reason}]\`. Use ONLY when narration EXPLICITLY disrupts a quest (questgiver dies on-screen via your prose, target location is destroyed). Most disruptions are detected backend-side from npc agent loop ticks — do NOT emit unless your dialogueSegments narrate the disruption.
+- questOffers (full schema): \`[{id, name, description, type, questGiverId, turnInNpcId, relatedHookId?, relatedNpcRefs?, completionCondition, objectives}]\`. Each objective is a graph node:
+  \`{nodeKey, description, parents?, branchType?, branchGroup?, choiceLabel?, placeholderHint?, failsOn?}\`.
+  * nodeKey: snake_case [a-z0-9_]{1,40}, unique within quest. Stable refs LLM uses across scenes.
+  * parents: nodeKeys that must be \`done\` before this node unlocks. Empty parents = root node = pending immediately.
+  * branchType: "and" (default — equivalent to AND chain), "path" (XOR — chosen sibling closes the others), "or" (any-of group).
+  * branchGroup: id of the XOR/OR group (e.g. "witch_resolution") — siblings share it.
+  * failsOn.npcDead: list of NPC names — if any dies (on-screen or via off-screen tick), backend stalls the quest.
+  * placeholderHint: optional vague hint shown to player as "??? — <hint>" before reveal (e.g. "??? — coś związanego z lasem"). Default: just "???".
+  When emitting from a Pending quest opportunity hook, copy questGiverId from the hook and include relatedHookId. Side/personal quests in living-world MUST have ≥2 objectives + ≥1 branch group with branchType="path" when relations contradict (NPC vs NPC conflict). Min 2 objectives, max 12.
 - rewards: for standard loot/drops/found items/money. Array of [{type, rarity?, category?, quantity?, context?}]. type: 'material'|'weapon'|'armour'|'shield'|'gear'|'medical'|'money'|'potion'. rarity: 'common'|'uncommon'|'rare'. category: materials only ('metal'|'wood'|'fabric'|'herb'|'liquid'|'misc'). quantity: 'one'|'few'|'some'|'many'. context: 'loot'|'found'|'gift' (NO 'quest_reward' — quest rewards are applied automatically on completedQuests using the quest's defined reward, do NOT duplicate via rewards[]). Do NOT specify item names — just type and tier.
 - newItems: ONLY unique quest/story items (MacGuffins, keys, letters, artifacts). {id, name, type, description}. Standard loot → use rewards.
 - removeItems: only items in character's inventory.
@@ -83,7 +119,8 @@ Emit stateChanges reflecting ALL of the above. Empty fields are OK only when the
   * Nie wymagaj podawania statów — backend generuje pełną kartę postaci z rasy+roli+poziomu. Emituj race/creatureKind/level a ewentualny statsOverride tylko gdy postać jest naprawdę wyróżniająca się.
   * appearance: WYMAGANE przy "introduce" — JEDNO zdanie po polsku opisujące fizyczny wygląd (budowa, włosy, twarz, ubiór, charakterystyczny detal). To jest kanoniczny rysopis NPC — używany przy generowaniu portretu i pokazywany graczowi. Stabilny: nie zmieniaj go przy "update", chyba że fabularnie się zmienił (zranienie, nowe ubranie, transformacja).
   * dialect: WYMAGANE przy "introduce" — JEDNO zdanie po polsku opisujące JAK NPC mówi: gwara/akcent (góralska, kresowa, miejski slang), rejestr (chłopski/kupiecki/szlachecki/książkowy), charakterystyczne zwroty lub przekleństwa. Spójne z rolą i charakterem. Stabilne: nie zmieniaj przy "update".
-- npcMemoryUpdates: [{npcName, memory, importance?}] — emit ONLY gdy coś narracyjnie znaczącego dzieje się z/dla NPC, co by zapamiętał (obietnica, sekret, cud, groźba, zdrada, uratowanie bliskiego). 1 zdanie z perspektywy NPC. importance: 'major' = trwała zmiana relacji, 'minor' = drobne wrażenie (default: minor). SKIP dla small talk / routine. Max ~3 per scene.
+- npcMemoryUpdates: [{npcName, memory, importance?, actionType?}] — emit ONLY gdy coś narracyjnie znaczącego dzieje się z/dla NPC, co by zapamiętał (obietnica, sekret, cud, groźba, zdrada, uratowanie bliskiego). 1 zdanie z perspektywy NPC. importance: 'major' = trwała zmiana relacji, 'minor' = drobne wrażenie (default: minor). SKIP dla small talk / routine. Max ~3 per scene.
+  * actionType (optional): "killed" | "saved" | "betrayed" | "aided" | "insulted" | "broke_promise" | "kept_promise". Include when the memory describes a directional act FROM player TO this NPC. This routes through relationshipRipple service — connected NPCs (brother, lover, rival) auto-react with disposition shifts and their own memory entries ("Słyszał, że <player> zabił mojego brata"). SKIP for routine observations. Use sparingly — high-impact events only.
 - locationMentioned: [{locationName, byNpcId}] — emit whenever a scene NPC NAMES OR DESCRIBES a location to the player (gives directions, recalls a rumour, mentions a place by name). Copy the location name EXACTLY as written in the prompt (Key NPCs block, Active Quests, [NPC_KNOWLEDGE], or the player's current location). \`byNpcId\` is the speaker NPC's name. If a [NPC_KNOWLEDGE] block lists allowed locations for the speaker, only mention locations from that list; otherwise the NPC narrates "doesn't know / speculates" and you DO NOT emit. Moves the location into the player's "heard-about" fog state so it appears on the map.
 - currentLocation: emit ONLY when the player ARRIVES at a different location THIS scene (travel montage to a known place, walking into a sublocation you just created, dungeon-room nav). Value is the EXACT canonical name from the [TRAVEL] block / sublocation entry / [DUNGEON ROOM] exits. NEVER invent a name — unrecognized locations are dropped silently and the player stays put. Do NOT emit when the scene happens entirely at the current location.
 - skillsUsed: ["SkillName"] — skills the PC used in this action. Max 3.
@@ -97,7 +134,7 @@ Emit stateChanges reflecting ALL of the above. Empty fields are OK only when the
 }
 
 export function actionRulesBlock() {
-  return `ACTION RULES:
+  return `## ACTION RULES
 - Impossible (target not present): narrate failure. Trivial (unlocked door, walking): auto-success.
 - Routine (eating, resting, looking): auto-success.
 - Uncertain: engine resolves checks. Narrate the result from user prompt.
@@ -108,15 +145,41 @@ export function actionRulesBlock() {
 - Item/money acquisition: if dialogueSegments say character gains anything, stateChanges MUST match. No exceptions.`;
 }
 
+export function itemCombinationBlock() {
+  // STRONG RULES: gracz może łączyć przedmioty z ekwipunku przez UI
+  // (UseItemModal → wybór "Przedmiot" jako cel) lub naturalnie w narracji.
+  // Trigger UI: tag `[ŁĄCZENIE PRZEDMIOTÓW: A + B]` w user input.
+  // Trigger narracyjny: gracz opisuje łączenie ("owijam szmatkę wokół kija
+  // i polewam olejem", "wbijam runę w miecz", "składam dwie połowy mapy").
+  return `ITEM COMBINATION RULES — STRONG:
+When the player tries to combine inventory items — either via UI tag \`[ŁĄCZENIE PRZEDMIOTÓW: A + B]\` OR via narrative ("łączę X z Y", "wsadzam runę w miecz", "owijam kij szmatą i polewam olejem") — you MUST handle it as a real mechanical change, not just flavor.
+
+PLAUSIBILITY CHECK first:
+- SENSIBLE (physical/lore logic holds): kij + szmata + olej = pochodnia; lina + hak = kotwiczka; sztylet + flakon trucizny = zatruty sztylet; dwie połowy mapy = kompletna mapa; broń + odłamek runy = broń runiczna; pusta butelka + woda ze studni = butelka wody.
+- NOT SENSIBLE (no physical/lore basis): chleb + miecz; mikstura + buty; dwa niezwiązane artefakty bez wspólnej narracji. Narrate failure, ZERO state changes, items stay in inventory.
+
+WHEN SENSIBLE — stateChanges MUST contain BOTH:
+1. \`removeItemsByName\`: one entry per consumed component, e.g. \`[{"name":"Lina", "quantity":1}, {"name":"Hak żelazny", "quantity":1}]\`. Quantity = how many copies were actually used (usually 1 each). Use full item name as it appears in Inventory.
+2. \`newItems\`: one entry — the resulting combined item with full \`{name, type, rarity, description}\` (and \`baseType\` if it maps onto a known equipment base). Description should mention it's a combination ("Pochodnia zwinięta z kija owiniętego naoliwioną szmatą").
+
+HARD RULES (no exceptions):
+- NEVER emit \`newItems\` for combination without matching \`removeItemsByName\` for the components — orphaned new items break inventory consistency.
+- NEVER emit \`removeItemsByName\` for items the character does NOT have in Inventory. Check the Inventory line before combining.
+- NEVER use \`removeItems\` (by id) for combinations — you don't have item ids in context. Always \`removeItemsByName\`.
+- If a component is stackable and player has multiple, decrement only what was used (quantity:1, not the whole stack).
+- If combining is a partial success (e.g. broken result), still consume both components but emit a degraded \`newItems\` entry.
+- The narration in dialogueSegments MUST describe the combining process and the resulting item — keep prose and stateChanges in sync.`;
+}
+
 export function playerInputPolicyBlock() {
   // Prevents the player from railroading the scene by writing declarative fiction
   // in their action text ("znajduję starego Włóczęgę który daje mi mapę…"). The
   // model is GM — player input is intent, not outcome. Also closes the
   // prose↔stateChanges consistency gap in the same place.
-  return `PLAYER INPUT POLICY — CRITICAL:
+  return `## [CRITICAL] PLAYER INPUT POLICY
 The player's text describes what their character ATTEMPTS, INTENDS, or HOPES. You are the GM — you decide what ACTUALLY happens, grounded in the game state below (World State / NPCs here / Key NPCs / Active Quests / Codex / Inventory).
 - NPCs, items, quests, locations, and world facts NOT present in the game state are NOT canonical. If the player asserts a new NPC, item transfer, or world fact that doesn't exist in context, narrate a GROUNDED alternative based on what actually exists. You MAY introduce a new NPC organically when the scene calls for it — but YOU choose what they look like, what they know, and what they give. Never mirror the player's script verbatim.
-- Consistency enforcement: if you DO narrate an NPC handing over an item or offering a quest, you MUST emit the matching newItems / questOffers entry in stateChanges. Quest offers emitted this way MUST tie into the main quest line — side/faction/personal quest creation is disabled in this build.`;
+- Consistency enforcement: if you DO narrate an NPC handing over an item or offering a quest, you MUST emit the matching newItems (in stateChanges) / questOffers (TOP-LEVEL, not inside stateChanges) entry. In graph-mode campaigns side/personal quests CAN emerge from Pending quest opportunities (see World State block) and from organic NPC requests; in legacy-mode campaigns prefer questOffers tied to the main quest line.`;
 }
 
 export function responseFormatBlock(language) {
@@ -134,13 +197,13 @@ export function responseFormatBlock(language) {
   return `RESPONSE: Return ONLY valid JSON in this field order:
 {
   "creativityBonus": 0,
-  "diceRolls": [{"skill":"","difficulty":"","success":true}],
+  "diceRolls": [{"skill":"","difficulty":"","modifiers":[{"reason":"ciemność","value":5}],"success":true}],
   "npcsIntroduced": [{"name":"","gender":"male|female","speechStyle":"1-sentence description of how this NPC talks"}],
   "dialogueSegments": [{"type":"narration|dialogue","text":"","character":"","gender":"male|female"}],
   "scenePacing": "exploration|combat|chase|stealth|dialogue|travel_montage|celebration|rest|dramatic|dream|cutscene",
   "suggestedActions": ["exactly 3 actions"],
   "atmosphere": {"weather":"clear|rain|snow|storm|fog|fire","particles":"none|magic_dust|sparks|embers|arcane","mood":"peaceful|tense|dark|mystical|chaotic","lighting":"natural|night|dawn|bright|rays|candlelight|moonlight","transition":"dissolve|fade|arcane_wipe"},
-  "imagePrompt": "comma-separated ENGLISH tags for SDXL image gen (max 400 chars). 8-14 tags, concrete nouns/adjectives only, no articles or filler. Order: subject, action, setting, time of day, lighting, weather, mood, camera angle, key props. Derive every tag from THIS scene's narrative — do NOT import unrelated locations, ruins, castles, or architecture that the scene does not actually contain. Template (do not copy literally, substitute from the scene): '<subject with attire>, <what they are doing>, <where — be specific to THIS scene>, <time>, <lighting>, <weather>, <mood>, <shot type>, <1-3 key props>'",
+  "imagePrompt": "comma-separated ENGLISH tags for SDXL image gen (max 400 chars). 8-14 tags, concrete nouns/adjectives only, no articles or filler. Order: subject, action, setting, time of day, lighting, weather, mood, camera angle, key props. Derive every tag from THIS scene's narrative — do NOT import unrelated locations, ruins, castles, or architecture that the scene does not actually contain. Always end with style tags: 'dark fantasy, dramatic lighting, painterly'. NEVER include: text, watermarks, UI elements, modern items, anime style, blurry, low quality. Template (substitute from the scene): '<subject with attire>, <action>, <specific setting>, <time>, <lighting>, <weather>, <mood>, <shot type>, <1-3 key props>, dark fantasy, dramatic lighting, painterly'",
   "soundEffect": "short English sound description or null",
   "musicPrompt": "instruments, tempo, mood (max 200 chars) or null",
   "questOffers": [],
@@ -148,20 +211,30 @@ export function responseFormatBlock(language) {
   "dilemma": null,
   "stateChanges": {
     "timeAdvance": {"hoursElapsed": 0.5},
-    "questUpdates": [{"questId":"","objectiveId":"","completed":true}],
+    "questUpdates": [{"questId":"","nodeKey":"","objectiveId":"","completed":true,"branchChoice":null}],
+    "objectiveReveals": [{"questId":"","nodeKey":"","revealSource":""}],
+    "branchGroupReveals": [{"questId":"","branchGroup":"","revealedNodeKeys":[],"revealSource":""}],
+    "questMutations": [{"questId":"","mutation":"stall|fail|reroute","reason":""}],
     "completedQuests": [],
     "npcs": [{"action":"introduce|update","name":"","dispositionChange":0}],
-    "npcMemoryUpdates": [{"npcName":"","memory":"","importance":"minor|major"}],
+    "npcMemoryUpdates": [{"npcName":"","memory":"","importance":"minor|major","actionType":null}],
     "locationMentioned": [{"locationName":"","byNpcId":""}],
     "currentLocation": null,
     "currentX": null,
     "currentY": null,
     "newItems": [],
     "removeItems": [],
+    "removeItemsByName": [{"name":"","quantity":1}],
     "rewards": [{"type":"","rarity":"","quantity":"","context":""}],
     "moneyChange": null,
+    "woundsChange": null,
+    "manaChange": null,
+    "spellUsage": null,
     "skillsUsed": [],
     "actionDifficulty": "easy|medium|hard|veryHard|extreme",
+    "learnSpell": null,
+    "manaMaxChange": null,
+    "addScroll": null,
     "dungeonComplete": null
   },
   "dialogueIfQuestTargetCompleted": null
@@ -169,7 +242,10 @@ export function responseFormatBlock(language) {
 FIELD SCOPE: diceRolls + dialogueIfQuestTargetCompleted are TOP-LEVEL. questUpdates + completedQuests + rewards + npcMemoryUpdates live INSIDE stateChanges — emitting them at top-level means the backend drops them silently.
 EMPTY vs OMIT: leave arrays empty ([]) and objects null when nothing happened. But if the narrative resolved a quest objective / transferred an item / moved the player, the matching stateChanges slot MUST be filled — the mockup lists every slot so you never "forget" one.
 npcsIntroduced: one entry per NEW speaking NPC (not already in NPCs section). Omit or [] if none.
-${languageRule}`;
+${languageRule}
+
+MINIMAL EXAMPLE (correct structure, abbreviated content):
+{"creativityBonus":4,"diceRolls":[{"skill":"Perswazja","difficulty":"medium","modifiers":[{"reason":"ciemność","value":5}],"success":true}],"npcsIntroduced":[],"dialogueSegments":[{"type":"narration","text":"Podchodzisz do kowala..."},{"type":"dialogue","character":"Bjorn","gender":"male","text":"No dobrze, przekonałeś mnie."}],"scenePacing":"dialogue","suggestedActions":["Pytam o zlecenie","Oglądam wystawę broni","Mówię: \\"Dziękuję, wrócę z materiałami.\\""],"atmosphere":{"weather":"clear","particles":"none","mood":"peaceful","lighting":"natural","transition":"dissolve"},"imagePrompt":"bearded blacksmith, leaning on anvil, medieval forge interior, midday, warm forge glow, clear weather, peaceful mood, medium shot, iron tools hanging on wall, dark fantasy, dramatic lighting, painterly","soundEffect":"hammer on anvil clang","musicPrompt":null,"questOffers":[],"cutscene":null,"dilemma":null,"stateChanges":{"timeAdvance":{"hoursElapsed":0.25},"questUpdates":[],"completedQuests":[],"npcs":[{"action":"update","name":"Bjorn","dispositionChange":2}],"npcMemoryUpdates":[],"locationMentioned":[],"currentLocation":null,"currentX":null,"currentY":null,"newItems":[],"removeItems":[],"removeItemsByName":[],"rewards":[],"moneyChange":null,"woundsChange":null,"manaChange":null,"spellUsage":null,"skillsUsed":["Perswazja"],"actionDifficulty":"medium","learnSpell":null,"manaMaxChange":null,"addScroll":null,"dungeonComplete":null},"dialogueIfQuestTargetCompleted":null}`;
 }
 
 export function worldSettingBlock(campaign) {

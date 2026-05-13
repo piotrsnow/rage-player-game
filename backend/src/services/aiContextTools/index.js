@@ -1,5 +1,5 @@
 import { childLogger } from '../../lib/logger.js';
-import { getLocationSummary } from '../memoryCompressor.js';
+import { getLocationSummary, getLocationDigests } from '../memoryCompressor.js';
 
 import { handleSearchMemory } from './handlers/searchMemory.js';
 import { handleGetNPC } from './handlers/npc.js';
@@ -8,6 +8,7 @@ import { handleGetLocation } from './handlers/location.js';
 import { handleGetCodex } from './handlers/codex.js';
 import { buildWorldLorePreamble } from './worldLore.js';
 import { buildLivingWorldContext } from './contextBuilders/livingWorld.js';
+import { buildNarrativeContext } from '../locationGraph/graphContextBuilder.js';
 
 export { buildWorldLorePreamble };
 
@@ -88,11 +89,34 @@ export async function assembleContext(
     );
   }
 
+  // Location History Digest — scene-level ring buffer for return-to-location
+  // context. Fetched whenever a current location is known (cheap DB read).
+  if (currentLocation) {
+    fetches.push(
+      getLocationDigests(campaignId, currentLocation)
+        .then((data) => ({ type: 'locationDigests', data }))
+        .catch(() => ({ type: 'locationDigests', data: null })),
+    );
+  }
+
   // Expand codex entries
   for (const topic of selectionResult.expand_codex || []) {
     if (skipCodex.has(topic.toLowerCase())) continue;
     fetches.push(
       handleGetCodex(campaignId, topic).then((r) => ({ type: 'codex', key: topic, data: r })),
+    );
+  }
+
+  // Location Graph — lean spatial context (exits, NPCs, perception hints).
+  // Fetched when the campaign has a resolved polymorphic location ref.
+  if (selectionResult._currentRef?.kind && selectionResult._currentRef?.id) {
+    fetches.push(
+      buildNarrativeContext(selectionResult._currentRef.id, selectionResult._currentRef.kind, campaignId)
+        .then((data) => ({ type: 'locationGraph', data }))
+        .catch((err) => {
+          log.warn({ err: err?.message, campaignId }, 'locationGraph context fetch failed');
+          return { type: 'locationGraph', data: null };
+        }),
     );
   }
 
@@ -104,7 +128,7 @@ export async function assembleContext(
   }
 
   if (fetches.length === 0) {
-    return { npcs: {}, quests: {}, location: null, codex: {}, memory: null, livingWorld: null, worldLore: null };
+    return { npcs: {}, quests: {}, location: null, codex: {}, memory: null, livingWorld: null, worldLore: null, locationGraph: null, locationDigests: null };
   }
 
   const results = await Promise.all(fetches);
@@ -112,7 +136,7 @@ export async function assembleContext(
 }
 
 function groupByType(results) {
-  const grouped = { npcs: {}, quests: {}, location: null, codex: {}, memory: null, livingWorld: null, worldLore: null };
+  const grouped = { npcs: {}, quests: {}, location: null, codex: {}, memory: null, livingWorld: null, worldLore: null, locationGraph: null, locationDigests: null };
 
   for (const r of results) {
     switch (r.type) {
@@ -136,6 +160,12 @@ function groupByType(results) {
         break;
       case 'worldLore':
         grouped.worldLore = r.data;
+        break;
+      case 'locationGraph':
+        grouped.locationGraph = r.data;
+        break;
+      case 'locationDigests':
+        grouped.locationDigests = r.data;
         break;
     }
   }

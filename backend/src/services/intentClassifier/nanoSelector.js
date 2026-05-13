@@ -138,7 +138,7 @@ async function callNanoOpenAI(userPrompt, signal) {
         { role: 'user', content: userPrompt },
       ],
       temperature: 0,
-      max_tokens: 250,
+      max_completion_tokens: 250,
       response_format: { type: 'json_object' },
     }),
     signal,
@@ -200,6 +200,9 @@ async function callNanoAnthropic(userPrompt, signal) {
 const VALID_DIFFICULTIES = ['easy', 'medium', 'hard', 'veryHard', 'extreme'];
 
 function normalizeSelection(raw) {
+  if (raw._reasoning) {
+    log.debug({ reasoning: raw._reasoning }, 'nano reasoning');
+  }
   const result = {
     expand_npcs: Array.isArray(raw.expand_npcs) ? raw.expand_npcs.filter((n) => typeof n === 'string') : [],
     expand_quests: Array.isArray(raw.expand_quests) ? raw.expand_quests.filter((n) => typeof n === 'string') : [],

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { getGameState } from '../../stores/gameStore';
@@ -22,9 +22,11 @@ import { useSettings } from '../../contexts/SettingsContext';
 import { useMultiplayer } from '../../contexts/MultiplayerContext';
 import { useAI } from '../../hooks/useAI';
 import { useDictation } from '../../hooks/useDictation';
+import { useDictationContext } from '../../contexts/DictationContext';
 import { useNarrator } from '../../hooks/useNarrator';
 import { useGlobalMusic } from '../../contexts/MusicContext';
 import { apiClient } from '../../services/apiClient';
+import { storage } from '../../services/storage';
 import ScenePanel from './ScenePanel';
 import ActionPanel from './ActionPanel';
 import ChatPanel from './ChatPanel';
@@ -65,7 +67,12 @@ import { useCombatResolution } from '../../hooks/useCombatResolution';
 import { useGameplayDerivedState } from '../../hooks/useGameplayDerivedState';
 import { useGameplayOverlays } from '../../hooks/useGameplayOverlays';
 import { useGameplayActions } from '../../hooks/useGameplayActions';
+import { useUltrawideBonus } from '../../hooks/useUltrawideBonus';
+import { useMomentumMinigame } from '../../hooks/useMomentumMinigame';
+import { useFavoriteScenes } from '../../hooks/useFavoriteScenes';
 import MainQuestCompleteModal from './MainQuestCompleteModal';
+import { ActionTagProvider } from '../../contexts/ActionTagContext';
+import { claimExclusiveReadAloud } from '../../utils/readAloudExclusive';
 
 function hashCode(str) {
   let h = 0;
@@ -85,6 +92,7 @@ export default function GameplayPage({ readOnly = false, shareToken = null, onRe
   const { t } = useTranslation();
   const dispatch = useGameDispatch();
   const autoSave = useGameAutoSave();
+  const uwBonus = useUltrawideBonus();
 
   // Granular per-slice subscriptions — each field only triggers a re-render when
   // that specific slice changes. No reconstructed `state` object: children that
@@ -124,7 +132,8 @@ export default function GameplayPage({ readOnly = false, shareToken = null, onRe
     narratorState: narrator.playbackState,
     narratorPause: narrator.pause,
   });
-  const { openSettings } = useModals();
+  const { openSettings, openGmModal, setPlayerActionHandler } = useModals();
+  const dictCtx = useDictationContext();
   const mp = useMultiplayer();
   const {
     generateScene, generateImageForScene, generateRecap,
@@ -132,6 +141,7 @@ export default function GameplayPage({ readOnly = false, shareToken = null, onRe
     sceneGenStartTime, lastSceneGenMs,
     earlyDiceRoll, clearEarlyDiceRoll,
     streamingNarrative, streamingSegments,
+    streamComplete,
   } = useAI();
 
   const { setNarratorState } = useGlobalMusic();
@@ -150,7 +160,16 @@ export default function GameplayPage({ readOnly = false, shareToken = null, onRe
     isMpReconnecting, showMpConnectionBanner, aiCosts, currentScene, tensionScore,
   } = derived;
 
+  const favoriteScenesHook = useFavoriteScenes(readOnly ? null : character?.backendId);
+
   useDocumentTitle(campaign?.name);
+
+  /** Keep document at top in /play — chat/combat used scrollIntoView and pulled the window down. */
+  useLayoutEffect(() => {
+    window.scrollTo(0, 0);
+    document.documentElement.scrollTop = 0;
+    document.body.scrollTop = 0;
+  }, [urlCampaignId, readOnly, location.pathname, location.key]);
 
   useEffect(() => {
     setNarratorState(narrator.playbackState);
@@ -165,18 +184,26 @@ export default function GameplayPage({ readOnly = false, shareToken = null, onRe
     });
   }, [dictation.setGameContext, combat, currentScene]);
 
+  useEffect(() => {
+    dictCtx?.register(dictation);
+    return () => dictCtx?.unregister();
+  }, [dictation, dictCtx]);
+
   const { sessionStartTime, sessionSeconds, totalPlayTime } = usePlayTimeTracker();
 
   // Modal open/close flags — kept in the page because they don't fit any of
   // the extracted hooks' concerns and are wired straight into GameplayModals.
   const [worldModalOpen, setWorldModalOpen] = useState(false);
-  const [gmModalOpen, setGmModalOpen] = useState(false);
+  const [worldModalInitialTab, setWorldModalInitialTab] = useState('npcs');
   const [mpPanelOpen, setMpPanelOpen] = useState(false);
   const [achievementsOpen, setAchievementsOpen] = useState(false);
+  const [systemLogsOpen, setSystemLogsOpen] = useState(false);
   const [videoPanelOpen, setVideoPanelOpen] = useState(false);
   const [autoPlayerSettingsOpen, setAutoPlayerSettingsOpen] = useState(false);
   const [viewingSceneIndex, setViewingSceneIndex] = useState(null);
   const [autoPlayScenes, setAutoPlayScenes] = useState(false);
+  const [combatExpandedLayout, setCombatExpandedLayout] = useState(false);
+  useEffect(() => { if (!combat?.active) setCombatExpandedLayout(false); }, [combat?.active]);
   const handleSceneNavRef = useRef(null);
   const consecutiveIdleEventsRef = useRef(0);
   const sceneGenSucceededRef = useRef(false);
@@ -273,6 +300,8 @@ export default function GameplayPage({ readOnly = false, shareToken = null, onRe
   const playSceneNarration = useCallback((scene, fallbackIndex = null) => {
     if (!scene?.narrative) return;
 
+    claimExclusiveReadAloud();
+
     // Preferred: ElevenLabs narrator (requires backend auth + voice configured)
     if (narrator.isNarratorReady) {
       const msg = chatHistory.find((m) => m.sceneId === scene.id);
@@ -305,6 +334,27 @@ export default function GameplayPage({ readOnly = false, shareToken = null, onRe
     openSettings();
   }, [narrator, chatHistory, openSettings, settings.language, settings.dialogueSpeed]);
 
+  const playSceneNarrationRef = useRef(playSceneNarration);
+  playSceneNarrationRef.current = playSceneNarration;
+  const replayNarrationSceneRef = useRef({ viewedScene, displayedSceneIndex });
+  replayNarrationSceneRef.current = { viewedScene, displayedSceneIndex };
+
+  useEffect(() => {
+    const onKeyDown = (e) => {
+      if (!e.ctrlKey || (e.key !== '8' && e.code !== 'Digit8')) return;
+      const tag = e.target?.tagName?.toLowerCase();
+      if (tag === 'input' || tag === 'textarea' || tag === 'select' || e.target?.isContentEditable) {
+        return;
+      }
+      const { viewedScene: vs, displayedSceneIndex: idx } = replayNarrationSceneRef.current;
+      if (!vs?.narrative) return;
+      e.preventDefault();
+      playSceneNarrationRef.current(vs, idx);
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, []);
+
   const handleSceneNavigation = (sceneIndex) => {
     const scene = scenes[sceneIndex];
     if (!scene) return;
@@ -331,6 +381,45 @@ export default function GameplayPage({ readOnly = false, shareToken = null, onRe
   };
   handleSceneNavRef.current = handleSceneNavigation;
 
+  // Stream sometimes omits `earlyDiceRoll` (no dice_early / skill in partial JSON).
+  // Still surface the full-screen dice animation from the finalized scene row.
+  const [fallbackDiceRoll, setFallbackDiceRoll] = useState(null);
+  const dismissedDiceSceneIdRef = useRef(null);
+  /** True while a scene generation was in progress — used only to gate fallback dice on gen end, not on campaign mount/load. */
+  const wasGeneratingSceneRef = useRef(false);
+  const latestSceneForDice = scenes[scenes.length - 1] || null;
+
+  useEffect(() => {
+    if (isGeneratingScene) {
+      wasGeneratingSceneRef.current = true;
+      setFallbackDiceRoll(null);
+      dismissedDiceSceneIdRef.current = null;
+      return;
+    }
+    const justFinishedGeneration = wasGeneratingSceneRef.current;
+    wasGeneratingSceneRef.current = false;
+
+    if (earlyDiceRoll) {
+      setFallbackDiceRoll(null);
+      return;
+    }
+    const dr = latestSceneForDice?.diceRoll;
+    if (!dr || !latestSceneForDice?.id) return;
+    if (dismissedDiceSceneIdRef.current === latestSceneForDice.id) return;
+    // Without this guard, revisiting gameplay remounts with `dismissed` cleared and replays
+    // the last scene's dice overlay (e.g. after lobby → campaign or LOAD_CAMPAIGN refetch).
+    if (!justFinishedGeneration) return;
+    setFallbackDiceRoll(dr);
+  }, [isGeneratingScene, earlyDiceRoll, latestSceneForDice?.id, latestSceneForDice?.diceRoll]);
+
+  const mergedDiceRoll = earlyDiceRoll ?? fallbackDiceRoll;
+
+  const clearDiceAnimation = useCallback(() => {
+    clearEarlyDiceRoll();
+    setFallbackDiceRoll(null);
+    dismissedDiceSceneIdRef.current = latestSceneForDice?.id ?? null;
+  }, [clearEarlyDiceRoll, latestSceneForDice?.id]);
+
   // Overlay hook owns raw overlay state (typewriter, playerAction, dice).
   // autoPlayer's overlay contribution is layered in below — keeping it out
   // of the hook avoids a cycle (autoPlayer depends on handleAction, which
@@ -340,8 +429,7 @@ export default function GameplayPage({ readOnly = false, shareToken = null, onRe
     narrator,
     autoPlayScenes,
     displayedSceneIndex,
-    earlyDiceRoll,
-    clearEarlyDiceRoll,
+    earlyDiceRoll: mergedDiceRoll,
     getSceneActionText,
     onSceneNavigate: (idx) => handleSceneNavRef.current?.(idx),
     setViewingSceneIndex,
@@ -362,6 +450,8 @@ export default function GameplayPage({ readOnly = false, shareToken = null, onRe
     try {
       await generateScene(action, false, isCustomAction, fromAutoPlayer, {
         forceRoll: opts?.forceRoll || null,
+        entityTags: opts?.entityTags || null,
+        travelFailureReason: opts?.travelFailureReason || null,
       });
       sceneGenSucceededRef.current = true;
     } catch {
@@ -372,6 +462,11 @@ export default function GameplayPage({ readOnly = false, shareToken = null, onRe
   const handleActionRef = useRef(handleAction);
   handleActionRef.current = handleAction;
   const stableHandleAction = useCallback((...args) => handleActionRef.current(...args), []);
+
+  useEffect(() => {
+    setPlayerActionHandler(stableHandleAction);
+    return () => setPlayerActionHandler(null);
+  }, [stableHandleAction, setPlayerActionHandler]);
 
   const autoPlayer = useAutoPlayer(
     isMultiplayer ? null : stableHandleAction,
@@ -404,17 +499,21 @@ export default function GameplayPage({ readOnly = false, shareToken = null, onRe
   // Trigger: first TTS audio file ready to play (canplay → audio.play() in
   // playAudioWithBuffer flips playbackState to PLAYING). Applies to all
   // overlay variants (player action / scene navigation / autoPlayer).
-  // Fallback for disabled / unavailable TTS: keep the legacy "stream started"
-  // trigger so the overlay still dismisses when the LLM finishes responding.
+  // Auto fast-finish only when the full LLM response is complete (not on
+  // first streaming chunk) — the typewriter plays at natural speed while the
+  // LLM streams, and snaps to done once the backend confirms completion.
   const ttsReady = narrator.playbackState === narrator.STATES.PLAYING;
-  const llmResponded = streamingNarrative !== null;
-  const overlayFastFinish = ttsReady || (llmResponded && !narrator.isNarratorReady);
+  const llmResponded = streamComplete;
+  const overlayFastFinish = ttsReady || llmResponded;
   // Manual click-to-skip is allowed once the LLM has started responding (or
-  // TTS is already preparing/playing) — clicking before that is ignored.
-  const canManuallySkipOverlay = llmResponded
-    || ttsReady
-    || narrator.playbackState === narrator.STATES.LOADING;
+  // TTS is already preparing/playing), or when dice is actively rolling —
+  // clicking before that is ignored.
   const { diceAfterTypewriter } = overlays;
+  const diceIsActive = !!(mergedDiceRoll && diceAfterTypewriter);
+  const canManuallySkipOverlay = (streamingNarrative !== null)
+    || ttsReady
+    || narrator.playbackState === narrator.STATES.LOADING
+    || diceIsActive;
 
   // Cut leftover narration only when the player starts a new turn (player
   // action overlay mounts). For typewriterAction / autoPlayer overlays we
@@ -430,6 +529,37 @@ export default function GameplayPage({ readOnly = false, shareToken = null, onRe
   }, [!!overlays.playerActionOverlayText]);
 
   useCampaignLoader({ campaign, isMultiplayer, readOnly, urlCampaignId, dispatch, navigate });
+
+  // After an incident is rozpatrzone pozytywnie the backend already mutated
+  // character + npcs + quests + codex/knowledge atomically. Refetch the
+  // campaign blob so the FE store mirrors the corrected world (mapa, panel
+  // postaci, lista NPC, kodeks). Same code path as useCampaignLoader uses.
+  const handleIncidentCorrectionsApplied = useCallback(() => {
+    const cid = sCampaign?.backendId || urlCampaignId;
+    if (!cid || isMultiplayer) return;
+    storage.loadCampaign(cid)
+      .then((data) => {
+        if (data) {
+          dispatch({ type: 'LOAD_CAMPAIGN', payload: data });
+          storage.saveLocalSnapshot(data);
+        }
+      })
+      .catch(() => { /* non-fatal — modal still shows the verdict */ });
+    // sCampaign?.backendId is the resolved id; urlCampaignId is the URL fallback
+  }, [sCampaign?.backendId, urlCampaignId, isMultiplayer, dispatch]);
+
+  // After modal close on a positive verdict with concrete corrections, fire
+  // a one-shot "providence" scene. Backend already queued a pendingProvidence
+  // payload — generateScene with the [PROVIDENCE_AFTER_INCIDENT] token reads
+  // it and weaves a short atmospheric scene where fate/luck/fortune
+  // manifests the correction in-world.
+  const handleProvidenceScene = useCallback(() => {
+    if (isMultiplayer) return; // guests/host disambiguation: skip in MP for now
+    generateScene('[PROVIDENCE_AFTER_INCIDENT]', false, false).catch((err) => {
+      // eslint-disable-next-line no-console
+      console.warn('Providence scene generation failed:', err?.message);
+    });
+  }, [generateScene, isMultiplayer]);
 
   const actions = useGameplayActions({
     dispatch,
@@ -475,18 +605,8 @@ export default function GameplayPage({ readOnly = false, shareToken = null, onRe
     dispatch,
   });
 
-  useEffect(() => {
-    if ((settings.sceneVisualization || 'image') !== 'map') return;
-    if (sWorld?.fieldMap) return;
-    if (!sCampaign) return;
-    dispatch({
-      type: 'INIT_FIELD_MAP',
-      payload: {
-        seed: sCampaign.id ? hashCode(sCampaign.id) : Date.now(),
-        activeBiome: 'plains',
-      },
-    });
-  }, [settings.sceneVisualization, sWorld?.fieldMap, sCampaign, dispatch]);
+  // Faza 5 — fieldMap removed; sceneVisualization='map' jest no-op (UI fallback
+  // do obrazka). Cała procedural-terrain warstwa zastąpiona Location Graph.
 
   const MAX_CONSECUTIVE_IDLE_EVENTS = 2;
 
@@ -516,6 +636,14 @@ export default function GameplayPage({ readOnly = false, shareToken = null, onRe
     onIdleEvent: handleIdleEvent,
   });
 
+  const momentum = useMomentumMinigame({
+    dispatch,
+    momentumBonus: isMultiplayer
+      ? (mpGameState?.characterMomentum?.[character?.name] || 0)
+      : (sMomentumBonus || 0),
+    sceneId: currentScene?.id || null,
+  });
+
   const combatHandlers = useCombatResolution({
     isMultiplayer,
     dispatch,
@@ -541,10 +669,11 @@ export default function GameplayPage({ readOnly = false, shareToken = null, onRe
   );
 
   return (
+    <ActionTagProvider>
     <div className="flex flex-col lg:flex-row h-[calc(100vh-4rem)] overflow-hidden">
       {/* Main Game Area */}
-      <div className={`flex-1 flex flex-col min-h-0 ${readOnly ? 'lg:mt-8' : ''}`}>
-        <div className="flex-1 flex flex-col px-4 md:px-6 pt-4 md:pt-6 pb-2 gap-6 overflow-y-auto custom-scrollbar min-h-0">
+      <div className={`flex-1 flex flex-col min-h-0 overflow-hidden ${readOnly ? 'lg:mt-8' : ''}`}>
+        <div className="shrink-0 px-4 md:px-6 pt-3 md:pt-4 pb-2 space-y-3">
         <GameplayHeader
           readOnly={readOnly}
           isMultiplayer={isMultiplayer}
@@ -558,8 +687,6 @@ export default function GameplayPage({ readOnly = false, shareToken = null, onRe
           currentScene={currentScene}
           character={character}
           allCharacters={allCharacters}
-          displayCharacter={displayCharacter}
-          isViewingCompanion={isViewingCompanion}
           attrPoints={attrPoints}
           setViewingSceneIndex={setViewingSceneIndex}
           handleSceneNavigation={handleSceneNavigation}
@@ -569,31 +696,35 @@ export default function GameplayPage({ readOnly = false, shareToken = null, onRe
           settings={settings}
           autoPlayScenes={autoPlayScenes}
           setAutoPlayScenes={setAutoPlayScenes}
-          handleRefresh={actions.handleRefresh}
-          isRefreshing={actions.isRefreshing}
           handleShare={actions.handleShare}
           shareCopied={actions.shareCopied}
           shareLoading={actions.shareLoading}
           aiCosts={aiCosts}
-          autoPlayer={autoPlayer}
-          onOpenAutoPlayerSettings={() => setAutoPlayerSettingsOpen(true)}
           onOpenAdvancement={() => actions.handleAdvancementOpen(character)}
           onOpenMpPanel={() => setMpPanelOpen(true)}
           onOpenSummaryModal={recap.openSummaryModal}
+          onOpenSystemLogs={() => setSystemLogsOpen(true)}
           onOpenAchievements={() => setAchievementsOpen(true)}
-          onOpenWorldModal={() => setWorldModalOpen(true)}
-          onOpenGmModal={() => setGmModalOpen(true)}
+          onOpenWorldModal={() => {
+            setWorldModalInitialTab('npcs');
+            setWorldModalOpen(true);
+          }}
           videoPanelOpen={videoPanelOpen}
           setVideoPanelOpen={setVideoPanelOpen}
-          dictation={dictation}
+          favoriteSceneIds={favoriteScenesHook.favoriteIds}
+          onToggleFavoriteScene={favoriteScenesHook.toggle}
+          campaignBackendId={campaign?.backendId}
         />
 
         {!readOnly && (
           <ContextDepthSlider settings={settings} updateDMSettings={updateDMSettings} />
         )}
+        </div>
 
+        {!(combat?.active && combatExpandedLayout) && (
+        <div className="shrink-0 px-4 md:px-6 pb-2">
         {/* Scene Panel */}
-        <div className="relative">
+        <div className="relative" id="scene-panel-container">
           <ScenePanel
             scene={viewedScene}
             combat={combat}
@@ -628,6 +759,14 @@ export default function GameplayPage({ readOnly = false, shareToken = null, onRe
             mpErrorCode={mpErrorCode}
             isMultiplayer={isMultiplayer}
             onOpenSettings={openSettings}
+            momentumDice={!readOnly && (momentum.active || momentum.result) ? {
+              visible: momentum.diceVisible,
+              position: momentum.position,
+              onDiceClick: momentum.handleDiceClick,
+              counting: momentum.counting,
+              countdownValue: momentum.countdownValue,
+              result: momentum.result,
+            } : null}
           />
           {overlayText && (
             <TypewriterActionOverlay
@@ -642,13 +781,16 @@ export default function GameplayPage({ readOnly = false, shareToken = null, onRe
               loaderEstimatedMs={lastSceneGenMs}
               fastFinish={overlayFastFinish}
               canManuallySkip={canManuallySkipOverlay}
+              waitForDice={diceIsActive}
+              onSkipDice={clearDiceAnimation}
+              mode={settings.typewriterMode || 'fullscreen'}
             />
           )}
-          {earlyDiceRoll && diceAfterTypewriter && (
+          {overlayText && mergedDiceRoll && diceAfterTypewriter && (
             <DiceRollAnimationOverlay
-              diceRoll={earlyDiceRoll}
-              onDismiss={clearEarlyDiceRoll}
-              holdOpen={!!overlayText}
+              diceRoll={mergedDiceRoll}
+              onDismiss={clearDiceAnimation}
+              mode={settings.typewriterMode || 'fullscreen'}
             />
           )}
           {sLocalDiceRoll && (
@@ -658,7 +800,120 @@ export default function GameplayPage({ readOnly = false, shareToken = null, onRe
             />
           )}
         </div>
+        </div>
+        )}
 
+        {isGeneratingScene && !readOnly && !(overlayText && isPlayerActionOverlayActive) && (
+          <div className="shrink-0 px-4 md:px-6 pb-2">
+            <SceneGenerationProgress
+              startTime={isMultiplayer ? mpSceneGenStartTime : sceneGenStartTime}
+              estimatedMs={lastSceneGenMs}
+              completing={streamingNarrative !== null}
+            />
+          </div>
+        )}
+
+        <div className="shrink-0 px-4 md:px-6 pb-2 pt-1">
+        {/* Action Panel */}
+        {currentScene && !isGeneratingScene && !(combat?.active) && !isViewingCompanion && !isReviewingPastScene && (!campaign?.status || campaign.status === 'active') && character?.status !== 'dead' && !mp.state.isDead && !readOnly && (
+          <div className={`px-2 animate-fade-in ${autoPlayer.isAutoPlaying && !autoPlayer.overlayAction && !isMultiplayer ? 'opacity-50 pointer-events-none' : autoPlayer.overlayAction ? 'pointer-events-none' : ''}`}>
+            <div className="flex items-center justify-between mb-2">
+              <label className="text-[10px] text-on-surface-variant font-label uppercase tracking-widest">
+                {autoPlayer.isAutoPlaying && !isMultiplayer ? t('autoPlayer.aiControlling') : t('gameplay.chooseAction')}
+              </label>
+              {!isMultiplayer && !autoPlayer.isAutoPlaying && (
+                <IdleTimer
+                  idleSeconds={idleTimer.idleSeconds}
+                  timerActive={idleTimer.timerActive}
+                  lastRoll={idleTimer.lastRoll}
+                  isRolling={idleTimer.isRolling}
+                  fastMode={idleTimer.fastMode}
+                  onToggleFastMode={idleTimer.toggleFastMode}
+                />
+              )}
+            </div>
+            <ActionPanel
+              key={currentScene.id || `scene-${scenes.length}`}
+              actions={currentScene.actions || currentScene.suggestedActions || []}
+              onAction={handleAction}
+              disabled={isGeneratingScene}
+              autoPlayerTypingText={autoPlayer.typingText}
+              npcs={(() => {
+                const npcsList = (isMultiplayer ? mpGameState?.world?.npcs : sWorld?.npcs) || [];
+                const currentRef = isMultiplayer ? mpGameState?.world?.currentLocationRef : sWorld?.currentLocationRef;
+                const currentName = isMultiplayer ? mpGameState?.world?.currentLocation : sWorld?.currentLocation;
+                return npcsList.filter((npc) => {
+                  if (npc.alive === false) return false;
+                  // Faza 3b — preferuj composite ref match. Fallback: legacy string.
+                  if (currentRef && npc.locationRef) {
+                    return npc.locationRef.kind === currentRef.kind && npc.locationRef.id === currentRef.id;
+                  }
+                  return npc.lastLocation === currentName;
+                });
+              })()}
+              character={character}
+              dilemma={currentScene.dilemma}
+              lastChosenAction={lastChosenAction}
+              multiplayerPlayers={isMultiplayer ? (mp.state.players || []) : []}
+              typingPlayers={isMultiplayer ? (mp.state.typingPlayers || {}) : {}}
+              dispatch={dispatch}
+              dictation={dictation}
+              campaignId={sCampaign?.backendId || urlCampaignId || null}
+              onIncidentCorrectionsApplied={handleIncidentCorrectionsApplied}
+              onProvidenceScene={handleProvidenceScene}
+              onOpenTravelMap={() => {
+                setWorldModalInitialTab('map');
+                setWorldModalOpen(true);
+              }}
+            />
+          </div>
+        )}
+
+        {/* Trade Panel */}
+        {sTrade?.active && !isViewingCompanion && !isReviewingPastScene && !readOnly && (
+          <div className="px-2 animate-fade-in">
+            <TradePanel
+              trade={sTrade}
+              character={character}
+              world={sWorld}
+              dispatch={dispatch}
+              disabled={isGeneratingScene}
+            />
+          </div>
+        )}
+
+        {/* Crafting Panel */}
+        {sCrafting?.active && !isViewingCompanion && !isReviewingPastScene && !readOnly && (
+          <div className="px-2 animate-fade-in">
+            <CraftingPanel
+              character={character}
+              dispatch={dispatch}
+              disabled={isGeneratingScene}
+            />
+          </div>
+        )}
+
+        {/* Alchemy Panel */}
+        {sAlchemy?.active && !isViewingCompanion && !isReviewingPastScene && !readOnly && (
+          <div className="px-2 animate-fade-in">
+            <AlchemyPanel
+              character={character}
+              dispatch={dispatch}
+              disabled={isGeneratingScene}
+            />
+          </div>
+        )}
+
+        <GameplayDeadNotices
+          character={character}
+          campaign={campaign}
+          isMultiplayer={isMultiplayer}
+          mp={mp}
+          readOnly={readOnly}
+        />
+        </div>
+
+        <div className="flex-1 min-h-0 overflow-y-auto lg:overflow-x-hidden custom-scrollbar px-4 md:px-6 pb-3 pt-1 space-y-3">
         {viewedScene?.cutscene && <CutscenePanel cutscene={viewedScene.cutscene} />}
 
         {/* Read-only: always show readable narrative text */}
@@ -709,15 +964,6 @@ export default function GameplayPage({ readOnly = false, shareToken = null, onRe
           </div>
         )}
 
-        {/* Loading State — fill bar to 100% + fade out once streaming starts */}
-        {isGeneratingScene && !readOnly && (
-          <SceneGenerationProgress
-            startTime={isMultiplayer ? mpSceneGenStartTime : sceneGenStartTime}
-            estimatedMs={lastSceneGenMs}
-            completing={streamingNarrative !== null}
-          />
-        )}
-
         <GameplayStatusBanners
           readOnly={readOnly}
           showMpConnectionBanner={showMpConnectionBanner}
@@ -753,6 +999,8 @@ export default function GameplayPage({ readOnly = false, shareToken = null, onRe
               isHost={mp.state.isHost}
               mpCharacters={isMultiplayer ? mpGameState?.characters : undefined}
               onPersistState={() => autoSave()}
+              expandedLayout={combatExpandedLayout}
+              onLayoutChange={setCombatExpandedLayout}
             />
           </div>
         )}
@@ -811,98 +1059,24 @@ export default function GameplayPage({ readOnly = false, shareToken = null, onRe
         )}
         </div>
 
-        {/* Bottom panel — always visible */}
-        <div className="shrink-0 px-4 md:px-6 pb-4 md:pb-6 pt-2">
-        {/* Action Panel */}
-        {currentScene && !isGeneratingScene && !(combat?.active) && !isViewingCompanion && !isReviewingPastScene && (!campaign?.status || campaign.status === 'active') && character?.status !== 'dead' && !mp.state.isDead && !readOnly && (
-          <div className={`px-2 animate-fade-in ${autoPlayer.isAutoPlaying && !autoPlayer.overlayAction && !isMultiplayer ? 'opacity-50 pointer-events-none' : autoPlayer.overlayAction ? 'pointer-events-none' : ''}`}>
-            <div className="flex items-center justify-between mb-2">
-              <label className="text-[10px] text-on-surface-variant font-label uppercase tracking-widest">
-                {autoPlayer.isAutoPlaying && !isMultiplayer ? t('autoPlayer.aiControlling') : t('gameplay.chooseAction')}
-              </label>
-              {!isMultiplayer && !autoPlayer.isAutoPlaying && (
-                <IdleTimer
-                  idleSeconds={idleTimer.idleSeconds}
-                  timerActive={idleTimer.timerActive}
-                  lastRoll={idleTimer.lastRoll}
-                  isRolling={idleTimer.isRolling}
-                  fastMode={idleTimer.fastMode}
-                  onToggleFastMode={idleTimer.toggleFastMode}
-                />
-              )}
-            </div>
-            <ActionPanel
-              key={currentScene.id || `scene-${scenes.length}`}
-              actions={currentScene.actions || currentScene.suggestedActions || []}
-              onAction={handleAction}
-              disabled={isGeneratingScene}
-              autoPlayerTypingText={autoPlayer.typingText}
-              npcs={((isMultiplayer ? mpGameState?.world?.npcs : sWorld?.npcs) || []).filter((npc) => npc.alive !== false && npc.lastLocation === (isMultiplayer ? mpGameState?.world?.currentLocation : sWorld?.currentLocation))}
-              character={character}
-              dilemma={currentScene.dilemma}
-              lastChosenAction={lastChosenAction}
-              multiplayerPlayers={isMultiplayer ? (mp.state.players || []) : []}
-              typingPlayers={isMultiplayer ? (mp.state.typingPlayers || {}) : {}}
-              dispatch={dispatch}
-              dictation={dictation}
-            />
-          </div>
-        )}
-
-        {/* Trade Panel */}
-        {sTrade?.active && !isViewingCompanion && !isReviewingPastScene && !readOnly && (
-          <div className="px-2 animate-fade-in">
-            <TradePanel
-              trade={sTrade}
-              character={character}
-              world={sWorld}
-              dispatch={dispatch}
-              disabled={isGeneratingScene}
-            />
-          </div>
-        )}
-
-        {/* Crafting Panel */}
-        {sCrafting?.active && !isViewingCompanion && !isReviewingPastScene && !readOnly && (
-          <div className="px-2 animate-fade-in">
-            <CraftingPanel
-              character={character}
-              dispatch={dispatch}
-              disabled={isGeneratingScene}
-            />
-          </div>
-        )}
-
-        {/* Alchemy Panel */}
-        {sAlchemy?.active && !isViewingCompanion && !isReviewingPastScene && !readOnly && (
-          <div className="px-2 animate-fade-in">
-            <AlchemyPanel
-              character={character}
-              dispatch={dispatch}
-              disabled={isGeneratingScene}
-            />
-          </div>
-        )}
-
-        <GameplayDeadNotices
-          character={character}
-          campaign={campaign}
-          isMultiplayer={isMultiplayer}
-          mp={mp}
-          readOnly={readOnly}
-        />
-        </div>
-
       </div>
 
       {/* Right Sidebar: Chat Panel */}
-      <aside className="w-full lg:w-96 bg-surface-container-low/50 backdrop-blur-md border-l border-outline-variant/15 flex flex-col h-[400px] lg:h-full shrink-0">
+      <aside
+        className="gameplay-right-aside-torn-edge w-full lg:w-[442px] bg-surface-container-low/30 backdrop-blur-md border-l border-outline-variant/15 flex flex-col min-h-0 h-[400px] lg:h-full shrink-0 overflow-hidden"
+        style={uwBonus.chat > 0 ? { width: 442 + uwBonus.chat } : undefined}
+      >
         <ChatPanel
           messages={chatHistory}
           streamingNarrative={streamingNarrative}
           streamingSegments={streamingSegments}
           narrator={settings.narratorEnabled ? narrator : null}
-          autoPlay={!readOnly && settings.narratorEnabled && settings.narratorAutoPlay && !overlayText}
+          // Do not gate on `overlayText`: the player-action typewriter often lacks
+          // fastFinish (streamComplete is cleared in clearStreamingOutput before paint),
+          // so tying auto-narration to the overlay blocks TTS until typing finishes
+          // or can stall edge cases. Narrator is already stopped when the overlay mounts
+          // on submit; new DM audio can overlap the tail of the typewriter safely.
+          autoPlay={!readOnly && settings.narratorEnabled && settings.narratorAutoPlay}
           myOdId={isMultiplayer ? mp.state.myOdId : null}
           momentumBonus={isMultiplayer
             ? (mpGameState?.characterMomentum?.[character?.name] || 0)
@@ -914,6 +1088,8 @@ export default function GameplayPage({ readOnly = false, shareToken = null, onRe
           totalPlayTime={totalPlayTime}
           narrationTime={sNarrationTime || 0}
           chatGate={!!overlayText}
+          onMomentumClick={!readOnly && !momentum.cooldown ? momentum.startGame : null}
+          momentumMinigameActive={momentum.active}
         />
       </aside>
 
@@ -928,24 +1104,29 @@ export default function GameplayPage({ readOnly = false, shareToken = null, onRe
         narrator={narrator}
         campaignId={sCampaign?.backendId || urlCampaignId || null}
         currentSceneId={currentScene?.id || null}
-        onTravelFromMap={(destinationName) => {
+        onTravelFromMap={(destinationName, opts) => {
           setWorldModalOpen(false);
-          if (destinationName) handleAction(`Podróżuję do ${destinationName}.`, true);
+          if (destinationName) {
+            handleAction(`Podróżuję do ${destinationName}.`, true, false, {
+              travelFailureReason: opts?.travelFailureReason || null,
+            });
+          }
         }}
         onEnterSubFromMap={(subName) => {
           setWorldModalOpen(false);
           if (subName) handleAction(`Wchodzę do ${subName}.`, true);
         }}
         worldModalOpen={worldModalOpen}
+        worldModalInitialTab={worldModalInitialTab}
         onWorldModalClose={() => setWorldModalOpen(false)}
-        gmModalOpen={gmModalOpen}
-        onGmModalClose={() => setGmModalOpen(false)}
         mpPanelOpen={mpPanelOpen}
         onMpPanelClose={() => setMpPanelOpen(false)}
         advancementOpen={actions.advancementOpen}
         onAdvancementClose={actions.handleAdvancementClose}
         achievementsOpen={achievementsOpen}
         onAchievementsClose={() => setAchievementsOpen(false)}
+        systemLogsOpen={systemLogsOpen}
+        onSystemLogsClose={() => setSystemLogsOpen(false)}
         autoPlayerSettingsOpen={autoPlayerSettingsOpen}
         onAutoPlayerSettingsClose={() => setAutoPlayerSettingsOpen(false)}
         autoPlayer={autoPlayer}
@@ -958,5 +1139,6 @@ export default function GameplayPage({ readOnly = false, shareToken = null, onRe
         onVideoPanelClose={() => setVideoPanelOpen(false)}
       />
     </div>
+    </ActionTagProvider>
   );
 }

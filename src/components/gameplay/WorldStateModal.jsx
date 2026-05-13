@@ -3,18 +3,18 @@ import { useTranslation } from 'react-i18next';
 import { useModalA11y } from '../../hooks/useModalA11y';
 import QuestsTab from './world/QuestsTab';
 import NpcTab from './world/NpcTab';
-import MapTab from './world/MapTab';
 import TimeTab from './world/TimeTab';
 import EffectsTab from './world/EffectsTab';
 import JournalTab from './world/JournalTab';
 import FactionsTab from './world/FactionsTab';
+import MapTab from './world/MapTab';
 
-const TABS = ['npcs', 'map', 'quests', 'factions', 'time', 'effects', 'journal'];
-const TAB_ICONS = { npcs: 'group', map: 'map', quests: 'assignment', factions: 'groups', time: 'schedule', effects: 'auto_fix_high', journal: 'menu_book' };
+const TABS = ['map', 'npcs', 'quests', 'factions', 'time', 'effects', 'journal'];
+const TAB_ICONS = { map: 'map', npcs: 'group', quests: 'assignment', factions: 'groups', time: 'schedule', effects: 'auto_fix_high', journal: 'menu_book' };
 
-export default function WorldStateModal({ world, quests, characterVoiceMap, maleVoices, femaleVoices, ttsProvider, dispatch, autoSave, campaignId, currentSceneId, onTravel, onEnterSub, onClose }) {
+export default function WorldStateModal({ world, quests, characterVoiceMap, maleVoices, femaleVoices, ttsProvider, dispatch, autoSave, campaignId, currentSceneId, initialTab = 'npcs', onTravel, onEnterSub, onClose }) {
   const { t } = useTranslation();
-  const [activeTab, setActiveTab] = useState('npcs');
+  const [activeTab, setActiveTab] = useState(initialTab);
   const [highlightId, setHighlightId] = useState(null);
   const contentRef = useRef(null);
   const modalRef = useModalA11y(onClose);
@@ -31,6 +31,10 @@ export default function WorldStateModal({ world, quests, characterVoiceMap, male
     setActiveTab(tab);
     setHighlightId(entityId || null);
   }, []);
+
+  useEffect(() => {
+    if (TABS.includes(initialTab)) setActiveTab(initialTab);
+  }, [initialTab]);
 
   useEffect(() => {
     if (!highlightId || !contentRef.current) return;
@@ -55,39 +59,43 @@ export default function WorldStateModal({ world, quests, characterVoiceMap, male
       <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} />
       <div
         ref={modalRef}
-        className="relative w-full max-w-2xl max-h-[80vh] bg-surface-container-highest/80 backdrop-blur-2xl border border-outline-variant/15 rounded-sm flex flex-col shadow-2xl animate-fade-in"
+        className={`relative w-full max-h-[90vh] bg-surface-container-highest/80 backdrop-blur-2xl border border-outline-variant/15 rounded-sm flex flex-col shadow-2xl animate-fade-in ${
+          activeTab === 'map' ? 'max-w-[80vw] h-[88vh]' : 'max-w-5xl'
+        }`}
       >
-        <div className="flex items-center justify-between px-5 py-4 border-b border-outline-variant/10">
-          <div className="flex items-center gap-2">
-            <span className="material-symbols-outlined text-primary text-xl">public</span>
-            <h2 className="text-sm font-bold text-on-surface uppercase tracking-widest">{t('worldState.title')}</h2>
-          </div>
-          <button onClick={onClose} aria-label={t('common.close')} className="material-symbols-outlined text-lg text-outline hover:text-on-surface transition-colors">close</button>
+        <div className="flex items-center justify-between px-6 py-4 border-b border-outline-variant/15">
+          <h2 className="font-headline text-xl text-tertiary flex items-center gap-2">
+            <span className="material-symbols-outlined text-primary-dim">public</span>
+            {t('worldState.title')}
+          </h2>
+          <button onClick={onClose} aria-label={t('common.close')} className="text-on-surface-variant hover:text-primary transition-colors">
+            <span className="material-symbols-outlined">close</span>
+          </button>
         </div>
 
-        <div className="flex border-b border-outline-variant/10 px-2 gap-1 overflow-x-auto">
+        <div className="flex border-b border-outline-variant/15 px-2 gap-1 overflow-x-auto">
           {TABS.map((tab) => (
             <button
               key={tab}
               onClick={() => setActiveTab(tab)}
-              className={`flex items-center gap-1.5 px-3 py-2.5 text-[10px] font-label uppercase tracking-widest transition-colors whitespace-nowrap border-b-2 ${
+              className={`flex items-center gap-1.5 px-3 py-2.5 text-xs font-label uppercase tracking-widest transition-colors whitespace-nowrap border-b-2 ${
                 activeTab === tab
                   ? 'text-primary border-primary'
                   : 'text-outline border-transparent hover:text-on-surface-variant hover:border-outline-variant/30'
               }`}
             >
-              <span className="material-symbols-outlined text-sm">{TAB_ICONS[tab]}</span>
+              <span className="material-symbols-outlined text-base">{TAB_ICONS[tab]}</span>
               {t(`worldState.tabs.${tab}`)}
             </button>
           ))}
         </div>
 
-        <div ref={contentRef} className="flex-1 overflow-y-auto custom-scrollbar p-5">
+        <div ref={contentRef} className="flex-1 overflow-y-auto custom-scrollbar p-6">
+          {activeTab === 'map' && (
+            <MapTab campaignId={campaignId} onTravel={onTravel} />
+          )}
           {activeTab === 'npcs' && (
             <NpcTab npcs={npcs} quests={quests} characterVoiceMap={characterVoiceMap} maleVoices={maleVoices} femaleVoices={femaleVoices} ttsProvider={ttsProvider} dispatch={dispatch} autoSave={autoSave} navigateTo={navigateTo} t={t} />
-          )}
-          {activeTab === 'map' && (
-            <MapTab campaignId={campaignId} currentSceneId={currentSceneId} currentLocation={currentLocation} onTravel={onTravel} onEnterSub={onEnterSub} t={t} />
           )}
           {activeTab === 'quests' && (
             <QuestsTab quests={quests} npcs={npcs} navigateTo={navigateTo} t={t} />

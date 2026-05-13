@@ -78,7 +78,7 @@ export async function generateImagePrompt({
     resolvedProvider === 'anthropic' ? 'Anthropic' : 'OpenAI',
   );
   const overrideModel = await resolveModelForTask('imagePrompt', resolvedProvider);
-  const resolvedModel = model || overrideModel || config.aiModels.nano[resolvedProvider];
+  const resolvedModel = overrideModel || model || config.aiModels.nano[resolvedProvider];
 
   const systemPrompt = buildSystemPrompt({
     imageProvider,

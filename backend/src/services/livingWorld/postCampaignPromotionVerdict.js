@@ -123,6 +123,8 @@ export async function getVerdictForCandidate({
       maxTokens,
       temperature: 0,
       userApiKeys,
+      taskType: 'promotion-verdict',
+      taskLabel: `NPC promotion: ${(npc.name || '').slice(0, 40)}`,
     });
   } catch (err) {
     log.warn({ err: err?.message, npcName: npc.name }, 'verdict provider call failed');

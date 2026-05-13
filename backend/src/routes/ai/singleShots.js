@@ -1,11 +1,15 @@
 import { prisma } from '../../lib/prisma.js';
 import { loadUserApiKeys } from '../../services/apiKeyService.js';
+import { config } from '../../config.js';
+import { getModelOverrides, TASK_CATEGORIES } from '../../services/serverConfig.js';
 import { generateStoryPrompt } from '../../services/storyPromptGenerator.js';
 import { generateCharacterLegend } from '../../services/characterLegendGenerator.js';
 import { enhanceImagePrompt } from '../../services/imagePromptEnhancer.js';
 import { generateImagePrompt } from '../../services/imagePromptGenerator.js';
 import { translateImagePromptToEnglish } from '../../services/translateImagePrompt.js';
+import { buildNpcPortraitPrompt } from '../../services/npcPortraitPromptBuilder.js';
 import { generateCombatCommentary } from '../../services/combatCommentary.js';
+import { resolveCombatTurn } from '../../services/combatTurnResolver.js';
 import { verifyObjective } from '../../services/objectiveVerifier.js';
 import { generateRecap } from '../../services/recapGenerator.js';
 import { ensureAppearanceAndDialect } from '../../services/livingWorld/npcAppearanceDialect.js';
@@ -15,7 +19,9 @@ import {
   ENHANCE_IMAGE_PROMPT_SCHEMA,
   GENERATE_IMAGE_PROMPT_SCHEMA,
   TRANSLATE_IMAGE_PROMPT_SCHEMA,
+  NPC_PORTRAIT_PROMPT_SCHEMA,
   COMBAT_COMMENTARY_SCHEMA,
+  COMBAT_TURN_RESOLVE_SCHEMA,
   VERIFY_OBJECTIVE_SCHEMA,
   RECAP_SCHEMA,
   NPC_MISSING_FIELDS_SCHEMA,
@@ -26,6 +32,22 @@ import {
  * that wraps one single-shot LLM call and returns JSON synchronously.
  */
 export async function singleShotRoutes(fastify) {
+  /**
+   * GET /ai/model-config — resolved model per task category + provider.
+   * Available to all authenticated users so the FE can send explicit models.
+   */
+  fastify.get('/model-config', async () => {
+    const overrides = await getModelOverrides();
+    const resolved = {};
+    for (const cat of TASK_CATEGORIES) {
+      resolved[cat] = {
+        openai: overrides[cat]?.openai || null,
+        anthropic: overrides[cat]?.anthropic || null,
+      };
+    }
+    return { models: resolved, defaults: config.aiModels };
+  });
+
   /**
    * POST /ai/generate-story-prompt — random story premise for campaign creator.
    */
@@ -156,6 +178,24 @@ export async function singleShotRoutes(fastify) {
   });
 
   /**
+   * POST /ai/npc-portrait-prompt — nano-tier prompt-builder that turns a full
+   * NPC card (name + race/creatureKind + role + personality + …) into a short
+   * English image-generation subject. Used by the FE NPC portrait pipeline so
+   * non-humanoid creatures and Polish-without-diacritics roles render as the
+   * intended subject instead of falling back to a generic human portrait.
+   */
+  fastify.post('/npc-portrait-prompt', { schema: { body: NPC_PORTRAIT_PROMPT_SCHEMA } }, async (request, reply) => {
+    const { npc, force = false } = request.body || {};
+    const userApiKeys = await loadUserApiKeys(prisma, request.user?.id);
+    try {
+      return await buildNpcPortraitPrompt({ npc, userApiKeys, force });
+    } catch (err) {
+      const status = err.statusCode || 502;
+      return reply.code(status).send({ error: err.message, code: err.code || 'AI_REQUEST_FAILED' });
+    }
+  });
+
+  /**
    * POST /ai/combat-commentary — mid-combat narration + battle cries.
    */
   fastify.post('/combat-commentary', { schema: { body: COMBAT_COMMENTARY_SCHEMA } }, async (request, reply) => {
@@ -260,6 +300,30 @@ export async function singleShotRoutes(fastify) {
     try {
       return await generateRecap({
         scenes, language, provider, model, modelTier, sentencesPerScene, summaryStyle, userApiKeys,
+      });
+    } catch (err) {
+      const status = err.statusCode || 502;
+      return reply.code(status).send({ error: err.message, code: err.code || 'AI_REQUEST_FAILED' });
+    }
+  });
+
+  /**
+   * POST /ai/combat-turn-resolve — AI resolves a mid-combat player turn (item use / custom action).
+   */
+  fastify.post('/combat-turn-resolve', { schema: { body: COMBAT_TURN_RESOLVE_SCHEMA } }, async (request, reply) => {
+    const {
+      combatSnapshot,
+      playerAction = '',
+      diceRoll = null,
+      language = 'pl',
+      provider = 'openai',
+      model,
+      modelTier = 'standard',
+    } = request.body || {};
+    const userApiKeys = await loadUserApiKeys(prisma, request.user?.id);
+    try {
+      return await resolveCombatTurn({
+        combatSnapshot, playerAction, diceRoll, language, provider, model, modelTier, userApiKeys,
       });
     } catch (err) {
       const status = err.statusCode || 502;
