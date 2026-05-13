@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
 import { apiClient } from '../../services/apiClient';
@@ -7,12 +7,139 @@ import { excerpt, genreBorderColors } from './galleryHelpers';
 import GlassCard from '../ui/GlassCard';
 import Button from '../ui/Button';
 
+const TILE_W = 192 + 12; // w-48 (192px) + gap-3 (12px)
+
+function SceneStrip({ scenes, campaign, onOpenLightbox, resolveImage, t }) {
+  const stripRef = useRef(null);
+  const [canScrollLeft, setCanScrollLeft] = useState(false);
+  const [canScrollRight, setCanScrollRight] = useState(false);
+  const [visibleRange, setVisibleRange] = useState('');
+
+  const updateScrollState = useCallback(() => {
+    const el = stripRef.current;
+    if (!el) return;
+    const { scrollLeft, scrollWidth, clientWidth } = el;
+    setCanScrollLeft(scrollLeft > 4);
+    setCanScrollRight(scrollLeft + clientWidth < scrollWidth - 4);
+
+    const firstVisible = Math.floor(scrollLeft / TILE_W) + 1;
+    const lastVisible = Math.min(
+      Math.ceil((scrollLeft + clientWidth) / TILE_W),
+      scenes.length,
+    );
+    setVisibleRange(`${firstVisible}–${lastVisible} / ${scenes.length}`);
+  }, [scenes.length]);
+
+  useEffect(() => {
+    const el = stripRef.current;
+    if (!el) return;
+    updateScrollState();
+    el.addEventListener('scroll', updateScrollState, { passive: true });
+    const ro = new ResizeObserver(updateScrollState);
+    ro.observe(el);
+    return () => {
+      el.removeEventListener('scroll', updateScrollState);
+      ro.disconnect();
+    };
+  }, [updateScrollState]);
+
+  const scroll = useCallback((dir) => {
+    const el = stripRef.current;
+    if (!el) return;
+    const pageW = el.clientWidth;
+    el.scrollBy({ left: dir * pageW, behavior: 'smooth' });
+  }, []);
+
+  return (
+    <div className="relative group/strip">
+      {canScrollLeft && (
+        <button
+          type="button"
+          aria-label="Scroll left"
+          onClick={() => scroll(-1)}
+          className="absolute left-0 top-0 bottom-0 z-10 w-10 flex items-center justify-center
+                     bg-gradient-to-r from-surface/90 to-transparent
+                     opacity-0 group-hover/strip:opacity-100 transition-opacity duration-200 cursor-pointer"
+        >
+          <span className="material-symbols-outlined text-on-surface text-2xl drop-shadow">chevron_left</span>
+        </button>
+      )}
+      {canScrollRight && (
+        <button
+          type="button"
+          aria-label="Scroll right"
+          onClick={() => scroll(1)}
+          className="absolute right-0 top-0 bottom-0 z-10 w-10 flex items-center justify-center
+                     bg-gradient-to-l from-surface/90 to-transparent
+                     opacity-0 group-hover/strip:opacity-100 transition-opacity duration-200 cursor-pointer"
+        >
+          <span className="material-symbols-outlined text-on-surface text-2xl drop-shadow">chevron_right</span>
+        </button>
+      )}
+
+      <div
+        ref={stripRef}
+        className="flex gap-3 overflow-x-auto snap-x snap-mandatory scroll-smooth chronicles-strip"
+      >
+        {scenes.map((scene) => {
+          const imgSrc = resolveImage(scene.imageUrl);
+          return (
+            <div
+              key={scene.id}
+              className={`
+                shrink-0 w-48 snap-start rounded-sm overflow-hidden cursor-pointer group relative
+                ${scene.isFavorite ? 'ring-2 ring-rose-400/60 shadow-[0_0_12px_rgba(251,113,133,0.3)]' : ''}
+              `}
+              onClick={() => onOpenLightbox({
+                ...scene,
+                campaignName: campaign.name,
+                likeCount: 0,
+              })}
+              role="button"
+              tabIndex={0}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault();
+                  onOpenLightbox({ ...scene, campaignName: campaign.name, likeCount: 0 });
+                }
+              }}
+            >
+              <img
+                src={imgSrc}
+                alt=""
+                loading="lazy"
+                className="w-full h-32 object-cover transition-transform duration-500 group-hover:scale-110"
+              />
+              <div className="absolute inset-0 bg-gradient-to-t from-black/70 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex flex-col justify-end p-2">
+                <p className="text-white text-[10px]">{t('common.scene')} {scene.sceneIndex + 1}</p>
+                <p className="text-white/60 text-[9px] line-clamp-2">{excerpt(scene.narrative, 80)}</p>
+              </div>
+              {scene.isFavorite && (
+                <span className="absolute top-1.5 right-1.5 material-symbols-outlined text-rose-400 text-sm" style={{ fontVariationSettings: "'FILL' 1" }}>
+                  favorite
+                </span>
+              )}
+            </div>
+          );
+        })}
+      </div>
+
+      {scenes.length > 0 && (
+        <span className="absolute -top-8 right-0 text-[10px] text-on-surface-variant/60 tabular-nums">
+          {visibleRange}
+        </span>
+      )}
+    </div>
+  );
+}
+
 export default function MyChronicles({ onOpenLightbox, resolveImage }) {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const { settings } = useSettings();
   const [campaigns, setCampaigns] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [togglingId, setTogglingId] = useState(null);
 
   const isConnected = settings.useBackend && !!settings.backendUrl && apiClient.isConnected();
 
@@ -30,6 +157,20 @@ export default function MyChronicles({ onOpenLightbox, resolveImage }) {
   }, [isConnected]);
 
   useEffect(() => { load(); }, [load]);
+
+  const togglePublish = useCallback(async (campaignId, currentlyPublic) => {
+    setTogglingId(campaignId);
+    try {
+      await apiClient.patch(`/campaigns/${campaignId}/publish`, { isPublic: !currentlyPublic });
+      setCampaigns((prev) =>
+        prev.map((c) => (c.id === campaignId ? { ...c, isPublic: !currentlyPublic } : c)),
+      );
+    } catch {
+      /* silent — user can retry */
+    } finally {
+      setTogglingId(null);
+    }
+  }, []);
 
   if (!isConnected) {
     return (
@@ -83,53 +224,39 @@ export default function MyChronicles({ onOpenLightbox, resolveImage }) {
                 <span className="text-[10px] text-on-surface-variant">
                   {campaign.sceneCount} {t('common.scenes', 'scenes')}
                 </span>
+                <button
+                  type="button"
+                  onClick={() => togglePublish(campaign.id, campaign.isPublic)}
+                  disabled={togglingId === campaign.id}
+                  title={campaign.isPublic
+                    ? t('gallery.unpublish', 'Ukryj z galerii')
+                    : t('gallery.publish', 'Opublikuj w galerii')}
+                  className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider border transition-colors ${
+                    campaign.isPublic
+                      ? 'bg-primary/10 text-primary border-primary/20 hover:bg-primary/20'
+                      : 'bg-surface-container text-outline border-outline-variant/20 hover:text-on-surface hover:border-outline-variant/40'
+                  } ${togglingId === campaign.id ? 'opacity-50' : ''}`}
+                >
+                  {togglingId === campaign.id
+                    ? <span className="material-symbols-outlined text-xs animate-spin">progress_activity</span>
+                    : <span className="material-symbols-outlined text-xs" style={campaign.isPublic ? { fontVariationSettings: "'FILL' 1" } : undefined}>
+                        {campaign.isPublic ? 'visibility' : 'visibility_off'}
+                      </span>}
+                  {campaign.isPublic
+                    ? t('gallery.published', 'Publiczna')
+                    : t('gallery.notPublished', 'Prywatna')}
+                </button>
               </div>
             </GlassCard>
 
             {scenesWithImages.length > 0 && (
-              <div className="flex gap-3 overflow-x-auto pb-2 scrollbar-thin scrollbar-thumb-outline-variant/30">
-                {scenesWithImages.map((scene) => {
-                  const imgSrc = resolveImage(scene.imageUrl);
-                  return (
-                    <div
-                      key={scene.id}
-                      className={`
-                        shrink-0 w-48 rounded-sm overflow-hidden cursor-pointer group relative
-                        ${scene.isFavorite ? 'ring-2 ring-rose-400/60 shadow-[0_0_12px_rgba(251,113,133,0.3)]' : ''}
-                      `}
-                      onClick={() => onOpenLightbox({
-                        ...scene,
-                        campaignName: campaign.name,
-                        likeCount: 0,
-                      })}
-                      role="button"
-                      tabIndex={0}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter' || e.key === ' ') {
-                          e.preventDefault();
-                          onOpenLightbox({ ...scene, campaignName: campaign.name, likeCount: 0 });
-                        }
-                      }}
-                    >
-                      <img
-                        src={imgSrc}
-                        alt=""
-                        loading="lazy"
-                        className="w-full h-32 object-cover transition-transform duration-500 group-hover:scale-110"
-                      />
-                      <div className="absolute inset-0 bg-gradient-to-t from-black/70 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex flex-col justify-end p-2">
-                        <p className="text-white text-[10px]">{t('common.scene')} {scene.sceneIndex + 1}</p>
-                        <p className="text-white/60 text-[9px] line-clamp-2">{excerpt(scene.narrative, 80)}</p>
-                      </div>
-                      {scene.isFavorite && (
-                        <span className="absolute top-1.5 right-1.5 material-symbols-outlined text-rose-400 text-sm" style={{ fontVariationSettings: "'FILL' 1" }}>
-                          favorite
-                        </span>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
+              <SceneStrip
+                scenes={scenesWithImages}
+                campaign={campaign}
+                onOpenLightbox={onOpenLightbox}
+                resolveImage={resolveImage}
+                t={t}
+              />
             )}
 
             {scenesWithImages.length === 0 && scenesWithoutImages.length > 0 && (

@@ -1,9 +1,26 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { apiClient } from '../../services/apiClient';
 import { GENRES, TONES } from './galleryHelpers';
 import MasonryGrid from './MasonryGrid';
 import SceneTile from './SceneTile';
+
+/**
+ * Assigns a visual size to each tile in the gallery grid.
+ * Uses a repeating pattern + likeCount boost so some tiles
+ * are larger (wide = 2 cols, tall = 2 rows). ~25% of tiles
+ * are featured for visual variety without chaos.
+ */
+function assignTileSizes(scenes) {
+  return scenes.map((scene, i) => {
+    if (scene.likeCount >= 3 && i % 4 === 0) return 'tall';
+    const pos = i % 11;
+    if (pos === 0) return 'tall';
+    if (pos === 4) return 'wide';
+    if (pos === 8) return 'tall';
+    return 'normal';
+  });
+}
 
 export default function DiscoverFeed({ onOpenLightbox, resolveImage }) {
   const { t } = useTranslation();
@@ -42,6 +59,8 @@ export default function DiscoverFeed({ onOpenLightbox, resolveImage }) {
   useEffect(() => {
     fetchPage(null, false);
   }, [fetchPage]);
+
+  const tileSizes = useMemo(() => assignTileSizes(scenes), [scenes]);
 
   useEffect(() => {
     if (!sentinelRef.current || !nextCursor) return;
@@ -110,10 +129,11 @@ export default function DiscoverFeed({ onOpenLightbox, resolveImage }) {
 
       {!loading && scenes.length > 0 && (
         <MasonryGrid>
-          {scenes.map((scene) => (
+          {scenes.map((scene, i) => (
             <SceneTile
               key={scene.id}
               scene={scene}
+              size={tileSizes[i] || 'normal'}
               onOpenLightbox={onOpenLightbox}
               resolveImage={resolveImage}
             />

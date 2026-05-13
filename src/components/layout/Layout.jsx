@@ -54,9 +54,6 @@ function ModalLayer() {
     closeProfile,
     adminUsersOpen,
     closeAdminUsers,
-    locationGraphOpen,
-    locationGraphRefreshKey,
-    closeLocationGraph,
     worldLocationGraphOpen,
     worldLocationGraphRefreshKey,
     closeWorldLocationGraph,
@@ -88,6 +85,7 @@ function ModalLayer() {
           ttsProvider={['elevenlabs', 'xtts'].includes(settings.sceneTtsTier) ? settings.sceneTtsTier : (settings.ttsProvider || 'elevenlabs')}
           dispatch={dispatch}
           autoSave={autoSave}
+          campaignId={campaign?.backendId}
           onClose={closeWorldState}
         />
       )}
@@ -108,16 +106,6 @@ function ModalLayer() {
       {profileOpen && <UserProfileModal onClose={closeProfile} />}
       {adminUsersOpen && <UserManagementModal onClose={closeAdminUsers} />}
       {privacyOpen && <PrivacyPolicyModal onClose={closePrivacy} />}
-      {locationGraphOpen && campaign?.backendId && (
-        <Suspense fallback={null}>
-          <LocationGraphModal
-            key={`campaign-graph-${campaign.backendId}`}
-            campaignId={campaign.backendId}
-            openGeneration={locationGraphRefreshKey}
-            onClose={closeLocationGraph}
-          />
-        </Suspense>
-      )}
       {worldLocationGraphOpen && backendUser?.isAdmin && (
         <Suspense fallback={null}>
           <LocationGraphModal

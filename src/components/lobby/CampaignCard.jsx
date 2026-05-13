@@ -14,9 +14,10 @@ const genreGlowColors = {
   Horror: 'hover:shadow-[0_4px_24px_rgba(255,110,132,0.12)]',
 };
 
-export default function CampaignCard({ campaign, onLoad, onDelete, loading, disabled }) {
+export default function CampaignCard({ campaign, onLoad, onDelete, onTogglePublish, loading, disabled }) {
   const { t, i18n } = useTranslation();
   const [deleteState, setDeleteState] = useState('idle'); // idle | confirming | deleting
+  const [publishing, setPublishing] = useState(false);
   const lastPlayed = new Date(campaign.lastSaved).toLocaleDateString(i18n.language === 'pl' ? 'pl-PL' : undefined, {
     month: 'short',
     day: 'numeric',
@@ -98,6 +99,32 @@ export default function CampaignCard({ campaign, onLoad, onDelete, loading, disa
                 ? 'opacity-0 group-hover:opacity-100 translate-x-2 group-hover:translate-x-0'
                 : 'opacity-100 translate-x-0'
             }`}>
+              {deleteState === 'idle' && onTogglePublish && (
+                <button
+                  type="button"
+                  onClick={async (e) => {
+                    e.stopPropagation();
+                    if (disabled || publishing) return;
+                    setPublishing(true);
+                    try { await onTogglePublish(); } finally { setPublishing(false); }
+                  }}
+                  disabled={publishing}
+                  title={campaign.isPublic
+                    ? t('gallery.unpublish', 'Ukryj z galerii')
+                    : t('gallery.publish', 'Opublikuj w galerii')}
+                  className={`p-1 rounded-sm transition-colors flex items-center justify-center ${
+                    campaign.isPublic
+                      ? 'text-primary hover:text-primary/70 hover:bg-primary/10'
+                      : 'text-outline hover:text-primary hover:bg-primary/10'
+                  }`}
+                >
+                  {publishing
+                    ? <span className="material-symbols-outlined text-sm animate-spin">progress_activity</span>
+                    : <span className="material-symbols-outlined text-sm" style={campaign.isPublic ? { fontVariationSettings: "'FILL' 1" } : undefined}>
+                        {campaign.isPublic ? 'visibility' : 'visibility_off'}
+                      </span>}
+                </button>
+              )}
               {deleteState === 'idle' && (
                 <button
                   type="button"

@@ -28,7 +28,6 @@ import ChipGroup from './ChipGroup';
 import ModeToggle from './ModeToggle';
 import CharacterPicker from './CharacterPicker';
 import StoryPromptSection from './StoryPromptSection';
-import LivingWorldModal from './LivingWorldModal';
 import { useGlobalMusic } from '../../contexts/MusicContext';
 
 export default function CampaignCreatorPage() {
@@ -70,7 +69,6 @@ export default function CampaignCreatorPage() {
   const [selectedCharacter, setSelectedCharacter] = useState(null);
   const [charsLoaded, setCharsLoaded] = useState(false);
   const [showCharModal, setShowCharModal] = useState(false);
-  const [showLivingWorldModal, setShowLivingWorldModal] = useState(false);
   const [createdCharacter, setCreatedCharacter] = useState(null);
   const [editingSelectedPortrait, setEditingSelectedPortrait] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -418,8 +416,6 @@ export default function CampaignCreatorPage() {
             onModeChange={setMode}
             inMpRoom={inMpRoom}
             isBackendConnected={isBackendConnected}
-            livingWorldEnabled={!!form.livingWorldEnabled}
-            onLivingWorldClick={() => setShowLivingWorldModal(true)}
           />
 
           {isGuest && (
@@ -618,18 +614,6 @@ export default function CampaignCreatorPage() {
         />
       )}
 
-      {showLivingWorldModal && (
-        <LivingWorldModal
-          enabled={!!form.livingWorldEnabled}
-          onEnabledChange={(v) => updateForm((p) => ({ ...p, livingWorldEnabled: v }))}
-          worldTimeRatio={form.worldTimeRatio}
-          onWorldTimeRatioChange={(v) => updateForm((p) => ({ ...p, worldTimeRatio: v }))}
-          worldTimeMaxGapDays={form.worldTimeMaxGapDays}
-          onWorldTimeMaxGapDaysChange={(v) => updateForm((p) => ({ ...p, worldTimeMaxGapDays: v }))}
-          disabled={isGuest}
-          onClose={() => setShowLivingWorldModal(false)}
-        />
-      )}
     </div>
   );
 }

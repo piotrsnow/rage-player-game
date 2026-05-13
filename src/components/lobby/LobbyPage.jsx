@@ -18,6 +18,7 @@ import FeaturedCampaignCard from './FeaturedCampaignCard';
 import AuthPanel from './AuthPanel';
 import IntroOverlay from './IntroOverlay';
 import VideoBackground from '../ui/VideoBackground';
+import LogoVideo from '../ui/LogoVideo';
 import { INTRO_SEEN_SESSION_KEY, RESUME_PLAY_CAMPAIGN_SESSION_KEY } from '../../constants/sessionIntro';
 
 const LOBBY_SCALING_DICE_COUNT = 20;
@@ -520,6 +521,20 @@ export default function LobbyPage() {
     }
   };
 
+  const handleTogglePublish = async (id) => {
+    const target = campaigns.find((c) => c.id === id);
+    if (!target || target.source === 'local') return;
+    const newValue = !target.isPublic;
+    try {
+      await apiClient.patch(`/campaigns/${id}/publish`, { isPublic: newValue });
+      setCampaigns((prev) =>
+        prev.map((c) => (c.id === id ? { ...c, isPublic: newValue } : c)),
+      );
+    } catch {
+      /* silent */
+    }
+  };
+
   const handleDelete = async (id) => {
     const target = campaigns.find((c) => c.id === id);
     if (target?.source === 'local') {
@@ -757,10 +772,10 @@ export default function LobbyPage() {
               transformOrigin: 'top center',
             }}
           >
-            {/* Hero logo — big, centered; larger for logged-in users */}
-            <img
-              src={t('common.logoPath', '/nikczemnu_logo.png')}
+            {/* Hero logo — animated webm, replays every 30s, holds last frame between */}
+            <LogoVideo
               alt={t('lobby.title')}
+              active={logoVisible}
               className={isLoggedIn
                 ? 'h-auto w-auto max-w-full object-contain drop-shadow-2xl'
                 : `h-60 md:h-80 w-auto drop-shadow-2xl ${useCompactGuestHero ? 'lg:h-72 justify-self-center self-end' : 'lg:h-[22rem]'}`}
@@ -873,6 +888,7 @@ export default function LobbyPage() {
                   disabled={!!loadingCampaignId}
                   onLoad={() => { handleLoad(campaigns[0]); setShowAllCampaigns(false); }}
                   onDelete={() => handleDelete(campaigns[0].id)}
+                  onTogglePublish={campaigns[0].source !== 'local' ? () => handleTogglePublish(campaigns[0].id) : undefined}
                 />
               )}
               {campaigns.length > 1 && (
@@ -886,6 +902,7 @@ export default function LobbyPage() {
                   disabled={!!loadingCampaignId}
                   onLoad={() => { handleLoad(c); setShowAllCampaigns(false); }}
                   onDelete={() => handleDelete(c.id)}
+                  onTogglePublish={c.source !== 'local' ? () => handleTogglePublish(c.id) : undefined}
                 />
               ))}
             </div>

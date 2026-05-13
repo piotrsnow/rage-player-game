@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { useSettings } from '../../contexts/SettingsContext';
 import BootLog from './BootLog';
 import SpinningDice from './SpinningDice';
+import LogoVideo from './LogoVideo';
 
 const RETRY_DELAY_MS = 5000;
 
@@ -77,8 +78,7 @@ export default function BackendConnectivityGate({ children }) {
       aria-busy="true"
     >
       <div className="rounded-2xl bg-[rgba(34,34,38,0.7)] backdrop-blur-xl border border-[rgba(197,154,255,0.15)] px-12 py-10 animate-pulse-subtle">
-        <img
-          src="/nikczemnu_logo.png"
+        <LogoVideo
           alt="Nikczemny Krzemuch"
           className="h-48 w-auto drop-shadow-[0_4px_24px_rgba(197,154,255,0.25)]"
         />

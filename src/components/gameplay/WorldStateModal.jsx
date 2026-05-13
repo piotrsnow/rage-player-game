@@ -90,10 +90,12 @@ export default function WorldStateModal({ world, quests, characterVoiceMap, male
           ))}
         </div>
 
-        <div ref={contentRef} className="flex-1 overflow-y-auto custom-scrollbar p-6">
-          {activeTab === 'map' && (
+        {activeTab === 'map' && (
+          <div className="flex-1 min-h-0">
             <MapTab campaignId={campaignId} onTravel={onTravel} />
-          )}
+          </div>
+        )}
+        <div ref={contentRef} className={`flex-1 overflow-y-auto custom-scrollbar p-6 ${activeTab === 'map' ? 'hidden' : ''}`}>
           {activeTab === 'npcs' && (
             <NpcTab npcs={npcs} quests={quests} characterVoiceMap={characterVoiceMap} maleVoices={maleVoices} femaleVoices={femaleVoices} ttsProvider={ttsProvider} dispatch={dispatch} autoSave={autoSave} navigateTo={navigateTo} t={t} />
           )}

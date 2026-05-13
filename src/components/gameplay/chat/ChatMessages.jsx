@@ -10,6 +10,8 @@ import {
 } from './ChatMessageParts';
 import { NarrableText } from '../../ui/NarrableText';
 import { filterDuplicateDialogueSegmentsWithIndex } from '../../../services/dialogueSegments';
+import { getPacingStyle } from './pacingStyles';
+import Tooltip from '../../ui/Tooltip';
 
 function formatSceneStats(message) {
   const parts = [];
@@ -40,6 +42,7 @@ export function DmMessage({ message, narrator }) {
     };
   const rawAiSpeechText = JSON.stringify(rawAiSpeech, null, 2);
   const statsLabel = formatSceneStats(message);
+  const pacing = getPacingStyle(message.scenePacing);
 
   return (
     <div className="flex flex-col gap-2 animate-fade-in">
@@ -55,7 +58,19 @@ export function DmMessage({ message, narrator }) {
           idleHoverClass="hover:text-primary"
         />
       </div>
-      <div className="glass-panel p-3 border-l-2 border-primary-dim/60 rounded-r-lg space-y-3 hover:border-primary-dim transition-colors duration-300">
+      <div className={`glass-panel p-3 border-l-2 rounded-r-lg space-y-3 transition-colors duration-300 relative overflow-hidden ${pacing.border} ${pacing.hoverBorder} ${pacing.bg}`}>
+        <div className="absolute bottom-1 right-2 z-[1]">
+          <Tooltip
+            content={<span className="font-headline tracking-widest uppercase text-sm">{pacing.label}</span>}
+            variant="compact"
+            tooltipClassName={`!bg-surface-container-lowest/90 backdrop-blur-md border ${pacing.tooltipBorder} ${pacing.tooltipGlow} !rounded-md !px-4 !py-2`}
+            asChild
+          >
+            <span className={`material-symbols-outlined text-[56px] leading-none select-none transition-colors duration-300 cursor-default ${pacing.iconColor} ${pacing.hoverIcon}`}>
+              {pacing.icon}
+            </span>
+          </Tooltip>
+        </div>
         <div className="flex items-start gap-2">
           <div className="min-w-0 flex-1">
             {shouldRenderSegments ? (

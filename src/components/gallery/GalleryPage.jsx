@@ -2,6 +2,7 @@ import { useCallback, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { apiClient } from '../../services/apiClient';
 import { useDocumentTitle } from '../../hooks/useDocumentTitle';
+import LogoVideo from '../ui/LogoVideo';
 import GalleryTabs from './GalleryTabs';
 import DiscoverFeed from './DiscoverFeed';
 import MyChronicles from './MyChronicles';
@@ -43,14 +44,14 @@ export default function GalleryPage() {
       <div className="absolute top-20 right-0 w-[500px] h-[500px] bg-primary/[0.05] rounded-full blur-[100px] pointer-events-none" />
       <div className="absolute bottom-20 left-0 w-[400px] h-[400px] bg-tertiary/[0.04] rounded-full blur-[90px] pointer-events-none" />
 
-      <header className="relative z-10 max-w-7xl mx-auto mb-6">
-        <div className="flex items-center gap-3 mb-2">
-          <span className="material-symbols-outlined text-primary text-3xl">auto_stories</span>
-          <h1 className="font-headline text-3xl md:text-4xl text-on-surface tracking-tight">
-            {t('gallery.title')}
-          </h1>
-        </div>
-        <p className="text-on-surface-variant text-sm max-w-xl">
+      <header className="relative z-10 max-w-7xl mx-auto mb-6 flex flex-col items-center -mt-[120px]">
+        <LogoVideo
+          src="/video/logo_2.webm"
+          replayIntervalMs={10_000}
+          alt={t('gallery.title')}
+          className="h-[32.4rem] w-auto object-contain drop-shadow-2xl"
+        />
+        <p className="text-on-surface-variant text-sm max-w-xl text-center mt-2">
           {t('gallery.subtitle')}
         </p>
       </header>

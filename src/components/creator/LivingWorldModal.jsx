@@ -1,6 +1,10 @@
 import { useTranslation } from 'react-i18next';
 import Slider from '../ui/Slider';
 
+/**
+ * @deprecated Living World creation settings are no longer exposed from the campaign creator menu.
+ * Keep this component only as a reference while the old modal flow is retired.
+ */
 export default function LivingWorldModal({ enabled, onEnabledChange, worldTimeRatio, onWorldTimeRatioChange, worldTimeMaxGapDays, onWorldTimeMaxGapDaysChange, disabled, onClose }) {
   const { t } = useTranslation();
 

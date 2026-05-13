@@ -32,7 +32,7 @@ export default function MobileNav() {
     hasActiveGame && { path: '/tasks-info', icon: 'assignment', label: t('nav.tasksInfo') },
     { path: '/keys', icon: 'vpn_key', label: t('nav.keys') },
     { path: '/audio', icon: 'graphic_eq', label: t('nav.audioConfig') },
-    { path: '/settings', icon: 'psychology', label: t('nav.settings') },
+    { path: '/settings', icon: 'history_edu', label: t('nav.settings') },
     backendUser?.isAdmin && { path: '/admin-users', icon: 'admin_panel_settings', label: t('admin.users') },
     { path: '/profile', icon: 'account_circle', label: t('nav.profile') },
     { path: '/', icon: 'home', label: t('nav.lobby') },

@@ -130,7 +130,7 @@ export async function galleryRoutes(fastify) {
     if (expandCampaignId) {
       const campaign = await prisma.campaign.findFirst({
         where: { id: expandCampaignId, userId },
-        select: { id: true, name: true, genre: true, tone: true },
+        select: { id: true, name: true, genre: true, tone: true, isPublic: true },
       });
       if (!campaign) return { campaigns: [] };
 
@@ -160,6 +160,7 @@ export async function galleryRoutes(fastify) {
           name: campaign.name,
           genre: campaign.genre,
           tone: campaign.tone,
+          isPublic: campaign.isPublic,
           sceneCount: scenes.length,
           scenes: scenes.map((s) => ({
             id: s.id,
@@ -178,7 +179,7 @@ export async function galleryRoutes(fastify) {
       where: { userId },
       orderBy: { lastSaved: 'desc' },
       take: 5,
-      select: { id: true, name: true, genre: true, tone: true },
+      select: { id: true, name: true, genre: true, tone: true, isPublic: true },
     });
 
     if (!recentCampaigns.length) return { campaigns: [] };
@@ -218,14 +219,14 @@ export async function galleryRoutes(fastify) {
     return {
       campaigns: recentCampaigns.map((c) => {
         const allScenes = scenesByCampaign.get(c.id) || [];
-        const capped = allScenes.slice(0, 20);
         return {
           id: c.id,
           name: c.name,
           genre: c.genre,
           tone: c.tone,
+          isPublic: c.isPublic,
           sceneCount: sceneCountMap.get(c.id) || 0,
-          scenes: capped.map((s) => ({
+          scenes: allScenes.map((s) => ({
             id: s.id,
             sceneIndex: s.sceneIndex,
             imageUrl: s.imageUrl,

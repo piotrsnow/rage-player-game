@@ -319,6 +319,13 @@
     background: rgba(197, 154, 255, 0.55);
   }
 
+  .chronicles-strip {
+    scrollbar-width: none;
+  }
+  .chronicles-strip::-webkit-scrollbar {
+    display: none;
+  }
+
   .noise-overlay {
     background-image: radial-gradient(#ffffff 1px, transparent 1px);
     background-size: 20px 20px;
@@ -1004,6 +1011,15 @@
 .animate-expand-left {
   transform-origin: right center;
   animation: expandLeft 0.36s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+@keyframes groupItemIn {
+  from { opacity: 0; transform: translateX(-4px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+
+.animate-group-item-in {
+  animation: groupItemIn 0.32s cubic-bezier(0.4, 0, 0.2, 1) both;
 }
 
 .animate-slide-up {

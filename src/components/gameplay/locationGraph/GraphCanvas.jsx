@@ -300,8 +300,13 @@ export default forwardRef(function GraphCanvas({
       <defs>
         <style>{`g[data-node]:hover .node-img { opacity: 1 !important; }
 g[data-node]:hover .node-label { opacity: 1 !important; }
-.npc-token { transition: scale 200ms ease; }
-g[data-node]:hover .npc-token { scale: 1.25; }`}</style>
+.npc-token {
+  transform-box: fill-box;
+  transform-origin: center;
+  transition: transform 200ms ease var(--npc-token-delay, 0ms);
+}
+g[data-node]:hover .npc-token,
+.npc-token:hover { transform: scale(1.25); }`}</style>
         <pattern id="graph-grid" width={GRID_STEP} height={GRID_STEP} patternUnits="userSpaceOnUse">
           <circle cx={GRID_STEP / 2} cy={GRID_STEP / 2} r={0.8} fill="rgba(255,255,255,0.12)" />
         </pattern>
@@ -584,8 +589,14 @@ g[data-node]:hover .npc-token { scale: 1.25; }`}</style>
                 const ox = Math.cos(angle) * orbitR;
                 const oy = Math.sin(angle) * orbitR;
                 const labelY = (spriteHref ? tokenPx / 2 : dotR) + 10;
+                const tokenDelayMs = Math.min(i * 45, 300);
                 return (
-                  <g key={occ.id} transform={`translate(${ox},${oy})`} className="npc-token" style={{ cursor: 'pointer' }}>
+                  <g
+                    key={occ.id}
+                    transform={`translate(${ox},${oy})`}
+                    className="npc-token"
+                    style={{ cursor: 'pointer', '--npc-token-delay': `${tokenDelayMs}ms` }}
+                  >
                     {spriteHref ? (
                       <>
                         <rect
@@ -620,7 +631,7 @@ g[data-node]:hover .npc-token { scale: 1.25; }`}</style>
                       fill={color}
                       fontSize={9}
                       fontWeight={500}
-                      pointerEvents="none"
+                      pointerEvents="visiblePainted"
                       opacity={0.9}
                     >
                       {truncate(occ.name, 12)}

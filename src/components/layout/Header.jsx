@@ -7,11 +7,9 @@ import { useGlobalMusic } from '../../contexts/MusicContext';
 import { useModals } from '../../contexts/ModalContext';
 import { useDictationContext } from '../../contexts/DictationContext';
 import { useGameCampaign } from '../../stores/gameSelectors';
-import { getGameState } from '../../stores/gameStore';
 import { useAiCallLogStore } from '../../stores/aiCallLogStore';
 import { useDevEventLogStore } from '../../stores/devEventLogStore';
 import { useMultiplayer } from '../../contexts/MultiplayerContext';
-import { storage } from '../../services/storage';
 import { peekEntryIntent, consumeEntryIntent } from '../../services/entryIntent';
 import Tooltip from '../ui/Tooltip';
 import FullCallLogModal from './FullCallLogModal';
@@ -102,7 +100,7 @@ function HeaderVersionPopover({ wrapperClassName = '', wrapperStyle }) {
       <button
         type="button"
         onClick={() => setOpen((p) => !p)}
-        className="text-on-surface-variant font-body text-[15px] hover:text-tertiary transition-colors px-1 tabular-nums"
+        className="text-on-surface-variant font-headline text-[15px] hover:text-tertiary transition-colors px-1 tabular-nums"
         aria-expanded={open}
         aria-haspopup="dialog"
       >
@@ -140,41 +138,86 @@ const HEADER_CHROME_STYLE = {
   boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.04), 0 8px 32px rgba(0,0,0,0.5)',
 };
 
-const GROUP_OPEN_DELAY = 100;
-const GROUP_CLOSE_DELAY = 180;
-
-function GroupItem({ icon, label, onClick, to, active, badge, ...rest }) {
-  const cls = `flex items-center gap-2.5 px-3 py-2 rounded-sm text-xs font-label transition-colors duration-150 whitespace-nowrap ${
-    active ? 'text-primary bg-primary/10' : 'text-on-surface-variant hover:text-tertiary hover:bg-surface-container-high/40'
-  }`;
-  const content = (
-    <>
-      <span className={`material-symbols-outlined text-base shrink-0 ${active ? 'text-primary' : ''}`}>{icon}</span>
-      <span className="truncate">{label}</span>
-      {badge}
-    </>
+function ZigzagDivider() {
+  return (
+    <svg width="6" height="28" viewBox="0 0 6 28" className="shrink-0 text-on-surface-variant/20 mx-3" aria-hidden>
+      <path d="M3 0 L6 3.5 L0 7 L6 10.5 L0 14 L6 17.5 L0 21 L6 24.5 L3 28" fill="none" stroke="currentColor" strokeWidth="0.8" />
+    </svg>
   );
-  if (to) return <Link to={to} className={cls} role="menuitem" {...rest}>{content}</Link>;
-  return <button type="button" onClick={onClick} className={cls} role="menuitem" {...rest}>{content}</button>;
 }
 
-function HeaderActionGroup({ id, icon, label, isOpen, onOpen, onClose, children }) {
-  const openRef = useRef(null);
-  const closeRef = useRef(null);
+function GroupItem({ icon, label, onClick, to, active, badge, ...rest }) {
+  const cls = `relative material-symbols-outlined text-[26px] transition-all active:scale-95 duration-150 cursor-pointer w-9 h-9 flex items-center justify-center rounded-full hover:bg-surface-container-high/40 ${
+    active ? 'text-[#ddbcff] bg-surface-container-high/20' : 'text-[#ffd4e6] hover:text-[#e0c4ff]'
+  }`;
+  const inner = (
+    <>
+      {icon}
+      {badge && <span className="absolute -top-0.5 -right-0.5 pointer-events-none">{badge}</span>}
+    </>
+  );
+  if (to) {
+    return (
+      <Tooltip content={label} placement="bottom" variant="compact" asChild>
+        <Link to={to} className={cls} aria-label={label} {...rest}>{inner}</Link>
+      </Tooltip>
+    );
+  }
+  return (
+    <Tooltip content={label} placement="bottom" variant="compact" asChild>
+      <button type="button" onClick={onClick} className={cls} aria-label={label} {...rest}>{inner}</button>
+    </Tooltip>
+  );
+}
 
-  const scheduleOpen = useCallback(() => {
-    clearTimeout(closeRef.current);
-    clearTimeout(openRef.current);
-    openRef.current = setTimeout(() => onOpen(id), GROUP_OPEN_DELAY);
-  }, [id, onOpen]);
+// status: 'closed' | 'open' | 'closing'
+function HeaderActionGroup({ id, icon, label, isOpen, dimmed, onOpen, onClose, children }) {
+  const statusRef = useRef('closed');
+  const [status, setStatus] = useState('closed');
+  const railRef = useRef(null);
+  const rafRef = useRef(0);
+  const widthRef = useRef(0);
+  const [width, setWidth] = useState(0);
 
-  const scheduleClose = useCallback(() => {
-    clearTimeout(openRef.current);
-    clearTimeout(closeRef.current);
-    closeRef.current = setTimeout(() => onClose(id), GROUP_CLOSE_DELAY);
-  }, [id, onClose]);
+  useLayoutEffect(() => {
+    if (isOpen && (statusRef.current === 'closed' || statusRef.current === 'closing')) {
+      cancelAnimationFrame(rafRef.current);
+      statusRef.current = 'open';
+      setStatus('open');
+    } else if (!isOpen && statusRef.current === 'open') {
+      cancelAnimationFrame(rafRef.current);
+      if (widthRef.current === 0) {
+        statusRef.current = 'closed';
+        setStatus('closed');
+      } else {
+        statusRef.current = 'closing';
+        setStatus('closing');
+        widthRef.current = 0;
+        setWidth(0);
+      }
+    }
+  }, [isOpen]);
 
-  useEffect(() => () => { clearTimeout(openRef.current); clearTimeout(closeRef.current); }, []);
+  useEffect(() => {
+    if (status !== 'open') return;
+    const el = railRef.current;
+    if (!el) return;
+    rafRef.current = requestAnimationFrame(() => {
+      if (statusRef.current !== 'open') return;
+      const w = el.scrollWidth;
+      widthRef.current = w;
+      setWidth(w);
+    });
+    return () => cancelAnimationFrame(rafRef.current);
+  }, [status]);
+
+  const handleTransitionEnd = useCallback((e) => {
+    if (e.target !== railRef.current || e.propertyName !== 'width') return;
+    if (statusRef.current === 'closing') {
+      statusRef.current = 'closed';
+      setStatus('closed');
+    }
+  }, []);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -183,42 +226,53 @@ function HeaderActionGroup({ id, icon, label, isOpen, onOpen, onClose, children 
     return () => document.removeEventListener('keydown', h);
   }, [isOpen, id, onClose]);
 
-  if (!Children.toArray(children).length) return null;
+  const childArray = Children.toArray(children).filter(Boolean);
+  if (!childArray.length) return null;
+  const N = childArray.length;
+  const dur = `${(0.26 + N * 0.05).toFixed(2)}s`;
+
+  const showRail = status !== 'closed';
+  const expanded = status === 'open' && width > 0;
 
   return (
-    <div
-      className="relative"
-      onMouseEnter={scheduleOpen}
-      onMouseLeave={scheduleClose}
-      onFocus={() => { clearTimeout(closeRef.current); clearTimeout(openRef.current); onOpen(id); }}
-      onBlur={(e) => { if (!e.currentTarget.contains(e.relatedTarget)) scheduleClose(); }}
-    >
+    <div className="flex items-center">
       <Tooltip content={label} placement="bottom" variant="compact" disabled={isOpen} asChild>
         <button
           type="button"
-          onClick={() => {
-            clearTimeout(openRef.current);
-            clearTimeout(closeRef.current);
-            if (isOpen) onClose(id); else onOpen(id);
-          }}
+          onClick={() => { if (isOpen) onClose(id); else onOpen(id); }}
           aria-expanded={isOpen}
-          aria-haspopup="menu"
-          aria-controls={isOpen ? `hdr-group-${id}` : undefined}
-          className={`material-symbols-outlined transition-all active:scale-95 duration-200 cursor-pointer w-9 h-9 flex items-center justify-center rounded-full hover:bg-surface-container-high/40 ${
-            isOpen ? 'text-primary bg-surface-container-high/30' : 'text-on-surface-variant hover:text-tertiary'
+          aria-controls={showRail ? `hdr-group-${id}` : undefined}
+          className={`material-symbols-outlined text-[30px] transition-all active:scale-95 duration-200 cursor-pointer w-10 h-10 flex items-center justify-center rounded-full hover:bg-surface-container-high/40 ${
+            isOpen ? 'text-[#b08ad4] bg-surface-container-high/20' : dimmed ? 'text-on-surface-variant/20 hover:text-on-surface-variant/40' : 'text-on-surface-variant/60 hover:text-[#e0c4ff]'
           }`}
         >
           {icon}
         </button>
       </Tooltip>
-      {isOpen && (
+      {showRail && (
         <div
+          ref={railRef}
           id={`hdr-group-${id}`}
-          role="menu"
-          onClick={() => onClose(id)}
-          className="absolute right-0 top-full mt-1 min-w-[180px] z-[60] bg-surface-container/95 backdrop-blur-xl border border-outline-variant/15 rounded-sm shadow-xl p-1 animate-scale-in"
+          onClick={() => { if (status === 'open') onClose(id); }}
+          onTransitionEnd={handleTransitionEnd}
+          style={{
+            width: expanded ? width : 0,
+            opacity: expanded ? 1 : 0,
+            transition: `width ${dur} cubic-bezier(0.4,0,0.2,1), opacity ${dur} cubic-bezier(0.4,0,0.2,1)`,
+          }}
+          className={`overflow-hidden ${status === 'closing' ? 'pointer-events-none' : ''}`}
         >
-          {children}
+          <div className="flex items-center gap-1 pl-1 whitespace-nowrap">
+            {childArray.map((child, i) => (
+              <span
+                key={i}
+                className="inline-flex items-center animate-group-item-in motion-reduce:animate-none"
+                style={{ animationDelay: `${i * 40}ms` }}
+              >
+                {child}
+              </span>
+            ))}
+          </div>
         </div>
       )}
     </div>
@@ -236,7 +290,7 @@ function DevEventLogGroupItem() {
       onClick={toggleOpen}
       active={isOpen}
       badge={evCount > 0 ? (
-        <span className="ml-auto min-w-[18px] h-[18px] rounded-full bg-tertiary/80 text-[9px] text-white flex items-center justify-center px-1 leading-none">
+        <span className="min-w-[14px] h-[14px] rounded-full bg-tertiary/80 text-[8px] text-white flex items-center justify-center px-0.5 leading-none">
           {evCount > 99 ? '99+' : evCount}
         </span>
       ) : null}
@@ -258,7 +312,7 @@ export default function Header() {
   }, [location.pathname, entryRoute]);
   const { settings, updateSettings, backendUser } = useSettings();
   const music = useGlobalMusic();
-  const { openCharacterSheet, openTasksInfo, openSettings, openKeys, openImageConfig, openAudioConfig, openProfile, openAdminUsers, openLocationGraph, openWorldLocationGraph, openGmModal, openPrivacy } = useModals();
+  const { openCharacterSheet, openTasksInfo, openSettings, openKeys, openImageConfig, openAudioConfig, openProfile, openAdminUsers, openWorldLocationGraph, openGmModal, openPrivacy } = useModals();
   const { dictation } = useDictationContext() ?? {};
   const campaign = useGameCampaign();
   const aiLogSidebarVisible = useAiCallLogStore((s) => s.sidebarVisible);
@@ -308,8 +362,6 @@ export default function Header() {
   const [volumeOpen, setVolumeOpen] = useState(false);
   const volumeRef = useRef(null);
   const preMuteVolumesRef = useRef(null);
-  const [saveStatus, setSaveStatus] = useState('idle');
-  const saveTimeoutRef = useRef(null);
 
   const aiMergedLogs = useMemo(() => {
     const clientIds = new Set(aiLogs.map((l) => l.id));
@@ -325,22 +377,8 @@ export default function Header() {
   const aiDetailEntry = useMemo(() => aiMergedLogs.find((l) => l.id === aiDetailId) || null, [aiMergedLogs, aiDetailId]);
   const [activeGroupId, setActiveGroupId] = useState(null);
   const handleOpenGroup = useCallback((id) => setActiveGroupId(id), []);
-  const handleCloseGroup = useCallback((id) => setActiveGroupId((prev) => prev === id ? null : prev), []);
+  const handleCloseGroup = useCallback((id) => setActiveGroupId(prev => (prev === id ? null : prev)), []);
 
-  const handleSaveCampaign = useCallback(async () => {
-    const snapshot = getGameState();
-    if (saveStatus === 'saving' || !snapshot.campaign) return;
-    setSaveStatus('saving');
-    if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
-    try {
-      await storage.saveCampaign(snapshot);
-      setSaveStatus('saved');
-      saveTimeoutRef.current = setTimeout(() => setSaveStatus('idle'), 2000);
-    } catch (err) {
-      console.error('[Header] Manual save error:', err);
-      setSaveStatus('idle');
-    }
-  }, [saveStatus]);
 
   useEffect(() => {
     const handleClick = (e) => {
@@ -423,7 +461,7 @@ export default function Header() {
     <>
     <header
       ref={headerRef}
-      className="fixed top-0 w-full z-50 flex justify-between items-center px-6 h-16 backdrop-blur-md border-b border-primary/[0.12] overflow-visible"
+      className="fixed top-0 w-full z-50 flex justify-between items-center pl-6 pr-10 h-16 backdrop-blur-md border-b border-primary/[0.12] overflow-visible"
       style={HEADER_CHROME_STYLE}
     >
       {isPlayRoute && (
@@ -500,16 +538,16 @@ export default function Header() {
               type="button"
               onClick={openPrivacy}
               aria-label={t('privacy.linkLabel')}
-              className="material-symbols-outlined text-on-surface-variant hover:text-tertiary transition-all active:scale-95 duration-200 w-9 h-9 flex items-center justify-center rounded-full hover:bg-surface-container-high/40"
+              className="material-symbols-outlined text-[30px] text-on-surface-variant hover:text-tertiary transition-all active:scale-95 duration-200 w-10 h-10 flex items-center justify-center rounded-full hover:bg-surface-container-high/40"
             >
               privacy_tip
             </button>
           </Tooltip>
         )}
       </div>
-      <div className="flex items-center gap-6">
+      <div className="flex items-center">
         {backendUser && (
-          <nav className="hidden md:flex gap-1 items-center text-on-surface-variant font-body text-[15px] lowercase">
+          <nav className="hidden md:flex gap-1 items-center text-on-surface-variant font-body text-[15px] lowercase pr-4">
             {navLinks.map((link) =>
               link.action ? (
                 <button
@@ -517,7 +555,7 @@ export default function Header() {
                   onClick={link.action}
                   className="relative flex items-center gap-1.5 px-4 py-2 transition-colors duration-300 hover:text-tertiary rounded-sm hover:bg-surface-container-high/30"
                 >
-                  <span className="material-symbols-outlined text-base text-tertiary/60">{link.icon}</span>
+                  <span className="material-symbols-outlined text-xl text-tertiary/60">{link.icon}</span>
                   <span>{link.label.toLowerCase()}</span>
                 </button>
               ) : (
@@ -530,7 +568,7 @@ export default function Header() {
                       : 'hover:text-tertiary hover:bg-surface-container-high/30'
                   }`}
                 >
-                  <span className={`material-symbols-outlined text-base ${location.pathname === link.path ? 'text-primary/70' : 'text-tertiary/60'}`}>{link.icon}</span>
+                  <span className={`material-symbols-outlined text-xl ${location.pathname === link.path ? 'text-primary/70' : 'text-tertiary/60'}`}>{link.icon}</span>
                   <span>{link.label.toLowerCase()}</span>
                 </Link>
               )
@@ -548,17 +586,18 @@ export default function Header() {
             }}
             className="flex items-center gap-1.5 px-4 py-2 text-sm font-label lowercase rounded-sm border border-primary/40 text-primary animate-pulse hover:bg-primary/10 transition-colors duration-200"
           >
-            <span className="material-symbols-outlined text-base">play_arrow</span>
+            <span className="material-symbols-outlined text-xl">play_arrow</span>
             Przejdź do kampanii
           </button>
         )}
 
-        {settings.localMusicEnabled && music.hasMusic && (
+        {settings.localMusicEnabled && music.hasMusic && (<>
+          <ZigzagDivider />
           <div className="flex items-center gap-2">
             <Tooltip content={music.isPlaying ? t('common.pause', 'Pause') : t('common.play', 'Play')} placement="bottom" variant="compact" asChild>
               <button
                 onClick={music.togglePlayPause}
-                className="material-symbols-outlined text-lg text-on-surface-variant hover:text-primary transition-colors active:scale-95 duration-200 w-8 h-8 flex items-center justify-center rounded-full hover:bg-surface-container-high/40"
+                className="material-symbols-outlined text-[22px] text-on-surface-variant hover:text-primary transition-colors active:scale-95 duration-200 w-9 h-9 flex items-center justify-center rounded-full hover:bg-surface-container-high/40"
               >
                 {music.isPlaying ? 'pause' : 'play_arrow'}
               </button>
@@ -566,7 +605,7 @@ export default function Header() {
             <Tooltip content={t('gameplay.musicSkip', 'Next')} placement="bottom" variant="compact" asChild>
               <button
                 onClick={music.skip}
-                className="material-symbols-outlined text-base text-on-surface-variant hover:text-primary transition-colors active:scale-95 duration-200 w-8 h-8 flex items-center justify-center rounded-full hover:bg-surface-container-high/40"
+                className="material-symbols-outlined text-xl text-on-surface-variant hover:text-primary transition-colors active:scale-95 duration-200 w-9 h-9 flex items-center justify-center rounded-full hover:bg-surface-container-high/40"
               >
                 skip_next
               </button>
@@ -593,7 +632,7 @@ export default function Header() {
                       preMuteVolumesRef.current = null;
                     }
                   }}
-                  className="material-symbols-outlined text-base text-on-surface-variant hover:text-primary transition-colors active:scale-95 duration-200 w-8 h-8 flex items-center justify-center rounded-full hover:bg-surface-container-high/40"
+                  className="material-symbols-outlined text-xl text-on-surface-variant hover:text-primary transition-colors active:scale-95 duration-200 w-9 h-9 flex items-center justify-center rounded-full hover:bg-surface-container-high/40"
                 >
                   {volumeIcon}
                 </button>
@@ -641,17 +680,18 @@ export default function Header() {
               </span>
             )}
           </div>
-        )}
+        </>)}
 
-        {backendUser && (
+        {backendUser && (<>
+          <ZigzagDivider />
           <div className="flex items-center gap-1">
             {showMpStatus && (
               <span className={`hidden lg:inline-flex items-center gap-1 text-[10px] uppercase tracking-widest px-2 py-1 rounded-sm border ${mpStatusClass}`}>
-                <span className="material-symbols-outlined text-sm">{mp.state.connected ? 'wifi' : 'wifi_off'}</span>
+                <span className="material-symbols-outlined text-base">{mp.state.connected ? 'wifi' : 'wifi_off'}</span>
                 {mpStatusLabel}
               </span>
             )}
-            <HeaderActionGroup id="game" icon="sports_esports" label="Gra" isOpen={activeGroupId === 'game'} onOpen={handleOpenGroup} onClose={handleCloseGroup}>
+            <HeaderActionGroup id="game" icon="sports_esports" label="Gra" isOpen={activeGroupId === 'game'} dimmed={activeGroupId !== null && activeGroupId !== 'game'} onOpen={handleOpenGroup} onClose={handleCloseGroup}>
               {dictation?.supported && (
                 <GroupItem
                   icon={dictation.enabled ? 'mic' : 'mic_off'}
@@ -661,30 +701,18 @@ export default function Header() {
                 />
               )}
               {hasActiveGame && (
-                <GroupItem icon="hub" label={t('nav.locationGraph')} onClick={openLocationGraph} />
-              )}
-              {hasActiveGame && (
                 <GroupItem icon="auto_awesome" label={t('nav.grimoire')} to={playPath} />
               )}
               <GroupItem icon="photo_library" label={t('nav.gallery')} to="/gallery" />
+              <GroupItem icon="public" label={t('nav.worldLocationGraph', { defaultValue: 'Graf lokacji świata' })} onClick={openWorldLocationGraph} />
             </HeaderActionGroup>
-            <HeaderActionGroup id="media" icon="tune" label="AI / Media" isOpen={activeGroupId === 'media'} onOpen={handleOpenGroup} onClose={handleCloseGroup}>
-              <GroupItem
-                icon="terminal"
-                label="LLM Calls"
-                onClick={openAiFullLog}
-                onContextMenu={(e) => { e.preventDefault(); toggleAiSidebar(); }}
-                active={aiLogSidebarVisible}
-                badge={aiPendingCount > 0 ? (
-                  <span className="ml-auto w-2 h-2 rounded-full bg-tertiary animate-pulse shrink-0" />
-                ) : null}
-              />
+            <HeaderActionGroup id="media" icon="tune" label="AI / Media" isOpen={activeGroupId === 'media'} dimmed={activeGroupId !== null && activeGroupId !== 'media'} onOpen={handleOpenGroup} onClose={handleCloseGroup}>
               <GroupItem icon="brush" label={t('nav.imageConfig')} onClick={openImageConfig} />
               <GroupItem icon="graphic_eq" label={t('nav.audioConfig')} onClick={openAudioConfig} />
               <GroupItem icon="vpn_key" label={t('nav.keys')} onClick={openKeys} />
             </HeaderActionGroup>
-            <HeaderActionGroup id="system" icon="settings" label="System" isOpen={activeGroupId === 'system'} onOpen={handleOpenGroup} onClose={handleCloseGroup}>
-              <GroupItem icon="settings" label={t('nav.settings')} onClick={openSettings} />
+            <HeaderActionGroup id="system" icon="settings" label="System" isOpen={activeGroupId === 'system'} dimmed={activeGroupId !== null && activeGroupId !== 'system'} onOpen={handleOpenGroup} onClose={handleCloseGroup}>
+              <GroupItem icon="draw" label={t('nav.settings')} onClick={openSettings} />
               <GroupItem icon="privacy_tip" label={t('privacy.linkLabel')} onClick={openPrivacy} />
               <GroupItem
                 icon="search"
@@ -694,46 +722,43 @@ export default function Header() {
               />
             </HeaderActionGroup>
             {backendUser?.isAdmin && (
-              <HeaderActionGroup id="admin" icon="shield_person" label="Admin" isOpen={activeGroupId === 'admin'} onOpen={handleOpenGroup} onClose={handleCloseGroup}>
-                <GroupItem icon="public" label={t('nav.worldLocationGraph', { defaultValue: 'Graf lokacji świata' })} onClick={openWorldLocationGraph} />
-                <GroupItem icon="auto_stories" label={t('admin.livingWorld')} onClick={openGmModal} />
+              <HeaderActionGroup id="admin" icon="shield_person" label="Admin" isOpen={activeGroupId === 'admin'} dimmed={activeGroupId !== null && activeGroupId !== 'admin'} onOpen={handleOpenGroup} onClose={handleCloseGroup}>
                 <GroupItem icon="admin_panel_settings" label={t('admin.userManagement')} onClick={openAdminUsers} />
                 <GroupItem icon="edit_note" label="Edytor kampanii" onClick={() => navigate('/admin')} />
                 <DevEventLogGroupItem />
+                <GroupItem
+                  icon="terminal"
+                  label="LLM Calls"
+                  onClick={openAiFullLog}
+                  onContextMenu={(e) => { e.preventDefault(); toggleAiSidebar(); }}
+                  active={aiLogSidebarVisible}
+                  badge={aiPendingCount > 0 ? (
+                    <span className="w-2 h-2 rounded-full bg-tertiary animate-pulse" />
+                  ) : null}
+                />
               </HeaderActionGroup>
             )}
-            {hasActiveGame && !isMultiplayer && (
-              <Tooltip content={saveStatus === 'saved' ? t('nav.campaignSaved') : t('nav.saveCampaign')} placement="bottom" variant="compact" asChild>
-                <button
-                  type="button"
-                  onClick={handleSaveCampaign}
-                  disabled={saveStatus === 'saving'}
-                  aria-label={t('nav.saveCampaign')}
-                  className={`relative w-9 h-9 flex items-center justify-center rounded-full transition-all active:scale-95 duration-200 ${
-                    saveStatus === 'saved'
-                      ? 'text-primary bg-primary/15'
-                      : 'text-on-surface-variant hover:text-tertiary hover:bg-surface-container-high/40'
-                  }`}
-                >
-                  <span className={`material-symbols-outlined text-lg ${saveStatus === 'saving' ? 'animate-spin' : ''}`}>
-                    {saveStatus === 'saving' ? 'progress_activity' : saveStatus === 'saved' ? 'check_circle' : 'save'}
-                  </span>
-                </button>
-              </Tooltip>
-            )}
+            <ZigzagDivider />
             <Tooltip content={(backendUser.credits ?? 0) < 0 ? t('credits.negativeBalance') : t('credits.title', 'Credits')} placement="bottom" variant="compact" asChild>
               <button
                 type="button"
                 onClick={openProfile}
                 aria-label={t('nav.credits', 'Credits')}
-                className={`flex items-center gap-1 px-2.5 h-9 rounded-full border text-xs font-label transition-all duration-300 ${
+                className={`relative flex items-center gap-1.5 px-3 h-9 rounded-full text-xs transition-all duration-300 ${
                   (backendUser.credits ?? 0) < 0
-                    ? 'border-error/40 bg-error/10 text-error hover:border-error/60 animate-pulse'
-                    : 'border-primary/20 bg-surface-container-high text-primary hover:border-primary/40 hover:shadow-[0_0_12px_rgba(197,154,255,0.2)]'
+                    ? 'text-error animate-pulse'
+                    : 'text-[#ffd4e6]'
                 }`}
+                style={{
+                  background: 'linear-gradient(135deg, rgba(24,8,24,0.9) 0%, rgba(14,5,19,0.95) 100%)',
+                  border: '1px solid rgba(255,140,200,0.35)',
+                  boxShadow: (backendUser.credits ?? 0) < 0
+                    ? 'inset 0 1px 0 rgba(255,60,80,0.1)'
+                    : 'inset 0 1px 0 rgba(255,200,240,0.08)',
+                }}
               >
-                <span className="material-symbols-outlined text-sm">payments</span>
-                <span>${((backendUser.credits ?? 0) / 100).toFixed(2)}</span>
+                <span className="material-symbols-outlined text-base" style={{ color: 'rgba(255,160,210,0.8)' }}>payments</span>
+                <span className="font-headline">${((backendUser.credits ?? 0) / 100).toFixed(2)}</span>
               </button>
             </Tooltip>
             <Tooltip content={t('nav.profile')} placement="bottom" variant="compact" asChild>
@@ -741,13 +766,18 @@ export default function Header() {
                 type="button"
                 onClick={openProfile}
                 aria-label={t('nav.profile')}
-                className="w-9 h-9 rounded-full border border-primary/20 overflow-hidden bg-surface-container-high flex items-center justify-center hover:border-primary/40 hover:shadow-[0_0_12px_rgba(197,154,255,0.2)] transition-all duration-300"
+                className="w-10 h-10 rounded-full overflow-hidden flex items-center justify-center transition-all duration-300 hover:scale-105"
+                style={{
+                  background: 'linear-gradient(135deg, rgba(24,8,24,0.9) 0%, rgba(14,5,19,0.95) 100%)',
+                  border: '1px solid rgba(255,140,200,0.35)',
+                  boxShadow: 'inset 0 1px 0 rgba(255,200,240,0.08)',
+                }}
               >
-                <span className="material-symbols-outlined text-primary text-sm">person</span>
+                <span className="material-symbols-outlined text-base" style={{ color: 'rgba(255,160,210,0.8)' }}>person</span>
               </button>
             </Tooltip>
           </div>
-        )}
+        </>)}
       </div>
     </header>
     {aiFullLogOpen && (

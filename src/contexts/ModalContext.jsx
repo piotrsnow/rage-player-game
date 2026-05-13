@@ -14,25 +14,16 @@ export function ModalProvider({ children }) {
   const [profileOpen, setProfileOpen] = useState(false);
   const [adminUsersOpen, setAdminUsersOpen] = useState(false);
   const [privacyOpen, setPrivacyOpen] = useState(false);
-  // NPC sheet modal triggered from chat speaker labels. Stores the NPC name
-  // rather than a reference so the latest world.npcs entry is always read
-  // fresh (disposition / stats can change between open and close).
-  const [locationGraphOpen, setLocationGraphOpen] = useState(false);
-  /** Incremented on each openLocationGraph — forces fresh GET in LocationGraphModal. */
-  const [locationGraphRefreshKey, setLocationGraphRefreshKey] = useState(0);
   const [gmModalOpen, setGmModalOpen] = useState(false);
   const [worldLocationGraphOpen, setWorldLocationGraphOpen] = useState(false);
   /** Increment on each open so `LocationGraphModal` world snapshot refetches. */
   const [worldLocationGraphRefreshKey, setWorldLocationGraphRefreshKey] = useState(0);
+  // NPC sheet modal triggered from chat speaker labels. Stores the NPC name
+  // so the latest world.npcs entry is always read fresh.
   const [npcSheetName, setNpcSheetName] = useState(null);
 
   const openCharacterSheet = useCallback(() => setCharacterSheetOpen(true), []);
   const closeCharacterSheet = useCallback(() => setCharacterSheetOpen(false), []);
-  const openLocationGraph = useCallback(() => {
-    setLocationGraphRefreshKey((k) => k + 1);
-    setLocationGraphOpen(true);
-  }, []);
-  const closeLocationGraph = useCallback(() => setLocationGraphOpen(false), []);
   const openWorldLocationGraph = useCallback(() => {
     setWorldLocationGraphRefreshKey((k) => k + 1);
     setWorldLocationGraphOpen(true);
@@ -70,8 +61,6 @@ export function ModalProvider({ children }) {
     <ModalContext.Provider
       value={{
         characterSheetOpen,
-        locationGraphOpen,
-        locationGraphRefreshKey,
         gmModalOpen,
         worldLocationGraphOpen,
         worldLocationGraphRefreshKey,
@@ -87,8 +76,6 @@ export function ModalProvider({ children }) {
         npcSheetName,
         openCharacterSheet,
         closeCharacterSheet,
-        openLocationGraph,
-        closeLocationGraph,
         openWorldLocationGraph,
         closeWorldLocationGraph,
         openGmModal,

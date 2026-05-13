@@ -33,7 +33,7 @@ export default function DMSettingsPage({ onClose }) {
       >
         <div className="flex items-center justify-between px-6 py-4 border-b border-outline-variant/15 shrink-0">
           <h2 className="font-headline text-xl text-tertiary flex items-center gap-2">
-            <span className="material-symbols-outlined text-primary-dim">settings</span>
+            <span className="material-symbols-outlined text-primary-dim">history_edu</span>
             {t('settings.title')}
           </h2>
           <button

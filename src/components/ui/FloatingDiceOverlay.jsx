@@ -15,6 +15,14 @@ const MAX_PLAYBACK_RATE = 4.0;
 const SPEED_FOR_MAX_RATE = 18;
 const MOMENTUM_FRICTION = 0.96;
 const MOMENTUM_GAIN = 0.3;
+const X_ACCELERATION_GAIN = 0.25;
+const X_PLAYBACK_GAIN = 0.08;
+
+function acceleratePointerDelta(delta) {
+  const absDelta = Math.abs(delta);
+  const acceleration = 1 + Math.min(absDelta / 80, 1) * X_ACCELERATION_GAIN;
+  return absDelta * acceleration;
+}
 
 export default function FloatingDiceOverlay() {
   const videoRef = useRef(null);
@@ -49,8 +57,9 @@ export default function FloatingDiceOverlay() {
     const onPointerMove = (e) => {
       const s = stateRef.current;
       if (s.prevClientX !== null) {
-        s.spinMomentum += Math.abs(e.clientX - s.prevClientX) * MOMENTUM_GAIN;
-        s.playMomentum += Math.abs(e.clientY - s.prevClientY) * MOMENTUM_GAIN;
+        const acceleratedX = acceleratePointerDelta(e.clientX - s.prevClientX);
+        s.spinMomentum += acceleratedX * MOMENTUM_GAIN;
+        s.playMomentum += Math.abs(e.clientY - s.prevClientY) * MOMENTUM_GAIN + acceleratedX * X_PLAYBACK_GAIN;
       }
       s.prevClientX = e.clientX;
       s.prevClientY = e.clientY;

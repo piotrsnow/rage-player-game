@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 const TABS = [
@@ -36,6 +37,9 @@ function TabButton({ tab, activeTab, onTabChange, title }) {
 
 export default function ModalNavBar({ activeTab, onTabChange, isAdmin = false }) {
   const { t } = useTranslation();
+  const [adminOpen, setAdminOpen] = useState(false);
+  const adminActive = ADMIN_TABS.some((tab) => tab.id === activeTab);
+
   return (
     <div className="w-12 flex-shrink-0 border-r border-outline-variant/15 flex flex-col items-center pt-2 gap-1 bg-surface-container/40">
       {TABS.map((tab) => (
@@ -45,8 +49,23 @@ export default function ModalNavBar({ activeTab, onTabChange, isAdmin = false })
       {isAdmin && (
         <>
           <div className="w-8 border-t border-outline-variant/15 mt-1 mb-0.5" />
-          <span className="text-[8px] font-label uppercase tracking-widest text-tertiary/70 mb-0.5">Admin</span>
-          {ADMIN_TABS.map((tab) => (
+          <button
+            type="button"
+            onClick={() => setAdminOpen((open) => !open)}
+            aria-expanded={adminOpen}
+            title="Admin"
+            className={`w-10 min-h-8 flex flex-col items-center justify-center rounded-sm transition-colors ${
+              adminActive || adminOpen
+                ? 'bg-primary/10 text-primary'
+                : 'text-tertiary/70 hover:text-primary hover:bg-primary/5'
+            }`}
+          >
+            <span className="text-[8px] font-label uppercase tracking-widest leading-none">Admin</span>
+            <span className="material-symbols-outlined text-[14px] leading-none">
+              {adminOpen ? 'expand_less' : 'expand_more'}
+            </span>
+          </button>
+          {adminOpen && ADMIN_TABS.map((tab) => (
             <TabButton key={tab.id} tab={tab} activeTab={activeTab} onTabChange={onTabChange} title={tab.label} />
           ))}
         </>

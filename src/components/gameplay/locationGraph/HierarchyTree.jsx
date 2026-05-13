@@ -62,6 +62,13 @@ function TreeNode({ node, selected, onSelect, depth }) {
           className="w-2.5 h-2.5 rounded-full flex-shrink-0"
           style={{ backgroundColor: vis.color }}
         />
+        <span
+          className="material-symbols-outlined text-[15px] flex-shrink-0"
+          style={{ color: vis.color }}
+          aria-hidden="true"
+        >
+          {vis.icon}
+        </span>
         <span className="truncate">{node.name}</span>
       </button>
       {expanded && hasChildren && (
