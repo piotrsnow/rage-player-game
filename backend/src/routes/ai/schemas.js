@@ -336,6 +336,7 @@ export const CREATURE_ENCOUNTER_SCHEMA = {
   properties: {
     provider: PROVIDER_SCHEMA,
     language: LANGUAGE_SCHEMA,
+    encounterKind: { type: 'string', enum: ['magical', 'animal'] },
     dmSettings: {
       type: 'object',
       additionalProperties: true,

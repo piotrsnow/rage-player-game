@@ -424,10 +424,12 @@ export const aiService = {
     provider = 'openai',
     language = 'pl',
     dmSettings = {},
+    encounterKind = undefined,
   } = {}) {
     const baseUrl = apiClient.getBaseUrl();
 
     const requestBody = { provider, language, dmSettings };
+    if (encounterKind) requestBody.encounterKind = encounterKind;
 
     const logId = aiCallLog.start({
       type: 'creature-encounter',

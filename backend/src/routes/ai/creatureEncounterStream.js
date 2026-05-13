@@ -23,6 +23,7 @@ export async function creatureEncounterStreamRoutes(fastify) {
         provider = 'openai',
         language = 'pl',
         dmSettings = {},
+        encounterKind: forcedKind,
       } = request.body || {};
 
       const campaign = await prisma.campaign.findUnique({
@@ -47,7 +48,7 @@ export async function creatureEncounterStreamRoutes(fastify) {
 
       await generateCreatureEncounter(
         campaignId,
-        { provider, language, userApiKeys, llmNanoTimeoutMs },
+        { provider, language, userApiKeys, llmNanoTimeoutMs, encounterKind: forcedKind },
         writeEvent,
       );
 

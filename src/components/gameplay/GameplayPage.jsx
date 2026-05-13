@@ -679,6 +679,16 @@ export default function GameplayPage({ readOnly = false, shareToken = null, onRe
     creatureEncounter.submitEncounter(backendCampaignId);
   }, [creatureEncounter, campaign?.backendId]);
 
+  const handleManualMagicalEncounter = useCallback(() => {
+    if (!CREATURE_ENCOUNTERS_ENABLED) return;
+    if (creatureEncounter.encounter || creatureEncounter.isLoading) return;
+    if (consecutiveIdleEventsRef.current >= MAX_CONSECUTIVE_IDLE_EVENTS) return;
+    consecutiveIdleEventsRef.current += 1;
+    const backendCampaignId = campaign?.backendId;
+    if (!backendCampaignId) return;
+    creatureEncounter.submitEncounter(backendCampaignId, { encounterKind: 'magical' });
+  }, [creatureEncounter, campaign?.backendId]);
+
   const idlePaused = isMultiplayer
     || !CREATURE_ENCOUNTERS_ENABLED
     || isGeneratingScene
@@ -901,9 +911,8 @@ export default function GameplayPage({ readOnly = false, shareToken = null, onRe
                   timerActive={idleTimer.timerActive}
                   lastRoll={idleTimer.lastRoll}
                   isRolling={idleTimer.isRolling}
-                  fastMode={idleTimer.fastMode}
-                  onToggleFastMode={idleTimer.toggleFastMode}
                   onManualCheck={idleTimer.triggerManualCheck}
+                  onMagicalEncounter={handleManualMagicalEncounter}
                 />
               )}
             </div>

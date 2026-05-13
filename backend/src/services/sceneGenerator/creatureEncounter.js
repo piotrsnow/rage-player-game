@@ -8,7 +8,7 @@
 import { childLogger } from '../../lib/logger.js';
 import { callAIJson, parseJsonOrNull } from '../aiJsonCall.js';
 import { loadCampaignState } from './campaignLoader.js';
-import { findCreatureById, MAGICAL_CREATURES, pickEncounterSubject } from '../../../../shared/domain/rpgCreatures.js';
+import { findCreatureById, MAGICAL_CREATURES, pickEncounterSubject, pickCreature, pickAnimal } from '../../../../shared/domain/rpgCreatures.js';
 
 const log = childLogger({ module: 'creatureEncounter' });
 
@@ -46,14 +46,13 @@ export async function generateCreatureEncounter(campaignId, opts = {}, onEvent) 
     creatureId = null,
     creatureName: creatureNameOverride = null,
     environments: envOverride = null,
+    encounterKind: forcedKind = null,
   } = opts;
 
   try {
     const { coreState } = await loadCampaignState(campaignId);
     const currentLocation = coreState.world?.currentLocation || '';
     const timeOfDay = coreState.world?.timeState?.timeOfDay || 'dzień';
-
-    const typeRoll = Math.floor(Math.random() * 100) + 1;
 
     let encounterKind;
     let creature;
@@ -63,7 +62,14 @@ export async function generateCreatureEncounter(campaignId, opts = {}, onEvent) 
         encounterKind = MAGICAL_CREATURES.some((c) => c.id === creature.id) ? 'magical' : 'animal';
       }
     }
-    if (!creature) {
+    if (!creature && forcedKind === 'magical') {
+      encounterKind = 'magical';
+      creature = pickCreature(currentLocation);
+    } else if (!creature && forcedKind === 'animal') {
+      encounterKind = 'animal';
+      creature = pickAnimal(currentLocation);
+    } else if (!creature) {
+      const typeRoll = Math.floor(Math.random() * 100) + 1;
       const picked = pickEncounterSubject({ currentLocation, typeRoll });
       encounterKind = picked.kind;
       creature = picked.creature;

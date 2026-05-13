@@ -11,9 +11,8 @@ export default function IdleTimer({
   timerActive,
   lastRoll,
   isRolling,
-  fastMode,
-  onToggleFastMode,
   onManualCheck,
+  onMagicalEncounter,
 }) {
   const { t } = useTranslation();
 
@@ -29,22 +28,21 @@ export default function IdleTimer({
           onClick={onManualCheck}
           onContextMenu={(e) => {
             e.preventDefault();
-            onToggleFastMode?.();
+            onMagicalEncounter?.();
           }}
-          className={`flex items-center gap-1.5 transition-all duration-500 cursor-pointer hover:text-primary ${fastMode ? 'text-primary' : ''}`}
+          className="flex items-center gap-1.5 transition-all duration-500 cursor-pointer hover:text-primary"
           style={{ opacity: 0.4 + pulseIntensity * 0.6 }}
-          title={t('idle.manualCheckHint', 'Lewy klik: sprawdź teraz • Prawy klik: x5')}
+          title={t('idle.manualCheckHint', 'Lewy klik: losowe spotkanie • Prawy klik: magiczne stworzenie')}
         >
           <span
             className="material-symbols-outlined text-xs"
             style={{ opacity: 0.5 + pulseIntensity * 0.5 }}
           >
-            {fastMode ? 'fast_forward' : 'hourglass_top'}
+            hourglass_top
           </span>
           <span className="tabular-nums font-mono tracking-wider">
             {formatTime(idleSeconds)}
           </span>
-          {fastMode && <span className="text-[8px] font-bold">x5</span>}
         </button>
       )}
 

@@ -21,13 +21,14 @@ export function useCreatureEncounter({ generateScene } = {}) {
     setFleeResult(null);
   }, []);
 
-  const submitEncounter = useCallback(async (campaignId) => {
+  const submitEncounter = useCallback(async (campaignId, opts = {}) => {
     setIsLoading(true);
     try {
       const outcome = await aiService.creatureEncounterViaBackend(campaignId, {
         provider: settings.aiProvider,
         language: settings.language,
         dmSettings: settings.dmSettings,
+        ...opts,
       });
 
       if (outcome.kind === 'complete') {
