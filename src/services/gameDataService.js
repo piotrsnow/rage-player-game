@@ -1,4 +1,5 @@
 import { apiClient } from './apiClient';
+import { formatMoney, moneyToCopper } from '../../shared/domain/currency.js';
 
 /**
  * Frontend cache for game data fetched from backend.
@@ -382,7 +383,7 @@ export const gameData = {
       ],
     };
 
-    const priceCp = (p) => ((p?.gold || 0) * 100) + ((p?.silver || 0) * 10) + (p?.copper || 0);
+    const priceCp = (p) => moneyToCopper(p);
 
     const candidatesByCategory = (category) =>
       Object.entries(equipment)
@@ -436,11 +437,7 @@ export const gameData = {
     const rows = this.getEquipmentByCategory(category);
     if (!rows.length) return `${label}: (no entries)`;
     const lines = rows.map((e) => {
-      const parts = [];
-      if (e.price?.gold) parts.push(`${e.price.gold} GC`);
-      if (e.price?.silver) parts.push(`${e.price.silver} SS`);
-      if (e.price?.copper) parts.push(`${e.price.copper} CP`);
-      const priceStr = parts.length ? parts.join(' ') : '0 CP';
+      const priceStr = formatMoney(e.price);
       const props = e.properties?.length ? ` [${e.properties.join('; ')}]` : '';
       return `- ${e.name} — ${priceStr}; Enc ${e.weight}; ${e.availability}${props}. ${e.description}`;
     });

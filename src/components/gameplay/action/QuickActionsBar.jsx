@@ -12,9 +12,11 @@ const TONE_STYLES = {
   teal:   'text-cyan-300 hover:text-cyan-200 bg-cyan-500/12 hover:bg-cyan-500/22 border-cyan-400/30 hover:border-cyan-300/55',
   gray:   'text-slate-300 hover:text-slate-200 bg-slate-500/12 hover:bg-slate-500/22 border-slate-400/30 hover:border-slate-300/55',
   yellow: 'text-yellow-300 hover:text-yellow-200 bg-yellow-500/12 hover:bg-yellow-500/22 border-yellow-400/30 hover:border-yellow-300/55',
+  orange: 'text-orange-300 hover:text-orange-200 bg-orange-500/12 hover:bg-orange-500/22 border-orange-400/30 hover:border-orange-300/55',
+  amber:  'text-amber-300 hover:text-amber-200 bg-amber-500/12 hover:bg-amber-500/22 border-amber-400/30 hover:border-amber-300/55',
 };
 
-function GroupButton({ icon, label, tone = 'neutral', disabled, items, onSelect }) {
+function GroupButton({ icon, label, hint = null, tone = 'neutral', disabled, items, onSelect, onRightClick = null, activeItemId = null }) {
   const [open, setOpen] = useState(false);
   const containerRef = useRef(null);
 
@@ -33,8 +35,19 @@ function GroupButton({ icon, label, tone = 'neutral', disabled, items, onSelect 
     if (item.action) onSelect?.(item.action);
   }, [onSelect]);
 
+  const handleItemRightClick = useCallback((e, item) => {
+    if (!onRightClick) return;
+    e.preventDefault();
+    setOpen(false);
+    onRightClick(item.action || item.id);
+  }, [onRightClick]);
+
   const visibleItems = items.filter((i) => i.visible !== false);
   if (visibleItems.length === 0) return null;
+
+  const activeItem = activeItemId ? visibleItems.find((i) => (i.action || i.id) === activeItemId) : null;
+  const resolvedIcon = activeItem ? 'push_pin' : icon;
+  const resolvedTone = activeItem?.tone || tone;
 
   if (visibleItems.length === 1) {
     const solo = visibleItems[0];
@@ -61,40 +74,50 @@ function GroupButton({ icon, label, tone = 'neutral', disabled, items, onSelect 
         aria-expanded={open}
         onClick={() => setOpen((v) => !v)}
         disabled={disabled}
-        className={`shrink-0 inline-flex items-center justify-center w-11 h-11 border rounded-sm transition-all duration-200 hover:-translate-y-px hover:shadow-[0_10px_24px_rgba(0,0,0,0.3)] disabled:opacity-30 disabled:cursor-not-allowed ${TONE_STYLES[tone]} ${open ? 'ring-1 ring-primary/40' : ''}`}
+        className={`shrink-0 inline-flex items-center justify-center w-11 h-11 border rounded-sm transition-all duration-200 hover:-translate-y-px hover:shadow-[0_10px_24px_rgba(0,0,0,0.3)] disabled:opacity-30 disabled:cursor-not-allowed ${TONE_STYLES[resolvedTone]} ${open ? 'ring-1 ring-primary/40' : ''} ${activeItem ? 'ring-1 ring-current/50' : ''}`}
       >
-        <span className="material-symbols-outlined text-[22px] leading-none">{icon}</span>
+        <span className="material-symbols-outlined text-[22px] leading-none">{resolvedIcon}</span>
       </button>
 
       {open && (
         <div className="absolute left-0 bottom-full mb-2 w-56 max-h-72 overflow-y-auto custom-scrollbar rounded-sm border border-outline-variant/20 bg-surface-container-highest/95 backdrop-blur-xl shadow-2xl z-40 p-1.5">
-          <div className="flex items-center px-2 py-1.5 border-b border-outline-variant/10 mb-1">
-            <span className="text-[10px] font-label uppercase tracking-widest text-on-surface-variant/70">
+          <div className="px-2 py-1.5 border-b border-outline-variant/10 mb-1">
+            <span className="block text-[10px] font-label uppercase tracking-widest text-on-surface-variant/70">
               {label}
             </span>
+            {hint && (
+              <span className="block text-[9px] text-on-surface-variant/50 mt-0.5">{hint}</span>
+            )}
           </div>
           <div className="space-y-0.5">
-            {visibleItems.map((item) => (
-              <button
-                key={item.id}
-                type="button"
-                onClick={() => handleItemClick(item)}
-                disabled={item.disabled}
-                className="w-full text-left flex items-center gap-2.5 px-2.5 py-2 rounded-sm border border-transparent hover:border-primary/20 hover:bg-primary/8 transition-colors disabled:opacity-40 disabled:pointer-events-none"
-              >
-                <span className={`material-symbols-outlined text-lg shrink-0 ${TONE_STYLES[item.tone || tone]?.split(' ')[0] || 'text-on-surface-variant'}`}>
-                  {item.icon}
-                </span>
-                <span className="min-w-0 flex-1">
-                  <span className="block text-xs font-bold text-on-surface truncate">{item.label}</span>
-                  {item.description && (
-                    <span className="block text-[10px] text-on-surface-variant/75 leading-tight line-clamp-1">
-                      {item.description}
-                    </span>
+            {visibleItems.map((item) => {
+              const isActive = activeItemId === (item.action || item.id);
+              return (
+                <button
+                  key={item.id}
+                  type="button"
+                  onClick={() => handleItemClick(item)}
+                  onContextMenu={(e) => handleItemRightClick(e, item)}
+                  disabled={item.disabled}
+                  className={`w-full text-left flex items-center gap-2.5 px-2.5 py-2 rounded-sm border transition-colors disabled:opacity-40 disabled:pointer-events-none ${isActive ? 'border-primary/30 bg-primary/12' : 'border-transparent hover:border-primary/20 hover:bg-primary/8'}`}
+                >
+                  <span className={`material-symbols-outlined text-lg shrink-0 ${TONE_STYLES[item.tone || tone]?.split(' ')[0] || 'text-on-surface-variant'}`}>
+                    {item.icon}
+                  </span>
+                  <span className="min-w-0 flex-1">
+                    <span className="block text-xs font-bold text-on-surface truncate">{item.label}</span>
+                    {item.description && (
+                      <span className="block text-[10px] text-on-surface-variant/75 leading-tight line-clamp-1">
+                        {item.description}
+                      </span>
+                    )}
+                  </span>
+                  {isActive && (
+                    <span className="material-symbols-outlined text-sm text-primary shrink-0">push_pin</span>
                   )}
-                </span>
-              </button>
-            ))}
+                </button>
+              );
+            })}
           </div>
         </div>
       )}
@@ -129,6 +152,8 @@ export default function QuickActionsBar({
   onForceRollRight,
   onRegenerateActions = null,
   isRegeneratingActions = false,
+  stickyTone = null,
+  onStickyTone = null,
 }) {
   const { t } = useTranslation();
   const tradeActive = useGameSlice((s) => s.trade?.active);
@@ -225,6 +250,8 @@ export default function QuickActionsBar({
     { id: 'conciliatory', icon: 'handshake',       label: t('gameplay.actionTones.conciliatory'), action: 'conciliatory', tone: 'teal' },
     { id: 'sleazy',       icon: 'sentiment_excited', label: t('gameplay.actionTones.sleazy'),     action: 'sleazy',       tone: 'pink' },
     { id: 'empathetic',   icon: 'favorite',        label: t('gameplay.actionTones.empathetic'),   action: 'empathetic',   tone: 'purple' },
+    { id: 'absurd',       icon: 'theater_comedy',  label: t('gameplay.actionTones.absurd'),       action: 'absurd',       tone: 'orange' },
+    { id: 'zingers',      icon: 'chat_bubble',     label: t('gameplay.actionTones.zingers'),      action: 'zingers',      tone: 'amber' },
   ];
 
   const craftItems = [
@@ -323,10 +350,13 @@ export default function QuickActionsBar({
         <GroupButton
           icon={isRegeneratingActions ? 'progress_activity' : 'casino'}
           label={t('gameplay.regenerateActions', 'Zmień styl akcji')}
+          hint={t('gameplay.stickyToneHint')}
           tone="yellow"
           disabled={isDisabled || isRegeneratingActions}
           items={toneItems}
           onSelect={onRegenerateActions}
+          onRightClick={onStickyTone}
+          activeItemId={stickyTone}
         />
       )}
 

@@ -10,8 +10,8 @@ const baseCharacter = {
 
 describe('validateStateChanges', () => {
   it('caps XP to max per scene', () => {
-    const { validated } = validateStateChanges({ xp: 200 }, { character: baseCharacter });
-    expect(validated.xp).toBe(50);
+    const { validated } = validateStateChanges({ xp: 600 }, { character: baseCharacter });
+    expect(validated.xp).toBe(500);
   });
 
   it('clamps negative XP to 0', () => {

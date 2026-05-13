@@ -108,10 +108,13 @@ export function getEdgeVisual(category, metadata, edgeType) {
 }
 
 export function getNodeRadius(scale) {
-  if (scale <= 1) return 28;
-  if (scale <= 3) return 22;
-  if (scale <= 5) return 18;
-  return 14;
+  if (scale <= 1) return 10;
+  if (scale <= 2) return 14;
+  if (scale <= 3) return 18;
+  if (scale <= 4) return 24;
+  if (scale <= 5) return 30;
+  if (scale <= 6) return 36;
+  return 44;
 }
 
 // ── Path geometry helpers ────────────────────────────────────────────

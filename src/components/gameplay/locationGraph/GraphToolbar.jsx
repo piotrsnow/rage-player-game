@@ -16,6 +16,7 @@ export default function GraphToolbar({
   onValidate,
   searchInputRef,
   snapToGrid, onToggleSnap, onResetLayout,
+  onAutoLayout,
   spriteJob,
   bulkImageGen,
   revision,
@@ -178,6 +179,21 @@ export default function GraphToolbar({
         <>
           <div className="w-px h-5 bg-outline-variant/20" />
           <BulkImageGenControls bulkImageGen={bulkImageGen} t={t} />
+        </>
+      )}
+
+      {onAutoLayout && (
+        <>
+          <div className="w-px h-5 bg-outline-variant/20" />
+          <button
+            type="button"
+            onClick={onAutoLayout}
+            title={t('locationGraph.tooltips.autoLayout', { defaultValue: 'Arrange nodes by connections' })}
+            className="flex items-center gap-1 px-3 py-1.5 rounded-sm hover:bg-white/5 text-on-surface-variant transition-colors uppercase tracking-widest"
+          >
+            <span className="material-symbols-outlined text-sm">hub</span>
+            {t('locationGraph.toolbar.autoLayout', { defaultValue: 'Ułóż graf' })}
+          </button>
         </>
       )}
 

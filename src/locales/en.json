@@ -633,6 +633,7 @@
     "inventSpellMana": "Mana cost",
     "inventSpellSchool": "School",
     "regenerateActions": "Change action style",
+    "stickyToneHint": "Right-click: pin tone — actions auto-regenerate in this style after each scene",
     "actionTones": {
       "thoughtful": "Thoughtful",
       "bold": "Bold",
@@ -641,7 +642,9 @@
       "neutral": "Neutral",
       "conciliatory": "Conciliatory",
       "sleazy": "Sleazy",
-      "empathetic": "Empathetic"
+      "empathetic": "Empathetic",
+      "absurd": "Absurd",
+      "zingers": "Zingers"
     },
     "forceRoll": {
       "button": "Force roll",
@@ -2670,7 +2673,8 @@
       "startingSprites": "Starting…",
       "cancelSprites": "Stop",
       "spritesDone": "Done: {{done}}, err: {{failed}}",
-      "spritesFailed": "Job failed"
+      "spritesFailed": "Job failed",
+      "autoLayout": "Auto layout"
     },
     "addNode": {
       "title": "New Location",
@@ -2749,7 +2753,8 @@
       "narrative": "Story-driven connections, quest-driven relations",
       "temporal": "Time-based changes — day/night, seasonal access",
       "snapToGrid": "Snap nodes to grid when dragging",
-      "resetLayout": "Reset manual node positions to automatic layout"
+      "resetLayout": "Reset manual node positions to automatic layout",
+      "autoLayout": "Arrange nodes by connections"
     }
   }
 }

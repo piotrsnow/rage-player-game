@@ -1,6 +1,7 @@
 // Shared state validation helpers — single source of truth for frontend + backend stateValidators
 
 import { prefixedId } from './ids.js';
+import { moneyToCopper as currencyToCopper } from './currency.js';
 
 // ── State change limits ──
 
@@ -10,7 +11,7 @@ export const STATE_CHANGE_LIMITS = {
   maxWoundsDelta: 20,
   needsDeltaMin: -30,
   needsDeltaMax: 100,
-  maxMoneyGainCopper: 500, // 5 ZK equivalent
+  maxMoneyGainCopper: 1200, // 5 ZK equivalent
   maxDispositionDelta: 10,
   maxCodexPerScene: 3,
   maxCodexFragmentLength: 1000,
@@ -23,7 +24,7 @@ export function clamp(value, min, max) {
 }
 
 export function moneyToCopper(m) {
-  return (m.gold || 0) * 100 + (m.silver || 0) * 10 + (m.copper || 0);
+  return currencyToCopper(m);
 }
 
 export function createItemId() {

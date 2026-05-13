@@ -1,5 +1,6 @@
 import { hourToPeriod, decayNeeds } from '../../services/timeUtils';
 import { normalizeMultiplayerStateChanges } from '../../../shared/contracts/multiplayer.js';
+import { moneyToCopper, normalizeCoins } from '../../../shared/domain/currency.js';
 import { shortId } from '../../utils/ids';
 
 export const initialState = {
@@ -183,11 +184,7 @@ export function mpReducer(state, action) {
             }
             if (delta.moneyChange) {
               const cur = u.money || { gold: 0, silver: 0, copper: 0 };
-              let total = ((cur.gold || 0) + (delta.moneyChange.gold || 0)) * 100
-                + ((cur.silver || 0) + (delta.moneyChange.silver || 0)) * 10
-                + ((cur.copper || 0) + (delta.moneyChange.copper || 0));
-              if (total < 0) total = 0;
-              u.money = { gold: Math.floor(total / 100), silver: Math.floor((total % 100) / 10), copper: total % 10 };
+              u.money = normalizeCoins(moneyToCopper(cur) + moneyToCopper(delta.moneyChange));
             }
             if (delta.needsChanges && u.needs) {
               const needs = { ...u.needs };

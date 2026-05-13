@@ -1,9 +1,7 @@
+import { formatMoney, moneyToCopper } from '../../../shared/domain/currency.js';
+
 function formatMoneyDelta(mc) {
-  const parts = [];
-  if (mc.gold) parts.push(`${Math.abs(mc.gold)} GC`);
-  if (mc.silver) parts.push(`${Math.abs(mc.silver)} SS`);
-  if (mc.copper) parts.push(`${Math.abs(mc.copper)} CP`);
-  return parts.join(' ') || '0 CP';
+  return formatMoney(mc, undefined, { absolute: true });
 }
 
 function resolveObjectiveForMessage(quest, rawObjId) {
@@ -94,7 +92,7 @@ export function generateStateChangeMessages(stateChanges, characters, language =
       }
       if (delta.moneyChange) {
         const mc = delta.moneyChange;
-        const total = (mc.gold || 0) * 100 + (mc.silver || 0) * 10 + (mc.copper || 0);
+        const total = moneyToCopper(mc);
         if (total !== 0) {
           const amount = formatMoneyDelta(mc);
           if (total < 0) {

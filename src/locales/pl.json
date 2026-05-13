@@ -626,6 +626,7 @@
     "inventSpellMana": "Koszt many",
     "inventSpellSchool": "Szkoła",
     "regenerateActions": "Zmień styl akcji",
+    "stickyToneHint": "PPM: przypnij ton — po każdej scenie akcje automatycznie się przeładują w tym stylu",
     "actionTones": {
       "thoughtful": "Przemyślane",
       "bold": "Odważne",
@@ -633,8 +634,10 @@
       "aggressive": "Agresywne",
       "neutral": "Neutralne",
       "conciliatory": "Ugodowe",
-      "sleazy": "Obleśne",
-      "empathetic": "Empatyczne"
+      "sleazy": "Obrzydliwe",
+      "empathetic": "Empatyczne",
+      "absurd": "Absurdalne",
+      "zingers": "Wiązanki"
     },
     "forceRoll": {
       "button": "Wymuś rzut",
@@ -2355,6 +2358,7 @@
       "cancelSprites": "Stop",
       "spritesDone": "Gotowe: {{done}}, err: {{failed}}",
       "spritesFailed": "Job nie powiódł się",
+      "autoLayout": "Ułóż graf",
       "revision": "Rewizja",
       "revisionTooltip": "AI sprawdzi spójność grafu i zaproponuje poprawki",
       "revising": "Analizuję...",
@@ -2448,7 +2452,8 @@
       "narrative": "Połączenia fabularne, quest-driven relacje",
       "temporal": "Zmiany w czasie — dzień/noc, sezonowe dostępy",
       "snapToGrid": "Przyciągaj węzły do siatki podczas przeciągania",
-      "resetLayout": "Resetuj ręczne rozmieszczenie węzłów do automatycznego układu"
+      "resetLayout": "Resetuj ręczne rozmieszczenie węzłów do automatycznego układu",
+      "autoLayout": "Ułóż węzły grafu wg połączeń"
     }
   }
 }

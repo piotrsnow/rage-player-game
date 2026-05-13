@@ -105,43 +105,43 @@ describe('calculateItemBuyPrice', () => {
 
   it('positive disposition lowers price', () => {
     const price = calculateItemBuyPrice({ price: { gold: 1, silver: 0, copper: 0 } }, 50);
-    // disposition 50 → -25% modifier → 75 copper
+    // disposition 50 → -25% modifier → 180 MK
     expect(price.gold).toBe(0);
-    expect(price.silver).toBe(7);
-    expect(price.copper).toBe(5);
+    expect(price.silver).toBe(15);
+    expect(price.copper).toBe(0);
   });
 
   it('negative disposition raises price', () => {
     const price = calculateItemBuyPrice({ price: { gold: 1, silver: 0, copper: 0 } }, -50);
-    // disposition -50 → +25% modifier → 125 copper
+    // disposition -50 → +25% modifier → 300 MK
     expect(price.gold).toBe(1);
-    expect(price.silver).toBe(2);
-    expect(price.copper).toBe(5);
+    expect(price.silver).toBe(5);
+    expect(price.copper).toBe(0);
   });
 });
 
 describe('calculateItemSellPrice', () => {
   it('returns 50% of base price with no Handel skill', () => {
     const price = calculateItemSellPrice({ price: { gold: 1, silver: 0, copper: 0 } }, 0);
-    expect(price).toEqual({ gold: 0, silver: 5, copper: 0 });
+    expect(price).toEqual({ gold: 0, silver: 10, copper: 0 });
   });
 
   it('increases with Handel level', () => {
     const price = calculateItemSellPrice({ price: { gold: 1, silver: 0, copper: 0 } }, 10);
     // 50% + 10*1% = 60%
-    expect(price).toEqual({ gold: 0, silver: 6, copper: 0 });
+    expect(price).toEqual({ gold: 0, silver: 12, copper: 0 });
   });
 
   it('caps at 75%', () => {
     const price = calculateItemSellPrice({ price: { gold: 1, silver: 0, copper: 0 } }, 30);
-    expect(price).toEqual({ gold: 0, silver: 7, copper: 5 });
+    expect(price).toEqual({ gold: 0, silver: 15, copper: 0 });
   });
 
   it('resolves price via baseType when item.price is missing', () => {
     // Reward items carry baseType but no price — lookup in catalog.
     const price = calculateItemSellPrice({ name: 'Sztylet', baseType: 'dagger', rarity: 'common' }, 0, mockEquipment);
-    // dagger price 5 SK = 50 MK, sell 50% = 25 MK → 2 SK 5 MK
-    expect(price).toEqual({ gold: 0, silver: 2, copper: 5 });
+    // dagger price 5 SK = 60 MK, sell 50% = 30 MK → 2 SK 6 MK
+    expect(price).toEqual({ gold: 0, silver: 2, copper: 6 });
   });
 
   it('falls back to rarity-based price when baseType is missing', () => {
@@ -150,13 +150,13 @@ describe('calculateItemSellPrice', () => {
     expect(priceCommon.gold + priceCommon.silver + priceCommon.copper).toBeGreaterThan(0);
 
     const priceRare = calculateItemSellPrice({ name: 'Something', rarity: 'rare' }, 0);
-    // 50 MK fallback × 50% = 25 MK → 2 SK 5 MK
-    expect(priceRare).toEqual({ gold: 0, silver: 2, copper: 5 });
+    // 50 MK fallback × 50% = 25 MK → 2 SK 1 MK
+    expect(priceRare).toEqual({ gold: 0, silver: 2, copper: 1 });
   });
 
   it('never returns zero price for any item', () => {
     const price = calculateItemSellPrice({ name: 'Dziwny Przedmiot' }, 0);
-    const totalCopper = price.gold * 100 + price.silver * 10 + price.copper;
+    const totalCopper = price.gold * 240 + price.silver * 12 + price.copper;
     expect(totalCopper).toBeGreaterThan(0);
   });
 });

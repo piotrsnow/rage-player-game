@@ -1,23 +1,19 @@
 /**
  * RPGon pricing utilities.
- * Currency: 1 Gold Crown (GC) = 10 Silver Shillings (SS) = 100 Copper Pennies (CP)
+ * Currency: 1 ZK = 20 SK = 240 MK, 1 SK = 12 MK.
  */
 
-export function normalizeCoins(copperTotal) {
-  let cp = Math.max(0, Math.round(copperTotal));
-  let ss = Math.floor(cp / 100);
-  cp %= 100;
-  let gc = Math.floor(ss / 10);
-  ss %= 10;
-  return { gold: gc, silver: ss, copper: cp };
-}
+import {
+  moneyToCopper,
+  normalizeCoins,
+  formatMoney,
+} from '../../../../shared/domain/currency.js';
+
+export { normalizeCoins };
 
 /** @param {{ gold?: number, silver?: number, copper?: number }} price */
 export function priceToCopper(price) {
-  const g = price.gold ?? 0;
-  const s = price.silver ?? 0;
-  const c = price.copper ?? 0;
-  return g * 100 + s * 10 + c;
+  return moneyToCopper(price);
 }
 
 /**
@@ -33,9 +29,5 @@ export function calculatePrice(item, reputationModifier = 0, locationModifier = 
 }
 
 export function formatCoinPrice(price) {
-  const parts = [];
-  if (price.gold) parts.push(`${price.gold} GC`);
-  if (price.silver) parts.push(`${price.silver} SS`);
-  if (price.copper) parts.push(`${price.copper} CP`);
-  return parts.length ? parts.join(' ') : '0 CP';
+  return formatMoney(price);
 }

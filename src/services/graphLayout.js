@@ -13,17 +13,20 @@ const KM_TO_BASE_PX = 2.8;
 function radiusForGraphScale(scale) {
   const s = Number(scale);
   const v = Number.isFinite(s) ? s : 5;
-  if (v <= 1) return 28;
-  if (v <= 3) return 22;
-  if (v <= 5) return 18;
-  return 14;
+  if (v <= 1) return 10;
+  if (v <= 2) return 14;
+  if (v <= 3) return 18;
+  if (v <= 4) return 24;
+  if (v <= 5) return 30;
+  if (v <= 6) return 36;
+  return 44;
 }
 
 /**
  * Push overlapping nodes apart until no pair is closer than r_a + r_b + pad.
  * Mutates `pos` in place. Early-exits when no pair moved.
  */
-export function resolveCollisions(pos, nodes, { iterations = 50, separationPad = 30 } = {}) {
+export function resolveCollisions(pos, nodes, { iterations = 50, separationPad = 62 } = {}) {
   const ids = [...pos.keys()];
   if (ids.length < 2) return;
   const radii = new Map();
@@ -44,7 +47,10 @@ export function resolveCollisions(pos, nodes, { iterations = 50, separationPad =
         let dx = pb.x - pa.x;
         let dy = pb.y - pa.y;
         let d = Math.sqrt(dx * dx + dy * dy) || 1e-6;
-        const minSep = radii.get(a) + radii.get(b) + separationPad;
+        const rA = radii.get(a);
+        const rB = radii.get(b);
+        const scaledPad = separationPad * (rA + rB) / 20;
+        const minSep = rA + rB + scaledPad;
         if (d >= minSep) continue;
         moved = true;
         const push = (minSep - d) / 2;
@@ -161,7 +167,7 @@ export function directedGraphLayout(nodes, edges, {
   height = GRAPH_LAYOUT_H,
   pad = GRAPH_LAYOUT_PAD,
   collisionIters = 50,
-  separationPad = 30,
+  separationPad = 62,
 } = {}) {
   if (!nodes?.length) return new Map();
 

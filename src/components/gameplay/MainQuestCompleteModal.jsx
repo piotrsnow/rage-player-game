@@ -50,11 +50,12 @@ export default function MainQuestCompleteModal({ dispatch, navigate }) {
                 +{completedMain.reward.xp} XP
               </span>
             )}
-            {(completedMain.reward.money?.gold > 0 || completedMain.reward.money?.silver > 0) && (
+            {(completedMain.reward.money?.gold > 0 || completedMain.reward.money?.silver > 0 || completedMain.reward.money?.copper > 0) && (
               <span className="flex items-center gap-1">
                 <span className="material-symbols-outlined text-sm text-tertiary">payments</span>
-                {completedMain.reward.money.gold > 0 && `${completedMain.reward.money.gold} ZM`}
-                {completedMain.reward.money.silver > 0 && ` ${completedMain.reward.money.silver} SS`}
+                {completedMain.reward.money.gold > 0 && `${completedMain.reward.money.gold} ${t('currency.goldShort', 'ZK')}`}
+                {completedMain.reward.money.silver > 0 && ` ${completedMain.reward.money.silver} ${t('currency.silverShort', 'SK')}`}
+                {completedMain.reward.money.copper > 0 && ` ${completedMain.reward.money.copper} ${t('currency.copperShort', 'MK')}`}
               </span>
             )}
           </div>

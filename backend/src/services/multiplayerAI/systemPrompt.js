@@ -101,10 +101,10 @@ export function buildMultiplayerSystemPrompt(gameState, settings, players, langu
     line += `\n  Inventory: ${inv || 'Empty'}`;
     const m = c.money || { gold: 0, silver: 0, copper: 0 };
     const moneyParts = [];
-    if (m.gold) moneyParts.push(`${m.gold} GC`);
-    if (m.silver) moneyParts.push(`${m.silver} SS`);
-    if (m.copper) moneyParts.push(`${m.copper} CP`);
-    line += `\n  Money: ${moneyParts.length > 0 ? moneyParts.join(' ') : '0 CP'}`;
+    if (m.gold) moneyParts.push(`${m.gold} ZK`);
+    if (m.silver) moneyParts.push(`${m.silver} SK`);
+    if (m.copper) moneyParts.push(`${m.copper} MK`);
+    line += `\n  Money: ${moneyParts.length > 0 ? moneyParts.join(' ') : '0 MK'}`;
     if (needsEnabled && c.needs) {
       const n = c.needs;
       const fmt = (k, v) => `${k}: ${v ?? 100}/100${(v ?? 100) < 15 ? ' [CRITICAL]' : (v ?? 100) < 30 ? ' [LOW]' : ''}`;
@@ -228,17 +228,17 @@ When any player asks about, investigates, or learns about something specific, ge
 {"codexUpdates": [{"id": "unique-slug", "name": "Subject Name", "category": "artifact|person|place|event|faction|creature|concept", "fragment": {"content": "2-4 sentences of specific detail...", "source": "Who revealed this", "aspect": "history|description|location|weakness|rumor|technical|political"}, "tags": ["relevant", "tags"], "relatedEntries": []}]}
 
 CURRENCY SYSTEM:
-The game uses three denominations: Gold Crown (GC), Silver Shilling (SS), Copper Penny (CP). 1 GC = 10 SS = 100 CP.
+The game uses three denominations: Złota Korona (ZK), Srebrna Korona (SK), Miedziana Korona (MK). 1 ZK = 20 SK = 240 MK, 1 SK = 12 MK.
 - When a character BUYS or PAYS, deduct via perCharacter moneyChange (negative deltas). If a character cannot afford the purchase, it MUST FAIL.
 - When a character RECEIVES money (loot, payment, selling, rewards), use positive deltas.
 - The system auto-normalizes coins.
 
 REFERENCE PRICE LIST (adjust contextually):
-Food/Drink: bread 2 CP, ale 3 CP, hot meal 8 CP, fine wine 3 SS
-Lodging: common room 5 CP/night, private room 2 SS/night
-Weapons: dagger 1 SS, hand weapon 1 GC, crossbow 2 GC 5 SS
-Armor: leather jerkin 1 GC 2 SS, mail shirt 6 GC
-Gear: rope 4 CP, torch 1 CP, lantern 5 SS, healing draught 3 SS, lockpicks 5 SS
-Services: healer 5 SS, blacksmith repair 3 SS, ferry 2 CP
-Animals: riding horse 50 GC, mule 15 GC`;
+Food/Drink: bread 2 MK, ale 3 MK, hot meal 8 MK, fine wine 3 SK
+Lodging: common room 5 MK/night, private room 2 SK/night
+Weapons: dagger 1 SK, hand weapon 1 ZK, crossbow 2 ZK 5 SK
+Armor: leather jerkin 1 ZK 2 SK, mail shirt 6 ZK
+Gear: rope 4 MK, torch 1 MK, lantern 5 SK, healing draught 3 SK, lockpicks 5 SK
+Services: healer 5 SK, blacksmith repair 3 SK, ferry 2 MK
+Animals: riding horse 50 ZK, mule 15 ZK`;
 }

@@ -221,6 +221,7 @@ export default function GameplayPage({ readOnly = false, shareToken = null, onRe
   const [autoPlayScenes, setAutoPlayScenes] = useState(false);
   const [combatExpandedLayout, setCombatExpandedLayout] = useState(false);
   const [isRegeneratingActions, setIsRegeneratingActions] = useState(false);
+  const [stickyTone, setStickyTone] = useState(null);
   useEffect(() => { if (!combat?.active) setCombatExpandedLayout(false); }, [combat?.active]);
   const handleSceneNavRef = useRef(null);
   const consecutiveIdleEventsRef = useRef(0);
@@ -472,6 +473,7 @@ export default function GameplayPage({ readOnly = false, shareToken = null, onRe
         travelFailureReason: opts?.travelFailureReason || null,
       });
       sceneGenSucceededRef.current = true;
+      if (stickyTone) handleRegenerateActions(stickyTone);
     } catch {
       // Error displayed in UI via context
     }
@@ -611,6 +613,10 @@ export default function GameplayPage({ readOnly = false, shareToken = null, onRe
       setIsRegeneratingActions(false);
     }
   }, [sCampaign?.backendId, urlCampaignId, isMultiplayer, isRegeneratingActions, settings.language, scenes, dispatch]);
+
+  const handleStickyTone = useCallback((tone) => {
+    setStickyTone((prev) => prev === tone ? null : tone);
+  }, []);
 
   const actions = useGameplayActions({
     dispatch,
@@ -933,6 +939,8 @@ export default function GameplayPage({ readOnly = false, shareToken = null, onRe
               }}
               onRegenerateActions={!isMultiplayer ? handleRegenerateActions : null}
               isRegeneratingActions={isRegeneratingActions}
+              stickyTone={stickyTone}
+              onStickyTone={handleStickyTone}
             />
           </div>
         )}

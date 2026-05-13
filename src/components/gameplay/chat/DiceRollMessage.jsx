@@ -203,8 +203,8 @@ export default function DiceRollMessage({ message }) {
           className={`w-[92px] h-[92px] rounded-xl border ${borderColor} bg-gradient-to-r ${bgGlow} flex flex-col items-center justify-center gap-1 transition-transform duration-200 hover:scale-[1.03]`}
           title={t('chat.expandDiceRoll', 'Expand dice roll details')}
         >
-          <span className={`material-symbols-outlined text-lg ${accentColor}`}>casino</span>
-          <span className="font-mono text-xs font-bold text-on-surface">
+          <span className={`material-symbols-outlined text-4xl ${accentColor}`}>casino</span>
+          <span className="font-mono text-sm font-bold text-on-surface">
             {totalValue} {t('common.vs')} {rollTarget}
           </span>
         </button>

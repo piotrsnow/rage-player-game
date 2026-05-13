@@ -4,6 +4,7 @@ import {
 } from '../data/rpgSystem';
 import { DEFAULT_CHARACTER_AGE } from './characterAge';
 import { prefixedId } from '../../shared/domain/ids.js';
+import { moneyToCopper, normalizeCoins, formatMoney as formatCurrency } from '../../shared/domain/currency.js';
 
 const RANDOM_NAMES = {
   Fantasy: [
@@ -152,13 +153,7 @@ export function calculateMaxWounds(wytrzymalosc) {
 }
 
 export function normalizeMoney(money) {
-  let total = (money.gold || 0) * 100 + (money.silver || 0) * 10 + (money.copper || 0);
-  if (total < 0) total = 0;
-  return {
-    gold: Math.floor(total / 100),
-    silver: Math.floor((total % 100) / 10),
-    copper: total % 10,
-  };
+  return normalizeCoins(moneyToCopper(money));
 }
 
 export function generateStartingMoney() {
@@ -182,11 +177,7 @@ export function createStarterInventory() {
 }
 
 export function formatMoney(money) {
-  const parts = [];
-  if (money.gold) parts.push(`${money.gold} GC`);
-  if (money.silver) parts.push(`${money.silver} SS`);
-  if (money.copper) parts.push(`${money.copper} CP`);
-  return parts.length > 0 ? parts.join(' ') : '0 CP';
+  return formatCurrency(money);
 }
 
 export function formatTimestamp(ts) {

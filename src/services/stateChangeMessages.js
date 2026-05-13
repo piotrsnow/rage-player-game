@@ -1,15 +1,20 @@
 import { xpForSkillLevel, charXpFromSkillLevelUp, cumulativeCharXpThreshold } from '../data/rpgSystem';
+import { formatMoney, moneyToCopper } from '../../shared/domain/currency.js';
 
-function formatMoneyDelta(mc) {
-  const parts = [];
-  if (mc.gold) parts.push(`${Math.abs(mc.gold)} GC`);
-  if (mc.silver) parts.push(`${Math.abs(mc.silver)} SS`);
-  if (mc.copper) parts.push(`${Math.abs(mc.copper)} CP`);
-  return parts.join(' ') || '0 CP';
+function currencyLabels(t) {
+  return {
+    gold: t('currency.goldShort', 'ZK'),
+    silver: t('currency.silverShort', 'SK'),
+    copper: t('currency.copperShort', 'MK'),
+  };
+}
+
+function formatMoneyDelta(mc, t) {
+  return formatMoney(mc, currencyLabels(t), { absolute: true });
 }
 
 function isMoneySpent(mc) {
-  return (mc.gold || 0) + (mc.silver || 0) + (mc.copper || 0) < 0;
+  return moneyToCopper(mc) < 0;
 }
 
 // Mirrors resolveObj in applyStateChangesHandler/quests.js — premium labels each
@@ -42,9 +47,9 @@ export function generateStateChangeMessages(stateChanges, state, t) {
 
   if (stateChanges.moneyChange) {
     const mc = stateChanges.moneyChange;
-    const total = (mc.gold || 0) * 100 + (mc.silver || 0) * 10 + (mc.copper || 0);
+    const total = moneyToCopper(mc);
     if (total !== 0) {
-      const amount = formatMoneyDelta(mc);
+      const amount = formatMoneyDelta(mc, t);
       if (isMoneySpent(mc)) {
         msgs.push({ id: mkId(), role: 'system', subtype: 'money_spent', content: t('system.moneySpent', { name: charName, amount }), timestamp: ts });
       } else {
@@ -202,9 +207,8 @@ export function generateStateChangeMessages(stateChanges, state, t) {
         if (quest.reward.xp) parts.push(`${quest.reward.xp} XP`);
         if (quest.reward.money) {
           const m = quest.reward.money;
-          if (m.gold) parts.push(`${m.gold} GC`);
-          if (m.silver) parts.push(`${m.silver} SS`);
-          if (m.copper) parts.push(`${m.copper} CP`);
+          const moneyText = formatMoney(m, currencyLabels(t));
+          if (moneyToCopper(m) > 0) parts.push(moneyText);
         }
         if (quest.reward.items?.length > 0) parts.push(quest.reward.items.map((i) => i.name || i).join(', '));
         const rewardText = parts.length > 0 ? parts.join(', ') : quest.reward.description;

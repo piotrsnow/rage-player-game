@@ -10,6 +10,7 @@
 
 import { EQUIPMENT, MATERIALS, normalizeCoins, priceToCopper, ALCHEMY_RECIPES } from '../data/equipment/index.js';
 import { prefixedId } from '../../../shared/domain/ids.js';
+import { moneyToCopper } from '../../../shared/domain/currency.js';
 
 // ── Constants ──
 
@@ -261,8 +262,7 @@ export function resolveRewards(rewards, { sceneCount = 0, difficultyTier = 'medi
 
   // Normalize final money
   if (result.moneyChange.gold || result.moneyChange.silver || result.moneyChange.copper) {
-    const totalCopper = result.moneyChange.gold * 100 + result.moneyChange.silver * 10 + result.moneyChange.copper;
-    result.moneyChange = normalizeCoins(totalCopper);
+    result.moneyChange = normalizeCoins(moneyToCopper(result.moneyChange));
   }
 
   return result;

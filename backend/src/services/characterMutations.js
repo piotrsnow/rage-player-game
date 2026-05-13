@@ -20,6 +20,7 @@ import { normalizeSpellMaterialIcon } from '../../../shared/domain/spellMaterial
 import { addEffect, removeEffect, removeEffectsByName, migrateStatusStrings, deriveStatusNames } from '../../../shared/domain/statusEffects.js';
 import { SKILL_BY_NAME, canonicalizeSkillName } from './diceResolver.js';
 import { sanitizeMana } from '../../../shared/domain/mana.js';
+import { moneyToCopper, normalizeCoins } from '../../../shared/domain/currency.js';
 import { childLogger } from '../lib/logger.js';
 
 const log = childLogger({ module: 'characterMutations' });
@@ -61,18 +62,7 @@ function createDefaultNeeds() {
 // ── Money helpers ──
 
 function normalizeMoney(money) {
-  let { gold = 0, silver = 0, copper = 0 } = money || {};
-  if (copper < 0 || silver < 0 || gold < 0) {
-    let totalCopper = gold * 100 + silver * 10 + copper;
-    if (totalCopper < 0) totalCopper = 0;
-    gold = Math.floor(totalCopper / 100);
-    silver = Math.floor((totalCopper % 100) / 10);
-    copper = totalCopper % 10;
-    return { gold, silver, copper };
-  }
-  if (copper >= 10) { silver += Math.floor(copper / 10); copper = copper % 10; }
-  if (silver >= 10) { gold += Math.floor(silver / 10); silver = silver % 10; }
-  return { gold, silver, copper };
+  return normalizeCoins(moneyToCopper(money));
 }
 
 // ── Material / inventory — per-instance identity (no name-merge) ──

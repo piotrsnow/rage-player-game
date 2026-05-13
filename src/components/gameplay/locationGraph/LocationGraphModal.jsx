@@ -1,4 +1,4 @@
-import { lazy, Suspense, useState, useCallback, useRef, useMemo } from 'react';
+import { lazy, Suspense, useState, useCallback, useRef, useMemo, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useModalA11y } from '../../../hooks/useModalA11y.js';
 import { useLocationGraph } from '../../../hooks/useLocationGraph.js';
@@ -11,6 +11,7 @@ import { useWorldGraphSpriteJob } from '../../../hooks/useWorldGraphSpriteJob.js
 import { useNodeImageBulkGeneration } from '../../../hooks/useNodeImageBulkGeneration.js';
 import { useGraphRevision } from '../../../hooks/useGraphRevision.js';
 import { useSettings } from '../../../contexts/SettingsContext.jsx';
+import { useCurrentLocationNode } from '../../../hooks/useCurrentLocationNode.js';
 import GraphCanvas from './GraphCanvas.jsx';
 import HierarchyTree from './HierarchyTree.jsx';
 import InspectorPanel from './InspectorPanel.jsx';
@@ -47,6 +48,7 @@ const ADMIN_TAB_COMPONENTS = {
 import {
   getGeoProjectionParams,
   layoutPxToRegion,
+  forceDirectedLayout,
   GRAPH_LAYOUT_W,
   GRAPH_LAYOUT_H,
   GRAPH_LAYOUT_PAD,
@@ -136,6 +138,31 @@ export default function LocationGraphModal({ campaignId = null, onClose, openGen
 
   const revision = useGraphRevision({ graph, worldMode, campaignId });
 
+  const canvasRef = useRef(null);
+  const currentLocationNode = useCurrentLocationNode(graph);
+  const [viewMode, setViewMode] = useState('all'); // 'all' | 'current'
+  const didInitialFit = useRef(false);
+
+  useEffect(() => {
+    if (didInitialFit.current || graph.loading || graph.nodes.length === 0) return;
+    didInitialFit.current = true;
+    requestAnimationFrame(() => canvasRef.current?.fitToView());
+  }, [graph.loading, graph.nodes.length]);
+
+  const handleToggleView = useCallback(() => {
+    setViewMode((prev) => {
+      const next = prev === 'all' ? 'current' : 'all';
+      requestAnimationFrame(() => {
+        if (next === 'current' && currentLocationNode) {
+          canvasRef.current?.centerOnNode(currentLocationNode.id);
+        } else {
+          canvasRef.current?.fitToView();
+        }
+      });
+      return next;
+    });
+  }, [currentLocationNode]);
+
   const [activeTab, setActiveTab] = useState('graph');
   const [selectedNpcId, setSelectedNpcId] = useState(null);
 
@@ -198,6 +225,18 @@ export default function LocationGraphModal({ campaignId = null, onClose, openGen
       return next;
     });
   }, [layoutStorageKey, positionOverrides]);
+
+  const handleAutoLayout = useCallback(() => {
+    const nodeIds = graph.nodes.map((n) => n.id);
+    const edgeLinks = graph.edges.map((e) => ({ from: e.fromId, to: e.toId }));
+    const layoutMap = forceDirectedLayout(nodeIds, edgeLinks, {
+      width: GRAPH_LAYOUT_W, height: GRAPH_LAYOUT_H,
+    });
+    const overrides = {};
+    layoutMap.forEach((pos, id) => { overrides[id] = pos; });
+    setPositionOverrides(overrides);
+    saveGraphLayout(layoutStorageKey, overrides, snapToGrid);
+  }, [graph.nodes, graph.edges, layoutStorageKey, snapToGrid]);
 
   const handleAddNodeToggle = useCallback(() => {
     setAddingNode((v) => !v);
@@ -312,7 +351,7 @@ export default function LocationGraphModal({ campaignId = null, onClose, openGen
       <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
       <div
         ref={modalRef}
-        className="relative w-full max-w-[95vw] h-[90vh] bg-surface-container-highest/80 backdrop-blur-2xl border border-outline-variant/15 rounded-sm flex flex-col shadow-2xl animate-fade-in"
+        className="relative w-full max-w-[80vw] h-[90vh] bg-surface-container-highest/80 backdrop-blur-2xl border border-outline-variant/15 rounded-sm flex flex-col shadow-2xl animate-fade-in"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between px-6 py-4 border-b border-outline-variant/15 shrink-0">
@@ -350,7 +389,7 @@ export default function LocationGraphModal({ campaignId = null, onClose, openGen
               </div>
 
               <div className="flex-1 flex flex-col min-w-0">
-                <div className="flex-1 relative bg-black/40 border border-outline-variant/20 rounded-sm">
+                <div className="flex-1 relative bg-black/40 rounded-sm border border-amber-900/30 ring-1 ring-amber-700/10 shadow-[inset_0_0_40px_rgba(120,53,15,0.15),inset_0_0_80px_rgba(0,0,0,0.3)]">
                   {graph.error && (
                     <div className="absolute top-2 left-2 right-2 z-10 bg-red-500/20 border border-red-500/30 rounded-sm px-3 py-1.5 text-xs text-red-300">
                       {graph.error}
@@ -372,6 +411,7 @@ export default function LocationGraphModal({ campaignId = null, onClose, openGen
                   )}
 
                   <GraphCanvas
+                    ref={canvasRef}
                     nodes={graph.nodes}
                     edges={graph.edges}
                     occupants={graph.occupants}
@@ -411,6 +451,17 @@ export default function LocationGraphModal({ campaignId = null, onClose, openGen
                     allNodes={graph.allNodes}
                     allEdges={graph.allEdges}
                   />
+
+                  <button
+                    type="button"
+                    onClick={handleToggleView}
+                    className="absolute top-2 right-2 z-10 w-8 h-8 flex items-center justify-center rounded-sm bg-surface-container-highest/80 backdrop-blur-sm border border-outline-variant/15 text-on-surface-variant hover:text-primary hover:bg-primary/10 transition-colors"
+                    title={viewMode === 'all' ? 'Przybliż na obecną lokalizację' : 'Pokaż cały graf'}
+                  >
+                    <span className="material-symbols-outlined text-lg">
+                      {viewMode === 'all' ? 'my_location' : 'zoom_out_map'}
+                    </span>
+                  </button>
                 </div>
 
                 <GraphToolbar
@@ -432,6 +483,7 @@ export default function LocationGraphModal({ campaignId = null, onClose, openGen
                   snapToGrid={snapToGrid}
                   onToggleSnap={handleToggleSnap}
                   onResetLayout={handleResetLayout}
+                  onAutoLayout={handleAutoLayout}
                   spriteJob={worldMode ? { ...spriteJob, nodes: graph.allNodes } : undefined}
                   bulkImageGen={bulkImageGen}
                   revision={revision}

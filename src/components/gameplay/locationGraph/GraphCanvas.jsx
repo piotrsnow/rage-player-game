@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState, useCallback, useEffect } from 'react';
+import { useMemo, useRef, useState, useCallback, useEffect, forwardRef, useImperativeHandle } from 'react';
 import {
   forceDirectedLayout,
   geoProjectLayout,
@@ -19,7 +19,7 @@ const LAYOUT_W = GRAPH_LAYOUT_W;
 const LAYOUT_H = GRAPH_LAYOUT_H;
 const GRID_STEP = 40;
 
-export default function GraphCanvas({
+export default forwardRef(function GraphCanvas({
   nodes, edges, occupants = [], selected, onSelect, onDoubleClickNode,
   addingNode, onCanvasClick, addingEdge, onEdgeSourceClick,
   positionOverrides, onNodeDragEnd, snapToGrid,
@@ -27,10 +27,10 @@ export default function GraphCanvas({
   occupantSpriteMap = {},
   /** 'auto' = geo from regionX/Y when spread exists, else force; 'geo' | 'force' = fixed basis */
   layoutBasis = 'auto',
-}) {
+}, ref) {
   const svgRef = useRef(null);
   const containerRef = useRef(null);
-  const [pan, setPan] = useState({ x: 0, y: 0 });
+  const [pan, setPan] = useState({ x: 0, y: -500 });
   const [zoom, setZoom] = useState(1.5);
   const [dragStart, setDragStart] = useState(null);
   const [size, setSize] = useState({ w: LAYOUT_W, h: LAYOUT_H });
@@ -39,6 +39,18 @@ export default function GraphCanvas({
   const [dragNodePos, setDragNodePos] = useState(null);
   const dragOffsetRef = useRef(null);
   const didDragRef = useRef(false);
+  const [edgesOnTop, setEdgesOnTop] = useState(true);
+
+  useEffect(() => {
+    const onKey = (e) => {
+      if (e.shiftKey && e.code === 'KeyL') {
+        e.preventDefault();
+        setEdgesOnTop((v) => !v);
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
 
   useEffect(() => {
     const el = containerRef.current;
@@ -73,8 +85,8 @@ export default function GraphCanvas({
       for (const [id, pos] of Object.entries(positionOverrides)) {
         if (merged.has(id)) merged.set(id, { ...pos });
       }
-      resolveCollisions(merged, nodes);
     }
+    resolveCollisions(merged, nodes);
     return merged;
   }, [basePositions, positionOverrides, nodes]);
 
@@ -138,7 +150,7 @@ export default function GraphCanvas({
     applyZoom(factor);
   }, [applyZoom]);
 
-  const handleZoomIn = useCallback(() => applyZoom(1.25), [applyZoom]);
+  const handleZoomIn = useCallback(() => applyZoom(1.5), [applyZoom]);
   const handleZoomOut = useCallback(() => applyZoom(0.8), [applyZoom]);
 
   const handleFitToView = useCallback(() => {
@@ -153,7 +165,7 @@ export default function GraphCanvas({
     const margin = 60;
     const contentW = maxX - minX + margin * 2;
     const contentH = maxY - minY + margin * 2;
-    const fitZoom = Math.max(0.3, Math.min(2, Math.min(size.w / contentW, size.h / contentH)));
+    const fitZoom = Math.max(0.3, Math.min(1.2, Math.min(size.w / contentW, size.h / contentH) * 0.85));
     const cx = (minX + maxX) / 2;
     const cy = (minY + maxY) / 2;
     const offsetX = (size.w - LAYOUT_W) / 2;
@@ -175,6 +187,22 @@ export default function GraphCanvas({
       y: size.h / 2 - focal.y * zoom - offsetY,
     });
   }, [getSelectedFocal, zoom, size]);
+
+  useImperativeHandle(ref, () => ({
+    fitToView: handleFitToView,
+    centerOnNode: (nodeId) => {
+      const pos = positions.get(nodeId);
+      if (!pos) return;
+      const offsetX = (size.w - LAYOUT_W) / 2;
+      const offsetY = (size.h - LAYOUT_H) / 2;
+      const targetZoom = 1.8;
+      setPan({
+        x: size.w / 2 - pos.x * targetZoom - offsetX,
+        y: size.h / 2 - pos.y * targetZoom - offsetY,
+      });
+      setZoom(targetZoom);
+    },
+  }), [handleFitToView, positions, size]);
 
   const handleMouseDown = useCallback((e) => {
     if (e.target === svgRef.current || e.target.closest('[data-bg]') || e.target === containerRef.current) {
@@ -198,7 +226,9 @@ export default function GraphCanvas({
 
   const handleMouseUp = useCallback(() => {
     if (draggingNodeId && dragNodePos) {
-      onNodeDragEnd?.(draggingNodeId, dragNodePos);
+      if (didDragRef.current) {
+        onNodeDragEnd?.(draggingNodeId, dragNodePos);
+      }
       setDraggingNodeId(null);
       setDragNodePos(null);
       dragOffsetRef.current = null;
@@ -268,6 +298,10 @@ export default function GraphCanvas({
       onClick={handleSvgClick}
     >
       <defs>
+        <style>{`g[data-node]:hover .node-img { opacity: 1 !important; }
+g[data-node]:hover .node-label { opacity: 1 !important; }
+.npc-token { transition: scale 200ms ease; }
+g[data-node]:hover .npc-token { scale: 1.25; }`}</style>
         <pattern id="graph-grid" width={GRID_STEP} height={GRID_STEP} patternUnits="userSpaceOnUse">
           <circle cx={GRID_STEP / 2} cy={GRID_STEP / 2} r={0.8} fill="rgba(255,255,255,0.12)" />
         </pattern>
@@ -280,13 +314,47 @@ export default function GraphCanvas({
             <feMergeNode in="SourceGraphic" />
           </feMerge>
         </filter>
+        <filter id="ambient-glow" x="-100%" y="-100%" width="300%" height="300%">
+          <feGaussianBlur stdDeviation="120" />
+        </filter>
+        <radialGradient id="node-img-fade">
+          <stop offset="55%" stopColor="white" stopOpacity={1} />
+          <stop offset="100%" stopColor="white" stopOpacity={0} />
+        </radialGradient>
+        <mask id="node-img-mask" maskContentUnits="objectBoundingBox">
+          <ellipse cx={0.5} cy={0.5} rx={0.5} ry={0.5} fill="url(#node-img-fade)" />
+        </mask>
+        <filter id="text-shadow" x="-10%" y="-10%" width="120%" height="120%">
+          <feDropShadow dx={0} dy={1} stdDeviation={1.5} floodColor="#000" floodOpacity={0.7} />
+        </filter>
       </defs>
 
       <g transform={`translate(${pan.x + (size.w - LAYOUT_W) / 2},${pan.y + (size.h - LAYOUT_H) / 2}) scale(${zoom})`}>
         <rect data-bg="1" x={-4000} y={-4000} width={8000} height={8000} fill="transparent" />
         <rect x={-4000} y={-4000} width={8000} height={8000} fill="url(#graph-grid)" pointerEvents="none" />
 
-        {edges.map((edge) => {
+        <g filter="url(#ambient-glow)" opacity={0.4} pointerEvents="none">
+          {nodes.map((node) => {
+            if (!node.nodeImageUrl) return null;
+            const pos = getNodePos(node.id);
+            if (!pos) return null;
+            const r = getNodeRadius(node.scale ?? 5);
+            const glowR = r * 10;
+            return (
+              <image
+                key={node.id}
+                href={apiClient.resolveMediaUrl(node.nodeImageUrl)}
+                x={pos.x - glowR}
+                y={pos.y - glowR}
+                width={glowR * 2}
+                height={glowR * 2}
+                preserveAspectRatio="xMidYMid slice"
+              />
+            );
+          })}
+        </g>
+
+        {!edgesOnTop && edges.map((edge) => {
           const fromPos = getNodePos(edge.fromId);
           const toPos = getNodePos(edge.toId);
           if (!fromPos || !toPos) return null;
@@ -311,16 +379,14 @@ export default function GraphCanvas({
           });
           const r = getNodeRadius(node.scale ?? 5);
           const hasImage = !!node.nodeImageUrl;
-          const imgR = hasImage ? r * 2 : r;
+          const imgR = hasImage ? r * 5 : r;
           const isSelected = selected?.type === 'node' && selected.id === node.id;
           const locOccupants = occupantsByLocation.get(node.id) || [];
           const isHighlightedCurrent = highlightedNodeId === node.id;
           const isHighlightedAdjacent = highlightedAdjacentIds?.has?.(node.id) && !isHighlightedCurrent;
           const nodeCursor = addingEdge || addingNode
             ? 'crosshair'
-            : onNodeDragEnd
-              ? 'move'
-              : 'pointer';
+            : 'pointer';
           const shapeName = vis.shape || 'circle';
           const shapeGen = SHAPE_PATHS[shapeName];
           const useCircle = !shapeGen;
@@ -328,6 +394,7 @@ export default function GraphCanvas({
           return (
             <g
               key={node.id}
+              data-node="1"
               transform={`translate(${pos.x},${pos.y})`}
               style={{ cursor: nodeCursor }}
               onMouseDown={(e) => handleNodeMouseDown(node.id, e)}
@@ -356,25 +423,31 @@ export default function GraphCanvas({
               )}
               {isSelected && !node.nodeImageUrl && (
                 useCircle ? (
-                  <circle r={r + 4} fill="none" stroke="#fbbf24" strokeWidth={2} opacity={0.8}>
-                    <animate attributeName="r" values={`${r + 3};${r + 6};${r + 3}`} dur="1.5s" repeatCount="indefinite" />
-                  </circle>
+                  <>
+                    <circle r={r + 6} fill="none" stroke="#fbbf24" strokeWidth={3} opacity={0.9} />
+                    <circle r={r + 6} fill="none" stroke="#fbbf24" strokeWidth={1} opacity={0.5}>
+                      <animate attributeName="r" values={`${r + 5};${r + 10};${r + 5}`} dur="1.5s" repeatCount="indefinite" />
+                      <animate attributeName="opacity" values="0.5;0;0.5" dur="1.5s" repeatCount="indefinite" />
+                    </circle>
+                  </>
                 ) : (
-                  <path
-                    d={shapeGen(r)}
-                    fill="none"
-                    stroke="#fbbf24"
-                    strokeWidth={2}
-                    opacity={0.8}
-                  >
-                    <animateTransform
-                      attributeName="transform"
-                      type="scale"
-                      values="1.15;1.3;1.15"
-                      dur="1.5s"
-                      repeatCount="indefinite"
-                    />
-                  </path>
+                  <>
+                    <path
+                      d={shapeGen(r)}
+                      fill="none"
+                      stroke="#fbbf24"
+                      strokeWidth={3}
+                      opacity={0.9}
+                    >
+                      <animateTransform
+                        attributeName="transform"
+                        type="scale"
+                        values="1.15;1.3;1.15"
+                        dur="1.5s"
+                        repeatCount="indefinite"
+                      />
+                    </path>
+                  </>
                 )
               )}
               {hasImage ? (
@@ -387,13 +460,15 @@ export default function GraphCanvas({
                     </clipPath>
                     {isSelected && (
                       <filter id={`hl-${node.id}`} filterUnits="objectBoundingBox"
-                        x="-15%" y="-15%" width="130%" height="130%">
+                        x="-20%" y="-20%" width="140%" height="140%">
                         <feMorphology in="SourceAlpha" operator="dilate" result="expanded">
-                          <animate attributeName="radius" values="2;3.5;2" dur="1.5s" repeatCount="indefinite" />
+                          <animate attributeName="radius" values="3;5;3" dur="1.5s" repeatCount="indefinite" />
                         </feMorphology>
                         <feFlood floodColor="#fbbf24" result="color" />
                         <feComposite in="color" in2="expanded" operator="in" result="outline" />
+                        <feGaussianBlur in="outline" stdDeviation="2" result="glow" />
                         <feMerge>
+                          <feMergeNode in="glow" />
                           <feMergeNode in="outline" />
                           <feMergeNode in="SourceGraphic" />
                         </feMerge>
@@ -407,9 +482,14 @@ export default function GraphCanvas({
                     width={imgR * 2}
                     height={imgR * 2}
                     preserveAspectRatio="xMidYMid slice"
-                    opacity={node.discoveryState === 'rumored' ? 0.4 : 1}
                     filter={isSelected ? `url(#hl-${node.id})` : undefined}
-                    style={{ imageRendering: 'pixelated' }}
+                    mask="url(#node-img-mask)"
+                    style={{
+                      imageRendering: 'pixelated',
+                      opacity: node.discoveryState === 'rumored' ? 0.2 : 0.4,
+                      transition: 'opacity 1.5s ease',
+                    }}
+                    className="node-img"
                   />
                 </>
               ) : (
@@ -445,48 +525,91 @@ export default function GraphCanvas({
                 </>
               )}
               {(() => {
-                const fs = isSelected ? 11 : 9;
-                const maxChars = isSelected ? 16 : 14;
+                const fs = isSelected ? 15 : 13;
+                const maxChars = isSelected ? 18 : 16;
                 const lines = wrapLabel(node.name, maxChars);
-                const lineHeight = fs + 2;
-                const baseY = imgR + 12;
+                const lineHeight = fs + 3;
+                const totalTextH = lines.length * lineHeight;
+                const padX = 6;
+                const padTop = 2;
+                const padBot = 6;
+                const approxCharW = fs * 0.55;
+                const maxLineW = Math.max(...lines.map((l) => l.length)) * approxCharW;
+                const boxW = maxLineW + padX * 2;
+                const boxH = totalTextH + padTop + padBot;
+                const boxY = -totalTextH / 2 - padTop;
                 return (
-                  <text
-                    textAnchor="middle"
-                    fill="rgba(255,255,255,0.85)"
-                    fontSize={fs}
-                    fontWeight={isSelected ? 700 : 400}
-                    pointerEvents="none"
-                  >
-                    {lines.map((line, i) => (
-                      <tspan key={i} x={0} y={baseY + i * lineHeight}>{line}</tspan>
-                    ))}
-                  </text>
+                  <g pointerEvents="none" className="node-label" style={{ opacity: 0.6, transition: 'opacity 250ms ease' }}>
+                    <rect
+                      x={-boxW / 2}
+                      y={boxY}
+                      width={boxW}
+                      height={boxH}
+                      rx={4}
+                      fill="rgba(0,0,0,0.55)"
+                    />
+                    <text
+                      textAnchor="middle"
+                      dominantBaseline="central"
+                      fill="rgba(255,255,255,0.95)"
+                      fontSize={fs}
+                      fontWeight={700}
+                      fontFamily="'Cinzel', 'Palatino Linotype', 'Book Antiqua', serif"
+                      letterSpacing={0.5}
+                      filter="url(#text-shadow)"
+                    >
+                      {lines.map((line, i) => (
+                        <tspan
+                          key={i}
+                          x={0}
+                          dy={i === 0 ? 0 : lineHeight}
+                          y={i === 0 ? (boxY + boxH / 2 - (lines.length - 1) * lineHeight / 2) : undefined}
+                        >
+                          {line}
+                        </tspan>
+                      ))}
+                    </text>
+                  </g>
                 );
               })()}
 
               {locOccupants.map((occ, i) => {
                 const angle = (2 * Math.PI * i) / Math.max(locOccupants.length, 1) - Math.PI / 2;
                 const isPlayer = occ.type === 'player';
-                const dotR = isPlayer ? 10 : 8;
-                const color = isPlayer ? '#22d3ee' : '#f472b6';
+                const dotR = isPlayer ? 12 : 10;
+                const color = isPlayer ? '#22d3ee' : '#d4d4d8';
                 const spriteHref = occupantSpriteMap[occ.id];
-                const tokenPx = isPlayer ? 36 : 32;
-                const orbitR = imgR + 3 + tokenPx / 2;
+                const tokenPx = isPlayer ? 44 : 40;
+                const orbitR = imgR * 0.35 + tokenPx / 2;
                 const ox = Math.cos(angle) * orbitR;
                 const oy = Math.sin(angle) * orbitR;
-                const labelY = (spriteHref ? tokenPx / 2 : dotR) + 8;
+                const labelY = (spriteHref ? tokenPx / 2 : dotR) + 10;
                 return (
-                  <g key={occ.id} transform={`translate(${ox},${oy})`}>
+                  <g key={occ.id} transform={`translate(${ox},${oy})`} className="npc-token" style={{ cursor: 'pointer' }}>
                     {spriteHref ? (
-                      <image
-                        href={spriteHref}
-                        x={-tokenPx / 2}
-                        y={-tokenPx / 2}
-                        width={tokenPx}
-                        height={tokenPx}
-                        style={{ imageRendering: 'pixelated' }}
-                      />
+                      <>
+                        <rect
+                          className="npc-token-border"
+                          x={-tokenPx / 2 - 2}
+                          y={-tokenPx / 2 - 2}
+                          width={tokenPx + 4}
+                          height={tokenPx + 4}
+                          rx={3}
+                          fill="none"
+                          stroke={color}
+                          strokeWidth={1.5}
+                          opacity={0}
+                          style={{ transition: 'opacity 200ms ease' }}
+                        />
+                        <image
+                          href={spriteHref}
+                          x={-tokenPx / 2}
+                          y={-tokenPx / 2}
+                          width={tokenPx}
+                          height={tokenPx}
+                          style={{ imageRendering: 'pixelated' }}
+                        />
+                      </>
                     ) : (
                       <circle r={dotR} fill={color} stroke="rgba(0,0,0,0.5)" strokeWidth={0.8} />
                     )}
@@ -495,17 +618,33 @@ export default function GraphCanvas({
                       y={labelY}
                       textAnchor="middle"
                       fill={color}
-                      fontSize={7}
+                      fontSize={9}
                       fontWeight={500}
                       pointerEvents="none"
                       opacity={0.9}
                     >
-                      {truncate(occ.name, 10)}
+                      {truncate(occ.name, 12)}
                     </text>
                   </g>
                 );
               })}
             </g>
+          );
+        })}
+
+        {edgesOnTop && edges.map((edge) => {
+          const fromPos = getNodePos(edge.fromId);
+          const toPos = getNodePos(edge.toId);
+          if (!fromPos || !toPos) return null;
+          return (
+            <EdgeRenderer
+              key={edge.id}
+              edge={edge}
+              fromPos={fromPos}
+              toPos={toPos}
+              isSelected={selected?.type === 'edge' && selected.id === edge.id}
+              onSelect={onSelect}
+            />
           );
         })}
       </g>
@@ -545,12 +684,14 @@ export default function GraphCanvas({
     </div>
     </div>
   );
-}
+})
 
 function EdgeRenderer({ edge, fromPos, toPos, isSelected, onSelect }) {
+  const [hovered, setHovered] = useState(false);
   const vis = getEdgeVisual(edge.category, edge.metadata, edge.edgeType);
   const opacity = vis.opacity ?? 0.7;
-  const w = isSelected ? vis.width + 1.5 : vis.width;
+  const groupOpacity = isSelected ? 1 : hovered ? 0.85 : 0.35;
+  const w = isSelected ? vis.width + 3 : vis.width;
   const handleClick = (e) => { e.stopPropagation(); onSelect({ type: 'edge', id: edge.id }); };
 
   const hitTarget = (
@@ -558,14 +699,24 @@ function EdgeRenderer({ edge, fromPos, toPos, isSelected, onSelect }) {
       x1={fromPos.x} y1={fromPos.y} x2={toPos.x} y2={toPos.y}
       stroke="transparent" strokeWidth={Math.max(vis.width + 8, 12)}
       style={{ cursor: 'pointer' }} onClick={handleClick}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
     />
   );
 
   const selGlow = isSelected ? (
-    <line
-      x1={fromPos.x} y1={fromPos.y} x2={toPos.x} y2={toPos.y}
-      stroke="#fbbf24" strokeWidth={vis.width + 4} opacity={0.3} pointerEvents="none"
-    />
+    <>
+      <line
+        x1={fromPos.x} y1={fromPos.y} x2={toPos.x} y2={toPos.y}
+        stroke="#fbbf24" strokeWidth={vis.width + 10} opacity={0.25} pointerEvents="none"
+        strokeLinecap="round"
+      />
+      <line
+        x1={fromPos.x} y1={fromPos.y} x2={toPos.x} y2={toPos.y}
+        stroke="#fbbf24" strokeWidth={vis.width + 5} opacity={0.5} pointerEvents="none"
+        strokeLinecap="round"
+      />
+    </>
   ) : null;
 
   const arrow = !edge.bidirectional ? (
@@ -704,7 +855,7 @@ function EdgeRenderer({ edge, fromPos, toPos, isSelected, onSelect }) {
   }
 
   return (
-    <g>
+    <g style={{ opacity: groupOpacity, transition: 'opacity 150ms ease' }}>
       {selGlow}
       {hitTarget}
       {visual}

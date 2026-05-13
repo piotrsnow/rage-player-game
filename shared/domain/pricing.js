@@ -3,22 +3,16 @@
  * Used by frontend engines (tradeEngine, craftingEngine, alchemyEngine)
  * and backend (equipment pricing).
  *
- * Currency: 1 Gold Crown (GC) = 10 Silver Shillings (SS) = 100 Copper Pennies (CP)
+ * Currency: 1 ZK = 20 SK = 240 MK, 1 SK = 12 MK.
  */
+
+import { moneyToCopper, normalizeCoins, formatMoney } from './currency.js';
+
+export { normalizeCoins };
 
 /** Convert a { gold, silver, copper } object to total copper. */
 export function priceToCopper(price) {
-  return (price.gold || 0) * 100 + (price.silver || 0) * 10 + (price.copper || 0);
-}
-
-/** Convert total copper back to normalized { gold, silver, copper }. */
-export function normalizeCoins(copperTotal) {
-  let cp = Math.max(0, Math.round(copperTotal));
-  const gold = Math.floor(cp / 100);
-  cp %= 100;
-  const silver = Math.floor(cp / 10);
-  cp %= 10;
-  return { gold, silver, copper: cp };
+  return moneyToCopper(price);
 }
 
 /**
@@ -34,13 +28,9 @@ export function calculatePrice(item, reputationModifier = 0, locationModifier = 
   return normalizeCoins(Math.round(base * repFactor * locFactor));
 }
 
-/** Format a price object as human-readable string: "2 GC 3 SS 5 CP" */
+/** Format a price object as human-readable string, e.g. "2 ZK 3 SK 5 MK". */
 export function formatCoinPrice(price) {
-  const parts = [];
-  if (price.gold) parts.push(`${price.gold} GC`);
-  if (price.silver) parts.push(`${price.silver} SS`);
-  if (price.copper) parts.push(`${price.copper} CP`);
-  return parts.length ? parts.join(' ') : '0 CP';
+  return formatMoney(price);
 }
 
 /** Subtract price from money, returning new money (clamped to 0). */
@@ -63,7 +53,7 @@ export function canAfford(money, price) {
 export function applyDiscount(price, discountPercent) {
   const base = priceToCopper(price);
   const discounted = Math.round(base * (1 - discountPercent / 100));
-  return normalizeCoins(Math.max(1, discounted)); // minimum 1 CP
+  return normalizeCoins(Math.max(1, discounted)); // minimum 1 MK
 }
 
 /** Location modifier constants. */

@@ -76,6 +76,8 @@ export default function ActionPanel({
   onOpenTravelMap = null,
   onRegenerateActions = null,
   isRegeneratingActions = false,
+  stickyTone = null,
+  onStickyTone = null,
 }) {
   const [customAction, setCustomAction] = useState('');
   const [combatPickerOpen, setCombatPickerOpen] = useState(false);
@@ -444,8 +446,8 @@ export default function ActionPanel({
                   onPointerUp={handleLongPressUpOrLeave}
                   onPointerLeave={handleLongPressUpOrLeave}
                   onContextMenu={(e) => e.preventDefault()}
-                  disabled={disabled || hasPendingAction}
-                  className="relative overflow-hidden flex-1 text-left px-4 py-3.5 min-h-[3.5rem] bg-surface-container-high/40 hover:bg-surface-container-high border border-outline-variant/15 hover:border-primary/30 rounded-sm transition-all duration-300 group disabled:opacity-50 disabled:pointer-events-none hover:translate-y-[-1px] hover:shadow-[0_4px_16px_rgba(0,0,0,0.3)]"
+                  disabled={disabled || hasPendingAction || isRegeneratingActions}
+                  className={`relative overflow-hidden flex-1 text-left px-4 py-3.5 min-h-[3.5rem] bg-surface-container-high/40 hover:bg-surface-container-high border border-outline-variant/15 hover:border-primary/30 rounded-sm transition-all duration-300 group disabled:opacity-50 disabled:pointer-events-none hover:translate-y-[-1px] hover:shadow-[0_4px_16px_rgba(0,0,0,0.3)] ${isRegeneratingActions ? 'animate-pulse' : ''}`}
                 >
                   <div
                     className="absolute inset-0 bg-primary/15 pointer-events-none origin-left"
@@ -456,9 +458,11 @@ export default function ActionPanel({
                   />
                   <div className="relative flex items-center gap-3.5">
                     <span className="w-7 h-7 shrink-0 flex items-center justify-center rounded-full bg-gradient-to-br from-primary-dim/20 to-primary/10 text-primary font-headline text-base leading-none border border-primary/15 group-hover:border-primary/30 group-hover:shadow-[0_0_8px_rgba(197,154,255,0.2)] transition-all">
-                      {i + 1}
+                      {isRegeneratingActions
+                        ? <span className="material-symbols-outlined text-sm animate-spin">progress_activity</span>
+                        : i + 1}
                     </span>
-                    <p className="text-base font-medium text-on-surface-variant group-hover:text-on-surface transition-colors leading-snug line-clamp-2">
+                    <p className={`text-base font-medium transition-colors leading-snug line-clamp-2 ${isRegeneratingActions ? 'text-on-surface-variant/50' : 'text-on-surface-variant group-hover:text-on-surface'}`}>
                       {action}
                     </p>
                   </div>
@@ -630,6 +634,8 @@ export default function ActionPanel({
             onForceRollRight={handleForceRollRight}
             onRegenerateActions={onRegenerateActions}
             isRegeneratingActions={isRegeneratingActions}
+            stickyTone={stickyTone}
+            onStickyTone={onStickyTone}
           />
           <CustomActionForm
             inputRef={inputRef}

@@ -1,4 +1,5 @@
 import { normalizeMultiplayerStateChanges } from '../../../shared/contracts/multiplayer.js';
+import { normalizeCoins } from '../../../shared/domain/currency.js';
 import {
   STATE_CHANGE_LIMITS,
   clamp,
@@ -66,16 +67,17 @@ export function validateMultiplayerStateChanges(stateChanges, gameState, config 
       if (charDelta.moneyChange) {
         const gain = moneyToCopper(charDelta.moneyChange);
         if (gain > limits.maxMoneyGainCopper) {
-          allWarnings.push(`${charName}: large money gain ${gain} CP (limit: ${limits.maxMoneyGainCopper})`);
+          allWarnings.push(`${charName}: large money gain ${gain} MK (limit: ${limits.maxMoneyGainCopper})`);
         }
         if (character.money && gain < 0) {
           const currentCopper = moneyToCopper(character.money);
           if (currentCopper + gain < 0) {
-            allCorrections.push(`${charName}: money spending clamped — tried ${Math.abs(gain)} CP but only has ${currentCopper} CP`);
+            allCorrections.push(`${charName}: money spending clamped — tried ${Math.abs(gain)} MK but only has ${currentCopper} MK`);
+            const allMoney = normalizeCoins(currentCopper);
             charDelta.moneyChange = {
-              gold: -Math.floor(currentCopper / 100),
-              silver: -Math.floor((currentCopper % 100) / 10),
-              copper: -(currentCopper % 10),
+              gold: -(allMoney.gold || 0),
+              silver: -(allMoney.silver || 0),
+              copper: -(allMoney.copper || 0),
             };
           }
         }

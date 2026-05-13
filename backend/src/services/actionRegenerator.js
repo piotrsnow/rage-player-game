@@ -3,6 +3,7 @@ import { callAIJson, parseJsonOrNull } from './aiJsonCall.js';
 const VALID_TONES = [
   'thoughtful', 'bold', 'stupid', 'aggressive',
   'neutral', 'conciliatory', 'sleazy', 'empathetic',
+  'absurd', 'zingers',
 ];
 
 const TONE_DESCRIPTIONS = {
@@ -14,6 +15,8 @@ const TONE_DESCRIPTIONS = {
   conciliatory: 'ugodowe — dyplomatyczne, łagodzące napięcia, szukające kompromisu',
   sleazy:       'obrzydliwe — dwuznaczne, nieprzyzwoite, prowokujące obrzydliwie',
   empathetic:   'empatyczne — współczujące, troskliwe, wczuwające się w emocje innych',
+  absurd:       'absurdalne — surrealistyczne, nonsensowne, łamiące czwartą ścianę, dziwaczne',
+  zingers:      'wiązanki — same cięte dialogi, riposty, błyskotliwe odzywki, ostre wymiany zdań',
 };
 
 function buildSystemPrompt() {

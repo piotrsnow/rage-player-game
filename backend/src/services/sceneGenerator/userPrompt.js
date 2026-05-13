@@ -61,7 +61,7 @@ Include stateChanges: timeAdvance, currentLocation, npcs (introduce at least 1),
   const isTruce = isPostCombat && playerAction.includes('forced a truce');
   const isPostCombatDefeat = isPostCombat && (playerAction.includes('LOST') || playerAction.includes('did NOT win'));
   const isGeneralCombatInitiation = playerAction?.startsWith('[INITIATE COMBAT]');
-  const isBeerDuelInitiation = playerAction?.startsWith('[INITIATE BEER DUEL]');
+  const isBeerDuelInitiation = playerAction?.startsWith('[INITIATE BEER DUEL');
   const beerDuelNpcNameMatch = playerAction?.match(/^\[INITIATE BEER DUEL:\s*(.+?)\]$/);
   const attackNpcMatch = playerAction?.match(/^\[ATTACK:\s*(.+?)\]$/);
   const talkNpcMatch = playerAction?.match(/^\[TALK:\s*(.+?)\]$/);

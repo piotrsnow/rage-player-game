@@ -1,6 +1,6 @@
 /**
  * RPGon equipment catalog — shop items with pricing and availability.
- * Currency: 1 Gold Crown (GC) = 10 Silver Shillings (SS) = 100 Copper Pennies (CP)
+ * Currency: 1 ZK = 20 SK = 240 MK, 1 SK = 12 MK.
  */
 
 export const EQUIPMENT_CATEGORIES = {
