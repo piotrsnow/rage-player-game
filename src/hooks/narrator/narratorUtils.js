@@ -25,6 +25,18 @@ export const STREAMING_POLL_MS = 120;
 export const MAX_NATURAL_PLAYBACK_RATE = 2;
 export const MAX_FAST_FORWARD_PLAYBACK_RATE = 5;
 
+/** Discrete TTS speed boosts (user «fast forward» control, persisted in settings). */
+export const NARRATION_PLAYBACK_BOOST_STEPS = [1, 1.25, 1.5, 2];
+const NARRATION_BOOST_MATCH_EPS = 0.06;
+
+/** Returns nearest allowed step, or `1` when unknown / invalid. */
+export function clampNarrationPlaybackBoost(value) {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return 1;
+  const hit = NARRATION_PLAYBACK_BOOST_STEPS.find((s) => Math.abs(s - n) < NARRATION_BOOST_MATCH_EPS);
+  return hit ?? 1;
+}
+
 export function clampRate(value, min = 0.5, max = 2) {
   return Math.max(min, Math.min(max, value));
 }

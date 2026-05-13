@@ -1,6 +1,7 @@
 import { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { getAiTaskDefaultTier } from '../../shared/domain/aiTaskCategories.js';
+import { clampNarrationPlaybackBoost } from '../hooks/narrator/narratorUtils.js';
 import { storage } from '../services/storage';
 import { apiClient } from '../services/apiClient';
 import { gameData } from '../services/gameDataService';
@@ -101,6 +102,8 @@ function mergeSettingsWithDefaults(source) {
     merged.sceneImageTier = 'none';
   }
 
+  merged.narrationPlaybackBoost = clampNarrationPlaybackBoost(merged.narrationPlaybackBoost);
+
   return merged;
 }
 
@@ -133,6 +136,8 @@ const defaultSettings = {
   narratorEnabled: false,
   narratorAutoPlay: true,
   dialogueSpeed: 100,
+  /** TTS narrator speed boost (1 / 1.25 / 1.5 / 2); synced with account like dialogueSpeed. */
+  narrationPlaybackBoost: 1,
   canvasEffectsEnabled: true,
   itemImagesEnabled: true,
   effectIntensity: 'medium',

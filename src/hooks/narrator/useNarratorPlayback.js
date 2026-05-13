@@ -8,20 +8,21 @@ import {
   CHARS_PER_SECOND_ESTIMATE,
   MAX_FAST_FORWARD_PLAYBACK_RATE,
   clampRate,
+  NARRATION_PLAYBACK_BOOST_STEPS,
+  clampNarrationPlaybackBoost,
 } from './narratorUtils';
 
-const FAST_FORWARD_HOLD_START_MULTIPLIER = 1.5;
-const FAST_FORWARD_HOLD_MAX_MULTIPLIER = 5;
-const FAST_FORWARD_HOLD_RAMP_MS = 2200;
+const SPEED_STEP_EPS = 0.06;
 const HIGHLIGHT_LEAD_SECONDS = 0.06;
 const HIGHLIGHT_SCALE_MIN = 0.85;
 const HIGHLIGHT_SCALE_MAX = 1.2;
 
-export function useNarratorPlayback({ settings, perVoiceVolumes, dispatch, viewerMode, coordinatorSessionRef }) {
+export function useNarratorPlayback({ settings, updateSettings, perVoiceVolumes, dispatch, viewerMode, coordinatorSessionRef }) {
+  const persistedBoost = clampNarrationPlaybackBoost(settings?.narrationPlaybackBoost);
   const [playbackState, setPlaybackStateRaw] = useState(STATES.IDLE);
   const [highlightInfo, setHighlightInfo] = useState(null);
   const [currentChunk, setCurrentChunk] = useState(null);
-  const [narrationFastForwardRate, setNarrationFastForwardRate] = useState(1);
+  const [narrationFastForwardRate, setNarrationFastForwardRate] = useState(persistedBoost);
   const [narrationSecondsRemaining, setNarrationSecondsRemaining] = useState(0);
 
   const audioRef = useRef(null);
@@ -29,11 +30,7 @@ export function useNarratorPlayback({ settings, perVoiceVolumes, dispatch, viewe
   const highlightRafRef = useRef(null);
   const skipSegmentRef = useRef(false);
   const naturalPlaybackRateRef = useRef(1);
-  const narrationFastForwardRateRef = useRef(1);
-  const holdActiveRef = useRef(false);
-  const [isHoldActive, setIsHoldActive] = useState(false);
-  const holdStartAtRef = useRef(0);
-  const holdRafRef = useRef(null);
+  const narrationFastForwardRateRef = useRef(persistedBoost);
   const remainingTextCharsRef = useRef(0);
 
   const setPlaybackState = useCallback((nextState) => {
@@ -53,48 +50,22 @@ export function useNarratorPlayback({ settings, perVoiceVolumes, dispatch, viewe
     audio.playbackRate = clampRate(natural * boost, 0.5, MAX_FAST_FORWARD_PLAYBACK_RATE);
   }, []);
 
-  const stopHoldLoop = useCallback(() => {
-    if (holdRafRef.current) {
-      cancelAnimationFrame(holdRafRef.current);
-      holdRafRef.current = null;
-    }
-  }, []);
-
-  const computeHoldMultiplier = useCallback(() => {
-    const elapsed = Math.max(0, performance.now() - holdStartAtRef.current);
-    const progress = Math.min(1, elapsed / FAST_FORWARD_HOLD_RAMP_MS);
-    return FAST_FORWARD_HOLD_START_MULTIPLIER
-      + (FAST_FORWARD_HOLD_MAX_MULTIPLIER - FAST_FORWARD_HOLD_START_MULTIPLIER) * progress;
-  }, []);
-
-  const startNarrationFastForwardHold = useCallback(() => {
-    if (holdActiveRef.current) return;
-    holdActiveRef.current = true;
-    setIsHoldActive(true);
-    holdStartAtRef.current = performance.now();
-    narrationFastForwardRateRef.current = FAST_FORWARD_HOLD_START_MULTIPLIER;
-    setNarrationFastForwardRate(FAST_FORWARD_HOLD_START_MULTIPLIER);
+  useEffect(() => {
+    narrationFastForwardRateRef.current = persistedBoost;
+    setNarrationFastForwardRate(persistedBoost);
     applyPlaybackRate();
+  }, [persistedBoost, applyPlaybackRate]);
 
-    const tick = () => {
-      if (!holdActiveRef.current) return;
-      const nextMultiplier = computeHoldMultiplier();
-      narrationFastForwardRateRef.current = nextMultiplier;
-      setNarrationFastForwardRate(nextMultiplier);
-      applyPlaybackRate();
-      holdRafRef.current = requestAnimationFrame(tick);
-    };
-    holdRafRef.current = requestAnimationFrame(tick);
-  }, [applyPlaybackRate, computeHoldMultiplier]);
-
-  const stopNarrationFastForwardHold = useCallback(() => {
-    holdActiveRef.current = false;
-    setIsHoldActive(false);
-    stopHoldLoop();
-    narrationFastForwardRateRef.current = 1;
-    setNarrationFastForwardRate(1);
+  const cycleNarrationPlaybackSpeed = useCallback(() => {
+    const cur = narrationFastForwardRateRef.current || 1;
+    let idx = NARRATION_PLAYBACK_BOOST_STEPS.findIndex((s) => Math.abs(s - cur) < SPEED_STEP_EPS);
+    if (idx < 0) idx = 0;
+    const next = NARRATION_PLAYBACK_BOOST_STEPS[(idx + 1) % NARRATION_PLAYBACK_BOOST_STEPS.length];
+    narrationFastForwardRateRef.current = next;
+    setNarrationFastForwardRate(next);
     applyPlaybackRate();
-  }, [applyPlaybackRate, stopHoldLoop]);
+    updateSettings({ narrationPlaybackBoost: next });
+  }, [applyPlaybackRate, updateSettings]);
 
   const stopHighlightLoop = useCallback(() => {
     if (highlightRafRef.current) {
@@ -200,9 +171,6 @@ export function useNarratorPlayback({ settings, perVoiceVolumes, dispatch, viewe
 
   const cleanup = useCallback(() => {
     stopHighlightLoop();
-    stopHoldLoop();
-    holdActiveRef.current = false;
-    setIsHoldActive(false);
     if (audioRef.current) {
       const a = audioRef.current;
       audioRef.current = null;
@@ -212,7 +180,7 @@ export function useNarratorPlayback({ settings, perVoiceVolumes, dispatch, viewe
     }
     objectUrlsRef.current.forEach((url) => URL.revokeObjectURL(url));
     objectUrlsRef.current = [];
-  }, [stopHighlightLoop, stopHoldLoop]);
+  }, [stopHighlightLoop]);
 
   const pause = useCallback(() => {
     if (audioRef.current && playbackState === STATES.PLAYING) {
@@ -269,12 +237,10 @@ export function useNarratorPlayback({ settings, perVoiceVolumes, dispatch, viewe
     narrationSecondsRemaining,
     setNarrationSecondsRemaining,
     narrationFastForwardRate,
-    isNarrationFastForwardHolding: isHoldActive,
     startHighlightLoop,
     stopHighlightLoop,
     applyPlaybackRate,
-    startNarrationFastForwardHold,
-    stopNarrationFastForwardHold,
+    cycleNarrationPlaybackSpeed,
     pause,
     resume,
     skipSegment,

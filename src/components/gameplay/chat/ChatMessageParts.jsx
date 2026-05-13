@@ -1,3 +1,4 @@
+import { useEffect, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import { splitTextForHighlight } from '../../../services/elevenlabs';
 import { getDialogueSpeakerLabel } from '../../../services/dialogueSegments';
@@ -6,6 +7,7 @@ import { GenderIcon } from '../../../utils/genderIcon';
 import Tooltip from '../../ui/Tooltip';
 import NpcSpeakerChip from './NpcSpeakerChip';
 import { NarrableText } from '../../ui/NarrableText';
+import { getPendingAutoPlayId, clearPendingAutoPlayId } from '../../../hooks/useChatAutoNarration';
 
 /**
  * Look up the full NPC row for a dialogue speaker. Case-insensitive match
@@ -211,8 +213,7 @@ export function NarratorHeaderButtons({ message, narrator, activeAccentClass, id
     speakSingle,
     pause,
     resume,
-    startNarrationFastForwardHold,
-    stopNarrationFastForwardHold,
+    cycleNarrationPlaybackSpeed,
     narrationFastForwardRate,
     STATES,
   } = narrator || {};
@@ -225,7 +226,7 @@ export function NarratorHeaderButtons({ message, narrator, activeAccentClass, id
     playbackState === STATES?.PLAYING || playbackState === STATES?.PAUSED || playbackState === STATES?.LOADING
   );
 
-  const handleNarratorToggle = () => {
+  const handleNarratorToggle = useCallback(() => {
     if (isThisPlaying) {
       pause();
     } else if (isThisPaused) {
@@ -233,11 +234,21 @@ export function NarratorHeaderButtons({ message, narrator, activeAccentClass, id
     } else {
       speakSingle(message, message.id);
     }
-  };
+  }, [isThisPlaying, isThisPaused, pause, resume, speakSingle, message]);
+
+  useEffect(() => {
+    if (!isNarratorReady || !speakSingle) return;
+    if (getPendingAutoPlayId() === message.id) {
+      clearPendingAutoPlayId(message.id);
+      speakSingle(message, message.id);
+    }
+  }, [isNarratorReady, message, speakSingle]);
 
   if (!isNarratorReady) return null;
 
-  const ffRate = Number(narrationFastForwardRate) > 1 ? Number(narrationFastForwardRate) : 1;
+  const ffRate = Number.isFinite(Number(narrationFastForwardRate)) && Number(narrationFastForwardRate) > 0
+    ? Number(narrationFastForwardRate)
+    : 1;
   const ffActive = ffRate > 1.001;
   const ffRateLabel = ffRate.toFixed(2).replace(/\.?0+$/, '');
 
@@ -245,6 +256,7 @@ export function NarratorHeaderButtons({ message, narrator, activeAccentClass, id
     <div className="flex items-center gap-0.5 shrink-0">
       <button
         type="button"
+        data-narrator-play={message.id}
         onClick={handleNarratorToggle}
         className={`flex items-center justify-center w-7 h-7 rounded-md transition-colors ${
           isThisPlaying ? activeAccentClass : `text-on-surface-variant ${idleHoverClass}`
@@ -267,40 +279,9 @@ export function NarratorHeaderButtons({ message, narrator, activeAccentClass, id
         <Tooltip content={t('chat.narratorFastForwardTip', { rate: ffRateLabel })}>
           <button
             type="button"
-            onMouseDown={(e) => {
+            onClick={(e) => {
               e.stopPropagation();
-              startNarrationFastForwardHold?.();
-            }}
-            onMouseUp={(e) => {
-              e.stopPropagation();
-              stopNarrationFastForwardHold?.();
-            }}
-            onMouseLeave={() => {
-              stopNarrationFastForwardHold?.();
-            }}
-            onTouchStart={(e) => {
-              e.stopPropagation();
-              startNarrationFastForwardHold?.();
-            }}
-            onTouchEnd={(e) => {
-              e.stopPropagation();
-              stopNarrationFastForwardHold?.();
-            }}
-            onTouchCancel={() => {
-              stopNarrationFastForwardHold?.();
-            }}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' || e.key === ' ') {
-                startNarrationFastForwardHold?.();
-              }
-            }}
-            onKeyUp={(e) => {
-              if (e.key === 'Enter' || e.key === ' ') {
-                stopNarrationFastForwardHold?.();
-              }
-            }}
-            onBlur={() => {
-              stopNarrationFastForwardHold?.();
+              cycleNarrationPlaybackSpeed?.();
             }}
             className={`flex items-center justify-center w-7 h-7 rounded-md transition-colors ${
               ffActive ? activeAccentClass : `text-on-surface-variant ${idleHoverClass}`

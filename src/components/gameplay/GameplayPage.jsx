@@ -526,15 +526,18 @@ export default function GameplayPage({ readOnly = false, shareToken = null, onRe
     : 1;
   const overlayHoldOpen = isPlayerActionOverlayActive && isGeneratingScene;
   const overlayHoldingDurationMs = isPlayerActionOverlayActive ? 800 : 1500;
-  // Trigger: first TTS audio file ready to play (canplay → audio.play() in
-  // playAudioWithBuffer flips playbackState to PLAYING). Applies to all
-  // overlay variants (player action / scene navigation / autoPlayer).
-  // Auto fast-finish only when the full LLM response is complete (not on
-  // first streaming chunk) — the typewriter plays at natural speed while the
-  // LLM streams, and snaps to done once the backend confirms completion.
+  // Scene navigation + auto-player: fast-finish when TTS reaches PLAYING or
+  // the SSE `complete` event fires — keeps typewriter aligned with narration.
+  // Player-action overlay: never auto fast-finish on those signals; tying
+  // streamComplete/PLAYING here dismissed the "your action" typewriter right
+  // after the model finished (or when unrelated TTS flipped), which felt like
+  // an accidental click. Manual skip still uses TypewriterActionOverlay's
+  // manualFastFinish when canManuallySkip allows it.
   const ttsReady = narrator.playbackState === narrator.STATES.PLAYING;
   const llmResponded = streamComplete;
-  const overlayFastFinish = ttsReady || llmResponded;
+  const overlayFastFinish = isPlayerActionOverlayActive
+    ? false
+    : (ttsReady || llmResponded);
   // Manual click-to-skip is allowed once the LLM has started responding (or
   // TTS is already preparing/playing), or when dice is actively rolling —
   // clicking before that is ignored.
@@ -1158,11 +1161,10 @@ export default function GameplayPage({ readOnly = false, shareToken = null, onRe
           onRetryStream={retryAfterStreamError}
           onDismissStreamError={dismissStreamError}
           narrator={settings.narratorEnabled ? narrator : null}
-          // Do not gate on `overlayText`: the player-action typewriter often lacks
-          // fastFinish (streamComplete is cleared in clearStreamingOutput before paint),
-          // so tying auto-narration to the overlay blocks TTS until typing finishes
-          // or can stall edge cases. Narrator is already stopped when the overlay mounts
-          // on submit; new DM audio can overlap the tail of the typewriter safely.
+          // Do not gate on `overlayText`: player-action typewriter does not auto
+          // fast-finish on streamComplete/TTS, so tying auto-narration to the overlay
+          // would block TTS until typing ends. Narrator is already stopped when the
+          // overlay mounts on submit; new DM audio can overlap the tail of the typewriter.
           autoPlay={!readOnly && settings.narratorEnabled && settings.narratorAutoPlay}
           myOdId={isMultiplayer ? mp.state.myOdId : null}
           momentumBonus={isMultiplayer

@@ -175,12 +175,20 @@ export const QuickBeatMessage = memo(function QuickBeatMessage({ message, narrat
 
   return (
     <div className="flex flex-col gap-2 animate-fade-in">
-      <div className="text-[10px] font-bold text-primary uppercase tracking-widest flex items-center gap-1.5">
-        <span className="material-symbols-outlined text-[11px] leading-none text-amber-300/70">flash_on</span>
-        <span className="truncate">
-          {t('chat.quickBeatDm', { defaultValue: 'Mała akcja · DM' })}
-          {' · '}{formatTimestamp(message.timestamp)}
+      <div className="text-[10px] font-bold text-primary uppercase tracking-widest flex items-center justify-between gap-2 min-w-0">
+        <span className="flex items-center gap-1.5 truncate">
+          <span className="material-symbols-outlined text-[11px] leading-none text-amber-300/70">flash_on</span>
+          <span className="truncate">
+            {t('chat.quickBeatDm', { defaultValue: 'Mała akcja · DM' })}
+            {' · '}{formatTimestamp(message.timestamp)}
+          </span>
         </span>
+        <NarratorHeaderButtons
+          message={message}
+          narrator={narrator}
+          activeAccentClass="text-primary"
+          idleHoverClass="hover:text-primary"
+        />
       </div>
       <div className="glass-panel p-3 border-l-2 border-amber-400/40 rounded-r-lg space-y-3 bg-amber-400/[0.06] hover:border-amber-400/60 transition-colors duration-300">
         <div className="min-w-0 flex-1">
