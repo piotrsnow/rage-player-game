@@ -50,14 +50,23 @@ export async function publicCampaignRoutes(fastify) {
     ]);
 
     const campaignIds = campaigns.map((c) => c.id);
-    const [sceneCounts, charIdsByCampaign] = await Promise.all([
+    const [sceneCounts, charIdsByCampaign, coverImages] = await Promise.all([
       prisma.campaignScene.groupBy({
         by: ['campaignId', 'sceneIndex'],
         where: { campaignId: { in: campaignIds } },
       }),
       getCharacterIdsForCampaigns(campaignIds),
+      Promise.all(campaignIds.map(async (cId) => {
+        const scene = await prisma.campaignScene.findFirst({
+          where: { campaignId: cId, imageUrl: { not: null } },
+          orderBy: { sceneIndex: 'asc' },
+          select: { imageUrl: true },
+        });
+        return [cId, scene?.imageUrl || null];
+      })),
     ]);
     const sceneCountMap = buildDistinctSceneCountMap(sceneCounts);
+    const coverImageMap = new Map(coverImages);
 
     const firstCharIds = [...new Set(
       [...charIdsByCampaign.values()].map((ids) => ids[0]).filter(Boolean),
@@ -91,6 +100,7 @@ export async function publicCampaignRoutes(fastify) {
           characterSpecies: firstChar?.species || '',
           characterLevel: firstChar?.characterLevel || 1,
           characterPortraitUrl: firstChar?.portraitUrl || '',
+          coverImageUrl: coverImageMap.get(c.id) || null,
         };
       }),
       total,
