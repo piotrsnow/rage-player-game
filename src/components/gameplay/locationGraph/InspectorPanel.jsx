@@ -81,12 +81,12 @@ function NodeInspector({ node, occupants = [], onUpdate, onDelete, mode, campaig
   const [saveError, setSaveError] = useState(null);
 
   const handleField = useCallback((field, value) => {
-    if (readOnly) return;
+    if (readOnly && !(worldMode && isAdmin)) return;
     setSaveError(null);
     onUpdate(node.id, { [field]: value }).catch((err) => {
       setSaveError(err.message || t('locationGraph.inspector.saveFailed', { defaultValue: 'Zapis nie powiódł się' }));
     });
-  }, [node.id, onUpdate, readOnly, t]);
+  }, [node.id, onUpdate, readOnly, worldMode, isAdmin, t]);
 
   const [localScale, setLocalScale] = useState(node.scale ?? 5);
   const scaleTimerRef = useRef(null);
@@ -185,7 +185,7 @@ function NodeInspector({ node, occupants = [], onUpdate, onDelete, mode, campaig
         title={t('locationGraph.inspector.sectionImage', { defaultValue: 'Obrazek' })}
         icon="image"
       >
-        <NodeImageSection node={node} campaignId={campaignId} onUpdate={handleField} isAdmin={isAdmin} readOnly={readOnly} />
+        <NodeImageSection node={node} campaignId={campaignId} worldMode={worldMode} onUpdate={handleField} isAdmin={isAdmin} readOnly={readOnly} />
       </CollapsibleSection>
 
       {occupants.length > 0 && (
@@ -655,7 +655,7 @@ const PROVIDER_LABELS = {
   'sd-webui': 'SD-WebUI',
 };
 
-function NodeImageSection({ node, campaignId, onUpdate, isAdmin, readOnly = false }) {
+function NodeImageSection({ node, campaignId, worldMode = false, onUpdate, isAdmin, readOnly = false }) {
   const { t } = useTranslation();
   const { settings } = useSettings();
   const fileRef = useRef(null);
@@ -701,17 +701,27 @@ function NodeImageSection({ node, campaignId, onUpdate, isAdmin, readOnly = fals
     setGeneratingPixel(true);
     try {
       const body = customPrompt.trim() ? { prompt: customPrompt.trim() } : {};
-      const res = await apiClient.request(
-        `/livingWorld/campaigns/${campaignId}/location-graph/nodes/${node.id}/generate-sprite`,
-        { method: 'POST', body },
-      );
-      onUpdate('nodeImageUrl', res.nodeImageUrl);
+      let nodeImageUrl;
+      if (worldMode) {
+        const res = await apiClient.request(
+          `/admin/livingWorld/world-graph/nodes/${node.kind || 'world'}/${node.id}/generate-sprite`,
+          { method: 'POST', body },
+        );
+        nodeImageUrl = res.nodeImageUrl;
+      } else {
+        const res = await apiClient.request(
+          `/livingWorld/campaigns/${campaignId}/location-graph/nodes/${node.id}/generate-sprite`,
+          { method: 'POST', body },
+        );
+        nodeImageUrl = res.nodeImageUrl;
+      }
+      onUpdate('nodeImageUrl', nodeImageUrl);
     } catch (err) {
       console.error('Sprite generation failed', err);
     } finally {
       setGeneratingPixel(false);
     }
-  }, [campaignId, node.id, customPrompt, onUpdate]);
+  }, [campaignId, worldMode, node.id, node.kind, customPrompt, onUpdate]);
 
   const handleGenerateStandard = useCallback(async () => {
     if (!stdProvider) return;
@@ -720,27 +730,33 @@ function NodeImageSection({ node, campaignId, onUpdate, isAdmin, readOnly = fals
       const { imageService } = await import('../../../services/imageGen.js');
       const { url } = await imageService.generateNodeImage(node, {
         provider: stdProvider,
-        campaignId,
+        campaignId: campaignId || null,
         sdModel: stdProvider === 'sd-webui' ? (settings.sdWebuiModel || null) : null,
         customPrompt: customPrompt.trim() || null,
       });
       if (url) {
-        onUpdate('nodeImageUrl', url);
-        if (campaignId) {
+        if (worldMode) {
+          await apiClient.request(
+            `/admin/livingWorld/world-graph/nodes/${node.kind || 'world'}/${node.id}`,
+            { method: 'PATCH', body: { nodeImageUrl: url } },
+          );
+        } else if (campaignId) {
           await apiClient.request(
             `/livingWorld/campaigns/${campaignId}/location-graph/nodes/${node.id}`,
             { method: 'PUT', body: { nodeImageUrl: url } },
           ).catch(() => {});
         }
+        onUpdate('nodeImageUrl', url);
       }
     } catch (err) {
       console.error('Standard image generation failed', err);
     } finally {
       setGeneratingStd(false);
     }
-  }, [stdProvider, node, campaignId, customPrompt, onUpdate, settings.sdWebuiModel]);
+  }, [stdProvider, node, campaignId, worldMode, customPrompt, onUpdate, settings.sdWebuiModel]);
 
   const loadGallery = useCallback(async () => {
+    if (worldMode) { setGallery([]); return; }
     try {
       const res = await apiClient.request(
         `/livingWorld/campaigns/${campaignId}/location-graph/node-images`,
@@ -750,7 +766,7 @@ function NodeImageSection({ node, campaignId, onUpdate, isAdmin, readOnly = fals
       console.error('Failed to load gallery', err);
       setGallery([]);
     }
-  }, [campaignId]);
+  }, [campaignId, worldMode]);
 
   const openPicker = useCallback(() => {
     setShowPicker(true);
@@ -766,7 +782,7 @@ function NodeImageSection({ node, campaignId, onUpdate, isAdmin, readOnly = fals
             alt={node.name}
             className="max-w-[180px] w-full rounded-lg border border-outline-variant/15 bg-black/20"
           />
-          {isAdmin && !readOnly && (
+          {isAdmin && (
             <button
               type="button"
               onClick={() => onUpdate('nodeImageUrl', null)}
@@ -778,7 +794,7 @@ function NodeImageSection({ node, campaignId, onUpdate, isAdmin, readOnly = fals
         </div>
       )}
 
-      {!readOnly && (
+      {(!readOnly || isAdmin) && (
         <>
           <div className="flex gap-1.5 flex-wrap">
             {isAdmin && (

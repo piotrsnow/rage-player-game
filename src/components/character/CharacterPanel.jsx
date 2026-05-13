@@ -1126,7 +1126,7 @@ export default function CharacterPanel({
 
       {scenes && (
         <div className="mt-8 animate-fade-in">
-          <CharacterHistoryPanel scenes={scenes} t={t} />
+          <CharacterHistoryPanel scenes={scenes} character={character} campaign={campaign} t={t} />
         </div>
       )}
 

@@ -359,6 +359,42 @@ export const REGENERATE_ACTIONS_SCHEMA = {
   required: ['campaignId', 'tone'],
 };
 
+export const REPUTATION_NARRATIVE_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    character: {
+      type: 'object',
+      additionalProperties: true,
+      properties: {
+        name: { type: 'string', maxLength: 200 },
+        species: { type: 'string', maxLength: 100 },
+        gender: { type: 'string', maxLength: 40 },
+        level: { type: ['number', 'null'] },
+        attributes: { type: ['object', 'null'], additionalProperties: true },
+        topSkills: { type: ['array', 'null'], maxItems: 10 },
+        factions: { type: ['object', 'null'], additionalProperties: true },
+        backstory: { type: ['string', 'null'], maxLength: 2000 },
+        titles: { type: ['array', 'null'], maxItems: 20 },
+      },
+    },
+    campaignDigest: {
+      type: 'object',
+      additionalProperties: true,
+      properties: {
+        sceneCount: { type: ['number', 'null'] },
+        quests: { type: ['array', 'null'], maxItems: 30 },
+        recentActions: { type: ['array', 'null'], maxItems: 20 },
+        factionChanges: { type: ['array', 'null'], maxItems: 20 },
+      },
+    },
+    language: LANGUAGE_SCHEMA,
+    provider: PROVIDER_SCHEMA,
+    model: MODEL_SCHEMA,
+  },
+  required: ['character', 'campaignDigest'],
+};
+
 export const SCENE_IMAGE_PATCH_SCHEMA = {
   type: 'object',
   additionalProperties: false,

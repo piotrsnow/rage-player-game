@@ -1,14 +1,41 @@
-import { useState, useMemo } from 'react';
-import { buildHistorySummary, buildTimeline } from '../../services/characterHistory';
+import { useState, useMemo, useCallback } from 'react';
+import { buildHistorySummary, buildTimeline, buildReputationDigest } from '../../services/characterHistory';
+import { apiClient } from '../../services/apiClient';
 
 const TAB_SUMMARY = 'summary';
 const TAB_TIMELINE = 'timeline';
+const TAB_REPUTATION = 'reputation';
 
-export default function CharacterHistoryPanel({ scenes, t }) {
+export default function CharacterHistoryPanel({ scenes, character, campaign, t }) {
   const [tab, setTab] = useState(TAB_SUMMARY);
+  const [reputationText, setReputationText] = useState(null);
+  const [reputationLoading, setReputationLoading] = useState(false);
+  const [reputationError, setReputationError] = useState(null);
 
   const summary = useMemo(() => buildHistorySummary(scenes), [scenes]);
   const timeline = useMemo(() => buildTimeline(scenes), [scenes]);
+
+  const generateReputation = useCallback(async () => {
+    setReputationLoading(true);
+    setReputationError(null);
+    try {
+      const digest = buildReputationDigest(character, scenes, campaign);
+      const result = await apiClient.post('/ai/generate-reputation', {
+        ...digest,
+        language: 'pl',
+      });
+      const text = result?.reputation;
+      if (text) {
+        setReputationText(text);
+      } else {
+        setReputationError(t('character.reputationEmpty'));
+      }
+    } catch (err) {
+      setReputationError(err?.message || t('character.reputationEmpty'));
+    } finally {
+      setReputationLoading(false);
+    }
+  }, [character, scenes, campaign, t]);
 
   if (!scenes || scenes.length === 0) {
     return (
@@ -30,7 +57,7 @@ export default function CharacterHistoryPanel({ scenes, t }) {
           {t('character.history')}
         </h3>
         <div className="flex gap-1">
-          {[TAB_SUMMARY, TAB_TIMELINE].map((id) => (
+          {[TAB_SUMMARY, TAB_TIMELINE, TAB_REPUTATION].map((id) => (
             <button
               key={id}
               onClick={() => setTab(id)}
@@ -40,7 +67,11 @@ export default function CharacterHistoryPanel({ scenes, t }) {
                   : 'text-on-surface-variant border-outline-variant/15 hover:text-primary hover:border-primary/20'
               }`}
             >
-              {t(`character.history${id === TAB_SUMMARY ? 'Summary' : 'Timeline'}`)}
+              {id === TAB_SUMMARY
+                ? t('character.historySummary')
+                : id === TAB_TIMELINE
+                  ? t('character.historyTimeline')
+                  : t('character.historyReputation')}
             </button>
           ))}
         </div>
@@ -118,6 +149,65 @@ export default function CharacterHistoryPanel({ scenes, t }) {
           ))}
         </div>
       )}
+
+      {tab === TAB_REPUTATION && (
+        <ReputationTab
+          reputationText={reputationText}
+          reputationLoading={reputationLoading}
+          reputationError={reputationError}
+          onGenerate={generateReputation}
+          t={t}
+        />
+      )}
+    </div>
+  );
+}
+
+function ReputationTab({ reputationText, reputationLoading, reputationError, onGenerate, t }) {
+  if (reputationLoading) {
+    return (
+      <div className="flex flex-col items-center justify-center py-12 animate-fade-in gap-3">
+        <span className="material-symbols-outlined text-2xl text-primary animate-spin">progress_activity</span>
+        <p className="text-xs text-on-surface-variant">{t('character.reputationLoading')}</p>
+      </div>
+    );
+  }
+
+  if (reputationText) {
+    return (
+      <div className="space-y-4 animate-fade-in">
+        <div className="prose prose-sm prose-invert max-w-none">
+          {reputationText.split(/\n\n+/).map((paragraph, i) => (
+            <p key={i} className="text-sm text-on-surface-variant leading-relaxed">
+              {paragraph}
+            </p>
+          ))}
+        </div>
+        <button
+          onClick={onGenerate}
+          className="text-[10px] text-on-surface-variant/60 hover:text-primary underline underline-offset-2 transition-colors"
+        >
+          {t('character.reputationRegenerate')}
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex flex-col items-center justify-center py-8 animate-fade-in gap-4">
+      <span className="material-symbols-outlined text-3xl text-primary/40">forum</span>
+      <p className="text-xs text-on-surface-variant/70 text-center max-w-xs">
+        {t('character.reputationHint')}
+      </p>
+      {reputationError && (
+        <p className="text-xs text-error text-center">{reputationError}</p>
+      )}
+      <button
+        onClick={onGenerate}
+        className="px-4 py-2 text-xs font-label uppercase tracking-widest rounded-sm border border-primary/30 bg-primary/10 text-primary hover:bg-primary/20 transition-all"
+      >
+        {t('character.reputationGenerate')}
+      </button>
     </div>
   );
 }

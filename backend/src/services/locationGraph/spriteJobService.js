@@ -30,7 +30,7 @@ async function loadNodeRow(kind, id) {
   });
 }
 
-async function generateSpriteForNode(kind, nodeId) {
+export async function generateSpriteForNode(kind, nodeId) {
   const loc = await loadNodeRow(kind, nodeId);
   if (!loc) throw new Error(`Node ${kind}:${nodeId} not found`);
 

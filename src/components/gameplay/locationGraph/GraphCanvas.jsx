@@ -18,6 +18,15 @@ import { apiClient } from '../../../services/apiClient.js';
 const LAYOUT_W = GRAPH_LAYOUT_W;
 const LAYOUT_H = GRAPH_LAYOUT_H;
 const GRID_STEP = 40;
+const ANIM_DURATION_MS = 400;
+
+function easeInOutCubic(t) {
+  return t < 0.5 ? 4 * t * t * t : 1 - (-2 * t + 2) ** 3 / 2;
+}
+
+function lerp(a, b, t) {
+  return a + (b - a) * t;
+}
 
 export default forwardRef(function GraphCanvas({
   nodes, edges, occupants = [], selected, onSelect, onDoubleClickNode,
@@ -40,6 +49,44 @@ export default forwardRef(function GraphCanvas({
   const dragOffsetRef = useRef(null);
   const didDragRef = useRef(false);
   const [edgesOnTop, setEdgesOnTop] = useState(true);
+
+  const animRef = useRef(null);
+  const panRef = useRef(pan);
+  const zoomRef = useRef(zoom);
+  panRef.current = pan;
+  zoomRef.current = zoom;
+
+  const cancelAnim = useCallback(() => {
+    if (animRef.current) {
+      cancelAnimationFrame(animRef.current.raf);
+      animRef.current = null;
+    }
+  }, []);
+
+  useEffect(() => cancelAnim, [cancelAnim]);
+
+  const animateTo = useCallback((targetPan, targetZoom, duration = ANIM_DURATION_MS) => {
+    cancelAnim();
+    const startPan = { ...panRef.current };
+    const startZoom = zoomRef.current;
+    const startTime = performance.now();
+
+    const step = (now) => {
+      const elapsed = now - startTime;
+      const raw = Math.min(elapsed / duration, 1);
+      const t = easeInOutCubic(raw);
+      const curPan = { x: lerp(startPan.x, targetPan.x, t), y: lerp(startPan.y, targetPan.y, t) };
+      const curZoom = lerp(startZoom, targetZoom, t);
+      setPan(curPan);
+      setZoom(curZoom);
+      if (raw < 1) {
+        animRef.current = { raf: requestAnimationFrame(step) };
+      } else {
+        animRef.current = null;
+      }
+    };
+    animRef.current = { raf: requestAnimationFrame(step) };
+  }, [cancelAnim]);
 
   useEffect(() => {
     const onKey = (e) => {
@@ -146,15 +193,16 @@ export default forwardRef(function GraphCanvas({
 
   const handleWheel = useCallback((e) => {
     e.preventDefault();
+    cancelAnim();
     const factor = e.deltaY > 0 ? 0.9 : 1.1;
     applyZoom(factor);
-  }, [applyZoom]);
+  }, [applyZoom, cancelAnim]);
 
   const handleZoomIn = useCallback(() => applyZoom(1.5), [applyZoom]);
   const handleZoomOut = useCallback(() => applyZoom(0.8), [applyZoom]);
 
-  const handleFitToView = useCallback(() => {
-    if (positions.size === 0) return;
+  const computeFitToView = useCallback(() => {
+    if (positions.size === 0) return null;
     let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
     for (const pos of positions.values()) {
       if (pos.x < minX) minX = pos.x;
@@ -170,23 +218,28 @@ export default forwardRef(function GraphCanvas({
     const cy = (minY + maxY) / 2;
     const offsetX = (size.w - LAYOUT_W) / 2;
     const offsetY = (size.h - LAYOUT_H) / 2;
-    setPan({
-      x: size.w / 2 - cx * fitZoom - offsetX,
-      y: size.h / 2 - cy * fitZoom - offsetY,
-    });
-    setZoom(fitZoom);
+    return {
+      pan: { x: size.w / 2 - cx * fitZoom - offsetX, y: size.h / 2 - cy * fitZoom - offsetY },
+      zoom: fitZoom,
+    };
   }, [positions, size]);
+
+  const handleFitToView = useCallback(() => {
+    const target = computeFitToView();
+    if (!target) return;
+    animateTo(target.pan, target.zoom);
+  }, [computeFitToView, animateTo]);
 
   const handleCenterOnSelection = useCallback(() => {
     const focal = getSelectedFocal();
     if (!focal) return;
     const offsetX = (size.w - LAYOUT_W) / 2;
     const offsetY = (size.h - LAYOUT_H) / 2;
-    setPan({
+    animateTo({
       x: size.w / 2 - focal.x * zoom - offsetX,
       y: size.h / 2 - focal.y * zoom - offsetY,
-    });
-  }, [getSelectedFocal, zoom, size]);
+    }, zoom);
+  }, [getSelectedFocal, zoom, size, animateTo]);
 
   useImperativeHandle(ref, () => ({
     fitToView: handleFitToView,
@@ -196,19 +249,19 @@ export default forwardRef(function GraphCanvas({
       const offsetX = (size.w - LAYOUT_W) / 2;
       const offsetY = (size.h - LAYOUT_H) / 2;
       const targetZoom = 1.8;
-      setPan({
+      animateTo({
         x: size.w / 2 - pos.x * targetZoom - offsetX,
         y: size.h / 2 - pos.y * targetZoom - offsetY,
-      });
-      setZoom(targetZoom);
+      }, targetZoom);
     },
-  }), [handleFitToView, positions, size]);
+  }), [handleFitToView, positions, size, animateTo]);
 
   const handleMouseDown = useCallback((e) => {
     if (e.target === svgRef.current || e.target.closest('[data-bg]') || e.target === containerRef.current) {
+      cancelAnim();
       setDragStart({ x: e.clientX - pan.x, y: e.clientY - pan.y });
     }
-  }, [pan]);
+  }, [pan, cancelAnim]);
 
   const handleMouseMove = useCallback((e) => {
     if (draggingNodeId) {

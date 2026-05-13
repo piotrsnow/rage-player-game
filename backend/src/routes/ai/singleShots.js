@@ -14,6 +14,7 @@ import { verifyObjective } from '../../services/objectiveVerifier.js';
 import { generateRecap } from '../../services/recapGenerator.js';
 import { ensureAppearanceAndDialect } from '../../services/livingWorld/npcAppearanceDialect.js';
 import { regenerateActions } from '../../services/actionRegenerator.js';
+import { generateReputationNarrative } from '../../services/reputationNarrativeGenerator.js';
 import {
   STORY_PROMPT_SCHEMA,
   CHARACTER_LEGEND_SCHEMA,
@@ -27,6 +28,7 @@ import {
   RECAP_SCHEMA,
   NPC_MISSING_FIELDS_SCHEMA,
   REGENERATE_ACTIONS_SCHEMA,
+  REPUTATION_NARRATIVE_SCHEMA,
 } from './schemas.js';
 
 /**
@@ -375,6 +377,23 @@ export async function singleShotRoutes(fastify) {
         return reply.code(502).send({ error: 'Failed to generate actions', code: 'AI_REQUEST_FAILED' });
       }
       return { suggestedActions: actions };
+    } catch (err) {
+      const status = err.statusCode || 502;
+      return reply.code(status).send({ error: err.message, code: err.code || 'AI_REQUEST_FAILED' });
+    }
+  });
+
+  /**
+   * POST /ai/generate-reputation — AI-generated narrative about what rumors
+   * and opinions circulate about the character in the game world.
+   */
+  fastify.post('/generate-reputation', { schema: { body: REPUTATION_NARRATIVE_SCHEMA } }, async (request, reply) => {
+    const { character, campaignDigest, language = 'pl', provider = 'openai', model } = request.body || {};
+    const userApiKeys = await loadUserApiKeys(prisma, request.user?.id);
+    try {
+      return await generateReputationNarrative({
+        character, campaignDigest, language, provider, model, userApiKeys, userId: request.user?.id,
+      });
     } catch (err) {
       const status = err.statusCode || 502;
       return reply.code(status).send({ error: err.message, code: err.code || 'AI_REQUEST_FAILED' });

@@ -111,9 +111,14 @@ export default function LocationGraphModal({ campaignId = null, onClose, openGen
 
   const bulkImageGenHook = useNodeImageBulkGeneration({
     campaignId: worldMode ? undefined : campaignId,
+    worldMode,
     onNodeComplete: useCallback((nodeId, url) => {
-      graph.updateNode(nodeId, { nodeImageUrl: url });
-    }, [graph]),
+      if (worldMode) {
+        worldGraphHook.patchNodeLocal(nodeId, { nodeImageUrl: url });
+      } else {
+        graph.updateNode(nodeId, { nodeImageUrl: url });
+      }
+    }, [graph, worldMode, worldGraphHook]),
   });
 
   const bulkImageGen = useMemo(() => ({
@@ -138,8 +143,27 @@ export default function LocationGraphModal({ campaignId = null, onClose, openGen
 
   const revision = useGraphRevision({ graph, worldMode, campaignId });
 
+  const worldUpdateNode = useCallback(async (nodeId, patch) => {
+    const node = graph.allNodes.find((n) => n.id === nodeId);
+    const kind = node?.kind || 'world';
+    await apiClient.request(
+      `/admin/livingWorld/world-graph/nodes/${kind}/${nodeId}`,
+      { method: 'PATCH', body: patch },
+    );
+    worldGraphHook.patchNodeLocal(nodeId, patch);
+  }, [graph.allNodes, worldGraphHook]);
+
   const canvasRef = useRef(null);
   const currentLocationNode = useCurrentLocationNode(graph);
+  const highlightedAdjacentIds = useMemo(() => {
+    if (!currentLocationNode) return new Set();
+    const set = new Set();
+    for (const e of graph.edges) {
+      if (e.fromId === currentLocationNode.id) set.add(e.toId);
+      if (e.toId === currentLocationNode.id) set.add(e.fromId);
+    }
+    return set;
+  }, [currentLocationNode, graph.edges]);
   const [viewMode, setViewMode] = useState('all'); // 'all' | 'current'
   const didInitialFit = useRef(false);
 
@@ -162,6 +186,13 @@ export default function LocationGraphModal({ campaignId = null, onClose, openGen
       return next;
     });
   }, [currentLocationNode]);
+
+  const handleHierarchySelect = useCallback((sel) => {
+    graph.setSelected(sel);
+    if (sel?.type === 'node') {
+      requestAnimationFrame(() => canvasRef.current?.centerOnNode(sel.id));
+    }
+  }, [graph]);
 
   const [activeTab, setActiveTab] = useState('graph');
   const [selectedNpcId, setSelectedNpcId] = useState(null);
@@ -383,7 +414,7 @@ export default function LocationGraphModal({ campaignId = null, onClose, openGen
                     nodes={graph.allNodes}
                     edges={graph.allEdges}
                     selected={graph.selected}
-                    onSelect={graph.setSelected}
+                    onSelect={handleHierarchySelect}
                   />
                 </div>
               </div>
@@ -426,6 +457,8 @@ export default function LocationGraphModal({ campaignId = null, onClose, openGen
                     positionOverrides={positionOverrides}
                     onNodeDragEnd={handleNodeDragEnd}
                     snapToGrid={snapToGrid}
+                    highlightedNodeId={currentLocationNode?.id || null}
+                    highlightedAdjacentIds={highlightedAdjacentIds}
                   />
 
                   {showNodeForm && !graph.readOnly && (
@@ -502,7 +535,7 @@ export default function LocationGraphModal({ campaignId = null, onClose, openGen
                     selectedEdge={graph.selectedEdge}
                     allNodes={graph.allNodes}
                     occupants={graph.occupants}
-                    onUpdateNode={graph.updateNode}
+                    onUpdateNode={worldMode ? worldUpdateNode : graph.updateNode}
                     onUpdateEdge={graph.updateEdge}
                     onDeleteNode={handleDeleteNode}
                     onDeleteEdge={handleDeleteEdge}

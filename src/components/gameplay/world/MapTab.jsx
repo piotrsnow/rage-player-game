@@ -1,4 +1,4 @@
-import { useMemo, useState, useEffect, useCallback, useRef } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useCharacterSprites } from '../../../hooks/useCharacterSprites';
 import { useCurrentLocationNode } from '../../../hooks/useCurrentLocationNode';
@@ -97,6 +97,13 @@ export default function MapTab({ campaignId, onTravel }) {
     return set;
   }, [currentNode, edges]);
 
+  const handleHierarchySelect = useCallback((sel) => {
+    setSelected(sel);
+    if (sel?.type === 'node') {
+      requestAnimationFrame(() => canvasRef.current?.centerOnNode(sel.id));
+    }
+  }, []);
+
   const lastScene = scenes?.[scenes.length - 1] || null;
   const canAttemptDistantTravel = isQuietScene(lastScene);
 
@@ -141,7 +148,7 @@ export default function MapTab({ campaignId, onTravel }) {
             nodes={allNodes || nodes}
             edges={allEdges || edges}
             selected={selected}
-            onSelect={setSelected}
+            onSelect={handleHierarchySelect}
           />
         </div>
       </div>

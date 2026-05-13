@@ -29,7 +29,7 @@ import { LOCATION_KIND_WORLD, LOCATION_KIND_CAMPAIGN } from '../services/locatio
 import { getModelOverrides, setModelOverrides, TASK_CATEGORIES } from '../services/serverConfig.js';
 import { config } from '../config.js';
 import { ensureCharacterSpritesBatch, MAX_CHARACTER_SPRITE_BATCH } from '../services/characterSpriteService.js';
-import { startSpriteJob, getSpriteJobStatus, cancelSpriteJob, getActiveJobId } from '../services/locationGraph/spriteJobService.js';
+import { startSpriteJob, getSpriteJobStatus, cancelSpriteJob, getActiveJobId, generateSpriteForNode } from '../services/locationGraph/spriteJobService.js';
 
 const log = childLogger({ module: 'adminLivingWorld' });
 
@@ -940,6 +940,69 @@ export async function adminLivingWorldRoutes(fastify) {
     const data = request.body;
     if (Object.keys(data).length === 0) return reply.code(400).send({ error: 'No fields provided' });
     return prisma.locationEdge.update({ where: { id: edgeId }, data });
+  });
+
+  // ── World-graph node image patch (admin bulk-gen save target) ────────
+  fastify.patch('/world-graph/nodes/:kind/:nodeId', guard({
+    schema: {
+      params: {
+        type: 'object',
+        required: ['kind', 'nodeId'],
+        properties: {
+          kind: { type: 'string', enum: ['world', 'campaign'] },
+          nodeId: { type: 'string', format: 'uuid' },
+        },
+      },
+      body: {
+        type: 'object',
+        additionalProperties: false,
+        properties: {
+          nodeImageUrl: { type: ['string', 'null'], maxLength: 500 },
+        },
+      },
+    },
+  }), async (request, reply) => {
+    const { kind, nodeId } = request.params;
+    const { nodeImageUrl } = request.body;
+    if (nodeImageUrl === undefined) return reply.code(400).send({ error: 'nodeImageUrl required' });
+
+    if (kind === 'world') {
+      const row = await prisma.worldLocation.findUnique({ where: { id: nodeId }, select: { id: true } });
+      if (!row) return reply.code(404).send({ error: 'WorldLocation not found' });
+      await prisma.worldLocation.update({ where: { id: nodeId }, data: { nodeImageUrl: nodeImageUrl || null } });
+    } else {
+      const row = await prisma.campaignLocation.findFirst({ where: { id: nodeId }, select: { id: true } });
+      if (!row) return reply.code(404).send({ error: 'CampaignLocation not found' });
+      await prisma.campaignLocation.update({ where: { id: nodeId }, data: { nodeImageUrl: nodeImageUrl || null } });
+    }
+
+    return { ok: true, nodeImageUrl: nodeImageUrl || null };
+  });
+
+  // ── World-graph single node sprite generation (admin PixelLab) ─────
+  fastify.post('/world-graph/nodes/:kind/:nodeId/generate-sprite', guard({
+    config: { rateLimit: { max: 10, timeWindow: '1 minute' } },
+    schema: {
+      params: {
+        type: 'object',
+        required: ['kind', 'nodeId'],
+        properties: {
+          kind: { type: 'string', enum: ['world', 'campaign'] },
+          nodeId: { type: 'string', format: 'uuid' },
+        },
+      },
+    },
+  }), async (request, reply) => {
+    if (!config.pixellabApiKey) {
+      return reply.code(503).send({ error: 'PIXELLAB_API_KEY not configured' });
+    }
+    const { kind, nodeId } = request.params;
+    try {
+      const nodeImageUrl = await generateSpriteForNode(kind, nodeId);
+      return { ok: true, nodeImageUrl };
+    } catch (err) {
+      return reply.code(400).send({ error: err.message });
+    }
   });
 
   // ── Cleanup stale __draft:: WorldLocation registry entries ──────────

@@ -69,3 +69,72 @@ export function buildTimeline(scenes = []) {
 
   return entries;
 }
+
+const ATTR_KEYS = ['sila', 'inteligencja', 'charyzma', 'zrecznosc', 'wytrzymalosc', 'szczescie'];
+const RECENT_ACTIONS_CAP = 15;
+
+export function buildReputationDigest(character, scenes, campaign) {
+  const safe = character || {};
+
+  const topSkills = Object.entries(safe.skills || {})
+    .map(([name, data]) => ({
+      name,
+      level: typeof data === 'object' ? (data.level || 0) : (data || 0),
+    }))
+    .sort((a, b) => b.level - a.level)
+    .slice(0, 5)
+    .filter((s) => s.level > 0);
+
+  const attrs = safe.attributes || {};
+  const attrObj = {};
+  for (const k of ATTR_KEYS) {
+    attrObj[k] = Number(attrs[k] ?? 0);
+  }
+
+  const titles = Array.isArray(safe.activeTitle)
+    ? [safe.activeTitle]
+    : (safe.activeTitle ? [safe.activeTitle] : []);
+
+  const charPayload = {
+    name: safe.name || 'Nieznany',
+    species: safe.species || 'człowiek',
+    gender: safe.gender || 'nieznana',
+    level: safe.characterLevel || safe.level || 1,
+    attributes: attrObj,
+    topSkills,
+    factions: safe.factions || {},
+    backstory: typeof safe.backstory === 'string' ? safe.backstory.slice(0, 600) : '',
+    titles,
+  };
+
+  const sceneArr = Array.isArray(scenes) ? scenes : [];
+  const recentActions = [];
+  const start = Math.max(0, sceneArr.length - RECENT_ACTIONS_CAP);
+  for (let i = sceneArr.length - 1; i >= start; i--) {
+    const s = sceneArr[i];
+    if (!s?.chosenAction) continue;
+    const entry = { action: truncate(s.chosenAction, 100) };
+    if (s.diceRoll) {
+      entry.roll = {
+        skill: s.diceRoll.skill || '',
+        success: !!s.diceRoll.success,
+      };
+    }
+    recentActions.push(entry);
+  }
+
+  const quests = [];
+  const questSrc = campaign?.quests || [];
+  for (const q of questSrc) {
+    if (!q?.name) continue;
+    quests.push({ name: q.name, completed: !!q.completed });
+  }
+
+  const digestPayload = {
+    sceneCount: sceneArr.length,
+    quests,
+    recentActions,
+  };
+
+  return { character: charPayload, campaignDigest: digestPayload };
+}

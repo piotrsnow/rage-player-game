@@ -394,7 +394,7 @@ export default function CampaignCreatorPage() {
             </div>
           )}
           <div className="relative z-20">
-            <CountdownProgress durationSeconds={120} label={t('creator.loadingTitle')} />
+            <CountdownProgress durationSeconds={180} label={t('creator.loadingTitle')} />
             <p className="text-on-surface-variant text-sm mt-6 text-center max-w-md">
               {t('creator.loadingDescription')}
             </p>

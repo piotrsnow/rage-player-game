@@ -62,6 +62,10 @@ export function useWorldGraph(options = {}) {
     throw new Error('World graph is read-only.');
   };
 
+  const patchNodeLocal = useCallback((nodeId, patch) => {
+    setNodes((prev) => prev.map((n) => (n.id === nodeId ? { ...n, ...patch } : n)));
+  }, []);
+
   const search = useCallback((q) => {
     setSearchQuery(typeof q === 'string' ? q : '');
   }, []);
@@ -96,6 +100,7 @@ export function useWorldGraph(options = {}) {
     searchResults,
     search,
     fetchGraph,
+    patchNodeLocal,
     createNode: readOnlyReject,
     updateNode: readOnlyReject,
     deleteNode: readOnlyReject,

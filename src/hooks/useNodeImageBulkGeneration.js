@@ -6,9 +6,9 @@ import { apiClient } from '../services/apiClient.js';
  * Client-side sequential bulk image generation for location graph nodes.
  * Supports both standard scene providers (proxy) and PixelLab (backend sprite endpoint).
  *
- * @param {{ campaignId?: string, onNodeComplete?: (nodeId: string, url: string) => void }} options
+ * @param {{ campaignId?: string, worldMode?: boolean, onNodeComplete?: (nodeId: string, url: string) => void }} options
  */
-export function useNodeImageBulkGeneration({ campaignId, onNodeComplete } = {}) {
+export function useNodeImageBulkGeneration({ campaignId, worldMode = false, onNodeComplete } = {}) {
   const [progress, setProgress] = useState(null);
   const [starting, setStarting] = useState(false);
   const cancelledRef = useRef(false);
@@ -45,12 +45,18 @@ export function useNodeImageBulkGeneration({ campaignId, onNodeComplete } = {}) 
         } else {
           const result = await imageService.generateNodeImage(node, {
             provider,
-            campaignId,
+            campaignId: campaignId || null,
             sdModel,
             forceNew: true,
           });
           url = result.url;
-          if (url && campaignId) {
+
+          if (url && worldMode) {
+            await apiClient.request(
+              `/admin/livingWorld/world-graph/nodes/${node.kind || 'world'}/${node.id}`,
+              { method: 'PATCH', body: { nodeImageUrl: url } },
+            );
+          } else if (url && campaignId) {
             await apiClient.request(
               `/livingWorld/campaigns/${campaignId}/location-graph/nodes/${node.id}`,
               { method: 'PUT', body: { nodeImageUrl: url } },
@@ -75,7 +81,7 @@ export function useNodeImageBulkGeneration({ campaignId, onNodeComplete } = {}) 
     const finalStatus = cancelledRef.current ? 'cancelled' : 'completed';
     setProgress({ done, failed, total: missing.length, status: finalStatus });
     activeRef.current = false;
-  }, [campaignId]);
+  }, [campaignId, worldMode]);
 
   const cancel = useCallback(() => {
     cancelledRef.current = true;

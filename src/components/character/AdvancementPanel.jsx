@@ -54,22 +54,31 @@ function AttributesTab({ character, dispatch }) {
           return (
             <div
               key={key}
-              className={`p-3 rounded-sm border text-center transition-all ${
+              className={`relative p-3 rounded-sm border text-center transition-all ${
                 canSpend ? 'bg-primary/10 border-primary/20' : 'bg-surface-container-high/40 border-outline-variant/10'
               }`}
             >
-              <span className="text-[9px] font-label uppercase tracking-widest text-on-surface-variant">
+              <span className="text-xs font-label uppercase tracking-widest text-on-surface-variant">
                 {short}
               </span>
               <p className="text-tertiary font-headline text-2xl">{value}</p>
-              <span className="text-[10px] text-outline">{translateAttribute(key, t)}</span>
+              <span className="text-xs text-outline">{translateAttribute(key, t)}</span>
               {canSpend && (
                 <button
                   onClick={() => dispatch({ type: 'SPEND_ATTRIBUTE_POINT', payload: { attribute: key } })}
-                  className="mt-1 px-3 py-0.5 text-[10px] font-bold rounded-sm bg-primary/20 text-primary hover:bg-primary/30 active:scale-95 transition-all"
+                  className="group/btn absolute bottom-1.5 right-1.5 w-10 h-10 flex items-center justify-center text-[15px] font-body lowercase rounded-md active:scale-95 transition-all duration-300 hover:scale-105 hover:brightness-150 hover:shadow-[0_0_12px_rgba(255,140,200,0.3)]"
+                  style={{
+                    background: 'linear-gradient(135deg, rgba(24,8,24,0.9) 0%, rgba(14,5,19,0.95) 100%)',
+                    border: '1px solid rgba(255,140,200,0.35)',
+                    boxShadow: 'inset 0 1px 0 rgba(255,200,240,0.08)',
+                    color: 'rgba(255,160,210,0.9)',
+                  }}
                 >
-                  +1 {cost > 1 ? `(${cost} pkt)` : ''}
+                  +1
                 </button>
+              )}
+              {canSpend && cost > 1 && (
+                <span className="absolute bottom-0.5 left-1 text-[9px] text-outline">({cost} pkt)</span>
               )}
             </div>
           );
