@@ -245,6 +245,7 @@ export async function buildLivingWorldContext(campaignId, currentLocation, { tra
 
   return {
     locationName: location.canonicalName,
+    locationRef: `${locationKind}:${location.id}`,
     locationType: location.locationType || 'generic',
     npcs: keyAmbient,
     hearsayByNpc,

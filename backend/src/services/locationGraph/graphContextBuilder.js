@@ -115,13 +115,13 @@ export async function buildNarrativeContext(locationId, locationKind, campaignId
 
     const lines = [];
     const name = currentNode.canonicalName || currentNode.displayName || currentNode.name || 'Unknown';
-    lines.push(`Current: ${name}${currentNode.atmosphere ? ` — ${currentNode.atmosphere}` : ''}`);
+    lines.push(`Current: ${name} [ref: ${locationKind}:${locationId}]${currentNode.atmosphere ? ` — ${currentNode.atmosphere}` : ''}`);
 
     // Parent chain + nearby settlements (canonical WorldLocations only)
     if (locationKind === LOCATION_KIND_WORLD) {
       const chain = await buildParentChain(locationId);
       if (chain.length > 1) {
-        lines.push(`Location hierarchy: ${chain.map((c) => `${c.name} (${c.type})`).join(' → ')}`);
+        lines.push(`Location hierarchy: ${chain.map((c) => `${c.name} [ref: world:${c.id}] (${c.type})`).join(' → ')}`);
       }
       const topLocation = chain[chain.length - 1];
       if (topLocation?.id) {
@@ -141,7 +141,7 @@ export async function buildNarrativeContext(locationId, locationKind, campaignId
             const dist = n.distance ? `~${n.distance} km` : '';
             const dir = n.direction || '';
             const suffix = [dist, dir].filter(Boolean).join(' ');
-            return `${n.name} (${n.type}${suffix ? ', ' + suffix : ''})`;
+            return `${n.name} [ref: world:${n.id}] (${n.type}${suffix ? ', ' + suffix : ''})`;
           });
           lines.push(`Nearby: ${parts.join(', ')}`);
         }
@@ -176,7 +176,7 @@ export async function buildNarrativeContext(locationId, locationKind, campaignId
         if (tc >= 3) annotations.push(`familiar (${tc}x)`);
         else if (tc === 0) annotations.push('first time');
         const suffix = annotations.length > 0 ? ` [${annotations.join(', ')}]` : '';
-        lines.push(`  - ${e.edgeType} → ${targetName}${suffix}`);
+        lines.push(`  - ${e.edgeType} → ${targetName} [ref: ${targetKey}]${suffix}`);
       }
     }
 

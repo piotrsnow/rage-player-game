@@ -19,7 +19,7 @@ export async function buildSeededSettlementsBlock(campaign, currentLocation) {
   // Fetch capital (always visible) + in-bounds settlements.
   const capital = await prisma.worldLocation.findFirst({
     where: { locationType: 'capital', regionX: 0, regionY: 0 },
-    select: { canonicalName: true, locationType: true, regionX: true, regionY: true, description: true },
+    select: { id: true, canonicalName: true, locationType: true, regionX: true, regionY: true, description: true },
   });
 
   let settlementsInBounds = [];
@@ -31,7 +31,7 @@ export async function buildSeededSettlementsBlock(campaign, currentLocation) {
         regionX: { gte: bounds.minX, lte: bounds.maxX },
         regionY: { gte: bounds.minY, lte: bounds.maxY },
       },
-      select: { canonicalName: true, locationType: true, regionX: true, regionY: true, description: true },
+      select: { id: true, canonicalName: true, locationType: true, regionX: true, regionY: true, description: true },
       take: 40,
     });
   }
@@ -50,6 +50,7 @@ export async function buildSeededSettlementsBlock(campaign, currentLocation) {
     const dy = (s.regionY ?? 0) - cy;
     const distanceKm = Math.round(Math.sqrt(dx * dx + dy * dy) * 10) / 10;
     return {
+      id: s.id,
       name: s.canonicalName,
       type: s.locationType,
       isCapital: s.isCapital,

@@ -2,6 +2,7 @@
 
 import { prisma } from '../../lib/prisma.js';
 import { withSnapshot } from '../../services/campaignSnapshot.js';
+import { serializeAdminPayload } from './serialization.js';
 
 const CAMPAIGN_PARAM = {
   type: 'object',
@@ -64,11 +65,9 @@ export async function adminNpcRoutes(fastify) {
       include: { relationships: true, experiences: { orderBy: { addedAt: 'desc' }, take: 20 } },
     });
     if (!npc) return reply.code(404).send({ error: 'NPC not found' });
-    return {
+    return serializeAdminPayload({
       ...npc,
-      experiences: (npc.experiences || []).map((e) => ({ ...e, id: String(e.id) })),
-      relationships: (npc.relationships || []).map((r) => ({ ...r, id: String(r.id) })),
-    };
+    });
   });
 
   fastify.post('/:id/npcs', {

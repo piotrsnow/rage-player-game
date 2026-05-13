@@ -65,6 +65,8 @@ const SKILL_ATTR_ICON = {
   szczescie: 'diamond',
 };
 
+const MAX_AUTH_PANEL_STAT_CHIPS = 22;
+
 const MAX_TILT = 18;
 const TILT_COOLDOWN_MS = 3000;
 /** Slight overshoot for return-to-neutral after drag release */
@@ -515,6 +517,7 @@ function LoggedInBanner({ user }) {
         }];
       })
     : [];
+  const skillLimit = Math.max(0, MAX_AUTH_PANEL_STAT_CHIPS - attrChips.length);
   const skillChips = SKILLS.flatMap((s) => {
     const entry = skillsObj[s.name];
     const lvl = typeof entry === 'number' ? entry : Number(entry?.level || 0);
@@ -526,7 +529,7 @@ function LoggedInBanner({ user }) {
       label: s.name,
       value: lvl,
     }];
-  });
+  }).slice(0, skillLimit);
   const statChips = [...attrChips, ...skillChips];
 
   const highlightedKey = recentHovered[0]?.key || null;
@@ -715,7 +718,7 @@ function LoggedInBanner({ user }) {
           )}
 
           {/* Footer (awers) */}
-          <div className="flex items-center gap-2 sm:gap-3 mt-auto pt-2 sm:pt-3 lg:pt-4 border-t border-outline-variant/8">
+          <div className="flex items-center gap-2 sm:gap-3 mt-auto pt-2 sm:pt-3 lg:pt-4 border-t border-outline-variant/70">
          
             {(lastRollSummary || fallbackMotto) && (
               <span

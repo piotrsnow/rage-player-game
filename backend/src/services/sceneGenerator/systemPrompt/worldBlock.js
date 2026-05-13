@@ -17,7 +17,11 @@ function isNpcHere(npc, currentLocationRef, currentLocationName) {
 
 export function buildWorldStateBlock(world, { sceneCount = 0, expectedScenes = 0 } = {}) {
   const lines = [];
-  if (world.currentLocation) lines.push(`Location: ${world.currentLocation}`);
+  if (world.currentLocation) {
+    const ref = world.currentLocationRef;
+    const locRefTag = ref?.kind && ref?.id ? ` [ref: ${ref.kind}:${ref.id}]` : '';
+    lines.push(`Location: ${world.currentLocation}${locRefTag}`);
+  }
   if (world.timeState) {
     const ts = world.timeState;
     const h = Math.floor(ts.hour ?? 6);
@@ -72,8 +76,14 @@ export function buildKeyNpcsBlock(world) {
 
   const lines = ['Key NPCs (disposition):'];
   for (const n of knownNpcs) {
+    let locSuffix = '';
+    if (n.lastLocation) {
+      const nLocRef = n.locationRef?.kind && n.locationRef?.id
+        ? ` [ref: ${n.locationRef.kind}:${n.locationRef.id}]` : '';
+      locSuffix = `, ${n.lastLocation}${nLocRef}`;
+    }
     lines.push(
-      `- ${n.name} (${n.attitude || 'neutral'}, dsp:${n.disposition || 0}) — ${n.role || '?'}${n.lastLocation ? ', ' + n.lastLocation : ''}`,
+      `- ${n.name} (${n.attitude || 'neutral'}, dsp:${n.disposition || 0}) — ${n.role || '?'}${locSuffix}`,
     );
   }
   return lines.join('\n');

@@ -2,6 +2,7 @@
 
 import { prisma } from '../../lib/prisma.js';
 import { withSnapshot } from '../../services/campaignSnapshot.js';
+import { serializeAdminPayload } from './serialization.js';
 
 const ID_PARAM = {
   type: 'object',
@@ -135,7 +136,7 @@ export async function adminCrudRoutes(fastify) {
         })
       : [];
 
-    return {
+    return serializeAdminPayload({
       campaign,
       participants,
       npcs,
@@ -148,7 +149,7 @@ export async function adminCrudRoutes(fastify) {
       scenes,
       incidents,
       characters,
-    };
+    });
   });
 
   // ── Patch campaign scalars / coreState ──

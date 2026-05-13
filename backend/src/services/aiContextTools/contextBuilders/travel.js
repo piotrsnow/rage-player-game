@@ -52,12 +52,16 @@ export async function buildTravelBlock({
   let targetInFog = false;
   let kind = 'travel';
 
+  let resolvedTargetRef = null;
+
   if (targetName) {
     const targetRef = await resolveLocationByName(targetName, { campaignId }).catch(() => null);
     if (!targetRef?.row?.id) {
       return {
         kind: 'travel',
         fromName,
+        fromRef: startLocation.kind && startLocation.id
+          ? { kind: startLocation.kind, id: startLocation.id } : null,
         targetName,
         targetInFog: false,
         unresolved: true,
@@ -69,6 +73,7 @@ export async function buildTravelBlock({
     resolvedTargetName = targetRef.kind === LOCATION_KIND_WORLD
       ? (targetRef.row.canonicalName || targetName)
       : (targetRef.row.name || targetName);
+    resolvedTargetRef = { kind: targetRef.kind, id: targetRef.row.id };
     const fog = await loadCampaignFog({ userId, campaignId }).catch(() => ({
       visited: new Set(),
       heardAbout: new Set(),
@@ -131,11 +136,14 @@ export async function buildTravelBlock({
   return {
     kind,
     fromName,
+    fromRef: startLocation.kind && startLocation.id
+      ? { kind: startLocation.kind, id: startLocation.id } : null,
     fromX,
     fromY,
     toX,
     toY,
     targetName: resolvedTargetName,
+    targetRef: resolvedTargetRef,
     targetInFog,
     distanceKm: scan?.path.distanceKm ?? null,
     fromBiome: scan?.path.fromBiome || null,

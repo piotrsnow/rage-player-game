@@ -46,6 +46,7 @@ export async function buildDungeonRoomBlock(roomLocation, contentLanguage = 'pl'
     return {
       direction: e.direction || 'unknown',
       targetRoomName: target?.canonicalName || null,
+      targetRef: target?.id ? `world:${target.id}` : null,
       targetRole: target?.slotType || 'normal',
       gated: !!e.gated,
       gateHint: e.gateHint || null,
@@ -63,6 +64,7 @@ export async function buildDungeonRoomBlock(roomLocation, contentLanguage = 'pl'
 
   return {
     roomName: roomLocation.canonicalName,
+    roomRef: `world:${roomLocation.id}`,
     dungeonName: parent?.canonicalName || null,
     role: meta.role || 'normal',
     theme: meta.theme || null,

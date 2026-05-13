@@ -5,6 +5,14 @@ import { sanitizeForPrompt } from '../../../../shared/domain/playerInputSanitize
 
 const log = childLogger({ module: 'contextSection' });
 
+function refTag(ref) {
+  if (!ref) return '';
+  const kind = ref.kind || (typeof ref === 'string' ? ref.split(':')[0] : null);
+  const id = ref.id || (typeof ref === 'string' ? ref.split(':')[1] : null);
+  if (!kind || !id) return '';
+  return ` [ref: ${kind}:${id}]`;
+}
+
 const TOKEN_WARN_THRESHOLD = 10_000;
 const TOKEN_HARD_CAP = 12_000;
 
@@ -117,7 +125,8 @@ export function buildContextSection(contextBlocks) {
     const lines = [];
     if (lw.locationName) {
       const typeTag = lw.locationType ? ` (${lw.locationType})` : '';
-      lines.push(`Canonical location: ${lw.locationName}${typeTag}`);
+      const locRef = lw.locationRef ? ` [ref: ${lw.locationRef}]` : '';
+      lines.push(`Canonical location: ${lw.locationName}${locRef}${typeTag}`);
     }
 
     // Phase C — saturation hint. Rendered at the TOP of the LIVING WORLD
@@ -252,7 +261,8 @@ export function buildContextSection(contextBlocks) {
       for (const s of lw.seededSettlements.entries) {
         const tag = s.isCapital ? ' [GLOBAL CAPITAL]' : '';
         const desc = s.description ? ` — ${s.description}` : '';
-        lines.push(`- ${s.name} (${s.type}, ~${s.distanceKm} km away)${tag}${desc}`);
+        const sRef = s.id ? ` [ref: world:${s.id}]` : '';
+        lines.push(`- ${s.name}${sRef} (${s.type}, ~${s.distanceKm} km away)${tag}${desc}`);
       }
       const caps = lw.seededSettlements.caps;
       if (caps) {
@@ -274,7 +284,7 @@ export function buildContextSection(contextBlocks) {
       const s = lw.settlement;
       lines.push('');
       lines.push(`## SUBLOCATIONS IN ${s.parentName} (${s.locationType})`);
-      const fmt = (c) => `${c.canonicalName}${c.slotType ? ` [${c.slotType}]` : ''}`;
+      const fmt = (c) => `${c.canonicalName}${c.id ? ` [ref: world:${c.id}]` : ''}${c.slotType ? ` [${c.slotType}]` : ''}`;
       if (s.budget.filled.required.length) {
         lines.push(`Required (always present): ${s.budget.filled.required.map(fmt).join(', ')}`);
       }
@@ -408,9 +418,9 @@ export function buildContextSection(contextBlocks) {
         const tc = hasRouteFamiliarity ? (t.routeFamiliarity.traversalCount ?? 0) : null;
         const familiarTag = tc >= 3 ? ` [familiar (${tc}x) — compress travel]` : tc === 0 ? ' [first time — describe richly]' : '';
         if (t.kind === 'travel') {
-          lines.push(`Trasa: ${t.fromName} (${fromB}) → ${t.targetName} (${toB}), ${km} km.${familiarTag}`);
+          lines.push(`Trasa: ${t.fromName}${refTag(t.fromRef)} (${fromB}) → ${t.targetName}${refTag(t.targetRef)} (${toB}), ${km} km.${familiarTag}`);
         } else {
-          lines.push(`Trasa: ${t.fromName} (${fromB}) → punkt (${t.toX.toFixed(2)}, ${t.toY.toFixed(2)}) (${toB}), ${km} km.${familiarTag}`);
+          lines.push(`Trasa: ${t.fromName}${refTag(t.fromRef)} (${fromB}) → punkt (${t.toX.toFixed(2)}, ${t.toY.toFixed(2)}) (${toB}), ${km} km.${familiarTag}`);
         }
 
         if (t.biomeTransitions?.length) {
@@ -426,8 +436,9 @@ export function buildContextSection(contextBlocks) {
           lines.push(`POI mijane (≤250 m od trasy):`);
           for (const p of t.poisAlongPath) {
             const sideLabel = p.side === 'left' ? 'lewo' : 'prawo';
+            const poiRef = p.location.kind && p.location.id ? refTag(p.location) : '';
             lines.push(
-              `  - ${p.location.name} (${p.location.locationType || 'generic'}) — po ${p.alongKm.toFixed(2)} km, ${(p.perpKm * 1000).toFixed(0)} m na ${sideLabel}`,
+              `  - ${p.location.name}${poiRef} (${p.location.locationType || 'generic'}) — po ${p.alongKm.toFixed(2)} km, ${(p.perpKm * 1000).toFixed(0)} m na ${sideLabel}`,
             );
           }
         } else {
@@ -436,7 +447,10 @@ export function buildContextSection(contextBlocks) {
 
         if (t.poisAtDestination?.length) {
           const labels = t.poisAtDestination
-            .map((p) => `${p.location.name} (${(p.distKm * 1000).toFixed(0)} m)`)
+            .map((p) => {
+              const pRef = p.location.kind && p.location.id ? refTag(p.location) : '';
+              return `${p.location.name}${pRef} (${(p.distKm * 1000).toFixed(0)} m)`;
+            })
             .join(', ');
           lines.push(`POI na docelowym polu (≤250 m): ${labels}.`);
         } else {
@@ -453,9 +467,12 @@ export function buildContextSection(contextBlocks) {
         }
 
         if (t.kind === 'travel') {
+          const refInstr = t.targetRef
+            ? ` AND \`stateChanges.currentLocationRef: "${t.targetRef.kind}:${t.targetRef.id}"\``
+            : '';
           lines.push(
             `Narracja: krótki opis przemarszu (1-2 zdania, wzmianka o mijanych POI jeśli były), zakończony przybyciem do ${t.targetName}. ` +
-            `Emit \`stateChanges.currentLocation: "${t.targetName}"\`. NIE twórz nowych lokacji ani encounterów po drodze.`,
+            `Emit \`stateChanges.currentLocation: "${t.targetName}"\`${refInstr}. NIE twórz nowych lokacji ani encounterów po drodze.`,
           );
         } else {
           lines.push(
@@ -475,7 +492,8 @@ export function buildContextSection(contextBlocks) {
       const d = lw.dungeon;
       lines.push('');
       lines.push(`## DUNGEON ROOM — DETERMINISTIC CONTENTS (NARRATE EXACTLY, DO NOT INVENT)`);
-      lines.push(`Room: ${d.roomName} (role: ${d.role}${d.dungeonName ? `, in: ${d.dungeonName}` : ''})`);
+      const roomRefTag = d.roomRef ? ` [ref: ${d.roomRef}]` : '';
+      lines.push(`Room: ${d.roomName}${roomRefTag} (role: ${d.role}${d.dungeonName ? `, in: ${d.dungeonName}` : ''})`);
       if (d.theme || d.difficulty) {
         lines.push(`Theme: ${d.theme || '?'}, difficulty: ${d.difficulty || '?'}`);
       }
@@ -485,7 +503,8 @@ export function buildContextSection(contextBlocks) {
         for (const e of d.exits) {
           const gate = e.gated ? ` [GATED${e.gateHint ? `: ${e.gateHint}` : ''}]` : '';
           const cleared = e.cleared ? ' (cleared earlier)' : '';
-          const targetLabel = e.targetRoomName ? ` → ${e.targetRoomName}` : '';
+          const exitRef = e.targetRef ? ` [ref: ${e.targetRef}]` : '';
+          const targetLabel = e.targetRoomName ? ` → ${e.targetRoomName}${exitRef}` : '';
           lines.push(`  - ${e.direction}${targetLabel} (${e.targetRole})${gate}${cleared}`);
         }
       }
@@ -526,7 +545,7 @@ export function buildContextSection(contextBlocks) {
       lines.push(`- Loot stays hidden until searched. On reveal, add entries to \`stateChanges.newItems\` and mark \`stateChanges.dungeonRoom.lootTaken = true\`.`);
       lines.push(`- Player may act creatively (smash walls, burn webs) — allow the improvisation, BUT DO NOT create new rooms, enemies, traps, or loot.`);
       lines.push(`- After combat resolves (all listed enemies defeated), set \`stateChanges.dungeonRoom.entryCleared = true\`.`);
-      lines.push(`- Movement through an exit: narrate transition + set \`stateChanges.currentLocation\` to the target room's canonical name.`);
+      lines.push(`- Movement through an exit: narrate transition + set \`stateChanges.currentLocation\` to the target room's canonical name AND \`stateChanges.currentLocationRef\` to the target's [ref: ...] tag.`);
     }
 
     if (lines.length) {

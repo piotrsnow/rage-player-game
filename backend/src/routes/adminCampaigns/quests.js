@@ -2,6 +2,7 @@
 
 import { prisma } from '../../lib/prisma.js';
 import { withSnapshot } from '../../services/campaignSnapshot.js';
+import { serializeAdminPayload } from './serialization.js';
 
 const CAMPAIGN_PARAM = {
   type: 'object',
@@ -51,11 +52,12 @@ export async function adminQuestRoutes(fastify) {
   // ── List quests ──
   fastify.get('/:id/quests', { schema: { params: CAMPAIGN_PARAM } }, async (request) => {
     const { id } = request.params;
-    return prisma.campaignQuest.findMany({
+    const quests = await prisma.campaignQuest.findMany({
       where: { campaignId: id },
       include: { objectives: { orderBy: { displayOrder: 'asc' } } },
       orderBy: { name: 'asc' },
     });
+    return serializeAdminPayload(quests);
   });
 
   // ── Get one quest with objectives + prerequisites ──
@@ -69,7 +71,7 @@ export async function adminQuestRoutes(fastify) {
       },
     });
     if (!quest) return reply.code(404).send({ error: 'Quest not found' });
-    return quest;
+    return serializeAdminPayload(quest);
   });
 
   // ── Create quest ──
