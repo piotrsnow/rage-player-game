@@ -46,6 +46,7 @@ import { sceneModelConfigRoutes } from './routes/sceneModelConfig.js';
 import { fontConfigRoutes } from './routes/fontConfig.js';
 import { mapStudioRoutes } from './routes/mapStudio/index.js';
 import { combatSpritesRoutes } from './routes/combatSprites.js';
+import { galleryRoutes } from './routes/gallery.js';
 import { seedWorld } from './scripts/seedWorld.js';
 import {
   startRoomCleanup,
@@ -329,6 +330,14 @@ await fastify.register(async (app) => {
   });
   app.register(mapStudioRoutes);
 }, { prefix: '/v1/map-studio' });
+
+// Gallery — public scene feed + personal chronicles.
+await fastify.register(async (app) => {
+  app.addHook('onRoute', (routeOptions) => {
+    routeOptions.config = { ...routeOptions.config, rateLimit: { max: 60, timeWindow: '1 minute' } };
+  });
+  app.register(galleryRoutes);
+}, { prefix: '/v1/gallery' });
 
 startRoomCleanup();
 startRefreshTokenCleanup();

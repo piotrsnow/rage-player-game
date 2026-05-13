@@ -1,4 +1,6 @@
+import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { apiClient } from '../../services/apiClient';
 import GlassCard from '../ui/GlassCard';
 import Button from '../ui/Button';
 import StarRow from './StarRow';
@@ -14,6 +16,12 @@ export default function GalleryCampaignCard({ entry, onOpen, onView }) {
     day: 'numeric',
   });
 
+  const coverUrl = entry.coverImageUrl || entry.gameState?.scenes?.[0]?.image || null;
+  const [coverLoaded, setCoverLoaded] = useState(false);
+  const [coverErrored, setCoverErrored] = useState(false);
+  const resolvedCover = coverUrl ? apiClient.resolveMediaUrl(coverUrl) : null;
+  const showCover = resolvedCover && !coverErrored;
+
   return (
     <GlassCard
       elevated
@@ -21,6 +29,22 @@ export default function GalleryCampaignCard({ entry, onOpen, onView }) {
       onClick={() => onOpen(entry)}
       className={`overflow-hidden border-l-2 ${borderColor} flex flex-col h-full`}
     >
+      {showCover && (
+        <div className="relative w-full aspect-video bg-surface-container overflow-hidden">
+          {!coverLoaded && (
+            <div className="absolute inset-0 bg-surface-container animate-pulse" />
+          )}
+          <img
+            src={resolvedCover}
+            alt=""
+            loading="lazy"
+            onLoad={() => setCoverLoaded(true)}
+            onError={() => setCoverErrored(true)}
+            className={`w-full h-full object-cover transition-transform duration-500 hover:scale-105 ${coverLoaded ? 'block' : 'invisible'}`}
+          />
+        </div>
+      )}
+
       <div className="p-5 flex flex-col flex-1 min-h-0">
         <div className="flex items-start gap-3 mb-3">
           <div className="w-11 h-11 bg-surface-container rounded-sm flex items-center justify-center border border-outline-variant/20 shrink-0">
