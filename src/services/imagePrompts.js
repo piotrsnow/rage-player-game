@@ -712,18 +712,18 @@ export function buildPortraitPrompt(species, gender, age, careerName, genre = 'F
     }
 
     if (isSD) {
-      return `ART STYLE: ${styleDirective}. Close-up portrait of a ${creatureSubject}. Sharp focus on the subject, intricate natural detail, moody atmospheric background.${darkDirective}${seriousnessDirective}${emotionDirective} No text, no watermarks.`;
+      return `ART STYLE: ${styleDirective}. Close-up portrait of a ${creatureSubject}.${appearanceDirective} Sharp focus on the subject, intricate natural detail, moody atmospheric background.${darkDirective}${seriousnessDirective}${emotionDirective} No text, no watermarks.`;
     }
 
     if (isGemini) {
-      return `Generate an image in this EXACT art style: ${styleDirective}. Portrait of a ${creatureSubject}. Sharp focus, dark atmospheric background. Square 1:1 aspect ratio.${darkDirective}${seriousnessDirective}${emotionDirective} No text, no watermarks.`;
+      return `Generate an image in this EXACT art style: ${styleDirective}. Portrait of a ${creatureSubject}.${appearanceDirective} Sharp focus, dark atmospheric background. Square 1:1 aspect ratio.${darkDirective}${seriousnessDirective}${emotionDirective} No text, no watermarks.`;
     }
 
     if (provider === 'gpt-image') {
-      return `ART STYLE: ${styleDirective}. Portrait of a ${creatureSubject}. Sharp focus on the subject, intricate natural detail, moody atmospheric background.${darkDirective}${seriousnessDirective}${emotionDirective} No text, no watermarks.`;
+      return `ART STYLE: ${styleDirective}. Portrait of a ${creatureSubject}.${appearanceDirective} Sharp focus on the subject, intricate natural detail, moody atmospheric background.${darkDirective}${seriousnessDirective}${emotionDirective} No text, no watermarks.`;
     }
 
-    return `ART STYLE: ${styleDirective}. Portrait of a ${creatureSubject}. Sharp focus, dark atmospheric background.${darkDirective}${seriousnessDirective}${emotionDirective} No text, no watermarks, no borders.`;
+    return `ART STYLE: ${styleDirective}. Portrait of a ${creatureSubject}.${appearanceDirective} Sharp focus, dark atmospheric background.${darkDirective}${seriousnessDirective}${emotionDirective} No text, no watermarks, no borders.`;
   }
 
   // When we have a reference photo going into plain img2img (A1111 / Stability
