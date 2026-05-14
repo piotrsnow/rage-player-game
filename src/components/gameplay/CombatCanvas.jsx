@@ -18,7 +18,8 @@ import {
   drawProjectile,
 } from './combat/combatCanvasDraw';
 import { gameData } from '../../services/gameDataService';
-import { getDistance } from '../../services/combatEngine';
+import { getDistance, attackObstacle } from '../../services/combatEngine';
+import { getTileDef, isDestructible } from '../../../shared/domain/battlefieldTiles.js';
 import CombatToken from './combat/CombatToken';
 import InitiativeBar from './combat/InitiativeBar';
 import ActionModal from './combat/ActionModal';
@@ -172,11 +173,11 @@ export default function CombatCanvas({
     const now = performance.now();
 
     drawBackground(ctx, w, h, now, animRef.current);
-    drawBattlefield(ctx, w, h, now);
+    drawBattlefield(ctx, w, h, now, combat.battlefield, combat.destructibleHp);
     drawTerrainTiles(ctx, w, h, combat.terrainTiles, gameData.terrainTiles, now);
 
     if (isMyTurn && myCombatant && !combatOver) {
-      drawMovementZone(ctx, w, h, myCombatant, hoverCellRef.current, now);
+      drawMovementZone(ctx, w, h, myCombatant, hoverCellRef.current, now, combat);
     }
 
     drawMeleeEngagements(ctx, combat.combatants, w, h, now);
@@ -188,7 +189,7 @@ export default function CombatCanvas({
     if (actionModal?.targetId && myCombatant) {
       const target = combat.combatants.find(c => c.id === actionModal.targetId);
       if (target && target.id !== myCombatant.id) {
-        drawRangeIndicator(ctx, myCombatant, target, w, h);
+        drawRangeIndicator(ctx, myCombatant, target, w, h, combat.battlefield, combat.destructibleHp);
       }
     }
 
@@ -239,6 +240,31 @@ export default function CombatCanvas({
         } else {
           setTileTooltip(null);
         }
+      } else if (cell && combat.battlefield) {
+        // Show structural tile tooltip
+        const structTileId = combat.battlefield[cell.x]?.[cell.y];
+        const structDef = structTileId ? getTileDef(structTileId) : null;
+        if (structDef && !structDef.passable) {
+          const px = cellToPixel(cell.x, cell.y, containerSize.w, containerSize.h);
+          const hpKey = `${cell.x}:${cell.y}`;
+          const hp = combat.destructibleHp?.[hpKey];
+          const hpText = hp != null ? ` (HP: ${hp})` : '';
+          setTileTooltip({ name: structDef.name + hpText, desc: structDef.blocksSight ? t('combat.blocksLoS', 'Blokuje linię wzroku') : '', x: px.x, y: px.y });
+        } else {
+          setTileTooltip(null);
+        }
+      } else {
+        setTileTooltip(null);
+      }
+    } else if (cell && combat.battlefield) {
+      const structTileId = combat.battlefield[cell.x]?.[cell.y];
+      const structDef = structTileId ? getTileDef(structTileId) : null;
+      if (structDef && !structDef.passable) {
+        const px = cellToPixel(cell.x, cell.y, containerSize.w, containerSize.h);
+        const hpKey = `${cell.x}:${cell.y}`;
+        const hp = combat.destructibleHp?.[hpKey];
+        const hpText = hp != null ? ` (HP: ${hp})` : '';
+        setTileTooltip({ name: structDef.name + hpText, desc: structDef.blocksSight ? t('combat.blocksLoS', 'Blokuje linię wzroku') : '', x: px.x, y: px.y });
       } else {
         setTileTooltip(null);
       }
@@ -257,7 +283,7 @@ export default function CombatCanvas({
     const hovId = hasCombatant?.id || null;
     setHoveredCombatantId(hovId);
     onHoverCombatant?.(hovId);
-  }, [containerSize.w, containerSize.h, isMyTurn, myCombatant, combatOver, combat.terrainTiles, t, combatantAtCell, onHoverCombatant]);
+  }, [containerSize.w, containerSize.h, isMyTurn, myCombatant, combatOver, combat.terrainTiles, combat.battlefield, combat.destructibleHp, t, combatantAtCell, onHoverCombatant]);
 
   const handleCanvasClick = useCallback((e) => {
     if (!isMyTurn || combatOver) return;

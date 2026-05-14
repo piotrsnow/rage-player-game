@@ -143,7 +143,66 @@ Status effects (`shared/domain/statusEffects.js`) are fully wired into combat:
 
 `characterBlock.js` renders active effects in the scene-generation system prompt so the premium model is aware of buffs/debuffs when narrating.
 
-## Terrain Tiles (Pola Specjalne)
+## Structural Battlefield Tiles (Layer 1)
+
+Two-layer tile system:
+- **Layer 1 (structural)**: every cell on the 16×9 grid has a tile type from `shared/domain/battlefieldTiles.js` (~40 types). Properties: `passable`, `blocksSight`, `destructible`, `directionalCover`, `color`, `pattern`, `biomes`.
+- **Layer 2 (special effects)**: the existing 8 terrain tiles (fury, teleport, etc.) spawn on top of passable structural tiles. No changes to this system.
+
+### Tile categories
+
+| Category | Count | Examples |
+|---|---|---|
+| Ground (passable, no LoS block) | 13 | `stone_floor`, `grass`, `cobblestone`, `shallow_water` |
+| Nature obstacles (impassable, blocks LoS) | 7 | `tree`, `rock`, `stalagmite`, `deep_water` |
+| Built obstacles (impassable, blocks LoS) | 5 | `stone_wall`, `brick_wall`, `pillar` |
+| Destructible (impassable→rubble) | 6 | `crate` (HP 2), `barrel` (HP 2), `cracked_wall` (HP 4) |
+| Directional cover (passable, blocks ranged from one side) | 5 | `fence`, `low_wall`, `sandbags` |
+| Special passable | 5 | `campfire`, `altar`, `door`, `stairs` |
+
+### Procedural map generation
+
+`src/services/battlefieldGenerator.js` — 8 biome generators:
+- **dungeon** (BSP rooms), **forest** (noise clusters), **village** (buildings + roads), **cave** (cellular automata), **field** (sparse), **ruins** (partial walls), **swamp** (water pools), **castle** (walled rooms)
+
+All generators guarantee: (a) passable spawn zones at edges, (b) BFS-verified path between spawns, (c) ≤35% impassable cells.
+
+Biome selection: `options.biome` passed to `createCombatState`. Default: `'field'`.
+
+### A* Pathfinding
+
+`findPath(battlefield, destructibleHp, from, to, occupiedSet)` — A* on the 16×9 grid, Chebyshev distance heuristic. Used by:
+- `moveCombatant()` — player movement costs = path length
+- Enemy AI in `resolveEnemyTurns` — routes around walls
+- `drawMovementZone()` — BFS flood-fill `getReachableCells()` replaces Chebyshev radius
+
+### Line-of-Sight
+
+`src/services/combatLineOfSight.js`:
+- `hasLineOfSight(battlefield, destructibleHp, from, to)` — Bresenham line, checks `blocksSight` (skips destroyed destructibles)
+- `isBlockedByDirectionalCover(battlefield, from, to)` — checks if target's tile has directional cover facing the attacker
+- `checkRangedPath()` — combined check, returns `{ clear, reason }`
+
+Integration: ranged attacks and spells check LoS before resolving. Enemy AI uses LoS to choose ranged vs melee. Range indicator line turns red when blocked.
+
+### Destructible tiles
+
+- State: `combat.destructibleHp: Record<string, number>` keyed by `"x:y"`
+- `attackObstacle(combat, actorId, x, y)` — Strength test, damage = `floor(Siła/3) + 1`
+- On HP ≤ 0: tile becomes `'gravel'` (rubble), passable, no LoS block
+- Rendered with crack overlay when damaged
+
+### Canvas rendering
+
+`combatCanvasDraw.js` → `drawBattlefield()` renders per-cell `color` + `pattern`. Patterns pre-cached in `src/services/combat/tilePatterns.js` using `OffscreenCanvas`. Directional cover shows a thick bar on the covered edge. Impassable tiles get darker borders.
+
+### Tests
+
+- `src/services/battlefieldGenerator.test.js` — all 8 biomes validated (passable spawns, BFS connected, ≤35% ratio)
+- `src/services/combatLineOfSight.test.js` — LoS, directional cover, destroyed destructibles
+- `src/services/combatPathfinding.test.js` — A*, BFS reachable, passability checks
+
+## Terrain Tiles (Pola Specjalne) — Layer 2
 
 Random special tiles spawned on the 16×9 battlefield at combat start (5-8 tiles). Each tile applies a mechanical effect to any combatant standing on it.
 

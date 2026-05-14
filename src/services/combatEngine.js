@@ -1,12 +1,15 @@
 import { rollD50, rollPercentage } from './gameState';
 import { rollLuckCheck } from '../../shared/domain/luck.js';
 import { computeEffectiveMods, tickEffects, isRestricted, addEffect } from '../../shared/domain/statusEffects.js';
+import { isTilePassable, getDestructibleHp, RUBBLE_TILE, getTileDef } from '../../shared/domain/battlefieldTiles.js';
 import { gameData } from './gameDataService';
 import { DIFFICULTY_THRESHOLDS, COMBAT_SKILL_XP, WEAPON_SKILL_MAP } from '../data/rpgSystem';
 import { SPELL_EFFECTS, findSpell } from '../data/rpgMagic.js';
 import { calculateCreativityBonus } from './mechanics/creativityBonus';
 import { resolveD50Test } from './mechanics/d50Test';
 import { castSpell } from './magicEngine.js';
+import { generateBattlefield } from './battlefieldGenerator.js';
+import { hasLineOfSight, checkRangedPath } from './combatLineOfSight.js';
 import { shortId } from '../utils/ids';
 import { devLog } from '../stores/devEventLogStore';
 
@@ -96,7 +99,7 @@ export const SKIRMISH_MODE_BEER_DUEL = 'beer_duel';
 export const SKIRMISH_MODE_CARD_GAME = 'card_game';
 export const SKIRMISH_MODE_DICE_GAME = 'dice_game';
 
-function spawnTerrainTiles(W, H, combatants) {
+function spawnTerrainTiles(W, H, combatants, battlefield) {
   const cfg = gameData.terrainSpawnConfig;
   const tileDefs = gameData.terrainTiles;
   if (!tileDefs || typeof tileDefs !== 'object') return [];
@@ -115,7 +118,11 @@ function spawnTerrainTiles(W, H, combatants) {
   const candidates = [];
   for (let x = margin; x < W - margin; x++) {
     for (let y = 0; y < H; y++) {
-      if (!occupied.has(`${x}:${y}`)) candidates.push({ x, y });
+      if (!occupied.has(`${x}:${y}`)) {
+        // Only spawn special terrain on passable structural tiles
+        if (battlefield && !isTilePassable(battlefield[x]?.[y])) continue;
+        candidates.push({ x, y });
+      }
     }
   }
 
@@ -149,7 +156,7 @@ export function getTileAt(terrainTiles, x, y) {
   return terrainTiles.find(t => t.x === x && t.y === y && !t.consumed) || null;
 }
 
-function assignInitialPositions(combatants) {
+function assignInitialPositions(combatants, battlefield) {
   const W = gameData.BATTLEFIELD_WIDTH;
   const H = gameData.BATTLEFIELD_HEIGHT;
   const friendlies = combatants.filter((c) => c.type === 'player' || c.type === 'ally');
@@ -157,7 +164,24 @@ function assignInitialPositions(combatants) {
   const spreadY = (group, startX) => {
     const gap = Math.max(1, Math.floor(H / (group.length + 1)));
     group.forEach((c, i) => {
-      c.position = { x: Math.min(startX + i, W - 1), y: Math.min(gap * (i + 1), H - 1) };
+      let x = Math.min(startX + i, W - 1);
+      let y = Math.min(gap * (i + 1), H - 1);
+      // Find a passable cell nearby if the initial position is blocked
+      if (battlefield && !isCellPassableOnBattlefield(battlefield, null, x, y)) {
+        for (let r = 1; r < 5; r++) {
+          let found = false;
+          for (let dy = -r; dy <= r && !found; dy++) {
+            for (let dx = -r; dx <= r && !found; dx++) {
+              const nx = x + dx, ny = y + dy;
+              if (nx >= 0 && nx < W && ny >= 0 && ny < H && isCellPassableOnBattlefield(battlefield, null, nx, ny)) {
+                x = nx; y = ny; found = true;
+              }
+            }
+          }
+          if (found) break;
+        }
+      }
+      c.position = { x, y };
     });
   };
   spreadY(friendlies, 1);
@@ -168,6 +192,113 @@ function normalizePos(p) {
   if (p && typeof p === 'object' && 'x' in p) return p;
   if (typeof p === 'number') return { x: p, y: 4 };
   return { x: 0, y: 0 };
+}
+
+/**
+ * Check if a cell is passable considering the structural battlefield grid
+ * and destructible tile state. Falls back to true when no battlefield exists.
+ */
+export function isCellPassableOnBattlefield(battlefield, destructibleHp, x, y) {
+  if (!battlefield) return true;
+  const tileId = battlefield[x]?.[y];
+  if (!tileId) return true;
+  if (isTilePassable(tileId)) return true;
+  // Destructible tiles that have been destroyed become passable
+  const key = `${x}:${y}`;
+  if (destructibleHp && destructibleHp[key] != null && destructibleHp[key] <= 0) return true;
+  return false;
+}
+
+/**
+ * A* pathfinding on the 16×9 grid respecting impassable tiles and occupied cells.
+ * Returns an array of {x, y} cells from `from` to `to` (inclusive), or null if no path.
+ * Uses Chebyshev distance (8-directional).
+ */
+export function findPath(battlefield, destructibleHp, from, to, occupiedSet) {
+  const W = gameData.BATTLEFIELD_WIDTH;
+  const H = gameData.BATTLEFIELD_HEIGHT;
+  const toKey = `${to.x}:${to.y}`;
+  const fromKey = `${from.x}:${from.y}`;
+  if (fromKey === toKey) return [from];
+
+  const open = [{ x: from.x, y: from.y, g: 0, f: 0 }];
+  const gScore = new Map();
+  const cameFrom = new Map();
+  gScore.set(fromKey, 0);
+  open[0].f = Math.max(Math.abs(to.x - from.x), Math.abs(to.y - from.y));
+
+  while (open.length > 0) {
+    // Find node with lowest f
+    let bestIdx = 0;
+    for (let i = 1; i < open.length; i++) {
+      if (open[i].f < open[bestIdx].f) bestIdx = i;
+    }
+    const current = open.splice(bestIdx, 1)[0];
+    const ck = `${current.x}:${current.y}`;
+    if (ck === toKey) {
+      const path = [{ x: current.x, y: current.y }];
+      let k = ck;
+      while (cameFrom.has(k)) {
+        k = cameFrom.get(k);
+        const [px, py] = k.split(':').map(Number);
+        path.unshift({ x: px, y: py });
+      }
+      return path;
+    }
+
+    for (let dx = -1; dx <= 1; dx++) {
+      for (let dy = -1; dy <= 1; dy++) {
+        if (dx === 0 && dy === 0) continue;
+        const nx = current.x + dx, ny = current.y + dy;
+        if (nx < 0 || nx >= W || ny < 0 || ny >= H) continue;
+        const nk = `${nx}:${ny}`;
+        if (!isCellPassableOnBattlefield(battlefield, destructibleHp, nx, ny)) continue;
+        if (occupiedSet && nk !== toKey && occupiedSet.has(nk)) continue;
+
+        const ng = current.g + 1;
+        if (ng < (gScore.get(nk) ?? Infinity)) {
+          gScore.set(nk, ng);
+          cameFrom.set(nk, ck);
+          const h = Math.max(Math.abs(to.x - nx), Math.abs(to.y - ny));
+          open.push({ x: nx, y: ny, g: ng, f: ng + h });
+        }
+      }
+    }
+  }
+  return null;
+}
+
+/**
+ * BFS flood-fill of reachable cells from `pos` within `range` steps,
+ * respecting battlefield passability and occupied cells.
+ * Returns a Set of "x:y" keys.
+ */
+export function getReachableCells(battlefield, destructibleHp, pos, range, occupiedSet) {
+  const W = gameData.BATTLEFIELD_WIDTH;
+  const H = gameData.BATTLEFIELD_HEIGHT;
+  const visited = new Set();
+  const startKey = `${pos.x}:${pos.y}`;
+  visited.add(startKey);
+  const queue = [{ x: pos.x, y: pos.y, d: 0 }];
+
+  while (queue.length > 0) {
+    const { x, y, d } = queue.shift();
+    if (d >= range) continue;
+    for (let dx = -1; dx <= 1; dx++) {
+      for (let dy = -1; dy <= 1; dy++) {
+        if (dx === 0 && dy === 0) continue;
+        const nx = x + dx, ny = y + dy;
+        if (nx < 0 || nx >= W || ny < 0 || ny >= H) continue;
+        const nk = `${nx}:${ny}`;
+        if (visited.has(nk)) continue;
+        if (!isCellPassableOnBattlefield(battlefield, destructibleHp, nx, ny)) continue;
+        if (occupiedSet && occupiedSet.has(nk)) continue;
+        visited.add(nk);
+        queue.push({ x: nx, y: ny, d: d + 1 });
+      }
+    }
+  }
+  return visited;
 }
 
 export function getDistance(a, b) {
@@ -198,7 +329,7 @@ export function isInMeleeRange(a, b) {
  * Check whether actor can charge target in a straight line (cardinal or diagonal)
  * with no non-defeated combatant blocking the path.
  */
-export function canCharge(actor, target, combatants) {
+export function canCharge(actor, target, combatants, battlefield, destructibleHp) {
   const ap = normalizePos(actor.position);
   const tp = normalizePos(target.position);
   const dx = tp.x - ap.x;
@@ -222,6 +353,9 @@ export function canCharge(actor, target, combatants) {
   let cy = ap.y + sy;
   while (cx !== tp.x || cy !== tp.y) {
     if (occupied.has(`${cx}:${cy}`)) return { valid: false, reason: 'path_blocked' };
+    if (!isCellPassableOnBattlefield(battlefield, destructibleHp, cx, cy)) {
+      return { valid: false, reason: 'path_blocked' };
+    }
     cx += sx;
     cy += sy;
   }
@@ -708,11 +842,17 @@ export function createCombatState(playerCharacter, enemies, allies = [], options
       `enemy_${enemy.name.toLowerCase().replace(/\s+/g, '_')}_${shortId(3)}`, 'enemy'));
   }
 
-  assignInitialPositions(combatants);
+  const isMinigame = mode === SKIRMISH_MODE_BEER_DUEL || mode === SKIRMISH_MODE_CARD_GAME || mode === SKIRMISH_MODE_DICE_GAME;
+  const biome = options?.biome || 'field';
+  const { battlefield, destructibleHp } = isMinigame
+    ? { battlefield: null, destructibleHp: {} }
+    : generateBattlefield(biome);
+
+  assignInitialPositions(combatants, battlefield);
 
   const W = gameData.BATTLEFIELD_WIDTH;
   const H = gameData.BATTLEFIELD_HEIGHT;
-  const terrainTiles = (mode === SKIRMISH_MODE_BEER_DUEL || mode === SKIRMISH_MODE_CARD_GAME || mode === SKIRMISH_MODE_DICE_GAME) ? [] : spawnTerrainTiles(W, H, combatants);
+  const terrainTiles = isMinigame ? [] : spawnTerrainTiles(W, H, combatants, battlefield);
 
   for (const c of combatants) {
     c.initiative = rollInitiative(c);
@@ -727,6 +867,8 @@ export function createCombatState(playerCharacter, enemies, allies = [], options
     modeConfig: options?.modeConfig || null,
     combatants,
     terrainTiles,
+    battlefield,
+    destructibleHp,
     skirmish: null,
     log: ['Combat begins! Round 1.'],
     resolved: false,
@@ -741,7 +883,7 @@ export function createCombatState(playerCharacter, enemies, allies = [], options
       startingWounds: playerCharacter.wounds ?? playerCharacter.maxWounds ?? 10,
     },
   };
-  devLog.emit({ category: 'combat', type: 'combat_start', label: `Combat started: ${enemies.map((e) => e.name).join(', ')}`, data: { enemies: enemies.map((e) => ({ name: e.name, wounds: e.wounds || e.maxWounds })), allies: allies.length, initiative: combatants.map((c) => ({ name: c.name, init: c.initiative })) } });
+  devLog.emit({ category: 'combat', type: 'combat_start', label: `Combat started: ${enemies.map((e) => e.name).join(', ')}`, data: { enemies: enemies.map((e) => ({ name: e.name, wounds: e.wounds || e.maxWounds })), allies: allies.length, initiative: combatants.map((c) => ({ name: c.name, init: c.initiative })), biome } });
   return combatState;
 }
 
@@ -750,6 +892,8 @@ export function moveCombatant(combat, actorId, targetPosition) {
     ...combat,
     combatants: combat.combatants.map((c) => ({ ...c })),
     terrainTiles: (combat.terrainTiles || []).map(t => ({ ...t })),
+    battlefield: combat.battlefield,
+    destructibleHp: combat.destructibleHp ? { ...combat.destructibleHp } : {},
   };
   const actor = state.combatants.find((c) => c.id === actorId);
   if (!actor || actor.isDefeated) return { combat: state, moved: false };
@@ -765,12 +909,21 @@ export function moveCombatant(combat, actorId, targetPosition) {
   if (isCellOccupied(state.combatants, target.x, target.y, actorId)) {
     return { combat: state, moved: false };
   }
+  // Check target cell is passable on the battlefield
+  if (!isCellPassableOnBattlefield(state.battlefield, state.destructibleHp, target.x, target.y)) {
+    return { combat: state, moved: false };
+  }
 
-  // Standard movement: pay full Chebyshev distance in one jump
+  // A* pathfinding respecting walls
+  const occupied = getOccupiedCells(state.combatants, actorId);
+  const path = findPath(state.battlefield, state.destructibleHp, cur, target, occupied);
+  if (!path || path.length < 2) return { combat: state, moved: false };
+
+  const dist = path.length - 1; // each step costs 1 movement point
+
   const destTile = getTileAt(state.terrainTiles, target.x, target.y);
   const freezeMultiplier = destTile?.type === 'freeze' ? 2 : 1;
 
-  const dist = Math.max(Math.abs(target.x - cur.x), Math.abs(target.y - cur.y));
   const moveCost = dist * freezeMultiplier;
   const moveMods = computeEffectiveMods(actor.activeEffects);
   const effectiveAllowance = Math.max(0, actor.movementAllowance + moveMods.movementMod);
@@ -780,7 +933,7 @@ export function moveCombatant(combat, actorId, targetPosition) {
   actor.movementUsed = (actor.movementUsed || 0) + moveCost;
   actor.position = target;
 
-  const result = { combat: state, moved: true, distance: dist };
+  const result = { combat: state, moved: true, distance: dist, path };
 
   if (destTile?.type === 'extraTurn') {
     actor.bonusTurn = true;
@@ -796,7 +949,9 @@ export function moveCombatant(combat, actorId, targetPosition) {
     for (let x = 0; x < W; x++) {
       for (let y = 0; y < H; y++) {
         const key = `${x}:${y}`;
-        if (!occupiedCells.has(key) && !tileCells.has(key)) emptyCells.push({ x, y });
+        if (!occupiedCells.has(key) && !tileCells.has(key) && isCellPassableOnBattlefield(state.battlefield, state.destructibleHp, x, y)) {
+          emptyCells.push({ x, y });
+        }
       }
     }
     if (emptyCells.length > 0) {
@@ -839,6 +994,8 @@ export function resolveManoeuvre(combat, actorId, manoeuvreKey, targetId, option
         )
       : combat.skillXpAccumulator,
     terrainTiles: (combat.terrainTiles || []).map(t => ({ ...t })),
+    battlefield: combat.battlefield,
+    destructibleHp: combat.destructibleHp ? { ...combat.destructibleHp } : {},
     log: [...(combat.log || [])],
   };
   const actor = state.combatants.find((c) => c.id === actorId);
@@ -871,8 +1028,26 @@ export function resolveManoeuvre(combat, actorId, manoeuvreKey, targetId, option
     };
   }
 
+  // LoS check for ranged attacks
+  if (target && manoeuvre.range === 'ranged' && state.battlefield) {
+    const ap = normalizePos(actor.position);
+    const tp = normalizePos(target.position);
+    const rangedCheck = checkRangedPath(state.battlefield, state.destructibleHp, ap, tp);
+    if (!rangedCheck.clear) {
+      return {
+        combat: state,
+        result: {
+          actor: actor.name, actorId: actor.id, actorType: actor.type,
+          manoeuvre: manoeuvre.name, manoeuvreKey,
+          targetId: target.id, targetName: target.name,
+          outcome: 'no_line_of_sight', reason: rangedCheck.reason, rolls: [],
+        },
+      };
+    }
+  }
+
   if (target && manoeuvre.closesDistance) {
-    const chargeCheck = canCharge(actor, target, state.combatants);
+    const chargeCheck = canCharge(actor, target, state.combatants, state.battlefield, state.destructibleHp);
     if (!chargeCheck.valid) {
       return {
         combat: state,
@@ -1297,6 +1472,77 @@ export function resolveManoeuvre(combat, actorId, manoeuvreKey, targetId, option
   return { combat: state, result };
 }
 
+// --- Destructible tile mechanics ---
+
+/**
+ * Destroy a tile at (x, y), replacing it with rubble (gravel).
+ */
+export function destroyTile(state, x, y) {
+  if (!state.battlefield) return;
+  state.battlefield[x][y] = RUBBLE_TILE;
+  delete state.destructibleHp[`${x}:${y}`];
+  state.log = [...(state.log || []), `Przeszkoda na (${x},${y}) została zniszczona!`];
+}
+
+/**
+ * Attack a destructible tile. Returns the updated state + result.
+ * Uses Strength test vs medium difficulty.
+ */
+export function attackObstacle(combat, actorId, targetX, targetY) {
+  const state = {
+    ...combat,
+    combatants: combat.combatants.map(c => ({ ...c, conditions: [...(c.conditions || [])], activeEffects: [...(c.activeEffects || [])] })),
+    terrainTiles: (combat.terrainTiles || []).map(t => ({ ...t })),
+    battlefield: combat.battlefield ? combat.battlefield.map(col => [...col]) : null,
+    destructibleHp: combat.destructibleHp ? { ...combat.destructibleHp } : {},
+    log: [...(combat.log || [])],
+  };
+  const actor = state.combatants.find(c => c.id === actorId);
+  if (!actor || actor.isDefeated) return { combat: state, result: null };
+
+  const key = `${targetX}:${targetY}`;
+  const hp = state.destructibleHp[key];
+  if (hp == null || hp <= 0) return { combat: state, result: { outcome: 'invalid', reason: 'not_destructible' } };
+
+  // Must be adjacent
+  const pos = normalizePos(actor.position);
+  const dist = Math.max(Math.abs(pos.x - targetX), Math.abs(pos.y - targetY));
+  if (dist > gameData.MELEE_RANGE) {
+    return { combat: state, result: { outcome: 'out_of_range', distance: dist } };
+  }
+
+  const str = getAttackAttribute(actor);
+  const test = resolveCombatTest(actor, str, 0, 0, DIFFICULTY_THRESHOLDS.medium);
+  const result = {
+    actor: actor.name, actorId: actor.id, actorType: actor.type,
+    manoeuvre: 'Attack Obstacle', manoeuvreKey: 'attackObstacle',
+    targetCell: { x: targetX, y: targetY },
+    rolls: [{ skill: 'Siła', ...test, attributeKey: 'sila', attributeValue: str, side: 'actor' }],
+  };
+
+  if (test.success) {
+    const damage = Math.max(1, Math.floor(str / 3) + 1);
+    state.destructibleHp[key] = Math.max(0, hp - damage);
+    result.outcome = 'hit';
+    result.damage = damage;
+    result.remainingHp = state.destructibleHp[key];
+    const tileId = state.battlefield[targetX]?.[targetY];
+    const tileDef = tileId ? getTileDef(tileId) : null;
+    const tileName = tileDef?.name || tileId || 'obstacle';
+    state.log.push(`${actor.name} uderza ${tileName}: ${damage} obrażeń (${state.destructibleHp[key]} HP pozostało).`);
+
+    if (state.destructibleHp[key] <= 0) {
+      destroyTile(state, targetX, targetY);
+      result.destroyed = true;
+    }
+  } else {
+    result.outcome = 'miss';
+    state.log.push(`${actor.name} próbuje zniszczyć przeszkodę, ale chybia!`);
+  }
+
+  return { combat: state, result };
+}
+
 // --- Turn/round management ---
 
 export function advanceRound(combat) {
@@ -1304,6 +1550,8 @@ export function advanceRound(combat) {
     ...combat,
     combatants: combat.combatants.map((c) => ({ ...c, activeEffects: [...(c.activeEffects || [])] })),
     terrainTiles: (combat.terrainTiles || []).map(t => ({ ...t })),
+    battlefield: combat.battlefield,
+    destructibleHp: combat.destructibleHp ? { ...combat.destructibleHp } : {},
   };
   const dotLog = [];
   const roundEffectEvents = [];
@@ -1455,7 +1703,7 @@ export function getEnemyAction(combat, enemyId) {
   const inMelee = dist <= gameData.MELEE_RANGE;
 
   if (!inMelee) {
-    if (canCharge(enemy, target, combat.combatants).valid) {
+    if (canCharge(enemy, target, combat.combatants, combat.battlefield, combat.destructibleHp).valid) {
       return { manoeuvre: 'charge', targetId: target.id, moveToward: target.id };
     }
     return { manoeuvre: 'attack', targetId: target.id, moveToward: target.id };
@@ -1481,6 +1729,8 @@ export function resolveEnemyTurns(combat) {
     ...combat,
     combatants: combat.combatants.map((c) => ({ ...c })),
     terrainTiles: (combat.terrainTiles || []).map(t => ({ ...t })),
+    battlefield: combat.battlefield,
+    destructibleHp: combat.destructibleHp ? { ...combat.destructibleHp } : {},
   };
   const results = [];
 
@@ -1506,41 +1756,43 @@ export function resolveEnemyTurns(combat) {
           const enemyMoveMods = computeEffectiveMods(current.activeEffects);
           const effAllowance = Math.max(0, current.movementAllowance + enemyMoveMods.movementMod);
           const remaining = effAllowance - (current.movementUsed || 0);
-          const totalDist = Math.max(Math.abs(tp.x - cp.x), Math.abs(tp.y - cp.y));
-          const moveDist = Math.min(remaining, Math.max(0, totalDist - 1));
-          if (moveDist > 0) {
+          if (remaining > 0) {
             const W = gameData.BATTLEFIELD_WIDTH;
             const H = gameData.BATTLEFIELD_HEIGHT;
-            let nx = cp.x, ny = cp.y;
             const enemyOccupied = getOccupiedCells(state.combatants, current.id);
-            for (let step = 0; step < moveDist; step++) {
-              const dx = tp.x - nx;
-              const dy = tp.y - ny;
-              if (dx === 0 && dy === 0) break;
-              const sx = dx === 0 ? 0 : (dx > 0 ? 1 : -1);
-              const sy = dy === 0 ? 0 : (dy > 0 ? 1 : -1);
-              const directScore = scoreTileAt(state.terrainTiles, nx + sx, ny + sy);
-              let bx = sx, by = sy;
-              if (enemyOccupied.has(`${nx + bx}:${ny + by}`) || (directScore < 0 && (sx !== 0 || sy !== 0))) {
-                const altMoves = [];
-                if (sx !== 0) altMoves.push({ ax: sx, ay: 0 });
-                if (sy !== 0) altMoves.push({ ax: 0, ay: sy });
-                let found = false;
-                for (const { ax, ay } of altMoves) {
-                  if (!enemyOccupied.has(`${nx + ax}:${ny + ay}`)) {
-                    const alt = scoreTileAt(state.terrainTiles, nx + ax, ny + ay);
-                    if (alt >= 0) { bx = ax; by = ay; found = true; break; }
-                  }
+
+            // Find the best passable cell adjacent to target
+            let goalCell = tp;
+            const adjCells = [];
+            for (let dx = -1; dx <= 1; dx++) {
+              for (let dy = -1; dy <= 1; dy++) {
+                if (dx === 0 && dy === 0) continue;
+                const nx = tp.x + dx, ny = tp.y + dy;
+                if (nx >= 0 && nx < W && ny >= 0 && ny < H && isCellPassableOnBattlefield(state.battlefield, state.destructibleHp, nx, ny)) {
+                  adjCells.push({ x: nx, y: ny });
                 }
-                if (!found && enemyOccupied.has(`${nx + bx}:${ny + by}`)) break;
               }
-              nx += bx;
-              ny += by;
-              enemyOccupied.delete(`${cp.x}:${cp.y}`);
-              enemyOccupied.add(`${nx}:${ny}`);
             }
-            current.position = { x: Math.max(0, Math.min(W - 1, nx)), y: Math.max(0, Math.min(H - 1, ny)) };
-            current.movementUsed = (current.movementUsed || 0) + moveDist;
+            if (adjCells.length > 0) {
+              adjCells.sort((a, b) => {
+                const da = Math.max(Math.abs(a.x - cp.x), Math.abs(a.y - cp.y));
+                const db = Math.max(Math.abs(b.x - cp.x), Math.abs(b.y - cp.y));
+                return da - db;
+              });
+              goalCell = adjCells[0];
+            }
+
+            const path = findPath(state.battlefield, state.destructibleHp, cp, goalCell, enemyOccupied);
+            if (path && path.length > 1) {
+              const steps = Math.min(remaining, path.length - 1);
+              const dest = path[steps];
+              // Verify tile scoring isn't negative (avoid hazard terrain tiles)
+              const destScore = scoreTileAt(state.terrainTiles, dest.x, dest.y);
+              if (destScore >= -1) {
+                current.position = { x: Math.max(0, Math.min(W - 1, dest.x)), y: Math.max(0, Math.min(H - 1, dest.y)) };
+                current.movementUsed = (current.movementUsed || 0) + steps;
+              }
+            }
           }
         }
       }
@@ -1669,7 +1921,7 @@ export function forceTruceCombat(combat, playerCharacter) {
 
 // --- Multiplayer combat ---
 
-export function createMultiplayerCombatState(playerCharacters, enemies, allies = []) {
+export function createMultiplayerCombatState(playerCharacters, enemies, allies = [], options = {}) {
   const combatants = [];
 
   for (const pc of playerCharacters) {
@@ -1688,11 +1940,14 @@ export function createMultiplayerCombatState(playerCharacters, enemies, allies =
       `enemy_${enemy.name.toLowerCase().replace(/\s+/g, '_')}_${shortId(3)}`, 'enemy'));
   }
 
-  assignInitialPositions(combatants);
+  const biome = options?.biome || 'field';
+  const { battlefield, destructibleHp } = generateBattlefield(biome);
+
+  assignInitialPositions(combatants, battlefield);
 
   const W = gameData.BATTLEFIELD_WIDTH;
   const H = gameData.BATTLEFIELD_HEIGHT;
-  const terrainTiles = spawnTerrainTiles(W, H, combatants);
+  const terrainTiles = spawnTerrainTiles(W, H, combatants, battlefield);
 
   for (const c of combatants) { c.initiative = rollInitiative(c); }
   combatants.sort((a, b) => b.initiative - a.initiative);
@@ -1700,7 +1955,8 @@ export function createMultiplayerCombatState(playerCharacters, enemies, allies =
   return {
     active: true, multiplayer: true, round: 1, turnIndex: 0,
     mode: SKIRMISH_MODE_COMBAT,
-    combatants, terrainTiles, skirmish: null, log: ['Combat begins! Round 1.'], resolved: false,
+    combatants, terrainTiles, battlefield, destructibleHp,
+    skirmish: null, log: ['Combat begins! Round 1.'], resolved: false,
   };
 }
 

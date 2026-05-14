@@ -1,4 +1,8 @@
 import { gameData } from '../../../services/gameDataService';
+import { getTileDef, isTilePassable } from '../../../../shared/domain/battlefieldTiles.js';
+import { getTilePattern, clearPatternCache } from '../../../services/combat/tilePatterns.js';
+import { hasLineOfSight } from '../../../services/combatLineOfSight.js';
+import { getReachableCells, getOccupiedCells, isCellPassableOnBattlefield } from '../../../services/combatEngine.js';
 
 export const COLORS = {
   bg: '#0e0e10',
@@ -129,7 +133,7 @@ export function drawBackground(ctx, w, h, now, anim) {
   ctx.globalAlpha = 1;
 }
 
-export function drawBattlefield(ctx, canvasW, canvasH, _now) {
+export function drawBattlefield(ctx, canvasW, canvasH, _now, battlefield, destructibleHp) {
   const W = gameData.BATTLEFIELD_WIDTH;
   const H = gameData.BATTLEFIELD_HEIGHT;
   const cell = getCellSize(canvasW, canvasH);
@@ -140,6 +144,80 @@ export function drawBattlefield(ctx, canvasW, canvasH, _now) {
   ctx.fillStyle = 'rgba(25,25,28,0.6)';
   ctx.fillRect(origin.x - 2, origin.y - 2, gridW + 4, gridH + 4);
 
+  // Draw structural tiles if present
+  if (battlefield) {
+    for (let col = 0; col < W; col++) {
+      for (let row = 0; row < H; row++) {
+        const tileId = battlefield[col]?.[row];
+        if (!tileId) continue;
+        const def = getTileDef(tileId);
+        if (!def) continue;
+
+        const cx = origin.x + col * cell;
+        const cy = origin.y + row * cell;
+
+        // Base color fill
+        ctx.fillStyle = def.color;
+        ctx.globalAlpha = 0.85;
+        ctx.fillRect(cx, cy, cell, cell);
+
+        // Pattern overlay
+        const pattern = getTilePattern(ctx, def.pattern, cell);
+        if (pattern) {
+          ctx.save();
+          ctx.translate(cx, cy);
+          ctx.fillStyle = pattern;
+          ctx.globalAlpha = 1;
+          ctx.fillRect(0, 0, cell, cell);
+          ctx.restore();
+        }
+
+        ctx.globalAlpha = 1;
+
+        // Impassable tiles: darker border
+        if (!def.passable) {
+          const isDestroyed = destructibleHp && destructibleHp[`${col}:${row}`] != null && destructibleHp[`${col}:${row}`] <= 0;
+          if (!isDestroyed) {
+            ctx.strokeStyle = 'rgba(0,0,0,0.4)';
+            ctx.lineWidth = 1.5;
+            ctx.strokeRect(cx + 0.5, cy + 0.5, cell - 1, cell - 1);
+          }
+        }
+
+        // Destructible tiles: show HP crack overlay when damaged
+        if (def.destructible && destructibleHp) {
+          const key = `${col}:${row}`;
+          const hp = destructibleHp[key];
+          if (hp != null && hp > 0 && hp < def.destructible.hp) {
+            const damageFrac = 1 - (hp / def.destructible.hp);
+            ctx.strokeStyle = `rgba(200,50,50,${0.3 + damageFrac * 0.4})`;
+            ctx.lineWidth = 1;
+            ctx.beginPath();
+            ctx.moveTo(cx + cell * 0.2, cy + cell * 0.1);
+            ctx.lineTo(cx + cell * 0.5, cy + cell * 0.5);
+            ctx.lineTo(cx + cell * 0.4, cy + cell * 0.9);
+            ctx.stroke();
+          }
+        }
+
+        // Directional cover: thick bar on the covered edge
+        if (def.directionalCover) {
+          ctx.strokeStyle = 'rgba(180,150,80,0.6)';
+          ctx.lineWidth = 3;
+          ctx.beginPath();
+          switch (def.directionalCover) {
+            case 'north': ctx.moveTo(cx, cy); ctx.lineTo(cx + cell, cy); break;
+            case 'south': ctx.moveTo(cx, cy + cell); ctx.lineTo(cx + cell, cy + cell); break;
+            case 'west':  ctx.moveTo(cx, cy); ctx.lineTo(cx, cy + cell); break;
+            case 'east':  ctx.moveTo(cx + cell, cy); ctx.lineTo(cx + cell, cy + cell); break;
+          }
+          ctx.stroke();
+        }
+      }
+    }
+  }
+
+  // Grid lines
   ctx.strokeStyle = COLORS.gridLine;
   ctx.lineWidth = 0.5;
   for (let col = 0; col <= W; col++) {
@@ -215,7 +293,7 @@ function alphaHex(a) {
   return Math.round(Math.max(0, Math.min(1, a)) * 255).toString(16).padStart(2, '0');
 }
 
-export function drawMovementZone(ctx, canvasW, canvasH, myCombatant, hoverCell, now) {
+export function drawMovementZone(ctx, canvasW, canvasH, myCombatant, hoverCell, now, combat) {
   const remaining = myCombatant.movementAllowance - (myCombatant.movementUsed || 0);
   if (remaining <= 0) return;
 
@@ -227,8 +305,15 @@ export function drawMovementZone(ctx, canvasW, canvasH, myCombatant, hoverCell, 
   const t = now ?? performance.now();
   const dashOffset = (t / 40) % 16;
 
+  // BFS flood-fill reachable cells respecting walls
+  const occupied = combat ? getOccupiedCells(combat.combatants, myCombatant.id) : new Set();
+  const reachable = combat?.battlefield
+    ? getReachableCells(combat.battlefield, combat.destructibleHp, pos, remaining, occupied)
+    : null;
+
   const inZone = (col, row) => {
     if (col < 0 || col >= W || row < 0 || row >= H) return false;
+    if (reachable) return reachable.has(`${col}:${row}`);
     return Math.max(Math.abs(col - pos.x), Math.abs(row - pos.y)) <= remaining;
   };
 
@@ -312,7 +397,7 @@ export function drawMeleeEngagements(ctx, combatants, canvasW, canvasH, now) {
   ctx.restore();
 }
 
-export function drawRangeIndicator(ctx, fromCombatant, toCombatant, canvasW, canvasH) {
+export function drawRangeIndicator(ctx, fromCombatant, toCombatant, canvasW, canvasH, battlefield, destructibleHp) {
   if (!fromCombatant || !toCombatant) return;
   const fp = normalizePos(fromCombatant.position);
   const tp = normalizePos(toCombatant.position);
@@ -320,8 +405,10 @@ export function drawRangeIndicator(ctx, fromCombatant, toCombatant, canvasW, can
   const p2 = cellToPixel(tp.x, tp.y, canvasW, canvasH);
   const dist = Math.max(Math.abs(fp.x - tp.x), Math.abs(fp.y - tp.y));
 
+  const losBlocked = battlefield && !hasLineOfSight(battlefield, destructibleHp || {}, fp, tp);
+
   ctx.save();
-  ctx.strokeStyle = 'rgba(197,154,255,0.35)';
+  ctx.strokeStyle = losBlocked ? 'rgba(255,100,100,0.5)' : 'rgba(197,154,255,0.35)';
   ctx.lineWidth = 1;
   ctx.setLineDash([6, 4]);
   ctx.beginPath();
@@ -332,11 +419,11 @@ export function drawRangeIndicator(ctx, fromCombatant, toCombatant, canvasW, can
 
   const midX = (p1.x + p2.x) / 2;
   const midY = (p1.y + p2.y) / 2;
-  ctx.fillStyle = 'rgba(197,154,255,0.6)';
+  ctx.fillStyle = losBlocked ? 'rgba(255,100,100,0.7)' : 'rgba(197,154,255,0.6)';
   ctx.font = 'bold 10px Manrope, sans-serif';
   ctx.textAlign = 'center';
   ctx.textBaseline = 'bottom';
-  ctx.fillText(`${dist}`, midX, midY - 4);
+  ctx.fillText(losBlocked ? `${dist} \u{1F6AB}` : `${dist}`, midX, midY - 4);
   ctx.restore();
 }
 

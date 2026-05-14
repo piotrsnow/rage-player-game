@@ -36,6 +36,8 @@ export const TERRAIN_SPAWN_CONFIG = {
   spawnMarginCols: 4,
 };
 
+export const BATTLEFIELD_BIOMES = ['dungeon', 'forest', 'village', 'cave', 'field', 'ruins', 'swamp', 'castle'];
+
 export const HIT_LOCATIONS = [
   { range: [1, 9], location: 'head' },
   { range: [10, 24], location: 'head' },
