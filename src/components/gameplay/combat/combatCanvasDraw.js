@@ -1,5 +1,5 @@
 import { gameData } from '../../../services/gameDataService';
-import { getTileDef, isTilePassable } from '../../../../shared/domain/battlefieldTiles.js';
+import { getTileDef, isTilePassable, isPushable } from '../../../../shared/domain/battlefieldTiles.js';
 import { getTilePattern, clearPatternCache } from '../../../services/combat/tilePatterns.js';
 import { hasLineOfSight } from '../../../services/combatLineOfSight.js';
 import { getReachableCells, getOccupiedCells, isCellPassableOnBattlefield } from '../../../services/combatEngine.js';
@@ -133,7 +133,7 @@ export function drawBackground(ctx, w, h, now, anim) {
   ctx.globalAlpha = 1;
 }
 
-export function drawBattlefield(ctx, canvasW, canvasH, _now, battlefield, destructibleHp) {
+export function drawBattlefield(ctx, canvasW, canvasH, _now, battlefield, destructibleHp, pushesLeft) {
   const W = gameData.BATTLEFIELD_WIDTH;
   const H = gameData.BATTLEFIELD_HEIGHT;
   const cell = getCellSize(canvasW, canvasH);
@@ -212,6 +212,41 @@ export function drawBattlefield(ctx, canvasW, canvasH, _now, battlefield, destru
             case 'east':  ctx.moveTo(cx + cell, cy); ctx.lineTo(cx + cell, cy + cell); break;
           }
           ctx.stroke();
+        }
+
+        // Pushable tile badge
+        if (def.pushable && pushesLeft) {
+          const key = `${col}:${row}`;
+          const remaining = pushesLeft[key];
+          const badgeR = Math.max(6, cell * 0.18);
+          const badgeX = cx + cell - badgeR - 2;
+          const badgeY = cy + cell - badgeR - 2;
+
+          if (remaining != null && remaining > 0) {
+            ctx.beginPath();
+            ctx.arc(badgeX, badgeY, badgeR, 0, Math.PI * 2);
+            ctx.fillStyle = 'rgba(180,130,40,0.85)';
+            ctx.fill();
+            ctx.strokeStyle = 'rgba(255,220,100,0.6)';
+            ctx.lineWidth = 1;
+            ctx.stroke();
+            ctx.fillStyle = '#fff';
+            ctx.font = `bold ${Math.round(badgeR * 1.2)}px sans-serif`;
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText(String(remaining), badgeX, badgeY);
+          } else if (remaining === undefined || remaining === 0) {
+            // Permanently fixed — lock icon (small padlock shape)
+            ctx.beginPath();
+            ctx.arc(badgeX, badgeY, badgeR, 0, Math.PI * 2);
+            ctx.fillStyle = 'rgba(80,80,80,0.75)';
+            ctx.fill();
+            ctx.fillStyle = 'rgba(200,200,200,0.9)';
+            ctx.font = `bold ${Math.round(badgeR * 1.1)}px sans-serif`;
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText('🔒', badgeX, badgeY);
+          }
         }
       }
     }

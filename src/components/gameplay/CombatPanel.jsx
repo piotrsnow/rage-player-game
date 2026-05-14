@@ -24,6 +24,7 @@ import {
   isInMeleeRange,
   getDistance,
   computeAttackPreview,
+  pushObstacle,
 } from '../../services/combatEngine';
 import { getCombatMoveDurationMs } from '../../services/combatAnimationTiming';
 import CombatCanvas from './CombatCanvas';
@@ -488,6 +489,25 @@ export default function CombatPanel({
   });
 
   const handleExecuteManoeuvre = useCallback((manoeuvreKey, targetId, customDesc, extraOpts = {}) => {
+    if (manoeuvreKey === 'pushObstacle') {
+      if (!isMyTurn || combatOver) return;
+      const actorId = isMultiplayer ? myPlayerId : 'player';
+      const { pushTarget, pushTo } = extraOpts;
+      if (!pushTarget || !pushTo) return;
+      const { combat: updated, result } = pushObstacle(combat, actorId, pushTarget.x, pushTarget.y, pushTo.x, pushTo.y);
+      if (!result || result.outcome !== 'pushed') return;
+      addLogEntry({
+        type: 'info',
+        actor: result.actor || '?',
+        action: t('combat.pushedLog', 'pushed {{tile}}', { tile: result.tileName }),
+        target: `(${pushTo.x},${pushTo.y})`,
+        actorColor: '#fbbf24',
+        id: `push_${shortId(4)}`,
+      });
+      dispatch({ type: 'UPDATE_COMBAT', payload: updated });
+      return;
+    }
+
     const actorId = isMultiplayer ? myPlayerId : 'player';
     const preview = computeAttackPreview(combat, actorId, manoeuvreKey, targetId, {
       customDescription: customDesc, ...extraOpts,
@@ -497,7 +517,7 @@ export default function CombatPanel({
       return;
     }
     return rawExecuteManoeuvre(manoeuvreKey, targetId, customDesc, extraOpts);
-  }, [combat, isMultiplayer, myPlayerId, rawExecuteManoeuvre]);
+  }, [combat, isMultiplayer, myPlayerId, rawExecuteManoeuvre, isMyTurn, combatOver, dispatch, addLogEntry, t]);
 
   const confirmManoeuvre = useCallback(async () => {
     if (!pendingManoeuvre) return;

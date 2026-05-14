@@ -11,6 +11,7 @@
 import {
   TILE_TYPES,
   isTilePassable,
+  isPushable,
   passableTilesForBiome,
   obstacleTilesForBiome,
   getDestructibleHp,
@@ -89,6 +90,18 @@ function initDestructibleHp(grid) {
     }
   }
   return hp;
+}
+
+function initPushesLeft(grid) {
+  const pushes = {};
+  for (let x = 0; x < W; x++) {
+    for (let y = 0; y < H; y++) {
+      if (isPushable(grid[x][y])) {
+        pushes[`${x}:${y}`] = 1 + Math.floor(Math.random() * 8);
+      }
+    }
+  }
+  return pushes;
 }
 
 function pickFloor(biome) {
@@ -460,12 +473,12 @@ export function generateBattlefield(biome = 'field') {
   for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
     const grid = gen();
     if (validate(grid)) {
-      return { battlefield: grid, destructibleHp: initDestructibleHp(grid) };
+      return { battlefield: grid, destructibleHp: initDestructibleHp(grid), pushesLeft: initPushesLeft(grid) };
     }
   }
 
   // Fallback: safe field
   const grid = emptyGrid('grass');
   clearSpawnZones(grid, 'grass');
-  return { battlefield: grid, destructibleHp: {} };
+  return { battlefield: grid, destructibleHp: {}, pushesLeft: {} };
 }

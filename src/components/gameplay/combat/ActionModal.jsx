@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { gameData } from '../../../services/gameDataService';
-import { getDistance, getShoveCells, canCharge } from '../../../services/combatEngine';
+import { getDistance, getShoveCells, canCharge, getPushTargetCells } from '../../../services/combatEngine';
+import { isPushable } from '../../../../shared/domain/battlefieldTiles.js';
 import { SPELL_TREES } from '../../../data/rpgMagic';
 import { resolveKnownSpellDisplay } from '../../../services/magicEngine';
 import Tooltip from '../../ui/Tooltip';
@@ -225,6 +226,7 @@ export default function ActionModal({
   onAiAction,
   t,
   targetCell,
+  combat,
 }) {
   const [selectedManoeuvre, setSelectedManoeuvre] = useState(null);
   const [customDescription, setCustomDescription] = useState('');
@@ -343,6 +345,27 @@ export default function ActionModal({
       onClose();
     }
   };
+
+  const pushableTileInfo = useMemo(() => {
+    if (targetType !== 'ground' || !targetCell || !combat?.battlefield || !combat?.pushesLeft) return null;
+    const tileId = combat.battlefield[targetCell.x]?.[targetCell.y];
+    if (!tileId || !isPushable(tileId)) return null;
+    const remaining = combat.pushesLeft[`${targetCell.x}:${targetCell.y}`];
+    if (!remaining || remaining <= 0) return null;
+    return { tileId, remaining };
+  }, [targetType, targetCell, combat?.battlefield, combat?.pushesLeft]);
+
+  const pushTargetCells = useMemo(() => {
+    if (!pushableTileInfo || !myCombatant || !combat) return [];
+    const actorPos = normalizePos(myCombatant.position);
+    return getPushTargetCells(combat, actorPos, targetCell.x, targetCell.y);
+  }, [pushableTileInfo, myCombatant, combat, targetCell]);
+
+  const handlePush = useCallback((pushTo) => {
+    if (!targetCell || !pushTo) return;
+    onExecute('pushObstacle', null, '', { pushTarget: targetCell, pushTo });
+    onClose();
+  }, [targetCell, onExecute, onClose]);
 
   const handleRegenerateSprite = async () => {
     if (!target || !onRegenerateSprite || regenerating) return;
@@ -564,6 +587,24 @@ export default function ActionModal({
               })()}
             </span>
           </button>
+
+          {/* Push pushable obstacle */}
+          {pushableTileInfo && pushTargetCells.length > 0 && (
+            <div className="space-y-1.5">
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => handlePush(pushTargetCells[0])}
+                  className="flex-1 flex items-center gap-2 px-3 py-2 text-xs font-bold rounded-md bg-amber-500/10 text-amber-400 border border-amber-500/15 hover:bg-amber-500/20 transition-colors"
+                >
+                  <span className="material-symbols-outlined text-base">open_with</span>
+                  {t('combat.pushObstacle', 'Pchnij')}
+                  <span className="ml-auto text-[10px] text-on-surface-variant font-normal">
+                    {t('combat.pushesRemaining', '{{count}} pchn.', { count: pushableTileInfo.remaining })}
+                  </span>
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       )}
 

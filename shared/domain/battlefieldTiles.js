@@ -37,8 +37,8 @@ export const TILE_TYPES = {
   iron_gate:     { id: 'iron_gate',     name: 'Żelazna brama',     passable: false, blocksSight: false, destructible: false, directionalCover: null, color: '#3e3e3e', pattern: 'crosshatch',      biomes: ['dungeon', 'castle'] },
 
   // ── Destructible (impassable→rubble on destroy, blocks LoS) ──
-  crate:         { id: 'crate',         name: 'Skrzynia',          passable: false, blocksSight: true,  destructible: { hp: 2 }, directionalCover: null, color: '#9e7a42', pattern: 'wood_grain',  biomes: ['dungeon', 'village', 'castle'] },
-  barrel:        { id: 'barrel',        name: 'Beczka',            passable: false, blocksSight: true,  destructible: { hp: 2 }, directionalCover: null, color: '#7a5e32', pattern: 'wood_grain',  biomes: ['dungeon', 'village', 'castle'] },
+  crate:         { id: 'crate',         name: 'Skrzynia',          passable: false, blocksSight: true,  destructible: { hp: 2 }, directionalCover: null, pushable: true, color: '#9e7a42', pattern: 'wood_grain',  biomes: ['dungeon', 'village', 'castle'] },
+  barrel:        { id: 'barrel',        name: 'Beczka',            passable: false, blocksSight: true,  destructible: { hp: 2 }, directionalCover: null, pushable: true, color: '#7a5e32', pattern: 'wood_grain',  biomes: ['dungeon', 'village', 'castle'] },
   cracked_wall:  { id: 'cracked_wall',  name: 'Pęknięta ściana',   passable: false, blocksSight: true,  destructible: { hp: 4 }, directionalCover: null, color: '#5a5a5a', pattern: 'cracks',     biomes: ['ruins', 'dungeon'] },
   hay_bale:      { id: 'hay_bale',      name: 'Bela siana',        passable: false, blocksSight: true,  destructible: { hp: 1 }, directionalCover: null, color: '#c4a844', pattern: 'diagonal_stripes', biomes: ['village', 'field'] },
   bookshelf:     { id: 'bookshelf',     name: 'Regał z książkami', passable: false, blocksSight: true,  destructible: { hp: 3 }, directionalCover: null, color: '#5e3e22', pattern: 'wood_grain',  biomes: ['castle', 'dungeon'] },
@@ -85,6 +85,11 @@ export function isDestructible(tileId) {
 export function getDestructibleHp(tileId) {
   const def = TILE_TYPES[tileId];
   return def?.destructible?.hp ?? 0;
+}
+
+export function isPushable(tileId) {
+  const def = TILE_TYPES[tileId];
+  return def?.pushable === true;
 }
 
 export function tilesForBiome(biome) {

@@ -19,7 +19,7 @@ import {
 } from './combat/combatCanvasDraw';
 import { gameData } from '../../services/gameDataService';
 import { getDistance, attackObstacle } from '../../services/combatEngine';
-import { getTileDef, isDestructible } from '../../../shared/domain/battlefieldTiles.js';
+import { getTileDef, isDestructible, isPushable } from '../../../shared/domain/battlefieldTiles.js';
 import CombatToken from './combat/CombatToken';
 import InitiativeBar from './combat/InitiativeBar';
 import ActionModal from './combat/ActionModal';
@@ -173,7 +173,7 @@ export default function CombatCanvas({
     const now = performance.now();
 
     drawBackground(ctx, w, h, now, animRef.current);
-    drawBattlefield(ctx, w, h, now, combat.battlefield, combat.destructibleHp);
+    drawBattlefield(ctx, w, h, now, combat.battlefield, combat.destructibleHp, combat.pushesLeft);
     drawTerrainTiles(ctx, w, h, combat.terrainTiles, gameData.terrainTiles, now);
 
     if (isMyTurn && myCombatant && !combatOver) {
@@ -555,6 +555,7 @@ export default function CombatCanvas({
           onAiAction={(actionText) => { onAiAction?.(actionText); setActionModal(null); }}
           t={t}
           targetCell={actionModal.targetCell}
+          combat={combat}
         />,
         document.body,
       )}

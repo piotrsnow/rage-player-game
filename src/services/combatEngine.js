@@ -1,7 +1,7 @@
 import { rollD50, rollPercentage } from './gameState';
 import { rollLuckCheck } from '../../shared/domain/luck.js';
 import { computeEffectiveMods, tickEffects, isRestricted, addEffect } from '../../shared/domain/statusEffects.js';
-import { isTilePassable, getDestructibleHp, RUBBLE_TILE, getTileDef } from '../../shared/domain/battlefieldTiles.js';
+import { isTilePassable, getDestructibleHp, isPushable, RUBBLE_TILE, getTileDef } from '../../shared/domain/battlefieldTiles.js';
 import { gameData } from './gameDataService';
 import { DIFFICULTY_THRESHOLDS, COMBAT_SKILL_XP, WEAPON_SKILL_MAP } from '../data/rpgSystem';
 import { SPELL_EFFECTS, findSpell } from '../data/rpgMagic.js';
@@ -844,8 +844,8 @@ export function createCombatState(playerCharacter, enemies, allies = [], options
 
   const isMinigame = mode === SKIRMISH_MODE_BEER_DUEL || mode === SKIRMISH_MODE_CARD_GAME || mode === SKIRMISH_MODE_DICE_GAME;
   const biome = options?.biome || 'field';
-  const { battlefield, destructibleHp } = isMinigame
-    ? { battlefield: null, destructibleHp: {} }
+  const { battlefield, destructibleHp, pushesLeft } = isMinigame
+    ? { battlefield: null, destructibleHp: {}, pushesLeft: {} }
     : generateBattlefield(biome);
 
   assignInitialPositions(combatants, battlefield);
@@ -869,6 +869,7 @@ export function createCombatState(playerCharacter, enemies, allies = [], options
     terrainTiles,
     battlefield,
     destructibleHp,
+    pushesLeft,
     skirmish: null,
     log: ['Combat begins! Round 1.'],
     resolved: false,
@@ -894,6 +895,7 @@ export function moveCombatant(combat, actorId, targetPosition) {
     terrainTiles: (combat.terrainTiles || []).map(t => ({ ...t })),
     battlefield: combat.battlefield,
     destructibleHp: combat.destructibleHp ? { ...combat.destructibleHp } : {},
+    pushesLeft: combat.pushesLeft ? { ...combat.pushesLeft } : {},
   };
   const actor = state.combatants.find((c) => c.id === actorId);
   if (!actor || actor.isDefeated) return { combat: state, moved: false };
@@ -996,6 +998,7 @@ export function resolveManoeuvre(combat, actorId, manoeuvreKey, targetId, option
     terrainTiles: (combat.terrainTiles || []).map(t => ({ ...t })),
     battlefield: combat.battlefield,
     destructibleHp: combat.destructibleHp ? { ...combat.destructibleHp } : {},
+    pushesLeft: combat.pushesLeft ? { ...combat.pushesLeft } : {},
     log: [...(combat.log || [])],
   };
   const actor = state.combatants.find((c) => c.id === actorId);
@@ -1495,6 +1498,7 @@ export function attackObstacle(combat, actorId, targetX, targetY) {
     terrainTiles: (combat.terrainTiles || []).map(t => ({ ...t })),
     battlefield: combat.battlefield ? combat.battlefield.map(col => [...col]) : null,
     destructibleHp: combat.destructibleHp ? { ...combat.destructibleHp } : {},
+    pushesLeft: combat.pushesLeft ? { ...combat.pushesLeft } : {},
     log: [...(combat.log || [])],
   };
   const actor = state.combatants.find(c => c.id === actorId);
@@ -1543,6 +1547,127 @@ export function attackObstacle(combat, actorId, targetX, targetY) {
   return { combat: state, result };
 }
 
+// --- Pushable obstacle mechanics ---
+
+/**
+ * Compute valid cells a pushable tile can be pushed to from actor's position.
+ * The crate moves 1 cell in the direction away from the actor (including diagonals).
+ */
+export function getPushTargetCells(combat, actorPos, crateX, crateY) {
+  const W = gameData.BATTLEFIELD_WIDTH;
+  const H = gameData.BATTLEFIELD_HEIGHT;
+  const dx = crateX - actorPos.x;
+  const dy = crateY - actorPos.y;
+  const sx = dx === 0 ? 0 : (dx > 0 ? 1 : -1);
+  const sy = dy === 0 ? 0 : (dy > 0 ? 1 : -1);
+
+  const pushX = crateX + sx;
+  const pushY = crateY + sy;
+
+  if (pushX < 0 || pushX >= W || pushY < 0 || pushY >= H) return [];
+  if (!isCellPassableOnBattlefield(combat.battlefield, combat.destructibleHp, pushX, pushY)) return [];
+  if (isCellOccupied(combat.combatants, pushX, pushY)) return [];
+
+  return [{ x: pushX, y: pushY }];
+}
+
+/**
+ * Push a pushable obstacle from (targetX, targetY) to (pushToX, pushToY).
+ * Costs 1 movement point. Auto-success (no dice roll).
+ */
+export function pushObstacle(combat, actorId, targetX, targetY, pushToX, pushToY) {
+  const state = {
+    ...combat,
+    combatants: combat.combatants.map(c => ({ ...c })),
+    terrainTiles: (combat.terrainTiles || []).map(t => ({ ...t })),
+    battlefield: combat.battlefield ? combat.battlefield.map(col => [...col]) : null,
+    destructibleHp: combat.destructibleHp ? { ...combat.destructibleHp } : {},
+    pushesLeft: combat.pushesLeft ? { ...combat.pushesLeft } : {},
+    log: [...(combat.log || [])],
+  };
+  const actor = state.combatants.find(c => c.id === actorId);
+  if (!actor || actor.isDefeated) return { combat: state, result: null };
+
+  const tileId = state.battlefield?.[targetX]?.[targetY];
+  if (!tileId || !isPushable(tileId)) {
+    return { combat: state, result: { outcome: 'invalid', reason: 'not_pushable' } };
+  }
+
+  const sourceKey = `${targetX}:${targetY}`;
+  const remaining = state.pushesLeft[sourceKey];
+  if (!remaining || remaining <= 0) {
+    return { combat: state, result: { outcome: 'invalid', reason: 'no_pushes_left' } };
+  }
+
+  // Actor must be adjacent
+  const pos = normalizePos(actor.position);
+  const dist = Math.max(Math.abs(pos.x - targetX), Math.abs(pos.y - targetY));
+  if (dist > 1) {
+    return { combat: state, result: { outcome: 'out_of_range', distance: dist } };
+  }
+
+  const W = gameData.BATTLEFIELD_WIDTH;
+  const H = gameData.BATTLEFIELD_HEIGHT;
+  if (pushToX < 0 || pushToX >= W || pushToY < 0 || pushToY >= H) {
+    return { combat: state, result: { outcome: 'invalid', reason: 'out_of_bounds' } };
+  }
+  if (!isCellPassableOnBattlefield(state.battlefield, state.destructibleHp, pushToX, pushToY)) {
+    return { combat: state, result: { outcome: 'invalid', reason: 'destination_blocked' } };
+  }
+  if (isCellOccupied(state.combatants, pushToX, pushToY)) {
+    return { combat: state, result: { outcome: 'invalid', reason: 'destination_occupied' } };
+  }
+
+  // Check movement budget (costs 1 movement point)
+  const moveMods = computeEffectiveMods(actor.activeEffects || []);
+  const effectiveAllowance = Math.max(0, (actor.movementAllowance || 0) + moveMods.movementMod);
+  const movementRemaining = effectiveAllowance - (actor.movementUsed || 0);
+  if (movementRemaining < 1) {
+    return { combat: state, result: { outcome: 'invalid', reason: 'no_movement' } };
+  }
+
+  // Execute push
+  const destKey = `${pushToX}:${pushToY}`;
+  const floorTile = state.battlefield[0]?.[0] || 'stone_floor';
+
+  // Move the tile
+  state.battlefield[pushToX][pushToY] = state.battlefield[targetX][targetY];
+  state.battlefield[targetX][targetY] = floorTile;
+
+  // Transfer destructibleHp
+  if (state.destructibleHp[sourceKey] != null) {
+    state.destructibleHp[destKey] = state.destructibleHp[sourceKey];
+    delete state.destructibleHp[sourceKey];
+  }
+
+  // Transfer and decrement pushesLeft
+  const newPushes = remaining - 1;
+  delete state.pushesLeft[sourceKey];
+  if (newPushes > 0) {
+    state.pushesLeft[destKey] = newPushes;
+  }
+
+  // Cost 1 movement point
+  actor.movementUsed = (actor.movementUsed || 0) + 1;
+
+  const tileDef = getTileDef(tileId);
+  const tileName = tileDef?.name || tileId;
+  state.log.push(`${actor.name} popycha ${tileName} na (${pushToX},${pushToY}).${newPushes === 0 ? ' Zablokowane na stałe!' : ` (pozostało pchnięć: ${newPushes})`}`);
+
+  return {
+    combat: state,
+    result: {
+      outcome: 'pushed',
+      actor: actor.name, actorId: actor.id, actorType: actor.type,
+      manoeuvre: 'Push Obstacle', manoeuvreKey: 'pushObstacle',
+      targetCell: { x: targetX, y: targetY },
+      pushTo: { x: pushToX, y: pushToY },
+      pushesLeft: newPushes,
+      tileName,
+    },
+  };
+}
+
 // --- Turn/round management ---
 
 export function advanceRound(combat) {
@@ -1552,6 +1677,7 @@ export function advanceRound(combat) {
     terrainTiles: (combat.terrainTiles || []).map(t => ({ ...t })),
     battlefield: combat.battlefield,
     destructibleHp: combat.destructibleHp ? { ...combat.destructibleHp } : {},
+    pushesLeft: combat.pushesLeft ? { ...combat.pushesLeft } : {},
   };
   const dotLog = [];
   const roundEffectEvents = [];
@@ -1731,6 +1857,7 @@ export function resolveEnemyTurns(combat) {
     terrainTiles: (combat.terrainTiles || []).map(t => ({ ...t })),
     battlefield: combat.battlefield,
     destructibleHp: combat.destructibleHp ? { ...combat.destructibleHp } : {},
+    pushesLeft: combat.pushesLeft ? { ...combat.pushesLeft } : {},
   };
   const results = [];
 
@@ -1941,7 +2068,7 @@ export function createMultiplayerCombatState(playerCharacters, enemies, allies =
   }
 
   const biome = options?.biome || 'field';
-  const { battlefield, destructibleHp } = generateBattlefield(biome);
+  const { battlefield, destructibleHp, pushesLeft } = generateBattlefield(biome);
 
   assignInitialPositions(combatants, battlefield);
 
@@ -1955,7 +2082,7 @@ export function createMultiplayerCombatState(playerCharacters, enemies, allies =
   return {
     active: true, multiplayer: true, round: 1, turnIndex: 0,
     mode: SKIRMISH_MODE_COMBAT,
-    combatants, terrainTiles, battlefield, destructibleHp,
+    combatants, terrainTiles, battlefield, destructibleHp, pushesLeft,
     skirmish: null, log: ['Combat begins! Round 1.'], resolved: false,
   };
 }
