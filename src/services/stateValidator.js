@@ -27,8 +27,6 @@ export function validateStateChanges(stateChanges, currentState, config = {}, co
   const corrections = [];
   const validated = { ...stateChanges };
   const character = currentState?.character;
-  const badgeCampaignId = context?.campaignId ?? null;
-  const badgeSceneIndex = Number.isInteger(context?.sceneIndex) ? context.sceneIndex : null;
   coerceItemAliases(validated);
 
   if (validated.xp !== undefined && validated.xp !== null) {
@@ -135,19 +133,12 @@ export function validateStateChanges(stateChanges, currentState, config = {}, co
   }
 
   if (validated.skillProgress && typeof validated.skillProgress === 'object') {
-    const maxSkillXpPerScene = 500; // max for a single boss kill
+    const maxSkillXpPerScene = 500;
     const rebuilt = {};
-    const badges = [];
     for (const [skillName, xpVal] of Object.entries(validated.skillProgress)) {
       const canon = normalizeSkillName(skillName);
       if (!canon) {
-        badges.push({
-          name: skillName,
-          earnedAt: new Date().toISOString(),
-          redeemed: false,
-          campaignId: badgeCampaignId,
-          sceneIndex: badgeSceneIndex,
-        });
+        warnings.push(`Unrecognized skill "${skillName}" — skipped`);
         continue;
       }
       if (typeof xpVal !== 'number' || xpVal <= 0) {
@@ -163,9 +154,6 @@ export function validateStateChanges(stateChanges, currentState, config = {}, co
       rebuilt[canon] = (rebuilt[canon] || 0) + finalXp;
     }
     validated.skillProgress = rebuilt;
-    if (badges.length > 0) {
-      validated.skillBadges = [...(validated.skillBadges || []), ...badges];
-    }
   }
 
   if (validated.removeItems && Array.isArray(validated.removeItems) && character?.inventory) {

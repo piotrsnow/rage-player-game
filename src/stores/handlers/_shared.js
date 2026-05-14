@@ -20,7 +20,7 @@ import { slugifyItemName } from '../../../shared/domain/itemKeys.js';
 import { sanitizeMana } from '../../../shared/domain/mana.js';
 
 export function createDefaultNeeds() {
-  return { hunger: 100, thirst: 100, bladder: 100, hygiene: 100, rest: 100 };
+  return { hunger: 100, thirst: 100, bladder: 100, rest: 100 };
 }
 
 export function normalizeCustomAttackPresets(presets) {

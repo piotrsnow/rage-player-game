@@ -10,6 +10,7 @@ import { callAIJson, parseJsonOrNull } from '../services/aiJsonCall.js';
 import { loadUserApiKeys } from '../services/apiKeyService.js';
 import { SCENE_CLIENT_SELECT, normalizeSceneAssetUrls } from '../services/campaignSerialize.js';
 import { generateBadge, regenerateBadgeImage } from '../services/badgeGenerator.js';
+import { ensureCharacterSprite } from '../services/characterSpriteService.js';
 
 function cumulativeCharXpThreshold(targetLevel) {
   if (targetLevel <= 1) return 0;
@@ -111,7 +112,7 @@ function snapshotFromBody(body) {
     money: body.money || { gold: 0, silver: 0, copper: 0 },
     equipped: body.equipped || { mainHand: null, offHand: null, armour: null },
     statuses: body.statuses || [],
-    needs: body.needs || { hunger: 100, thirst: 100, bladder: 100, hygiene: 100, rest: 100 },
+    needs: body.needs || { hunger: 100, thirst: 100, bladder: 100, rest: 100 },
     backstory: body.backstory || '',
     customAttackPresets: Array.isArray(body.customAttackPresets) ? body.customAttackPresets : [],
     portraitUrl: body.portraitUrl || '',
@@ -123,7 +124,6 @@ function snapshotFromBody(body) {
     lockedCampaignId: body.lockedCampaignId ?? null,
     lockedCampaignName: body.lockedCampaignName ?? null,
     lockedLocation: body.lockedLocation ?? null,
-    skillBadges: Array.isArray(body.skillBadges) ? body.skillBadges : [],
   };
 }
 
@@ -143,7 +143,6 @@ function mergeUpdateBody(existingSnapshot, body) {
     'attributes', 'mana', 'spells', 'money', 'statuses', 'needs',
     'customAttackPresets', 'knownTitles', 'activeDungeonState',
     'skills', 'inventory', 'materialBag', 'equipped',
-    'skillBadges',
   ];
   for (const key of passthrough) {
     if (body[key] !== undefined) merged[key] = body[key];
@@ -189,7 +188,6 @@ const CHARACTER_BODY_SCHEMA = {
     lockedCampaignId: { type: ['string', 'null'], maxLength: 100 },
     lockedCampaignName: { type: ['string', 'null'], maxLength: 200 },
     lockedLocation: { type: ['string', 'null'], maxLength: 200 },
-    skillBadges: { type: 'array', maxItems: 500 },
   },
 };
 
@@ -551,18 +549,26 @@ export async function characterRoutes(fastify) {
       };
     }
 
+    const sceneFrom = typeof request.body?.sceneFrom === 'number' ? request.body.sceneFrom : null;
+    const sceneTo = typeof request.body?.sceneTo === 'number' ? request.body.sceneTo : null;
+    const hasRange = sceneFrom != null && sceneTo != null;
+
     let scenes = [];
     if (campaignIds.length > 0) {
+      const where = { campaignId: { in: campaignIds } };
+      if (hasRange) {
+        where.sceneIndex = { gte: sceneFrom, lte: sceneTo };
+      }
       scenes = await prisma.campaignScene.findMany({
-        where: { campaignId: { in: campaignIds } },
+        where,
         orderBy: { createdAt: 'desc' },
-        take: 10,
+        ...(hasRange ? {} : { take: 10 }),
         select: SCENE_CLIENT_SELECT,
       });
     }
 
     const sceneTexts = scenes
-      .slice(0, 5)
+      .slice(0, hasRange ? scenes.length : 5)
       .map((s, i) => `Scene ${s.sceneIndex ?? i + 1}: ${(s.narrative || '').slice(0, 300)}`)
       .join('\n');
 
@@ -773,5 +779,33 @@ Return JSON with exactly three fields, all written in ${isPolish ? 'Polish' : 'E
     } catch (err) {
       return reply.code(502).send({ error: err.message });
     }
+  });
+
+  // ── Sprite sheet generation ────────────────────────────────────────
+  fastify.post('/:id/sprite', {
+    schema: {
+      params: { type: 'object', properties: { id: { type: 'string' } }, required: ['id'] },
+      body: { type: 'object', properties: { force: { type: 'boolean', default: false } }, additionalProperties: false },
+    },
+  }, async (request, reply) => {
+    const char = await prisma.character.findUnique({
+      where: { id: request.params.id },
+      select: { id: true, userId: true },
+    });
+    if (!char || char.userId !== request.user.id) {
+      return reply.code(404).send({ error: 'Character not found' });
+    }
+
+    const result = await ensureCharacterSprite({
+      kind: 'character',
+      id: char.id,
+      userId: request.user.id,
+      force: !!request.body?.force,
+    });
+
+    return {
+      spriteSheetUrl: result?.spriteSheetUrl || null,
+      chargenAppearance: result?.chargenAppearance || null,
+    };
   });
 }

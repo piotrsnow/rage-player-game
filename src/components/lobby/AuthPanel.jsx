@@ -179,7 +179,8 @@ function LoggedInBanner({ user }) {
   const audioRef = useRef(null);
   const diceVideoRef = useRef(null);
 
-  const [charCount, setCharCount] = useState(0);
+  const [characterLoading, setCharacterLoading] = useState(true);
+  const [characterLoadFailed, setCharacterLoadFailed] = useState(false);
   const [lastLobbyDiceRoll, setLastLobbyDiceRoll] = useState(null);
 
   const resolveFallbackCharacter = useCallback(async (preferredId = null) => {
@@ -201,14 +202,34 @@ function LoggedInBanner({ user }) {
   }, []);
 
   useEffect(() => {
-    const chars = storage.getCharacters();
-    setCharCount(chars.length);
-    if (chars.length > 0) {
-      const sorted = [...chars].sort(
-        (a, b) => (b.characterLevel || 1) - (a.characterLevel || 1),
-      );
-      setTopChar(sorted[0]);
-    }
+    let cancelled = false;
+
+    setCharacterLoading(true);
+    setCharacterLoadFailed(false);
+
+    storage.getCharactersAsync()
+      .then((chars) => {
+        if (cancelled) return;
+        const list = Array.isArray(chars) ? chars : [];
+        if (list.length > 0) {
+          const sorted = [...list].sort(
+            (a, b) => (b.characterLevel || 1) - (a.characterLevel || 1),
+          );
+          setTopChar(sorted[0]);
+        } else {
+          setTopChar(null);
+        }
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setTopChar(null);
+        setCharacterLoadFailed(true);
+      })
+      .finally(() => {
+        if (!cancelled) setCharacterLoading(false);
+      });
+
+    return () => { cancelled = true; };
   }, []);
 
   const refreshLastLobbyDice = useCallback(() => {
@@ -620,7 +641,23 @@ function LoggedInBanner({ user }) {
     : [];
 
   if (!topChar) {
-    return null;
+    return (
+      <GlassCard elevated className="p-4 sm:p-6 lg:p-8 text-center" data-testid="logged-in-banner">
+        <span className={`material-symbols-outlined text-primary/50 text-4xl mb-3 block ${characterLoading ? 'animate-spin' : ''}`}>
+          {characterLoading ? 'progress_activity' : 'account_circle'}
+        </span>
+        <p className="font-headline text-tertiary text-sm sm:text-base">
+          {t('settings.backendLoggedInAs', 'Logged in as')} {user?.email || ''}
+        </p>
+        <p className="text-on-surface-variant/60 text-xs mt-2 max-w-sm mx-auto">
+          {characterLoading
+            ? t('lobby.loadingCharacters', 'Ładowanie biblioteki postaci...')
+            : characterLoadFailed
+              ? t('lobby.characterLoadFailed', 'Nie udało się wczytać karty postaci. Możesz nadal rozpocząć nową kampanię.')
+              : t('lobby.noCharacters', 'Nie masz jeszcze zapisanych postaci. Możesz rozpocząć nową kampanię.')}
+        </p>
+      </GlassCard>
+    );
   }
 
   return (

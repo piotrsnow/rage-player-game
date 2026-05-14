@@ -125,11 +125,13 @@ export function buildManoeuvreExecutor({
         combat, actorId, manoeuvreKey, targetId, { customDescription: customDesc, ...extraOpts },
       );
       const hit = result?.outcome === 'hit';
-      const spellVfxVariant = manoeuvreKey === 'castSpell'
+      const isSpell = manoeuvreKey === 'castSpell';
+      const spellVfxVariant = isSpell
         ? Math.floor(Math.random() * SPELL_VFX_COUNT)
         : undefined;
       if (result && spellVfxVariant != null) result.spellVfxVariant = spellVfxVariant;
-      await triggerProjectileAnim(actorId, targetId, hit, { spellVfxVariant });
+      const spellName = isSpell ? (extraOpts.spellName || null) : undefined;
+      await triggerProjectileAnim(actorId, targetId, hit, { spellVfxVariant, spellName });
 
       const { anims } = diffPositionAnims(updatedCombat.combatants, positionsBefore);
       if (Object.keys(anims).length) scheduleTokenAnim(anims);

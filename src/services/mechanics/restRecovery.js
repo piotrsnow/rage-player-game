@@ -2,7 +2,7 @@ import { sanitizeMana } from '../../../shared/domain/mana.js';
 import { NEED_KEYWORD_HINTS } from '../autoPlayer.js';
 
 const HEAL_RATE_PER_HOUR = 0.10;
-const NEEDS_KEYS = ['hunger', 'thirst', 'bladder', 'hygiene', 'rest'];
+const NEEDS_KEYS = ['hunger', 'thirst', 'bladder', 'rest'];
 const REST_KEYWORDS = NEED_KEYWORD_HINTS.rest;
 
 /**

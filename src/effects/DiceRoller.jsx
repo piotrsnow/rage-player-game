@@ -16,10 +16,37 @@ const OVERLAY_THEME = {
   disableSpotLight: false,
 };
 
+function clampNumber(value, min, max, fallback) {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) return fallback;
+  return Math.trunc(Math.max(min, Math.min(max, numeric)));
+}
+
+function getD50Results(roll) {
+  const safeRoll = clampNumber(roll, 1, 50, 1);
+  const zeroBasedRoll = safeRoll - 1;
+  return [Math.floor(zeroBasedRoll / 10), (zeroBasedRoll % 10) + 1];
+}
+
 function getPercentileResults(roll) {
   if (roll === 100) return [0, 0];
-  const safeRoll = Math.max(0, Math.min(99, Number(roll) || 0));
+  const safeRoll = clampNumber(roll, 0, 99, 0);
   return [Math.floor(safeRoll / 10), safeRoll % 10];
+}
+
+const DICE_MODE_CONFIG = {
+  d50: {
+    notation: 'd5+d10',
+    getResults: getD50Results,
+  },
+  percentile: {
+    notation: 'd100+d9',
+    getResults: getPercentileResults,
+  },
+};
+
+function getDiceModeConfig(diceMode) {
+  return DICE_MODE_CONFIG[diceMode] ?? DICE_MODE_CONFIG.d50;
 }
 
 export default function DiceRoller({
@@ -29,6 +56,8 @@ export default function DiceRoller({
   sizeMultiplier = 1,
   durationMultiplier = 1,
   variant = 'default',
+  overlayTheme = null,
+  diceMode = 'd50',
   isVisible = true,
   /** Delay before `start_throw` (overlay should align with CSS fly-in end). */
   preRollRevealMs = PRE_ROLL_REVEAL_MS,
@@ -48,11 +77,24 @@ export default function DiceRoller({
   const [ready, setReady] = useState(false);
   const [showResult, setShowResult] = useState(false);
   const [showDice, setShowDice] = useState(false);
+  const diceModeConfig = getDiceModeConfig(diceMode);
 
   const clearTimers = () => {
     if (rollTimeoutRef.current) {
       window.clearTimeout(rollTimeoutRef.current);
       rollTimeoutRef.current = null;
+    }
+  };
+
+  const stopDiceBox = () => {
+    const box = boxRef.current;
+    if (!box) return;
+    box.running = false;
+    box.rolling = false;
+    try {
+      box.clear?.();
+    } catch {
+      /* dice library may already be tearing down */
     }
   };
 
@@ -73,12 +115,13 @@ export default function DiceRoller({
                 antialias: antialias ?? false,
                 physicsSolverIterations: physicsSolverIterations ?? 5,
                 ...OVERLAY_THEME,
+                ...(overlayTheme ?? {}),
               }
             : undefined;
 
         containerRef.current.innerHTML = '';
         const box = new DICE.dice_box(containerRef.current, boxOptions);
-        box.setDice('d100+d9');
+        box.setDice(diceModeConfig.notation);
         boxRef.current = box;
         setReady(true);
       })
@@ -89,13 +132,14 @@ export default function DiceRoller({
     return () => {
       cancelled = true;
       clearTimers();
+      stopDiceBox();
       boxRef.current = null;
       setReady(false);
       if (containerRef.current) {
         containerRef.current.innerHTML = '';
       }
     };
-  }, [variant, sizeMultiplier, durationMultiplier, maxPixelRatio, antialias, physicsSolverIterations]);
+  }, [variant, sizeMultiplier, durationMultiplier, overlayTheme, maxPixelRatio, antialias, physicsSolverIterations, diceModeConfig.notation]);
 
   useEffect(() => {
     if (!ready || !boxRef.current) return;
@@ -103,6 +147,7 @@ export default function DiceRoller({
     clearTimers();
 
     if (!diceRoll || !isVisible) {
+      stopDiceBox();
       setShowResult(false);
       setShowDice(false);
       return;
@@ -110,13 +155,13 @@ export default function DiceRoller({
 
     const box = boxRef.current;
     const rawRoll = diceRoll.roll ?? diceRoll.rolledValue;
-    const requestedResults = getPercentileResults(rawRoll);
+    const requestedResults = diceModeConfig.getResults(rawRoll);
     targetFaceValuesRef.current = requestedResults.slice();
     rolledOnceRef.current = false;
     setShowResult(false);
     setShowDice(true);
     rollTimeoutRef.current = window.setTimeout(() => {
-      box.setDice('d100+d9');
+      box.setDice(diceModeConfig.notation);
       box.start_throw(
         () => requestedResults,
         () => {
@@ -131,7 +176,7 @@ export default function DiceRoller({
     return () => {
       clearTimers();
     };
-  }, [ready, diceRoll, onComplete, isVisible, preRollRevealMs]);
+  }, [ready, diceRoll, onComplete, isVisible, preRollRevealMs, diceModeConfig]);
 
   const trySkipAnimation = () => {
     if (!skipOnClick || rolledOnceRef.current) return;

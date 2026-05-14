@@ -3,6 +3,7 @@ import { getTileDef, isTilePassable, isPushable } from '../../../../shared/domai
 import { getTilePattern, clearPatternCache } from '../../../services/combat/tilePatterns.js';
 import { hasLineOfSight } from '../../../services/combatLineOfSight.js';
 import { getReachableCells, getOccupiedCells, isCellPassableOnBattlefield } from '../../../services/combatEngine.js';
+import { findSpell } from '../../../data/rpgMagic.js';
 
 export const COLORS = {
   bg: '#0e0e10',
@@ -311,13 +312,25 @@ export function drawTerrainTiles(ctx, canvasW, canvasH, terrainTiles, tileDefs, 
       ctx.strokeRect(cx + 1, cy + 1, cell - 2, cell - 2);
     }
 
-    // Emoji icon
+    // Circle background + emoji icon
     const emojiAlpha = tile.consumed ? 0.12 : 0.75 + 0.15 * Math.sin(now / 600 + tile.x);
+    const circleR = cell * 0.34;
+    ctx.globalAlpha = emojiAlpha * 0.45;
+    ctx.beginPath();
+    ctx.arc(centerX, centerY, circleR, 0, Math.PI * 2);
+    ctx.fillStyle = def.color;
+    ctx.fill();
+    ctx.globalAlpha = emojiAlpha * 0.7;
+    ctx.lineWidth = 1.5;
+    ctx.strokeStyle = def.color;
+    ctx.stroke();
+
     ctx.globalAlpha = emojiAlpha;
-    const fontSize = cell * 0.5;
+    const fontSize = cell * 0.36;
     ctx.font = `${fontSize}px sans-serif`;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
+    ctx.fillStyle = '#fff';
     ctx.fillText(def.emoji, centerX, centerY);
 
     ctx.restore();
@@ -349,7 +362,7 @@ export function drawMovementZone(ctx, canvasW, canvasH, myCombatant, hoverCell, 
   const inZone = (col, row) => {
     if (col < 0 || col >= W || row < 0 || row >= H) return false;
     if (reachable) return reachable.has(`${col}:${row}`);
-    return Math.max(Math.abs(col - pos.x), Math.abs(row - pos.y)) <= remaining;
+    return (Math.abs(col - pos.x) + Math.abs(row - pos.y)) <= remaining;
   };
 
   ctx.save();
@@ -374,9 +387,20 @@ export function drawMovementZone(ctx, canvasW, canvasH, myCombatant, hoverCell, 
   ctx.stroke();
   ctx.restore();
 
-  if (hoverCell) {
-    const dist = Math.max(Math.abs(hoverCell.x - pos.x), Math.abs(hoverCell.y - pos.y));
-    if (dist > 0 && dist <= remaining) {
+  if (hoverCell && inZone(hoverCell.x, hoverCell.y)) {
+    const path = _cardinalBfsPath(pos, hoverCell, occupied, W, H);
+    if (path && path.length > 0 && path.length <= remaining) {
+      ctx.save();
+      const pathAlpha = 0.25 + 0.1 * Math.sin(t / 400);
+      ctx.fillStyle = COLORS.primary;
+      ctx.globalAlpha = pathAlpha;
+      for (const step of path) {
+        const cx = origin.x + step.x * cell;
+        const cy = origin.y + step.y * cell;
+        ctx.fillRect(cx + 2, cy + 2, cell - 4, cell - 4);
+      }
+      ctx.restore();
+
       const px = cellToPixel(hoverCell.x, hoverCell.y, canvasW, canvasH);
       const bright = 1.2 + 1.0 * (0.5 + 0.5 * Math.sin(t / 220));
       const bounce = Math.sin(t / 300) * 2;
@@ -390,6 +414,43 @@ export function drawMovementZone(ctx, canvasW, canvasH, myCombatant, hoverCell, 
       ctx.globalAlpha = 1;
     }
   }
+}
+
+const _DIRS = [{ dx: 0, dy: -1 }, { dx: 1, dy: 0 }, { dx: 0, dy: 1 }, { dx: -1, dy: 0 }];
+
+function _cardinalBfsPath(start, end, occupiedSet, width, height) {
+  if (start.x === end.x && start.y === end.y) return [];
+  const endKey = `${end.x}:${end.y}`;
+  if (occupiedSet.has(endKey)) return null;
+  const startKey = `${start.x}:${start.y}`;
+  const cameFrom = new Map();
+  cameFrom.set(startKey, null);
+  const queue = [{ x: start.x, y: start.y }];
+  while (queue.length > 0) {
+    const { x, y } = queue.shift();
+    const key = `${x}:${y}`;
+    if (key === endKey) {
+      const path = [];
+      let cur = endKey;
+      while (cur && cur !== startKey) {
+        const [cx, cy] = cur.split(':').map(Number);
+        path.push({ x: cx, y: cy });
+        cur = cameFrom.get(cur);
+      }
+      path.reverse();
+      return path;
+    }
+    for (const { dx, dy } of _DIRS) {
+      const nx = x + dx, ny = y + dy;
+      if (nx < 0 || nx >= width || ny < 0 || ny >= height) continue;
+      const nk = `${nx}:${ny}`;
+      if (cameFrom.has(nk)) continue;
+      if (nk !== endKey && occupiedSet.has(nk)) continue;
+      cameFrom.set(nk, key);
+      queue.push({ x: nx, y: ny });
+    }
+  }
+  return null;
 }
 
 export function drawMeleeEngagements(ctx, combatants, canvasW, canvasH, now) {
@@ -522,13 +583,93 @@ const SPARK_COUNT = 10;
 export const PROJECTILE_TOTAL_MS = FLIGHT_MS + EXPLOSION_MS;
 export const SPELL_VFX_COUNT = 5;
 
-const SPELL_PALETTES = [
-  { primary: '#c59aff', rgb: '197,154,255' },
-  { primary: '#00d4ff', rgb: '0,212,255' },
-  { primary: '#ff6a00', rgb: '255,106,0' },
-  { primary: '#a8e0ff', rgb: '168,224,255' },
-  { primary: '#7b2fbe', rgb: '123,47,190' },
-];
+// ── School-specific spell palettes ──
+const SCHOOL_PALETTES = {
+  ogien:           { primary: '#ff6a00', secondary: '#ffcc44', glowRgb: '255,106,0',  mistRgb: '255,80,0',    accent: '#ff3300' },
+  blyskawice:      { primary: '#00d4ff', secondary: '#a0f0ff', glowRgb: '0,212,255',  mistRgb: '100,200,255', accent: '#ffffff' },
+  lod:             { primary: '#a8e0ff', secondary: '#ffffff', glowRgb: '168,224,255', mistRgb: '200,230,255', accent: '#d0f0ff' },
+  leczenie:        { primary: '#44dd88', secondary: '#a0ffcc', glowRgb: '68,221,136',  mistRgb: '60,200,120',  accent: '#22ff88' },
+  ochrona:         { primary: '#ffd060', secondary: '#fff0b0', glowRgb: '255,208,96',  mistRgb: '255,200,80',  accent: '#ffaa00' },
+  niewidzialnosc:  { primary: '#b0c8e8', secondary: '#e0e8f0', glowRgb: '176,200,232', mistRgb: '160,180,210', accent: '#8090b0' },
+  przestrzen:      { primary: '#b040ff', secondary: '#d090ff', glowRgb: '176,64,255',  mistRgb: '140,60,220',  accent: '#8000cc' },
+  umysl:           { primary: '#e060c0', secondary: '#ffb0e8', glowRgb: '224,96,192',  mistRgb: '180,60,160',  accent: '#a020a0' },
+  wiatr_percepcja: { primary: '#80d8d8', secondary: '#c0f0f0', glowRgb: '128,216,216', mistRgb: '100,200,200', accent: '#40b0b0' },
+};
+const FALLBACK_SPELL_PAL = { primary: '#c59aff', secondary: '#e0c8ff', glowRgb: '197,154,255', mistRgb: '160,120,220', accent: '#7b2fbe' };
+
+const SCHOOL_VARIANT = {
+  ogien: 2, blyskawice: 1, lod: 3, umysl: 4, przestrzen: 4,
+  ochrona: 0, leczenie: 0, niewidzialnosc: 0, wiatr_percepcja: 1,
+};
+
+function hashStr(s) {
+  let h = 0;
+  for (let i = 0; i < s.length; i++) h = ((h << 5) - h + s.charCodeAt(i)) | 0;
+  return Math.abs(h);
+}
+
+function hslHex(h, s, l) {
+  s /= 100; l /= 100;
+  const c = (1 - Math.abs(2 * l - 1)) * s;
+  const x = c * (1 - Math.abs((h / 60) % 2 - 1));
+  const m = l - c / 2;
+  let r, g, b;
+  if (h < 60)       { r = c; g = x; b = 0; }
+  else if (h < 120) { r = x; g = c; b = 0; }
+  else if (h < 180) { r = 0; g = c; b = x; }
+  else if (h < 240) { r = 0; g = x; b = c; }
+  else if (h < 300) { r = x; g = 0; b = c; }
+  else              { r = c; g = 0; b = x; }
+  const hex = v => Math.round((v + m) * 255).toString(16).padStart(2, '0');
+  return `#${hex(r)}${hex(g)}${hex(b)}`;
+}
+
+function hexRgb(hex) {
+  return `${parseInt(hex.slice(1, 3), 16)},${parseInt(hex.slice(3, 5), 16)},${parseInt(hex.slice(5, 7), 16)}`;
+}
+
+/**
+ * Resolve spell school palette + visual variant from spellName.
+ * Falls back to a stable hash-derived palette for custom spells, or the
+ * legacy indexed palette when no name is available at all.
+ */
+export function getSpellVfxProfile(spellName, fallbackVariant) {
+  if (spellName) {
+    const found = findSpell(spellName);
+    if (found) {
+      return {
+        pal: SCHOOL_PALETTES[found.treeId] || FALLBACK_SPELL_PAL,
+        variant: SCHOOL_VARIANT[found.treeId] ?? 0,
+        treeId: found.treeId,
+      };
+    }
+    const h = hashStr(spellName);
+    const hue = h % 360;
+    const primary = hslHex(hue, 70, 55);
+    return {
+      pal: {
+        primary, secondary: hslHex(hue, 50, 78),
+        glowRgb: hexRgb(primary), mistRgb: hexRgb(hslHex(hue, 60, 40)),
+        accent: hslHex(hue, 80, 38),
+      },
+      variant: h % 5,
+      treeId: null,
+    };
+  }
+  const OLD_PALS = [
+    FALLBACK_SPELL_PAL,
+    SCHOOL_PALETTES.blyskawice,
+    SCHOOL_PALETTES.ogien,
+    SCHOOL_PALETTES.lod,
+    { primary: '#7b2fbe', secondary: '#b080e0', glowRgb: '123,47,190', mistRgb: '100,40,160', accent: '#3a0066' },
+  ];
+  return { pal: OLD_PALS[fallbackVariant] || FALLBACK_SPELL_PAL, variant: fallbackVariant ?? 0, treeId: null };
+}
+
+const SPELL_TRAIL_LEN = 20;
+const SPELL_SPARK_N = 16;
+const STREAK_N = 5;
+const FORK_N = 4;
 
 function easeOutCubic(t) {
   return 1 - Math.pow(1 - t, 3);
@@ -538,8 +679,9 @@ function drawSpellProjectile(ctx, anim, canvasW, canvasH, now) {
   const elapsed = now - anim.startTime;
   if (elapsed > FLIGHT_MS + EXPLOSION_MS) return false;
 
-  const v = anim.spellVfxVariant;
-  const pal = SPELL_PALETTES[v] || SPELL_PALETTES[0];
+  if (!anim._vfxProfile) anim._vfxProfile = getSpellVfxProfile(anim.spellName, anim.spellVfxVariant);
+  const { pal, variant } = anim._vfxProfile;
+
   const fromPx = cellToPixel(anim.fromCell.x, anim.fromCell.y, canvasW, canvasH);
   const cell = getCellSize(canvasW, canvasH);
   let toPx = cellToPixel(anim.toCell.x, anim.toCell.y, canvasW, canvasH);
@@ -550,6 +692,7 @@ function drawSpellProjectile(ctx, anim, canvasW, canvasH, now) {
 
   ctx.save();
 
+  // ═══ FLIGHT PHASE ═══
   if (elapsed <= FLIGHT_MS) {
     const t = easeOutCubic(Math.min(1, elapsed / FLIGHT_MS));
     const cx = fromPx.x + (toPx.x - fromPx.x) * t;
@@ -557,318 +700,330 @@ function drawSpellProjectile(ctx, anim, canvasW, canvasH, now) {
 
     if (!anim._trail) anim._trail = [];
     anim._trail.push({ x: cx, y: cy });
-    if (anim._trail.length > TRAIL_LENGTH) anim._trail.shift();
+    if (anim._trail.length > SPELL_TRAIL_LEN) anim._trail.shift();
 
-    switch (v) {
-      case 0: {
-        for (let i = 0; i < anim._trail.length; i++) {
-          const p = anim._trail[i];
-          const r = (i + 1) / anim._trail.length;
-          ctx.globalAlpha = r * 0.3;
-          ctx.fillStyle = pal.primary;
-          ctx.beginPath();
-          ctx.arc(p.x, p.y, 2 + r * 4, 0, Math.PI * 2);
-          ctx.fill();
-        }
-        for (let i = 0; i < 3; i++) {
-          const a = elapsed / 200 + i * Math.PI * 2 / 3;
-          const oR = 10 + Math.sin(elapsed / 150) * 3;
-          ctx.globalAlpha = 0.6;
-          ctx.fillStyle = '#e0c8ff';
-          ctx.beginPath();
-          ctx.arc(cx + Math.cos(a) * oR, cy + Math.sin(a) * oR, 2.5, 0, Math.PI * 2);
-          ctx.fill();
-        }
-        const ag = ctx.createRadialGradient(cx, cy, 0, cx, cy, 18);
-        ag.addColorStop(0, `rgba(${pal.rgb},0.55)`);
-        ag.addColorStop(0.5, `rgba(${pal.rgb},0.15)`);
-        ag.addColorStop(1, `rgba(${pal.rgb},0)`);
-        ctx.globalAlpha = 1;
-        ctx.fillStyle = ag;
-        ctx.beginPath();
-        ctx.arc(cx, cy, 18, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.fillStyle = pal.primary;
-        ctx.beginPath();
-        ctx.arc(cx, cy, 7, 0, Math.PI * 2);
-        ctx.fill();
-        break;
+    // Trail
+    for (let i = 0; i < anim._trail.length; i++) {
+      const p = anim._trail[i];
+      const r = (i + 1) / anim._trail.length;
+      ctx.globalAlpha = r * 0.35;
+      ctx.fillStyle = r > 0.6 ? pal.primary : pal.secondary;
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, 2.5 + r * 5, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    // Mist cloud
+    const mistR = 32 + Math.sin(elapsed / 200) * 8;
+    const mg = ctx.createRadialGradient(cx, cy, 0, cx, cy, mistR);
+    mg.addColorStop(0, `rgba(${pal.mistRgb},0.18)`);
+    mg.addColorStop(0.5, `rgba(${pal.mistRgb},0.06)`);
+    mg.addColorStop(1, `rgba(${pal.mistRgb},0)`);
+    ctx.globalAlpha = 1;
+    ctx.fillStyle = mg;
+    ctx.beginPath();
+    ctx.arc(cx, cy, mistR, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Side streaks
+    if (!anim._streaks) {
+      anim._streaks = [];
+      for (let i = 0; i < STREAK_N; i++) {
+        anim._streaks.push({
+          offAngle: Math.random() * Math.PI * 2,
+          len: 8 + Math.random() * 14,
+          drift: (Math.random() - 0.5) * 6,
+          phase: Math.random() * 1000,
+        });
       }
+    }
+    const dx = toPx.x - fromPx.x;
+    const dy = toPx.y - fromPx.y;
+    const travelAngle = Math.atan2(dy, dx);
+    for (const sk of anim._streaks) {
+      const vis = Math.sin((elapsed + sk.phase) / 180) * 0.5 + 0.5;
+      if (vis < 0.2) continue;
+      const perpA = travelAngle + Math.PI / 2 + sk.offAngle * 0.3;
+      const sx = cx + Math.cos(perpA) * sk.drift;
+      const sy = cy + Math.sin(perpA) * sk.drift;
+      const ex = sx + Math.cos(travelAngle + sk.offAngle * 0.2) * sk.len;
+      const ey = sy + Math.sin(travelAngle + sk.offAngle * 0.2) * sk.len;
+      ctx.globalAlpha = vis * 0.4;
+      ctx.strokeStyle = pal.accent;
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.moveTo(sx, sy);
+      ctx.lineTo(ex, ey);
+      ctx.stroke();
+    }
+
+    // Lightning micro-forks (all spells; stronger for lightning school)
+    const forkIntensity = variant === 1 ? 1.0 : 0.3;
+    if (!anim._forks || anim._forkFrame !== Math.floor(elapsed / 120)) {
+      anim._forkFrame = Math.floor(elapsed / 120);
+      anim._forks = [];
+      const forkN = variant === 1 ? FORK_N + 2 : FORK_N;
+      for (let i = 0; i < forkN; i++) {
+        const a = Math.random() * Math.PI * 2;
+        const len = 6 + Math.random() * 12;
+        anim._forks.push({ a, len, midA: a + (Math.random() - 0.5) * 0.8, midD: len * 0.45 });
+      }
+    }
+    ctx.strokeStyle = pal.primary;
+    ctx.lineWidth = 1.2;
+    ctx.shadowColor = pal.primary;
+    ctx.shadowBlur = variant === 1 ? 10 : 4;
+    for (const f of anim._forks) {
+      ctx.globalAlpha = forkIntensity * (0.4 + Math.random() * 0.3);
+      const mx = cx + Math.cos(f.midA) * f.midD;
+      const my = cy + Math.sin(f.midA) * f.midD;
+      const ex = cx + Math.cos(f.a) * f.len;
+      const ey = cy + Math.sin(f.a) * f.len;
+      ctx.beginPath();
+      ctx.moveTo(cx, cy);
+      ctx.lineTo(mx, my);
+      ctx.lineTo(ex, ey);
+      ctx.stroke();
+    }
+    ctx.shadowBlur = 0;
+
+    // Variant-specific flight overlay
+    switch (variant) {
       case 1: {
-        ctx.globalAlpha = 0.9;
-        ctx.strokeStyle = pal.primary;
-        ctx.lineWidth = 2.5;
-        ctx.shadowColor = pal.primary;
-        ctx.shadowBlur = 12;
+        // Lightning: full zigzag bolt from source
         if (!anim._zigzag || anim._zigzagFrame !== Math.floor(elapsed / 60)) {
           anim._zigzagFrame = Math.floor(elapsed / 60);
-          const segs = 8;
+          const segs = 10;
           const pts = [{ x: fromPx.x, y: fromPx.y }];
           for (let s = 1; s < segs; s++) {
             const frac = s / segs;
             const bx = fromPx.x + (cx - fromPx.x) * frac;
             const by = fromPx.y + (cy - fromPx.y) * frac;
-            const perp = 12 * (Math.random() - 0.5);
+            const perp = 16 * (Math.random() - 0.5);
             pts.push({ x: bx + perp, y: by + perp });
           }
           pts.push({ x: cx, y: cy });
           anim._zigzag = pts;
         }
+        ctx.globalAlpha = 0.85;
+        ctx.strokeStyle = pal.primary;
+        ctx.lineWidth = 2.5;
+        ctx.shadowColor = pal.primary;
+        ctx.shadowBlur = 14;
         ctx.beginPath();
         ctx.moveTo(anim._zigzag[0].x, anim._zigzag[0].y);
         for (let i = 1; i < anim._zigzag.length; i++) ctx.lineTo(anim._zigzag[i].x, anim._zigzag[i].y);
         ctx.stroke();
         ctx.shadowBlur = 0;
-        const tg = ctx.createRadialGradient(cx, cy, 0, cx, cy, 10);
-        tg.addColorStop(0, `rgba(${pal.rgb},0.8)`);
-        tg.addColorStop(1, `rgba(${pal.rgb},0)`);
-        ctx.globalAlpha = 1;
-        ctx.fillStyle = tg;
-        ctx.beginPath();
-        ctx.arc(cx, cy, 10, 0, Math.PI * 2);
-        ctx.fill();
         break;
       }
       case 2: {
-        for (let i = 0; i < anim._trail.length; i++) {
-          const p = anim._trail[i];
-          const r = (i + 1) / anim._trail.length;
-          const drift = (1 - r) * 4;
-          const wobble = Math.sin(elapsed / 80 + i * 1.2) * 3;
-          ctx.globalAlpha = r * 0.4;
-          ctx.fillStyle = i % 2 === 0 ? pal.primary : '#ffcc44';
+        // Fire: rising embers
+        if (!anim._embers) {
+          anim._embers = [];
+          for (let i = 0; i < 8; i++) {
+            anim._embers.push({
+              offX: (Math.random() - 0.5) * 12,
+              speed: 0.3 + Math.random() * 0.5,
+              size: 1 + Math.random() * 2,
+              phase: Math.random() * 1000,
+            });
+          }
+        }
+        for (const em of anim._embers) {
+          const age = ((elapsed + em.phase) % 600) / 600;
+          const ex = cx + em.offX + Math.sin(elapsed / 200 + em.phase) * 4;
+          const ey = cy - age * 18;
+          ctx.globalAlpha = (1 - age) * 0.7;
+          ctx.fillStyle = age > 0.5 ? pal.secondary : pal.primary;
           ctx.beginPath();
-          ctx.arc(p.x + wobble, p.y - drift, 1.5 + r * 3, 0, Math.PI * 2);
+          ctx.arc(ex, ey, em.size * (1 - age * 0.5), 0, Math.PI * 2);
           ctx.fill();
         }
-        for (let i = 0; i < 4; i++) {
-          const a = elapsed / 120 + i * Math.PI / 2;
-          const oR = 8 + Math.sin(elapsed / 100 + i) * 3;
-          ctx.globalAlpha = 0.7;
-          ctx.fillStyle = '#ffcc44';
-          ctx.beginPath();
-          ctx.arc(cx + Math.cos(a) * oR, cy + Math.sin(a) * oR, 2, 0, Math.PI * 2);
-          ctx.fill();
-        }
-        const fg = ctx.createRadialGradient(cx, cy, 0, cx, cy, 16);
-        fg.addColorStop(0, `rgba(${pal.rgb},0.5)`);
-        fg.addColorStop(0.5, `rgba(${pal.rgb},0.15)`);
-        fg.addColorStop(1, `rgba(${pal.rgb},0)`);
-        ctx.globalAlpha = 1;
-        ctx.fillStyle = fg;
-        ctx.beginPath();
-        ctx.arc(cx, cy, 16, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.fillStyle = pal.primary;
-        ctx.beginPath();
-        ctx.arc(cx, cy, 6, 0, Math.PI * 2);
-        ctx.fill();
         break;
       }
       case 3: {
-        for (let i = 0; i < anim._trail.length; i++) {
-          const p = anim._trail[i];
-          const r = (i + 1) / anim._trail.length;
-          ctx.globalAlpha = r * 0.2;
-          ctx.fillStyle = '#ffffff';
-          ctx.beginPath();
-          ctx.arc(p.x, p.y, 3 + (1 - r) * 5, 0, Math.PI * 2);
-          ctx.fill();
-        }
-        const ig = ctx.createRadialGradient(cx, cy, 0, cx, cy, 14);
-        ig.addColorStop(0, `rgba(${pal.rgb},0.45)`);
-        ig.addColorStop(1, `rgba(${pal.rgb},0)`);
-        ctx.globalAlpha = 1;
-        ctx.fillStyle = ig;
-        ctx.beginPath();
-        ctx.arc(cx, cy, 14, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.globalAlpha = 0.9;
-        ctx.fillStyle = pal.primary;
-        ctx.save();
-        ctx.translate(cx, cy);
-        ctx.rotate(elapsed / 300);
-        ctx.fillRect(-5, -5, 10, 10);
-        ctx.restore();
-        for (let i = 0; i < 3; i++) {
-          const a = elapsed / 250 + i * Math.PI * 2 / 3;
-          const d = 7 + Math.sin(elapsed / 180 + i) * 2;
-          ctx.globalAlpha = 0.5;
-          ctx.fillStyle = '#ffffff';
-          ctx.fillRect(cx + Math.cos(a) * d - 1.5, cy + Math.sin(a) * d - 1.5, 3, 3);
+        // Frost: orbiting ice crystals
+        for (let i = 0; i < 4; i++) {
+          const a = elapsed / 250 + i * Math.PI / 2;
+          const oR = 13 + Math.sin(elapsed / 180 + i) * 3;
+          ctx.globalAlpha = 0.7;
+          ctx.fillStyle = pal.secondary;
+          ctx.save();
+          ctx.translate(cx + Math.cos(a) * oR, cy + Math.sin(a) * oR);
+          ctx.rotate(a * 2);
+          ctx.fillRect(-2.5, -2.5, 5, 5);
+          ctx.restore();
         }
         break;
       }
       case 4: {
-        for (let i = 0; i < anim._trail.length; i++) {
-          const p = anim._trail[i];
-          const r = (i + 1) / anim._trail.length;
-          const wobble = Math.sin(elapsed / 80 + i * 0.5) * 4;
-          ctx.globalAlpha = r * 0.35;
-          ctx.fillStyle = '#3a0066';
+        // Void/mind: counter-rotating ring of dots
+        for (let i = 0; i < 6; i++) {
+          const a = -elapsed / 200 + i * Math.PI * 2 / 6;
+          const d = 10 + Math.sin(elapsed / 140 + i) * 3;
+          ctx.globalAlpha = 0.55;
+          ctx.fillStyle = pal.accent;
           ctx.beginPath();
-          ctx.arc(p.x + wobble, p.y + wobble, 3 + r * 5, 0, Math.PI * 2);
+          ctx.arc(cx + Math.cos(a) * d, cy + Math.sin(a) * d, 2, 0, Math.PI * 2);
           ctx.fill();
         }
-        const dg = ctx.createRadialGradient(cx, cy, 0, cx, cy, 16);
-        dg.addColorStop(0, 'rgba(20,0,40,0.7)');
-        dg.addColorStop(0.5, `rgba(${pal.rgb},0.3)`);
-        dg.addColorStop(1, `rgba(${pal.rgb},0)`);
-        ctx.globalAlpha = 1;
-        ctx.fillStyle = dg;
-        ctx.beginPath();
-        ctx.arc(cx, cy, 16, 0, Math.PI * 2);
-        ctx.fill();
-        for (let i = 0; i < 5; i++) {
-          const a = -elapsed / 180 + i * Math.PI * 2 / 5;
-          const d = 6 + Math.sin(elapsed / 120 + i) * 3;
-          ctx.globalAlpha = 0.6;
-          ctx.fillStyle = pal.primary;
-          ctx.beginPath();
-          ctx.arc(cx + Math.cos(a) * d, cy + Math.sin(a) * d, 1.5, 0, Math.PI * 2);
-          ctx.fill();
-        }
-        ctx.globalAlpha = 1;
-        ctx.fillStyle = '#1a0033';
-        ctx.beginPath();
-        ctx.arc(cx, cy, 5, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.strokeStyle = pal.primary;
-        ctx.lineWidth = 1.5;
-        ctx.stroke();
         break;
       }
+      default: {
+        // Arcane: orbiting satellites
+        for (let i = 0; i < 4; i++) {
+          const a = elapsed / 220 + i * Math.PI * 2 / 4;
+          const oR = 14 + Math.sin(elapsed / 160) * 3;
+          ctx.globalAlpha = 0.65;
+          ctx.fillStyle = pal.secondary;
+          ctx.beginPath();
+          ctx.arc(cx + Math.cos(a) * oR, cy + Math.sin(a) * oR, 3, 0, Math.PI * 2);
+          ctx.fill();
+        }
+      }
     }
+
+    // Core glow
+    const coreGlowR = 28;
+    const cg = ctx.createRadialGradient(cx, cy, 0, cx, cy, coreGlowR);
+    cg.addColorStop(0, `rgba(${pal.glowRgb},0.55)`);
+    cg.addColorStop(0.4, `rgba(${pal.glowRgb},0.18)`);
+    cg.addColorStop(1, `rgba(${pal.glowRgb},0)`);
+    ctx.globalAlpha = 1;
+    ctx.fillStyle = cg;
+    ctx.beginPath();
+    ctx.arc(cx, cy, coreGlowR, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Core orb
+    ctx.fillStyle = pal.primary;
+    ctx.globalAlpha = 1;
+    ctx.beginPath();
+    ctx.arc(cx, cy, 10, 0, Math.PI * 2);
+    ctx.fill();
+
   } else {
+    // ═══ IMPACT PHASE ═══
     const explosionElapsed = elapsed - FLIGHT_MS;
     const t = Math.min(1, explosionElapsed / EXPLOSION_MS);
     const ix = toPx.x;
     const iy = toPx.y;
 
-    const flashAlpha = Math.max(0, 1 - t * 2.5);
+    // Large flash
+    const flashAlpha = Math.max(0, 1 - t * 2);
     if (flashAlpha > 0) {
-      const fg = ctx.createRadialGradient(ix, iy, 0, ix, iy, 30);
-      fg.addColorStop(0, `rgba(${pal.rgb},${flashAlpha * 0.6})`);
-      fg.addColorStop(1, `rgba(${pal.rgb},0)`);
+      const fg = ctx.createRadialGradient(ix, iy, 0, ix, iy, 45);
+      fg.addColorStop(0, `rgba(${pal.glowRgb},${flashAlpha * 0.6})`);
+      fg.addColorStop(0.4, `rgba(${pal.glowRgb},${flashAlpha * 0.2})`);
+      fg.addColorStop(1, `rgba(${pal.glowRgb},0)`);
       ctx.globalAlpha = 1;
       ctx.fillStyle = fg;
       ctx.beginPath();
-      ctx.arc(ix, iy, 30, 0, Math.PI * 2);
+      ctx.arc(ix, iy, 45, 0, Math.PI * 2);
       ctx.fill();
     }
 
-    switch (v) {
-      case 0: {
-        const rR = 5 + t * 22;
-        const alpha = Math.max(0, 1 - t);
-        ctx.globalAlpha = alpha * 0.7;
-        ctx.strokeStyle = pal.primary;
-        ctx.lineWidth = 2 - t * 1.5;
-        ctx.beginPath();
-        ctx.arc(ix, iy, rR, 0, Math.PI * 2);
-        ctx.stroke();
-        const sR = rR * 0.65;
-        ctx.beginPath();
-        for (let i = 0; i < 6; i++) {
-          const a = (i / 6) * Math.PI * 2 - Math.PI / 2 + elapsed * 0.001;
-          const px = ix + Math.cos(a) * sR;
-          const py = iy + Math.sin(a) * sR;
-          i === 0 ? ctx.moveTo(px, py) : ctx.lineTo(px, py);
-        }
-        ctx.closePath();
-        ctx.stroke();
-        if (!anim._sparks) {
-          anim._sparks = [];
-          for (let i = 0; i < SPARK_COUNT; i++) {
-            const angle = (i / SPARK_COUNT) * Math.PI * 2 + Math.random() * 0.4;
-            anim._sparks.push({ angle, speed: 30 + Math.random() * 25, size: 1.5 + Math.random() * 1.5 });
-          }
-        }
-        for (const s of anim._sparks) {
-          const d = s.speed * t;
-          ctx.globalAlpha = Math.max(0, 1 - t * 1.2) * 0.8;
-          ctx.fillStyle = pal.primary;
-          ctx.beginPath();
-          ctx.arc(ix + Math.cos(s.angle) * d, iy + Math.sin(s.angle) * d, s.size * (1 - t * 0.7), 0, Math.PI * 2);
-          ctx.fill();
-        }
-        break;
+    // Mist explosion
+    const mistExpR = 20 + t * 35;
+    const mistExpA = Math.max(0, 1 - t * 1.5) * 0.25;
+    if (mistExpA > 0) {
+      const mfg = ctx.createRadialGradient(ix, iy, 0, ix, iy, mistExpR);
+      mfg.addColorStop(0, `rgba(${pal.mistRgb},${mistExpA})`);
+      mfg.addColorStop(0.6, `rgba(${pal.mistRgb},${mistExpA * 0.4})`);
+      mfg.addColorStop(1, `rgba(${pal.mistRgb},0)`);
+      ctx.globalAlpha = 1;
+      ctx.fillStyle = mfg;
+      ctx.beginPath();
+      ctx.arc(ix, iy, mistExpR, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    // Expanding ring
+    const ringR = 6 + t * 30;
+    const ringAlpha = Math.max(0, 1 - t);
+    ctx.globalAlpha = ringAlpha * 0.7;
+    ctx.strokeStyle = pal.primary;
+    ctx.lineWidth = 2.5 - t * 2;
+    ctx.beginPath();
+    ctx.arc(ix, iy, ringR, 0, Math.PI * 2);
+    ctx.stroke();
+
+    // Sparks
+    if (!anim._sparks) {
+      anim._sparks = [];
+      for (let i = 0; i < SPELL_SPARK_N; i++) {
+        const angle = (i / SPELL_SPARK_N) * Math.PI * 2 + Math.random() * 0.4;
+        anim._sparks.push({ angle, speed: 35 + Math.random() * 30, size: 1.5 + Math.random() * 2 });
       }
+    }
+    for (const s of anim._sparks) {
+      const d = s.speed * t;
+      ctx.globalAlpha = Math.max(0, 1 - t * 1.2) * 0.8;
+      ctx.fillStyle = s.angle % 2 > 1 ? pal.secondary : pal.primary;
+      ctx.beginPath();
+      ctx.arc(ix + Math.cos(s.angle) * d, iy + Math.sin(s.angle) * d, s.size * (1 - t * 0.6), 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    // Variant-specific impact overlay
+    switch (variant) {
       case 1: {
+        // Lightning: impact bolts
         if (!anim._impactBolts) {
           anim._impactBolts = [];
-          for (let i = 0; i < 6; i++) {
-            const a = (i / 6) * Math.PI * 2 + Math.random() * 0.5;
-            const len = 15 + Math.random() * 20;
+          for (let i = 0; i < 8; i++) {
+            const a = (i / 8) * Math.PI * 2 + Math.random() * 0.5;
+            const len = 18 + Math.random() * 24;
             anim._impactBolts.push({ angle: a, len, midAngle: a + (Math.random() - 0.5) * 0.6, midDist: len * 0.5 });
           }
         }
         const boltAlpha = Math.max(0, 1 - t * 1.3);
         ctx.globalAlpha = boltAlpha;
         ctx.strokeStyle = pal.primary;
-        ctx.lineWidth = 2;
+        ctx.lineWidth = 2.5;
         ctx.shadowColor = pal.primary;
-        ctx.shadowBlur = 8;
+        ctx.shadowBlur = 10;
         const reach = Math.min(1, t * 3);
         for (const b of anim._impactBolts) {
-          const mx = ix + Math.cos(b.midAngle) * b.midDist * reach;
-          const my = iy + Math.sin(b.midAngle) * b.midDist * reach;
-          const ex = ix + Math.cos(b.angle) * b.len * reach;
-          const ey = iy + Math.sin(b.angle) * b.len * reach;
           ctx.beginPath();
           ctx.moveTo(ix, iy);
-          ctx.lineTo(mx, my);
-          ctx.lineTo(ex, ey);
+          ctx.lineTo(ix + Math.cos(b.midAngle) * b.midDist * reach, iy + Math.sin(b.midAngle) * b.midDist * reach);
+          ctx.lineTo(ix + Math.cos(b.angle) * b.len * reach, iy + Math.sin(b.angle) * b.len * reach);
           ctx.stroke();
         }
         ctx.shadowBlur = 0;
         break;
       }
       case 2: {
-        const fireR = 5 + t * 25;
+        // Fire: fiery burst
+        const fireR = 8 + t * 32;
         const fireAlpha = Math.max(0, 1 - t);
         const ffg = ctx.createRadialGradient(ix, iy, 0, ix, iy, fireR);
-        ffg.addColorStop(0, `rgba(${pal.rgb},${fireAlpha * 0.5})`);
-        ffg.addColorStop(0.6, `rgba(255,204,68,${fireAlpha * 0.3})`);
-        ffg.addColorStop(1, 'rgba(255,106,0,0)');
+        ffg.addColorStop(0, `rgba(${pal.glowRgb},${fireAlpha * 0.5})`);
+        ffg.addColorStop(0.5, `rgba(${pal.glowRgb},${fireAlpha * 0.2})`);
+        ffg.addColorStop(1, `rgba(${pal.glowRgb},0)`);
         ctx.globalAlpha = 1;
         ctx.fillStyle = ffg;
         ctx.beginPath();
         ctx.arc(ix, iy, fireR, 0, Math.PI * 2);
         ctx.fill();
-        ctx.globalAlpha = fireAlpha * 0.6;
-        ctx.strokeStyle = '#ffcc44';
+        ctx.globalAlpha = fireAlpha * 0.5;
+        ctx.strokeStyle = pal.secondary;
         ctx.lineWidth = 2 - t;
         ctx.beginPath();
         ctx.arc(ix, iy, fireR, 0, Math.PI * 2);
         ctx.stroke();
-        if (!anim._sparks) {
-          anim._sparks = [];
-          for (let i = 0; i < SPARK_COUNT; i++) {
-            const angle = (i / SPARK_COUNT) * Math.PI * 2 + Math.random() * 0.4;
-            anim._sparks.push({ angle, speed: 30 + Math.random() * 25, size: 1.5 + Math.random() * 1.5 });
-          }
-        }
-        for (const s of anim._sparks) {
-          const d = s.speed * t;
-          ctx.globalAlpha = Math.max(0, 1 - t * 1.2) * 0.8;
-          ctx.fillStyle = s.angle > Math.PI ? pal.primary : '#ffcc44';
-          ctx.beginPath();
-          ctx.arc(ix + Math.cos(s.angle) * d, iy + Math.sin(s.angle) * d, s.size * (1 - t * 0.7), 0, Math.PI * 2);
-          ctx.fill();
-        }
         break;
       }
       case 3: {
-        const frostR = 5 + t * 22;
-        const frostAlpha = Math.max(0, 1 - t);
-        ctx.globalAlpha = frostAlpha * 0.6;
+        // Frost: snowflake arms
+        const frostR = 6 + t * 28;
+        const frostAlpha = Math.max(0, 1 - t) * 0.65;
+        ctx.globalAlpha = frostAlpha;
         ctx.strokeStyle = pal.primary;
         ctx.lineWidth = 1.5;
-        ctx.beginPath();
-        ctx.arc(ix, iy, frostR, 0, Math.PI * 2);
-        ctx.stroke();
-        const armLen = frostR * 0.8;
+        const armLen = frostR * 0.85;
         for (let i = 0; i < 6; i++) {
           const a = (i / 6) * Math.PI * 2;
           ctx.beginPath();
@@ -885,30 +1040,13 @@ function drawSpellProjectile(ctx, anim, canvasW, canvasH, now) {
           ctx.lineTo(bx + Math.cos(a - 0.5) * bLen, by + Math.sin(a - 0.5) * bLen);
           ctx.stroke();
         }
-        if (!anim._sparks) {
-          anim._sparks = [];
-          for (let i = 0; i < 8; i++) {
-            const angle = (i / 8) * Math.PI * 2 + Math.random() * 0.3;
-            anim._sparks.push({ angle, speed: 25 + Math.random() * 20, size: 2 + Math.random() * 1.5 });
-          }
-        }
-        for (const s of anim._sparks) {
-          const d = s.speed * t;
-          ctx.globalAlpha = Math.max(0, 1 - t * 1.1) * 0.7;
-          ctx.fillStyle = '#ffffff';
-          ctx.save();
-          ctx.translate(ix + Math.cos(s.angle) * d, iy + Math.sin(s.angle) * d);
-          ctx.rotate(s.angle);
-          ctx.fillRect(-s.size / 2, -s.size / 2, s.size, s.size);
-          ctx.restore();
-        }
         break;
       }
       case 4: {
+        // Void/mind: implosion + dark flash
         const phase1 = Math.min(1, t * 2.5);
-        const phase2 = Math.max(0, (t - 0.4) / 0.6);
         if (phase1 < 1) {
-          const impR = 25 * (1 - phase1);
+          const impR = 30 * (1 - phase1);
           ctx.globalAlpha = (1 - phase1) * 0.5;
           ctx.strokeStyle = pal.primary;
           ctx.lineWidth = 3 * (1 - phase1);
@@ -916,35 +1054,35 @@ function drawSpellProjectile(ctx, anim, canvasW, canvasH, now) {
           ctx.arc(ix, iy, impR, 0, Math.PI * 2);
           ctx.stroke();
         }
-        if (t > 0.35 && t < 0.6) {
-          const dfA = 1 - Math.abs(t - 0.475) / 0.125;
-          const dfg = ctx.createRadialGradient(ix, iy, 0, ix, iy, 20);
-          dfg.addColorStop(0, `rgba(20,0,40,${dfA * 0.8})`);
-          dfg.addColorStop(1, 'rgba(20,0,40,0)');
+        if (t > 0.3 && t < 0.6) {
+          const dfA = 1 - Math.abs(t - 0.45) / 0.15;
+          const dfg = ctx.createRadialGradient(ix, iy, 0, ix, iy, 24);
+          dfg.addColorStop(0, `rgba(${pal.mistRgb},${dfA * 0.7})`);
+          dfg.addColorStop(1, `rgba(${pal.mistRgb},0)`);
           ctx.globalAlpha = 1;
           ctx.fillStyle = dfg;
           ctx.beginPath();
-          ctx.arc(ix, iy, 20, 0, Math.PI * 2);
+          ctx.arc(ix, iy, 24, 0, Math.PI * 2);
           ctx.fill();
         }
-        if (phase2 > 0) {
-          if (!anim._sparks) {
-            anim._sparks = [];
-            for (let i = 0; i < SPARK_COUNT; i++) {
-              const angle = (i / SPARK_COUNT) * Math.PI * 2 + Math.random() * 0.4;
-              anim._sparks.push({ angle, speed: 30 + Math.random() * 25, size: 1.5 + Math.random() * 1.5 });
-            }
-          }
-          for (const s of anim._sparks) {
-            const d = s.speed * phase2;
-            ctx.globalAlpha = Math.max(0, 1 - phase2) * 0.7;
-            ctx.fillStyle = pal.primary;
-            ctx.beginPath();
-            ctx.arc(ix + Math.cos(s.angle) * d, iy + Math.sin(s.angle) * d, s.size * (1 - phase2 * 0.5), 0, Math.PI * 2);
-            ctx.fill();
-          }
-        }
         break;
+      }
+      default: {
+        // Arcane: hexagonal ring
+        const hR = 5 + t * 26;
+        const alpha = Math.max(0, 1 - t) * 0.65;
+        ctx.globalAlpha = alpha;
+        ctx.strokeStyle = pal.primary;
+        ctx.lineWidth = 2 - t * 1.5;
+        ctx.beginPath();
+        for (let i = 0; i < 6; i++) {
+          const a = (i / 6) * Math.PI * 2 - Math.PI / 2 + elapsed * 0.001;
+          const px = ix + Math.cos(a) * hR;
+          const py = iy + Math.sin(a) * hR;
+          i === 0 ? ctx.moveTo(px, py) : ctx.lineTo(px, py);
+        }
+        ctx.closePath();
+        ctx.stroke();
       }
     }
   }

@@ -1,5 +1,4 @@
 export {
-  MAP_MODES,
   ROAD_VARIANTS,
   SCENE_PACING_TYPES,
   NpcIntroducedSchema,

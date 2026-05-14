@@ -42,7 +42,7 @@ const SCALAR_FIELDS = [
   'name', 'age', 'gender', 'species',
   'wounds', 'maxWounds', 'bonusMaxWounds', 'movement',
   'characterLevel', 'characterXp', 'attributePoints',
-  'backstory', 'portraitUrl', 'spriteUrl', 'voiceId', 'voiceName',
+  'backstory', 'portraitUrl', 'spriteUrl', 'spriteSheetUrl', 'voiceId', 'voiceName',
   'campaignCount', 'fame', 'infamy', 'status',
   'lockedCampaignId', 'lockedCampaignName', 'lockedLocation',
   'equippedMainHand', 'equippedOffHand', 'equippedArmour',
@@ -50,7 +50,7 @@ const SCALAR_FIELDS = [
 
 const JSON_FIELDS = [
   'attributes', 'mana', 'spells', 'money', 'statuses', 'needs',
-  'customAttackPresets', 'knownTitles', 'activeDungeonState', 'skillBadges',
+  'customAttackPresets', 'knownTitles', 'activeDungeonState',
 ];
 
 // ── Shape conversion ──
@@ -73,6 +73,9 @@ export function reconstructCharacterSnapshot(row) {
   }
   if (snapshot.spriteUrl) {
     snapshot.spriteUrl = toCanonicalStoragePath(snapshot.spriteUrl);
+  }
+  if (snapshot.spriteSheetUrl) {
+    snapshot.spriteSheetUrl = toCanonicalStoragePath(snapshot.spriteSheetUrl);
   }
 
   // Lazy backfill: historically `characterXp` stored "XP since last level-up"
@@ -159,6 +162,9 @@ export function splitCharacterSnapshot(snapshot) {
   }
   if (typeof scalars.spriteUrl === 'string' && scalars.spriteUrl) {
     scalars.spriteUrl = toCanonicalStoragePath(scalars.spriteUrl);
+  }
+  if (typeof scalars.spriteSheetUrl === 'string' && scalars.spriteSheetUrl) {
+    scalars.spriteSheetUrl = toCanonicalStoragePath(scalars.spriteSheetUrl);
   }
   const equipped = snapshot.equipped || {};
   if (equipped.mainHand !== undefined) scalars.equippedMainHand = equipped.mainHand || null;
@@ -289,7 +295,7 @@ export function clearStaleEquipped(snapshot) {
 
 // ── Custom spell hydration ──
 
-async function hydrateCustomSpells(snapshot, client = prisma) {
+export async function hydrateCustomSpells(snapshot, client = prisma) {
   const ids = snapshot?.spells?.customKnown;
   if (!Array.isArray(ids) || ids.length === 0) {
     snapshot.customSpells = [];

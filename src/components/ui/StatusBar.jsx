@@ -35,6 +35,10 @@ export default function StatusBar({ label, current, max, color = 'primary' }) {
     error: 'from-error-container to-error-dim',
     tertiary: 'from-on-tertiary-container to-tertiary-dim',
     blue: 'from-blue-700 to-blue-400 shadow-[0_0_8px_rgba(96,165,250,0.5)]',
+    hunger: 'from-emerald-600 to-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.45)]',
+    thirst: 'from-blue-600 to-blue-400 shadow-[0_0_8px_rgba(96,165,250,0.45)]',
+    bladder: 'from-yellow-600 to-yellow-400 shadow-[0_0_8px_rgba(250,204,21,0.4)]',
+    rest: 'from-blue-950 to-indigo-600 shadow-[0_0_8px_rgba(99,102,241,0.45)]',
   };
 
   const textColors = {
@@ -42,6 +46,10 @@ export default function StatusBar({ label, current, max, color = 'primary' }) {
     error: 'text-error',
     tertiary: 'text-tertiary-dim',
     blue: 'text-blue-400',
+    hunger: 'text-emerald-400',
+    thirst: 'text-blue-400',
+    bladder: 'text-yellow-400',
+    rest: 'text-indigo-300',
   };
 
   const isDynamic = color === 'dynamic';

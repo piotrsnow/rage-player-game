@@ -93,12 +93,10 @@ export default function ScenePanel({
   world,
   characterName,
   multiplayerPlayers = [],
-  interactiveMap = false,
-  onSceneGridChange,
-  onFieldTurnReady,
   gameError = null,
   onDismissGameError = null,
   mpErrorCode = null,
+  interactiveMap = false,
   isMultiplayer = false,
   onOpenSettings = null,
   momentumDice = null,
@@ -107,6 +105,7 @@ export default function ScenePanel({
   const { settings, updateSettings } = useSettings();
   const campaign = useGameCampaign();
   const dispatch = useGameDispatch();
+  const characterSpriteSheet = useGameSlice((s) => s.character?.spriteSheetUrl);
 
   const lastSentenceRef = useRef(null);
 
@@ -398,6 +397,7 @@ export default function ScenePanel({
           world={world}
           characterName={characterName}
           interactive={interactiveMap}
+          character={characterSpriteSheet ? { spriteSheetUrl: characterSpriteSheet } : null}
           multiplayerPlayers={multiplayerPlayers}
         />
       ) : (settings.sceneVisualization || 'image') === 'image' && (displayedSrc || previousSrc) ? (

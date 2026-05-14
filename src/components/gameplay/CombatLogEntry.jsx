@@ -74,6 +74,24 @@ function buildRollItem(label, breakdown, roll, modifiers) {
   };
 }
 
+function getD50FaceValues(roll) {
+  const numeric = Number(roll);
+  if (!Number.isFinite(numeric)) return null;
+  const safeRoll = Math.trunc(Math.max(1, Math.min(50, numeric)));
+  const zeroBasedRoll = safeRoll - 1;
+  return [Math.floor(zeroBasedRoll / 10), (zeroBasedRoll % 10) + 1];
+}
+
+function hexToRgba(hex, alpha) {
+  const normalized = String(hex || '').replace('#', '');
+  if (!/^[0-9a-f]{6}$/i.test(normalized)) return `rgba(255,255,255,${alpha})`;
+  const value = Number.parseInt(normalized, 16);
+  const r = (value >> 16) & 255;
+  const g = (value >> 8) & 255;
+  const b = value & 255;
+  return `rgba(${r},${g},${b},${alpha})`;
+}
+
 export function buildCombatLogDetails(result, t) {
   if (!result) return [];
 
@@ -182,6 +200,29 @@ export function buildCombatLogDetails(result, t) {
   if (result.checkBreakdown) {
     const checkRoll = result.rolls?.[0];
     const item = buildRollItem(t('combat.logFlee', 'Ucieczka'), result.checkBreakdown, checkRoll, []);
+    if (item) items.push(item);
+  }
+
+  if (result.shoveBreakdown) {
+    const shoveRoll = result.rolls?.find((r) => r.side === 'attacker') || result.rolls?.[0];
+    const sb = result.shoveBreakdown;
+    const item = buildRollItem(
+      t('combat.logShove', 'Pchnięcie'),
+      { target: sb.threshold, baseTarget: sb.threshold },
+      shoveRoll,
+      [
+        {
+          label: translateAttribute('sila', t),
+          value: formatSignedNumber(sb.actorStr),
+          color: 'text-purple-300',
+        },
+        {
+          label: t('combat.logTargetToughness', 'wytrzymałość celu'),
+          value: formatSignedNumber(sb.targetTough),
+          color: 'text-orange-300',
+        },
+      ],
+    );
     if (item) items.push(item);
   }
 
@@ -532,6 +573,37 @@ function buildCombatLogTooltipContent(entry, t) {
   );
 }
 
+function getPrimaryRollItem(entry) {
+  return entry?.details?.find((item) => item?.kind === 'roll' && item.roll != null) || null;
+}
+
+function CombatLogDice({ roll, color, t }) {
+  const faceValues = getD50FaceValues(roll);
+  if (!faceValues) return null;
+
+  const title = t('combat.logDiceRollTitle', 'Rzut k50: {{roll}}', { roll });
+  const squareStyle = {
+    color,
+    borderColor: hexToRgba(color, 0.7),
+    background: `linear-gradient(145deg, ${hexToRgba(color, 0.3)}, ${hexToRgba(color, 0.1)})`,
+    boxShadow: `inset 0 1px 0 ${hexToRgba('#ffffff', 0.12)}, 0 0 16px ${hexToRgba(color, 0.22)}`,
+  };
+
+  return (
+    <div className="ml-auto flex shrink-0 items-center gap-1.5 self-center pl-2" title={title} aria-label={title}>
+      {faceValues.map((value, index) => (
+        <span
+          key={`${roll}_${index}`}
+          className="grid h-8 w-8 place-items-center rounded-[5px] border font-mono text-sm font-black leading-none tabular-nums"
+          style={squareStyle}
+        >
+          {value}
+        </span>
+      ))}
+    </div>
+  );
+}
+
 function CombatLogEntry({ entry, t, isNew = false }) {
   if (!entry) return null;
   const style = LOG_COLORS[entry.type] || LOG_COLORS.miss;
@@ -551,13 +623,14 @@ function CombatLogEntry({ entry, t, isNew = false }) {
   }
 
   const tooltipContent = buildCombatLogTooltipContent(entry, t);
+  const rollItem = getPrimaryRollItem(entry);
   const entryAnimClass = isNew ? 'combat-log-entry-new' : 'animate-fade-in';
 
   const content = (
     <div
       data-testid="combat-log-entry"
       data-combat-log-type={entry.type}
-      className={`flex items-start gap-2 px-2.5 py-1.5 rounded-sm ${entryAnimClass} transition-colors ${
+      className={`flex items-center gap-2 px-2.5 py-2 rounded-sm ${entryAnimClass} transition-colors ${
         isAiAction || isAiPending ? 'ring-1 ring-violet-400/20' : ''
       } ${
         tooltipContent ? 'hover:bg-surface-container/30' : ''
@@ -581,6 +654,9 @@ function CombatLogEntry({ entry, t, isNew = false }) {
    
         {!isAiPending && <AnimatedCombatLogText entry={entry} />}
       </div>
+      {!isAiPending && rollItem && (
+        <CombatLogDice roll={rollItem.roll} color={style.border} t={t} />
+      )}
       {tooltipContent && (
         <span className="material-symbols-outlined text-xs text-outline-variant/70 mt-px shrink-0">
           info

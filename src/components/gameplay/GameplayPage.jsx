@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { getGameState } from '../../stores/gameStore';
@@ -37,6 +37,8 @@ import DidYouKnow from '../ui/DidYouKnow';
 import SceneGenerationProgress from './SceneGenerationProgress';
 import CombatPanel from './CombatPanel';
 import BeerDuelPanel from './combat/BeerDuelPanel';
+import CardGamePanel from './combat/CardGamePanel';
+import DiceGamePanel from './combat/DiceGamePanel';
 import MagicPanel from './MagicPanel';
 import TradePanel from './TradePanel';
 import CraftingPanel from './CraftingPanel';
@@ -72,6 +74,7 @@ import { useGameplayOverlays } from '../../hooks/useGameplayOverlays';
 import { useGameplayActions } from '../../hooks/useGameplayActions';
 import { useUltrawideBonus } from '../../hooks/useUltrawideBonus';
 import { useMomentumMinigame } from '../../hooks/useMomentumMinigame';
+import { useMinigameAudio } from '../../hooks/useMinigameAudio';
 import { useFavoriteScenes } from '../../hooks/useFavoriteScenes';
 import { filterNpcsHere } from '../../utils/npcLocation';
 import MainQuestCompleteModal from './MainQuestCompleteModal';
@@ -81,6 +84,8 @@ import { PLAY_SESSION_START_KEY } from '../../constants/sessionIntro';
 import WorldNewsPanel from './WorldNewsPanel';
 import { useCreatureEncounter } from '../../hooks/useCreatureEncounter';
 import CreatureEncounterModal from './CreatureEncounterModal';
+import { useLocationGraph } from '../../hooks/useLocationGraph';
+import { useCurrentLocationNode } from '../../hooks/useCurrentLocationNode';
 
 function hashCode(str) {
   let h = 0;
@@ -89,6 +94,8 @@ function hashCode(str) {
   }
   return Math.abs(h);
 }
+
+const SCENE_OVERLAY_MINIGAME_MODES = new Set(['beer_duel', 'card_game', 'dice_game']);
 
 export default function GameplayPage({ readOnly = false, shareToken = null, onRefresh = null }) {
   const CREATURE_ENCOUNTERS_ENABLED = true;
@@ -171,6 +178,23 @@ export default function GameplayPage({ readOnly = false, shareToken = null, onRe
 
   const favoriteScenesHook = useFavoriteScenes(readOnly ? null : character?.backendId);
   const lastAudioStoppedSceneIdRef = useRef(null);
+
+  const graphCampaignId = sCampaign?.backendId || urlCampaignId || null;
+  const locationGraph = useLocationGraph(graphCampaignId, { paused: !graphCampaignId });
+  const currentLocationNode = useCurrentLocationNode(locationGraph);
+
+  const adjacentLocations = useMemo(() => {
+    if (!currentLocationNode || !locationGraph.edges) return [];
+    const neighborIds = new Set();
+    for (const e of locationGraph.edges) {
+      if (e.fromId === currentLocationNode.id) neighborIds.add(e.toId);
+      if (e.toId === currentLocationNode.id) neighborIds.add(e.fromId);
+    }
+    if (neighborIds.size === 0) return [];
+    return locationGraph.nodes
+      .filter((n) => neighborIds.has(n.id) && n.id !== currentLocationNode.id)
+      .map((n) => ({ id: n.id, name: n.name, type: n.type }));
+  }, [currentLocationNode, locationGraph.nodes, locationGraph.edges]);
 
   useDocumentTitle(campaign?.name);
 
@@ -674,8 +698,6 @@ export default function GameplayPage({ readOnly = false, shareToken = null, onRe
     dispatch,
   });
 
-  // Faza 5 — fieldMap removed; sceneVisualization='map' jest no-op (UI fallback
-  // do obrazka). Cała procedural-terrain warstwa zastąpiona Location Graph.
 
   const MAX_CONSECUTIVE_IDLE_EVENTS = 2;
 
@@ -721,12 +743,14 @@ export default function GameplayPage({ readOnly = false, shareToken = null, onRe
     onIdleEvent: handleIdleEvent,
   });
 
+  const momentumSfx = useMinigameAudio();
   const momentum = useMomentumMinigame({
     dispatch,
     momentumBonus: isMultiplayer
       ? (mpGameState?.characterMomentum?.[character?.name] || 0)
       : (sMomentumBonus || 0),
     sceneId: currentScene?.id || null,
+    playSfx: momentumSfx,
   });
 
   const combatHandlers = useCombatResolution({
@@ -739,6 +763,14 @@ export default function GameplayPage({ readOnly = false, shareToken = null, onRe
     settings,
     t,
   });
+
+  const sceneOverlayMinigameMode = combat?.active && SCENE_OVERLAY_MINIGAME_MODES.has(combat.mode)
+    ? combat.mode
+    : null;
+  const showSceneOverlayMinigame = !!sceneOverlayMinigameMode
+    && !isViewingCompanion
+    && !isReviewingPastScene
+    && !readOnly;
 
   useMultiplayerCombatSceneDetect({
     isMultiplayer,
@@ -828,9 +860,6 @@ export default function GameplayPage({ readOnly = false, shareToken = null, onRe
             world={isMultiplayer ? mpGameState?.world : sWorld}
             characterName={character?.name}
             multiplayerPlayers={isMultiplayer ? (mp.state.players || []) : []}
-            interactiveMap={!isMultiplayer && !readOnly && !isReviewingPastScene && (!campaign?.status || campaign.status === 'active')}
-            onSceneGridChange={actions.handleSceneGridChange}
-            onFieldTurnReady={actions.handleFieldTurnReady}
             onImageError={(sceneId) => {
               if (!sceneId) return;
               if (isMultiplayer && !mp.state.isHost) return;
@@ -893,17 +922,45 @@ export default function GameplayPage({ readOnly = false, shareToken = null, onRe
               onDismiss={() => dispatch({ type: 'CLEAR_LOCAL_DICE_ROLL' })}
             />
           )}
-          {combat?.active && combat.mode === 'beer_duel' && !isViewingCompanion && !isReviewingPastScene && !readOnly && (
-            <div className="absolute inset-0 z-30 flex items-center justify-center bg-black/40 backdrop-blur-[2px] rounded-xl overflow-hidden animate-fade-in">
-              <div className="w-full max-w-2xl px-4">
-                <BeerDuelPanel
-                  combat={combat}
-                  character={character}
-                  dispatch={dispatch}
-                  onEndCombat={combatHandlers.onEndCombat}
-                  isMultiplayer={isMultiplayer}
-                  mpCharacters={isMultiplayer ? mpGameState?.characters : undefined}
-                />
+          {showSceneOverlayMinigame && (
+            <div className="absolute inset-0 z-30 flex items-center justify-center bg-black/45 backdrop-blur-[2px] rounded-xl overflow-hidden animate-fade-in">
+              <div className={`w-full px-4 ${
+                sceneOverlayMinigameMode === 'beer_duel'
+                  ? 'max-w-2xl'
+                  : sceneOverlayMinigameMode === 'card_game'
+                    ? 'max-w-[72rem] h-[88%]'
+                    : 'max-w-3xl'
+              }`}>
+                {sceneOverlayMinigameMode === 'beer_duel' && (
+                  <BeerDuelPanel
+                    combat={combat}
+                    character={character}
+                    dispatch={dispatch}
+                    onEndCombat={combatHandlers.onEndCombat}
+                    isMultiplayer={isMultiplayer}
+                    mpCharacters={isMultiplayer ? mpGameState?.characters : undefined}
+                  />
+                )}
+                {sceneOverlayMinigameMode === 'card_game' && (
+                  <CardGamePanel
+                    combat={combat}
+                    character={character}
+                    dispatch={dispatch}
+                    onEndCombat={combatHandlers.onEndCombat}
+                    isMultiplayer={isMultiplayer}
+                    mpCharacters={isMultiplayer ? mpGameState?.characters : undefined}
+                  />
+                )}
+                {sceneOverlayMinigameMode === 'dice_game' && (
+                  <DiceGamePanel
+                    combat={combat}
+                    character={character}
+                    dispatch={dispatch}
+                    onEndCombat={combatHandlers.onEndCombat}
+                    isMultiplayer={isMultiplayer}
+                    mpCharacters={isMultiplayer ? mpGameState?.characters : undefined}
+                  />
+                )}
               </div>
             </div>
           )}
@@ -930,7 +987,7 @@ export default function GameplayPage({ readOnly = false, shareToken = null, onRe
           return (
           <div className={`transition-all duration-300 ease-in-out ${actionPanelVisible ? 'opacity-100 max-h-[500px]' : 'opacity-0 max-h-0 overflow-hidden pointer-events-none'}`}>
           {currentScene && (
-            <div className={`px-2 ${autoPlayer.isAutoPlaying && !autoPlayer.overlayAction && !isMultiplayer ? 'opacity-50 pointer-events-none' : autoPlayer.overlayAction ? 'pointer-events-none' : ''}`}>
+            <div className={`px-[3px] ${autoPlayer.isAutoPlaying && !autoPlayer.overlayAction && !isMultiplayer ? 'opacity-50 pointer-events-none' : autoPlayer.overlayAction ? 'pointer-events-none' : ''}`}>
               <div className="flex items-center justify-between mb-2">
                 <label className="text-[10px] text-on-surface-variant font-label uppercase tracking-widest">
                   {autoPlayer.isAutoPlaying && !isMultiplayer ? t('autoPlayer.aiControlling') : t('gameplay.chooseAction')}
@@ -975,6 +1032,14 @@ export default function GameplayPage({ readOnly = false, shareToken = null, onRe
                 onOpenTravelMap={() => {
                   setWorldModalInitialTab('map');
                   setWorldModalOpen(true);
+                }}
+                onOpenWorldModal={() => {
+                  setWorldModalInitialTab('npcs');
+                  setWorldModalOpen(true);
+                }}
+                adjacentLocations={adjacentLocations}
+                onTravelToLocation={(name) => {
+                  handleAction(`Podróżuję do ${name}.`, true);
                 }}
                 onRegenerateActions={!isMultiplayer ? handleRegenerateActions : null}
                 isRegeneratingActions={isRegeneratingActions}
@@ -1099,8 +1164,8 @@ export default function GameplayPage({ readOnly = false, shareToken = null, onRe
           </div>
         )}
 
-        {/* Combat Panel (non-beer-duel modes) */}
-        {combat?.active && combat.mode !== 'beer_duel' && !isViewingCompanion && !isReviewingPastScene && !readOnly && (
+        {/* Combat Panel (full tactical combat only; minigames live over the scene image) */}
+        {combat?.active && !SCENE_OVERLAY_MINIGAME_MODES.has(combat.mode) && !isViewingCompanion && !isReviewingPastScene && !readOnly && (
           <div className="px-2 animate-fade-in">
             <CombatPanel
               combat={combat}

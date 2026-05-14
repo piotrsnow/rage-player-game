@@ -532,7 +532,7 @@ function evaluateCondition(condition, gameState, event) {
       const needs = getCharacter(gameState)?.needs;
       if (!needs || typeof needs !== 'object') return false;
       const t = condition.threshold ?? 14;
-      const keys = ['hunger', 'thirst', 'bladder', 'hygiene', 'rest'];
+      const keys = ['hunger', 'thirst', 'bladder', 'rest'];
       return keys.every((k) => typeof needs[k] === 'number' && needs[k] <= t);
     }
     case 'skill_at_level': {

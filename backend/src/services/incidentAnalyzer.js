@@ -278,7 +278,7 @@ CHARACTER (deltas):
   newItems: [{name, quantity, type?:'material'}],
   removeItems: [itemId, ...], removeItemsByName: [{name, quantity}],
   moneyChange: { gold, silver, copper },
-  statuses: [...], needsChanges: { hunger|thirst|bladder|hygiene|rest: delta },
+  statuses: [...], needsChanges: { hunger|thirst|bladder|rest: delta },
   equipChange: { mainHand?, offHand?, armour? },
   forceStatus
 
@@ -322,7 +322,7 @@ COMBAT (FE-only — corrections to a wrong/missing combat state):
 
 TIME / NEEDS:
   timeAdvance: hours (number, e.g. 0.5),
-  needsChanges: { hunger|thirst|bladder|hygiene|rest: delta },
+  needsChanges: { hunger|thirst|bladder|rest: delta },
   restRecovery: { wounds?, mana?, ... }
 
 FACTION:

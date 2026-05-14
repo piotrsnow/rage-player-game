@@ -7,7 +7,7 @@ vi.mock('./gameDataService', () => ({
     BATTLEFIELD_WIDTH: 16,
     BATTLEFIELD_HEIGHT: 9,
     MELEE_RANGE: 1,
-    DEFAULT_MOVEMENT: 8,
+    DEFAULT_MOVEMENT: 10,
     terrainTiles: {},
     terrainSpawnConfig: { minCount: 5, maxCount: 8, spawnMarginCols: 4 },
     manoeuvres: {},

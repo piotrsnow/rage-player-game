@@ -83,7 +83,7 @@ ${language === 'pl' ? 'Write ALL text in Polish.' : ''}`;
       backstory: cd.backstory || '',
       characterLevel: cd.characterLevel ?? 1,
       characterXp: cd.characterXp ?? 0,
-      needs: { hunger: 100, thirst: 100, bladder: 100, hygiene: 100, rest: 100 },
+      needs: { hunger: 100, thirst: 100, bladder: 100, rest: 100 },
     };
   });
 

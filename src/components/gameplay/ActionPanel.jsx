@@ -15,7 +15,7 @@ import TrainerNpcPicker from './action/TrainerNpcPicker';
 import RecruitNpcPicker from './action/RecruitNpcPicker';
 import DilemmaPanel from './action/DilemmaPanel';
 import TeammateTypingPanels from './action/TeammateTypingPanels';
-import QuickActionsBar from './action/QuickActionsBar';
+import QuickActionsBar, { ActionStyleButton } from './action/QuickActionsBar';
 import CustomActionForm from './action/CustomActionForm';
 import IncidentModal from './action/IncidentModal';
 import SelfQuestModal from './action/SelfQuestModal';
@@ -74,6 +74,9 @@ export default function ActionPanel({
   onIncidentCorrectionsApplied = null,
   onProvidenceScene = null,
   onOpenTravelMap = null,
+  onOpenWorldModal = null,
+  adjacentLocations = [],
+  onTravelToLocation = null,
   onRegenerateActions = null,
   isRegeneratingActions = false,
   stickyTone = null,
@@ -478,49 +481,60 @@ export default function ActionPanel({
       {/* Suggested Actions */}
       {(!hasPendingAction || !isMultiplayer) && (
         <div className="space-y-2">
-          <div className="grid grid-cols-3 gap-2">
-            {actions.slice(0, 3).map((action, i) => (
-              <div key={`${action.substring(0, 30)}_${i}`} className="flex gap-1">
-                <button
-                  data-testid="suggested-action"
-                  onClick={() => handleSuggestedAction(action)}
-                  onPointerDown={() => handleLongPressDown(i, action)}
-                  onPointerUp={handleLongPressUpOrLeave}
-                  onPointerLeave={handleLongPressUpOrLeave}
-                  onContextMenu={(e) => e.preventDefault()}
-                  disabled={disabled || hasPendingAction || isRegeneratingActions}
-                  className={`relative overflow-hidden flex-1 text-left px-4 py-3.5 min-h-[3.5rem] bg-surface-container-high/40 hover:bg-surface-container-high border border-outline-variant/15 hover:border-primary/30 rounded-sm transition-all duration-300 group disabled:opacity-50 disabled:pointer-events-none hover:translate-y-[-1px] hover:shadow-[0_4px_16px_rgba(0,0,0,0.3)] ${isRegeneratingActions ? 'animate-pulse' : ''}`}
-                >
-                  <div
-                    className="absolute inset-0 bg-primary/15 pointer-events-none origin-left"
-                    style={{
-                      transform: longPressActiveIndex === i ? 'scaleX(1)' : 'scaleX(0)',
-                      transition: longPressActiveIndex === i ? 'transform 1s linear' : 'none',
-                    }}
-                  />
-                  <div className="relative flex items-center gap-3.5">
-                    <span className="w-7 h-7 shrink-0 flex items-center justify-center rounded-full bg-gradient-to-br from-primary-dim/20 to-primary/10 text-primary font-headline text-base leading-none border border-primary/15 group-hover:border-primary/30 group-hover:shadow-[0_0_8px_rgba(197,154,255,0.2)] transition-all">
-                      {isRegeneratingActions
-                        ? <span className="material-symbols-outlined text-sm animate-spin">progress_activity</span>
-                        : i + 1}
-                    </span>
-                    <p className={`text-base font-medium transition-colors leading-snug line-clamp-2 ${isRegeneratingActions ? 'text-on-surface-variant/50' : 'text-on-surface-variant group-hover:text-on-surface'}`}>
-                      {action}
-                    </p>
-                  </div>
-                </button>
-                {isMultiplayer && (
+          <div className="flex gap-2 pr-11">
+            <div className="grid grid-cols-3 gap-2 flex-1 min-w-0">
+              {actions.slice(0, 3).map((action, i) => (
+                <div key={`${action.substring(0, 30)}_${i}`} className="flex gap-1">
                   <button
-                    onClick={() => handleSoloSuggestedAction(action)}
-                    disabled={disabled || !soloAvailable || mp.state.isGenerating}
-                    title={soloAvailable ? t('multiplayer.soloActionTooltip') : t('multiplayer.soloActionCooldown', { time: soloCooldownTime })}
-                    className="shrink-0 w-7 flex items-center justify-center bg-tertiary/10 hover:bg-tertiary/20 border border-tertiary/20 hover:border-tertiary/40 rounded-sm transition-all disabled:opacity-30 disabled:cursor-not-allowed"
+                    data-testid="suggested-action"
+                    onClick={() => handleSuggestedAction(action)}
+                    onPointerDown={() => handleLongPressDown(i, action)}
+                    onPointerUp={handleLongPressUpOrLeave}
+                    onPointerLeave={handleLongPressUpOrLeave}
+                    onContextMenu={(e) => e.preventDefault()}
+                    disabled={disabled || hasPendingAction || isRegeneratingActions}
+                    className={`relative overflow-hidden flex-1 text-left px-4 py-3.5 min-h-[3.5rem] bg-surface-container-high/40 hover:bg-surface-container-high border border-outline-variant/15 hover:border-primary/30 rounded-sm transition-all duration-300 group disabled:opacity-50 disabled:pointer-events-none hover:translate-y-[-1px] hover:shadow-[0_4px_16px_rgba(0,0,0,0.3)] ${isRegeneratingActions ? 'animate-pulse' : ''}`}
                   >
-                    <span className="material-symbols-outlined text-tertiary text-sm">bolt</span>
+                    <div
+                      className="absolute inset-0 bg-primary/15 pointer-events-none origin-left"
+                      style={{
+                        transform: longPressActiveIndex === i ? 'scaleX(1)' : 'scaleX(0)',
+                        transition: longPressActiveIndex === i ? 'transform 1s linear' : 'none',
+                      }}
+                    />
+                    <div className="relative flex items-center gap-3.5">
+                      <span className="w-7 h-7 shrink-0 flex items-center justify-center rounded-full bg-gradient-to-br from-primary-dim/20 to-primary/10 text-primary font-headline text-base leading-none border border-primary/15 group-hover:border-primary/30 group-hover:shadow-[0_0_8px_rgba(197,154,255,0.2)] transition-all">
+                        {isRegeneratingActions
+                          ? <span className="material-symbols-outlined text-sm animate-spin">progress_activity</span>
+                          : i + 1}
+                      </span>
+                      <p className={`text-base font-medium transition-colors leading-snug line-clamp-2 ${isRegeneratingActions ? 'text-on-surface-variant/50' : 'text-on-surface-variant group-hover:text-on-surface'}`}>
+                        {action}
+                      </p>
+                    </div>
                   </button>
-                )}
-              </div>
-            ))}
+                  {isMultiplayer && (
+                    <button
+                      onClick={() => handleSoloSuggestedAction(action)}
+                      disabled={disabled || !soloAvailable || mp.state.isGenerating}
+                      title={soloAvailable ? t('multiplayer.soloActionTooltip') : t('multiplayer.soloActionCooldown', { time: soloCooldownTime })}
+                      className="shrink-0 w-7 flex items-center justify-center bg-tertiary/10 hover:bg-tertiary/20 border border-tertiary/20 hover:border-tertiary/40 rounded-sm transition-all disabled:opacity-30 disabled:cursor-not-allowed"
+                    >
+                      <span className="material-symbols-outlined text-tertiary text-sm">bolt</span>
+                    </button>
+                  )}
+                </div>
+              ))}
+            </div>
+            {onRegenerateActions && !isMultiplayer && (
+              <ActionStyleButton
+                disabled={disabled || hasPendingAction || isRegeneratingActions}
+                isRegeneratingActions={isRegeneratingActions}
+                stickyTone={stickyTone}
+                onRegenerateActions={onRegenerateActions}
+                onStickyTone={onStickyTone}
+              />
+            )}
           </div>
 
           {combatPickerOpen && (
@@ -663,7 +677,7 @@ export default function ActionPanel({
           character={character}
           dispatch={dispatch}
           onClose={() => setInventSpellOpen(false)}
-          onCorrectionsApplied={onIncidentCorrectionsApplied}
+          onAction={onAction}
         />,
         document.body
       )}
@@ -692,16 +706,15 @@ export default function ActionPanel({
             onOpenSelfQuest={campaignId && dispatch ? () => setSelfQuestOpen(true) : undefined}
             onOpenInventSpell={campaignId && dispatch ? () => setInventSpellOpen(true) : undefined}
             onOpenTravelMap={onOpenTravelMap}
+            onOpenWorldModal={onOpenWorldModal}
+            adjacentLocations={adjacentLocations}
+            onTravelToLocation={onTravelToLocation}
             recruitableCount={recruitableNpcs.length}
             partyHasSlot={partyHasSlot}
             forceRollState={isMultiplayer ? null : forceRoll}
             onForceRollLeft={handleForceRollLeft}
             onForceRollDouble={handleForceRollDouble}
             onForceRollRight={handleForceRollRight}
-            onRegenerateActions={onRegenerateActions}
-            isRegeneratingActions={isRegeneratingActions}
-            stickyTone={stickyTone}
-            onStickyTone={onStickyTone}
           />
           <CustomActionForm
             inputRef={inputRef}

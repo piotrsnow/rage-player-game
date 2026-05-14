@@ -112,8 +112,9 @@ export default function MapTab({ campaignId, onTravel }) {
     }
   }, []);
 
-  const lastScene = scenes?.[scenes.length - 1] || null;
-  const canAttemptDistantTravel = isQuietScene(lastScene);
+  const REQUIRED_CALM_SCENES = 0;
+  const canAttemptDistantTravel = REQUIRED_CALM_SCENES === 0
+    || scenes.slice(-REQUIRED_CALM_SCENES).every(isQuietScene);
 
   const selectedNode = useMemo(() => {
     if (selected?.type !== 'node') return null;

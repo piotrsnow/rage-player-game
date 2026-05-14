@@ -193,7 +193,6 @@ const defaultSettings = {
     promptProfile: 'balanced',
     llmPremiumTimeoutMs: 45000,
     llmNanoTimeoutMs: 15000,
-    badgeFrequency: 5,
   },
 };
 

@@ -28,7 +28,6 @@ import {
   buildKeyNpcsBlock,
   buildKeyPlotFactsBlock,
   buildCodexSummaryBlock,
-  buildNeedsCrisisBlock,
   buildActiveQuestsBlock,
   buildNpcRelationshipsBlock,
   buildPendingQuestHooksBlock,
@@ -62,8 +61,6 @@ import {
  */
 export function buildLeanSystemPrompt(coreState, recentScenes, language = 'pl', {
   dmSettings = {},
-  needsSystemEnabled = false,
-  characterNeeds = null,
   sceneCount = 0,
   intentResult = {},
   livingWorldEnabled = false,
@@ -146,8 +143,8 @@ export function buildLeanSystemPrompt(coreState, recentScenes, language = 'pl', 
   const codexSummary = buildCodexSummaryBlock(world);
   if (codexSummary) dynamicSections.push(codexSummary);
 
-  const needsCrisis = buildNeedsCrisisBlock({ needsSystemEnabled, characterNeeds });
-  if (needsCrisis) dynamicSections.push(needsCrisis);
+  // Needs crisis moved to a separate post-scene nano commentary (needsCommentary.js).
+  // buildNeedsCrisisBlock is no longer injected into the premium prompt.
 
   const activeQuests = buildActiveQuestsBlock(quests, { questGraphEnabled });
   if (activeQuests) dynamicSections.push(activeQuests);

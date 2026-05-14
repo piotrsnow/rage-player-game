@@ -261,7 +261,6 @@ describe('applyCharacterStateChanges', () => {
       expect(result.skills.Spostrzegawczosc.xp).toBe(10);
       expect(result.skills.Spostrzegawczosc.level).toBe(2);
       expect(result.skills['Spostrzegawczość']).toBeUndefined();
-      expect(result.skillBadges || []).toHaveLength(0);
     });
 
     it('maps case-insensitive skill name to canonical key', () => {
@@ -282,13 +281,12 @@ describe('applyCharacterStateChanges', () => {
       expect(result.skills.Jezdziectwo.xp).toBe(4);
     });
 
-    it('still creates badge for truly unknown skill names', () => {
+    it('ignores truly unknown skill names', () => {
       const c = baseCharacter();
       const result = applyCharacterStateChanges(c, {
         skillProgress: { 'Latanie na miotle': 10 },
       });
-      expect(result.skillBadges).toHaveLength(1);
-      expect(result.skillBadges[0].name).toBe('Latanie na miotle');
+      expect(result.skills['Latanie na miotle']).toBeUndefined();
     });
   });
 });

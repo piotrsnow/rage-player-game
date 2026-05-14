@@ -5,6 +5,7 @@ import { useChatAutoNarration } from '../../hooks/useChatAutoNarration';
 import {
   DmMessage,
   CombatCommentaryMessage,
+  NeedsCommentaryMessage,
   PlayerMessage,
   SystemMessage,
   TypingIndicator,
@@ -208,8 +209,9 @@ export default function ChatPanel({
         {visibleMessages.map((msg, idx) => {
           let inner;
           let px = 'px-2';
-          const needsSceneDivider = msg.role === 'player' && msg.subtype !== 'quick_beat' && idx > 0;
+          const needsSceneDivider = msg.role === 'player' && msg.subtype !== 'quick_beat' && msg.subtype !== 'needs_commentary' && idx > 0;
           if (msg.subtype === 'quick_beat') inner = <QuickBeatMessage message={msg} narrator={narrator} />;
+          else if (msg.subtype === 'needs_commentary') inner = <NeedsCommentaryMessage message={msg} />;
           else if (msg.role === 'dm') inner = <DmMessage message={msg} narrator={narrator} />;
           else if (msg.subtype === 'combat_commentary') inner = <CombatCommentaryMessage message={msg} narrator={narrator} />;
           else if (msg.role === 'player') { const isMe = myOdId ? msg.odId === myOdId : true; inner = <PlayerMessage message={msg} isMe={isMe} />; }

@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { gameData } from '../../../services/gameDataService';
-import { getDistance, getShoveCells, canCharge, getPushTargetCells } from '../../../services/combatEngine';
+import { getDistance, getShoveCells, canCharge, getPushTargetCells, computeAttackPreview } from '../../../services/combatEngine';
 import { isPushable } from '../../../../shared/domain/battlefieldTiles.js';
 import { SPELL_TREES } from '../../../data/rpgMagic';
 import { resolveKnownSpellDisplay } from '../../../services/magicEngine';
@@ -71,6 +71,117 @@ const MANOEUVRE_ICONS = {
   castSpell: 'auto_awesome',
   defend: 'security',
   shove: 'move_group',
+};
+
+const ACTION_THEMES = {
+  attack: {
+    selected: 'bg-red-500/20 border-red-400/50 text-red-400 shadow-lg shadow-red-500/10',
+    idle:     'text-red-400/60 hover:text-red-400 hover:border-red-500/30',
+    detail:   'bg-red-500/8 border-red-500/20',
+    text:     'text-red-400',
+    btn:      'bg-red-500/15 text-red-400 border-red-500/25 hover:bg-red-500/25',
+    focus:    'focus:border-red-500/40',
+    glow:     '239,68,68',
+  },
+  rangedAttack: {
+    selected: 'bg-rose-500/20 border-rose-400/50 text-rose-400 shadow-lg shadow-rose-500/10',
+    idle:     'text-rose-400/60 hover:text-rose-400 hover:border-rose-500/30',
+    detail:   'bg-rose-500/8 border-rose-500/20',
+    text:     'text-rose-400',
+    btn:      'bg-rose-500/15 text-rose-400 border-rose-500/25 hover:bg-rose-500/25',
+    focus:    'focus:border-rose-500/40',
+    glow:     '244,63,94',
+  },
+  dodge: {
+    selected: 'bg-emerald-500/20 border-emerald-400/50 text-emerald-400 shadow-lg shadow-emerald-500/10',
+    idle:     'text-emerald-400/60 hover:text-emerald-400 hover:border-emerald-500/30',
+    detail:   'bg-emerald-500/8 border-emerald-500/20',
+    text:     'text-emerald-400',
+    btn:      'bg-emerald-500/15 text-emerald-400 border-emerald-500/25 hover:bg-emerald-500/25',
+    focus:    'focus:border-emerald-500/40',
+    glow:     '52,211,153',
+  },
+  charge: {
+    selected: 'bg-amber-500/20 border-amber-400/50 text-amber-400 shadow-lg shadow-amber-500/10',
+    idle:     'text-amber-400/60 hover:text-amber-400 hover:border-amber-500/30',
+    detail:   'bg-amber-500/8 border-amber-500/20',
+    text:     'text-amber-400',
+    btn:      'bg-amber-500/15 text-amber-400 border-amber-500/25 hover:bg-amber-500/25',
+    focus:    'focus:border-amber-500/40',
+    glow:     '245,158,11',
+  },
+  flee: {
+    selected: 'bg-slate-400/20 border-slate-400/50 text-slate-300 shadow-lg shadow-slate-400/10',
+    idle:     'text-slate-400/60 hover:text-slate-300 hover:border-slate-400/30',
+    detail:   'bg-slate-500/8 border-slate-500/20',
+    text:     'text-slate-300',
+    btn:      'bg-slate-500/15 text-slate-300 border-slate-500/25 hover:bg-slate-500/25',
+    focus:    'focus:border-slate-500/40',
+    glow:     '148,163,184',
+  },
+  defend: {
+    selected: 'bg-sky-500/20 border-sky-400/50 text-sky-400 shadow-lg shadow-sky-500/10',
+    idle:     'text-sky-400/60 hover:text-sky-400 hover:border-sky-500/30',
+    detail:   'bg-sky-500/8 border-sky-500/20',
+    text:     'text-sky-400',
+    btn:      'bg-sky-500/15 text-sky-400 border-sky-500/25 hover:bg-sky-500/25',
+    focus:    'focus:border-sky-500/40',
+    glow:     '56,189,248',
+  },
+  shove: {
+    selected: 'bg-orange-500/20 border-orange-400/50 text-orange-400 shadow-lg shadow-orange-500/10',
+    idle:     'text-orange-400/60 hover:text-orange-400 hover:border-orange-500/30',
+    detail:   'bg-orange-500/8 border-orange-500/20',
+    text:     'text-orange-400',
+    btn:      'bg-orange-500/15 text-orange-400 border-orange-500/25 hover:bg-orange-500/25',
+    focus:    'focus:border-orange-500/40',
+    glow:     '251,146,60',
+  },
+  skipTurn: {
+    selected: 'bg-gray-400/20 border-gray-400/50 text-gray-300 shadow-lg shadow-gray-400/10',
+    idle:     'text-gray-400/60 hover:text-gray-300 hover:border-gray-400/30',
+    detail:   'bg-gray-500/8 border-gray-500/20',
+    text:     'text-gray-300',
+    btn:      'bg-gray-500/15 text-gray-300 border-gray-500/25 hover:bg-gray-500/25',
+    focus:    'focus:border-gray-500/40',
+    glow:     '156,163,175',
+  },
+  inventory: {
+    selected: 'bg-teal-500/20 border-teal-400/50 text-teal-400 shadow-lg shadow-teal-500/10',
+    idle:     'text-teal-400/60 hover:text-teal-400 hover:border-teal-500/30',
+    detail:   'bg-teal-500/8 border-teal-500/20',
+    text:     'text-teal-400',
+    btn:      'bg-teal-500/15 text-teal-400 border-teal-500/25 hover:bg-teal-500/25',
+    focus:    'focus:border-teal-500/40',
+    glow:     '45,212,191',
+  },
+  custom: {
+    selected: 'bg-amber-500/20 border-amber-400/50 text-amber-400 shadow-lg shadow-amber-500/10',
+    idle:     'text-amber-400/60 hover:text-amber-400 hover:border-amber-500/30',
+    detail:   'bg-amber-500/8 border-amber-500/20',
+    text:     'text-amber-400',
+    btn:      'bg-amber-500/15 text-amber-400 border-amber-500/25 hover:bg-amber-500/25',
+    focus:    'focus:border-amber-500/40',
+    glow:     '245,158,11',
+  },
+  castSpell: {
+    selected: 'bg-violet-500/20 border-violet-400/50 text-violet-400 shadow-lg shadow-violet-500/10',
+    idle:     'text-violet-400/60 hover:text-violet-400 hover:border-violet-500/30',
+    detail:   'bg-violet-500/8 border-violet-500/20',
+    text:     'text-violet-400',
+    btn:      'bg-violet-500/15 text-violet-400 border-violet-500/25 hover:bg-violet-500/25',
+    focus:    'focus:border-violet-500/40',
+    glow:     '167,139,250',
+  },
+};
+const DEFAULT_ACTION_THEME = ACTION_THEMES.attack;
+
+const ATTR_I18N = {
+  sila: 'rpgAttributes.sila',
+  inteligencja: 'rpgAttributes.inteligencja',
+  zrecznosc: 'rpgAttributes.zrecznosc',
+  wytrzymalosc: 'rpgAttributes.wytrzymalosc',
+  szczescie: 'rpgAttributes.szczescie',
 };
 
 const CUSTOM_ACTIONS_STORAGE_KEY = 'rpgon:combatCustomActions';
@@ -161,28 +272,149 @@ function ShoveCellPicker({ target, shoveCells, selectedCell, onSelect }) {
   );
 }
 
-function SuggestionList({ items, onSelect, onDelete }) {
+function SuggestionList({ items, onSelect, onDelete, accentRgb = '197,154,255' }) {
   if (!Array.isArray(items) || items.length === 0) return null;
 
   return (
-    <div className="flex-1 overflow-y-auto custom-scrollbar divide-y divide-outline-variant/10">
+    <div className="flex-1 overflow-y-auto custom-scrollbar divide-y divide-[rgba(197,154,255,0.08)]">
       {items.map((value, i) => (
-        <div key={`${i}_${value}`} className="group flex items-center gap-1 px-2 py-1">
+        <div key={`${i}_${value}`} className="group flex items-center gap-1 px-2.5 py-1.5">
           <button
             onClick={() => onSelect?.(value)}
-            className="flex-1 min-w-0 text-left text-xs text-on-surface hover:text-primary transition-colors truncate"
+            className="flex-1 min-w-0 text-left text-xs text-[rgba(220,200,255,0.8)] transition-colors truncate"
+            style={{ '--accent': `rgb(${accentRgb})` }}
+            onMouseEnter={(e) => { e.currentTarget.style.color = `rgb(${accentRgb})`; }}
+            onMouseLeave={(e) => { e.currentTarget.style.color = ''; }}
           >
             {value}
           </button>
           <button
             onClick={() => onDelete?.(value)}
-            className="shrink-0 text-outline-variant hover:text-error transition-colors opacity-0 group-hover:opacity-100"
+            className="shrink-0 text-[rgba(197,154,255,0.3)] hover:text-error transition-colors opacity-0 group-hover:opacity-100"
           >
             <span className="material-symbols-outlined text-sm">delete</span>
           </button>
         </div>
       ))}
     </div>
+  );
+}
+
+function PreviewValueRow({ label, value, color = 'text-on-surface/80' }) {
+  const sign = value > 0 ? '+' : '';
+  return (
+    <div className="flex justify-between gap-3 text-xs">
+      <span className="text-on-surface-variant/75 truncate">{label}</span>
+      <span className={`${color} shrink-0 tabular-nums`}>{sign}{value}</span>
+    </div>
+  );
+}
+
+function getBonusLabel(label, t) {
+  if (ATTR_I18N[label]) return t(ATTR_I18N[label]);
+  return t(`combat.preRoll.mod_${label}`, label);
+}
+
+function RollPreviewBreakdown({ preview, t }) {
+  if (!preview) return null;
+  const { actor, threshold, bonuses, minRoll, sureHit, weaponName } = preview;
+  const minRollClass = minRoll <= 10
+    ? 'text-emerald-300'
+    : minRoll <= 25
+      ? 'text-amber-300'
+      : 'text-rose-300';
+
+  return (
+    <div className="space-y-2 rounded-md border border-outline-variant/15 bg-surface-container-low/55 p-2.5">
+      <div className="flex items-center justify-between gap-2">
+        <div className="text-[10px] font-bold uppercase tracking-wider text-on-surface-variant/80">
+          {t('combat.preRoll.testPreview', 'Test k50')}
+        </div>
+        {weaponName && (
+          <span className="text-[10px] px-1.5 py-0.5 rounded bg-surface-container text-on-surface-variant/70 truncate">
+            {weaponName}
+          </span>
+        )}
+      </div>
+
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+        <div className="space-y-1 rounded border border-emerald-400/15 bg-emerald-500/[0.04] p-2">
+          <div className="text-[10px] uppercase tracking-wider text-emerald-400/85 font-semibold">
+            {t('combat.preRoll.yourBonuses', 'Twoje bonusy')}
+          </div>
+          {bonuses.modifiers.map((m, i) => (
+            <PreviewValueRow
+              key={`${m.label}_${i}`}
+              label={getBonusLabel(m.label, t)}
+              value={m.value}
+              color={m.color || 'text-on-surface/80'}
+            />
+          ))}
+          <div className="border-t border-outline-variant/15 pt-1 flex justify-between text-xs font-semibold">
+            <span className="text-on-surface/75">{t('combat.preRoll.totalBonus', 'Razem')}</span>
+            <span className="text-emerald-300 tabular-nums">+{bonuses.total}</span>
+          </div>
+        </div>
+
+        <div className="space-y-1 rounded border border-rose-400/15 bg-rose-500/[0.04] p-2">
+          <div className="text-[10px] uppercase tracking-wider text-rose-400/85 font-semibold">
+            {t('combat.preRoll.threshold', 'Próg trudności')}
+          </div>
+          <PreviewValueRow
+            label={t('combat.preRoll.baseThreshold', 'Bazowy')}
+            value={threshold.base}
+            color="text-on-surface/80"
+          />
+          {threshold.modifiers.map((m, i) => (
+            <PreviewValueRow
+              key={`${m.label}_${i}`}
+              label={m.label}
+              value={m.value}
+              color="text-rose-300"
+            />
+          ))}
+          <div className="border-t border-outline-variant/15 pt-1 flex justify-between text-xs font-semibold">
+            <span className="text-on-surface/75">{t('combat.preRoll.finalThreshold', 'Wymagany')}</span>
+            <span className="text-rose-300 tabular-nums">{threshold.final}</span>
+          </div>
+        </div>
+      </div>
+
+      <div className="rounded border border-outline-variant/15 bg-surface-container/35 px-3 py-2 text-center">
+        {sureHit ? (
+          <div className="text-sm font-bold text-amber-300">
+            {t('combat.preRoll.sureHit', 'Automatyczne trafienie!')}
+          </div>
+        ) : (
+          <>
+            <div className="text-[10px] uppercase tracking-wider text-on-surface-variant/65">
+              {t('combat.preRoll.minRollLabel', 'Minimalna wartość na k50')}
+            </div>
+            <div className={`text-3xl font-bold tabular-nums ${minRollClass}`}>
+              {minRoll}
+            </div>
+          </>
+        )}
+        {actor.luckChance > 0 && (
+          <div className="text-[10px] text-yellow-300/80 mt-0.5">
+            {t('combat.preRoll.luckChance', 'Szczęście: {{pct}}% auto-sukces', { pct: actor.luckChance })}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function BackToActionsButton({ onClick, t, className = '' }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`shrink-0 inline-flex items-center gap-1 rounded-sm border border-outline-variant/20 px-2 py-1 text-[10px] font-label uppercase tracking-widest text-on-surface-variant hover:border-primary/35 hover:text-primary transition-colors ${className}`}
+    >
+      <span className="material-symbols-outlined text-sm">arrow_back</span>
+      {t('combat.backToActions', 'Wróć')}
+    </button>
   );
 }
 
@@ -435,31 +667,57 @@ export default function ActionModal({
     setSelectedSpell(selectedSpell === spellName ? null : spellName);
   };
 
+  const handleBackToActions = () => {
+    setSelectedManoeuvre(null);
+    setSelectedSpell(null);
+    setSelectedItem(null);
+    setSelectedShoveCell(null);
+    setBottomPanel(null);
+  };
+
+  const selectedMan = selectedManoeuvre ? gameData.manoeuvres[selectedManoeuvre] : null;
+  const selectedPreview = useMemo(() => {
+    if (!combat || !myCombatant?.id || !selectedManoeuvre) return null;
+    if (selectedManoeuvre === 'castSpell' && !selectedSpell) return null;
+    return computeAttackPreview(combat, myCombatant.id, selectedManoeuvre, target?.id || null, {
+      customDescription,
+      spellName: selectedSpell,
+      pushTarget: selectedShoveCell,
+    });
+  }, [combat, myCombatant?.id, selectedManoeuvre, target?.id, customDescription, selectedSpell, selectedShoveCell]);
+
+  const modalWidth = selectedPreview ? 520 : 360;
+
   const modalStyle = useMemo(() => {
     if (!anchorRect) return { top: '50%', left: '50%', transform: 'translate(-50%, -50%)' };
     const gap = 16;
     const pad = 12;
+    const halfWidth = Math.min(modalWidth, window.innerWidth - pad * 2) / 2;
     let left = anchorRect.x + anchorRect.width / 2;
 
-    if (left + 160 > window.innerWidth - pad) left = window.innerWidth - 172;
-    if (left < pad + 160) left = pad + 160;
+    if (left + halfWidth > window.innerWidth - pad) left = window.innerWidth - pad - halfWidth;
+    if (left < pad + halfWidth) left = pad + halfWidth;
 
     const belowY = anchorRect.y + anchorRect.height + gap;
-    const fitsBelow = belowY + 200 < window.innerHeight - pad;
+    const fitsBelow = belowY + 360 < window.innerHeight - pad;
 
     if (fitsBelow) {
       return { top: belowY, left, transform: 'translate(-50%, 0)' };
     }
     const aboveY = anchorRect.y - gap;
     return { top: aboveY, left, transform: 'translate(-50%, -100%)' };
-  }, [anchorRect]);
+  }, [anchorRect, modalWidth]);
 
   const canExecuteManoeuvre = selectedManoeuvre
     && (selectedManoeuvre !== 'castSpell' || selectedSpell)
     && (selectedManoeuvre !== 'shove' || selectedShoveCell);
 
-  const selectedMan = selectedManoeuvre ? gameData.manoeuvres[selectedManoeuvre] : null;
   const customActionOpen = bottomPanel === 'custom' && !selectedItem && !selectedSpell && !selectedMan;
+  const selectedActionOpen = Boolean(
+    (selectedManoeuvre && (selectedManoeuvre !== 'castSpell' || selectedSpell))
+      || selectedItem
+      || customActionOpen
+  );
 
   const suggestionPanelConfig = useMemo(() => {
     if (isCustomAttackManoeuvre(selectedManoeuvre)) {
@@ -511,6 +769,22 @@ export default function ActionModal({
     t,
   ]);
 
+  const activeTheme = useMemo(() => {
+    if (selectedItem) return ACTION_THEMES.inventory;
+    if (customActionOpen) return ACTION_THEMES.custom;
+    if (selectedManoeuvre === 'castSpell' && selectedSpell) return ACTION_THEMES.castSpell;
+    if (selectedManoeuvre) return ACTION_THEMES[selectedManoeuvre] || DEFAULT_ACTION_THEME;
+    return null;
+  }, [selectedManoeuvre, selectedSpell, selectedItem, customActionOpen]);
+
+  const panelGlowStyle = useMemo(() => {
+    const rgb = activeTheme?.glow || '197,154,255';
+    return {
+      boxShadow: `0 0 20px rgba(${rgb},0.12), 0 0 4px rgba(${rgb},0.18), 0 8px 32px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.04)`,
+      borderColor: `rgba(${rgb},0.3)`,
+    };
+  }, [activeTheme]);
+
   return (
     <div
       ref={modalRef}
@@ -518,11 +792,11 @@ export default function ActionModal({
       style={modalStyle}
     >
       <div
-        className="bg-surface-container-high border border-outline-variant/25 rounded-lg shadow-2xl backdrop-blur-xl overflow-hidden max-h-[70vh] overflow-y-auto custom-scrollbar"
-        style={{ width: 320 }}
+        className="action-holo-panel max-h-[70vh] overflow-y-auto custom-scrollbar"
+        style={{ width: `min(${modalWidth}px, calc(100vw - 24px))`, ...panelGlowStyle }}
       >
       {/* Header */}
-      <div className="flex items-center justify-between px-3 py-2 border-b border-outline-variant/15 sticky top-0 bg-surface-container-high z-10">
+      <div className="flex items-center justify-between px-3 py-2 border-b border-[rgba(197,154,255,0.12)] sticky top-0 bg-[rgba(16,14,20,0.95)] backdrop-blur-md z-10 rounded-t-[14px]">
         <div className="flex items-center gap-2 min-w-0">
           {target && (
             <span className={`text-xs font-bold truncate ${
@@ -575,7 +849,7 @@ export default function ActionModal({
         <div className="p-2 space-y-2">
           <button
             onClick={handleMoveHere}
-            className="w-full flex items-center gap-2 px-3 py-2 text-xs font-bold rounded-md bg-primary/10 text-primary border border-primary/15 hover:bg-primary/20 transition-colors"
+            className="w-full flex items-center gap-2 px-3 py-2 text-xs font-bold rounded-md bg-sky-500/10 text-sky-400 border border-sky-500/20 hover:bg-sky-500/20 transition-colors"
           >
             <span className="material-symbols-outlined text-base">directions_walk</span>
             {t('combat.moveHere', 'Move here')}
@@ -583,7 +857,7 @@ export default function ActionModal({
               {(() => {
                 const pos = myCombatant.position && typeof myCombatant.position === 'object'
                   ? myCombatant.position : { x: 0, y: 0 };
-                return Math.max(Math.abs(pos.x - targetCell.x), Math.abs(pos.y - targetCell.y));
+                return Math.abs(pos.x - targetCell.x) + Math.abs(pos.y - targetCell.y);
               })()}
             </span>
           </button>
@@ -609,7 +883,7 @@ export default function ActionModal({
       )}
 
       {/* Manoeuvre icon grid */}
-      {filteredManoeuvres.length > 0 && (
+      {!selectedActionOpen && filteredManoeuvres.length > 0 && (
         <div className="px-2 pt-2 pb-1.5">
           <div className="grid grid-cols-5 gap-1.5">
             {filteredManoeuvres.map(([key, man]) => {
@@ -641,12 +915,12 @@ export default function ActionModal({
                   <button
                     onClick={() => handleSelectManoeuvre(key)}
                     disabled={disabled}
-                    className={`relative aspect-square flex items-center justify-center rounded-md border-2 transition-colors duration-150 ${
+                    className={`relative aspect-square flex items-center justify-center rounded-md border-2 transition-all duration-150 ${
                       isSelected
-                        ? 'bg-primary/20 border-primary/50 text-primary shadow-lg shadow-primary/10'
+                        ? (ACTION_THEMES[key]?.selected || DEFAULT_ACTION_THEME.selected)
                         : disabled
                           ? 'bg-surface-container/20 border-outline-variant/10 text-outline-variant/40 cursor-not-allowed'
-                          : 'bg-surface-container/40 border-outline-variant/15 text-on-surface-variant hover:bg-surface-container/70 hover:border-primary/30 hover:text-primary'
+                          : `bg-[rgba(16,14,20,0.45)] border-[rgba(197,154,255,0.12)] ${ACTION_THEMES[key]?.idle || DEFAULT_ACTION_THEME.idle} hover:bg-[rgba(26,18,40,0.6)]`
                     }`}
                   >
                     <span className="material-symbols-outlined text-xl">
@@ -670,7 +944,7 @@ export default function ActionModal({
             >
               <button
                 onClick={() => { onExecute('skipTurn', null, ''); onClose(); }}
-                className="relative aspect-square flex items-center justify-center rounded-md border-2 transition-colors duration-150 bg-surface-container/40 border-outline-variant/15 text-on-surface-variant hover:bg-surface-container/70 hover:border-outline-variant/40 hover:text-on-surface"
+                className={`relative aspect-square flex items-center justify-center rounded-md border-2 transition-all duration-150 bg-[rgba(16,14,20,0.45)] border-[rgba(197,154,255,0.12)] ${ACTION_THEMES.skipTurn.idle} hover:bg-[rgba(26,18,40,0.6)]`}
               >
                 <span className="material-symbols-outlined text-xl">hourglass_empty</span>
               </button>
@@ -680,9 +954,9 @@ export default function ActionModal({
       )}
 
       {/* Extra actions: Inventory + Cast Spell + Custom (square icon row) */}
-      {targetType !== 'ground' && (
+      {!selectedActionOpen && targetType !== 'ground' && (
         <div className="px-2 pb-1.5">
-          <div className="border-t border-outline-variant/10 mb-1.5" />
+          <div className="border-t border-[rgba(197,154,255,0.08)] mb-1.5" />
           <div className="grid grid-cols-5 gap-1.5">
             {inventoryItems.length > 0 && (
               <Tooltip
@@ -693,14 +967,14 @@ export default function ActionModal({
               >
                 <button
                   onClick={() => toggleBottomPanel('inventory')}
-                  className={`relative aspect-square flex items-center justify-center rounded-md border-2 transition-colors duration-150 ${
+                  className={`relative aspect-square flex items-center justify-center rounded-md border-2 transition-all duration-150 ${
                     bottomPanel === 'inventory'
-                      ? 'bg-tertiary/20 border-tertiary/50 text-tertiary shadow-lg shadow-tertiary/10'
-                      : 'bg-surface-container/40 border-outline-variant/15 text-on-surface-variant hover:bg-surface-container/70 hover:border-tertiary/30 hover:text-tertiary'
+                      ? ACTION_THEMES.inventory.selected
+                      : `bg-[rgba(16,14,20,0.45)] border-[rgba(197,154,255,0.12)] ${ACTION_THEMES.inventory.idle} hover:bg-[rgba(26,18,40,0.6)]`
                   }`}
                 >
                   <span className="material-symbols-outlined text-xl">inventory_2</span>
-                  <span className="absolute -top-0.5 -right-0.5 min-w-[14px] h-[14px] flex items-center justify-center rounded-full bg-tertiary/90 text-white text-[8px] font-bold px-0.5">
+                  <span className="absolute -top-0.5 -right-0.5 min-w-[14px] h-[14px] flex items-center justify-center rounded-full bg-teal-500/90 text-white text-[8px] font-bold px-0.5">
                     {inventoryItems.length}
                   </span>
                 </button>
@@ -715,10 +989,10 @@ export default function ActionModal({
               >
                 <button
                   onClick={() => toggleBottomPanel('spells')}
-                  className={`aspect-square flex items-center justify-center rounded-md border-2 transition-colors duration-150 ${
+                  className={`aspect-square flex items-center justify-center rounded-md border-2 transition-all duration-150 ${
                     bottomPanel === 'spells'
-                      ? 'bg-violet-500/20 border-violet-500/50 text-violet-400 shadow-lg shadow-violet-500/10'
-                      : 'bg-surface-container/40 border-outline-variant/15 text-on-surface-variant hover:bg-surface-container/70 hover:border-violet-500/30 hover:text-violet-400'
+                      ? ACTION_THEMES.castSpell.selected
+                      : `bg-[rgba(16,14,20,0.45)] border-[rgba(197,154,255,0.12)] ${ACTION_THEMES.castSpell.idle} hover:bg-[rgba(26,18,40,0.6)]`
                   }`}
                 >
                   <span className="material-symbols-outlined text-xl">auto_awesome</span>
@@ -733,10 +1007,10 @@ export default function ActionModal({
             >
               <button
                 onClick={() => toggleBottomPanel('custom')}
-                className={`aspect-square flex items-center justify-center rounded-md border-2 transition-colors duration-150 ${
+                className={`aspect-square flex items-center justify-center rounded-md border-2 transition-all duration-150 ${
                   bottomPanel === 'custom'
-                    ? 'bg-amber-500/20 border-amber-500/50 text-amber-400 shadow-lg shadow-amber-500/10'
-                    : 'bg-surface-container/40 border-outline-variant/15 text-on-surface-variant hover:bg-surface-container/70 hover:border-amber-500/30 hover:text-amber-400'
+                    ? ACTION_THEMES.custom.selected
+                    : `bg-[rgba(16,14,20,0.45)] border-[rgba(197,154,255,0.12)] ${ACTION_THEMES.custom.idle} hover:bg-[rgba(26,18,40,0.6)]`
                 }`}
               >
                 <span className="material-symbols-outlined text-xl">edit_note</span>
@@ -747,7 +1021,7 @@ export default function ActionModal({
       )}
 
       {/* Spells grid panel (grid only — detail is in the unified section below) */}
-      {bottomPanel === 'spells' && knownSpells.length > 0 && (
+      {!selectedActionOpen && bottomPanel === 'spells' && knownSpells.length > 0 && (
         <div className="px-2 pb-1.5 animate-fade-in">
           <div className="grid grid-cols-5 gap-1.5">
             {knownSpells.map((spell) => {
@@ -769,7 +1043,7 @@ export default function ActionModal({
                   <button
                     onClick={() => handleSelectSpell(spell.name)}
                     disabled={!spell.canCast}
-                    className={`relative aspect-square flex items-center justify-center rounded-md border-2 transition-colors duration-150 ${
+                    className={`relative aspect-square flex items-center justify-center rounded-md border-2 transition-all duration-150 ${
                       selectedSpell === spell.name
                         ? sc.selected
                         : !spell.canCast
@@ -787,7 +1061,7 @@ export default function ActionModal({
       )}
 
       {/* Inventory items grid panel (grid only — detail is in the unified section below) */}
-      {bottomPanel === 'inventory' && inventoryItems.length > 0 && (
+      {!selectedActionOpen && bottomPanel === 'inventory' && inventoryItems.length > 0 && (
         <div className="px-2 pb-1.5 animate-fade-in">
           <div className="grid grid-cols-5 gap-1.5 max-h-32 overflow-y-auto custom-scrollbar">
             {inventoryItems.slice(0, 15).map((item) => {
@@ -808,10 +1082,10 @@ export default function ActionModal({
                 >
                   <button
                     onClick={() => handleSelectItem(item)}
-                    className={`relative aspect-square rounded-md border-2 overflow-hidden flex items-center justify-center transition-colors duration-150 ${
+                    className={`relative aspect-square rounded-md border-2 overflow-hidden flex items-center justify-center transition-all duration-150 ${
                       isItemSelected
-                        ? 'bg-tertiary/15 border-tertiary/40 ring-1 ring-tertiary/30'
-                        : 'bg-surface-container/30 border-outline-variant/10 hover:border-tertiary/20'
+                        ? 'bg-teal-500/15 border-teal-400/40 ring-1 ring-teal-400/30'
+                        : 'bg-[rgba(16,14,20,0.45)] border-[rgba(197,154,255,0.1)] hover:border-teal-500/20'
                     }`}
                   >
                     {item.imageUrl ? (
@@ -839,19 +1113,21 @@ export default function ActionModal({
 
       {/* Unified selection detail panel — always renders in the same spot */}
       {/* Manoeuvre detail */}
-      {selectedManoeuvre && selectedManoeuvre !== 'castSpell' && selectedMan && (
+      {selectedManoeuvre && selectedManoeuvre !== 'castSpell' && selectedMan && (() => {
+        const th = ACTION_THEMES[selectedManoeuvre] || DEFAULT_ACTION_THEME;
+        return (
         <div className="px-2 pb-2 space-y-1.5 animate-fade-in">
-          <div className="flex items-center gap-2.5 px-2.5 py-2 bg-primary/5 border border-primary/15 rounded-md">
-            <span className="material-symbols-outlined text-base text-primary">
-              {MANOEUVRE_ICONS[selectedManoeuvre] || 'help'}
-            </span>
+          <div className={`px-3 py-2.5 ${th.detail} border rounded-md`}>
+            <div className="flex items-start justify-between gap-3">
             <div className="flex-1 min-w-0">
-              <div className="text-sm font-bold text-primary">
+              <div className={`font-headline text-xl tracking-wide leading-tight ${th.text}`}>
                 {t(`combat.manoeuvres.${selectedManoeuvre}`, selectedMan.name)}
               </div>
-              <div className="text-xs text-on-surface-variant leading-snug mt-0.5">
+              <div className="text-xs text-[rgba(220,200,255,0.6)] leading-snug mt-0.5">
                 {selectedMan.description}
               </div>
+            </div>
+              <BackToActionsButton onClick={handleBackToActions} t={t} />
             </div>
           </div>
           {/* Shove direction picker */}
@@ -874,9 +1150,10 @@ export default function ActionModal({
               )}
             </div>
           )}
+          <RollPreviewBreakdown preview={selectedPreview} t={t} />
           {isCustomAttackManoeuvre(selectedManoeuvre) && (
             <div className="space-y-1">
-              <label className="text-[10px] text-on-surface-variant font-medium px-0.5">
+              <label className={`text-sm font-headline tracking-wide px-0.5 ${th.text}`}>
                 {t('combat.customAttackLabel', 'Describe your attack')}
               </label>
               <textarea
@@ -884,61 +1161,73 @@ export default function ActionModal({
                 onChange={(e) => setCustomDescription(e.target.value)}
                 rows={2}
                 placeholder={t('combat.customAttackPlaceholder', 'Describe how you strike to earn creativity bonus to the attack roll.')}
-                className="w-full px-2 py-1.5 rounded-md border border-outline-variant/15 bg-surface-container/40 text-xs text-on-surface placeholder:text-outline-variant/60 focus:outline-none focus:border-primary/30 resize-none"
+                className={`w-full px-2 py-1.5 rounded-md border border-[rgba(197,154,255,0.12)] bg-[rgba(16,14,20,0.5)] text-xs text-on-surface placeholder:text-[rgba(197,154,255,0.35)] focus:outline-none ${th.focus} resize-none`}
               />
             </div>
           )}
           {canExecuteManoeuvre && (
             <button
               onClick={handleExecute}
-              className="w-full px-3 py-2 text-xs font-bold uppercase tracking-wider bg-error/15 text-error border border-error/20 rounded-md hover:bg-error/25 transition-colors"
+              className={`w-full px-3 py-2 text-xs font-bold uppercase tracking-wider border rounded-md transition-colors ${th.btn}`}
             >
-              {t('combat.execute', 'Execute')}
+              {selectedPreview
+                ? t('combat.preRoll.rollButton', 'Rzuć kośćmi!')
+                : t('combat.execute', 'Execute')}
             </button>
           )}
         </div>
-      )}
+        );
+      })()}
       {/* Spell detail */}
       {selectedManoeuvre === 'castSpell' && selectedSpell && (() => {
         const spellData = knownSpells.find((s) => s.name === selectedSpell);
         const sc = SPELL_TREE_COLORS[spellData?.treeId] || DEFAULT_SPELL_COLOR;
         return (
           <div className="px-2 pb-2 space-y-1.5 animate-fade-in">
-            <div className={`flex items-center gap-2 px-2 py-1.5 ${sc.detail.bg} border ${sc.detail.border} rounded-md`}>
-              <span className={`material-symbols-outlined text-sm ${sc.detail.text}`}>{spellData?.icon || 'auto_awesome'}</span>
+            <div className={`px-3 py-2.5 ${sc.detail.bg} border ${sc.detail.border} rounded-md`}>
+              <div className="flex items-start justify-between gap-3">
               <div className="flex-1 min-w-0">
-                <div className={`text-xs font-bold ${sc.detail.text}`}>{selectedSpell}</div>
-                <div className="text-[10px] text-on-surface-variant leading-snug mt-0.5">
+                <div className={`font-headline text-xl tracking-wide leading-tight ${sc.detail.text}`}>{selectedSpell}</div>
+                <div className="text-[10px] text-[rgba(220,200,255,0.6)] leading-snug mt-0.5">
                   {spellData?.manaCost}m · {spellData?.treeName}
                 </div>
               </div>
+                <BackToActionsButton onClick={handleBackToActions} t={t} />
+              </div>
             </div>
+            <RollPreviewBreakdown preview={selectedPreview} t={t} />
             <textarea
               value={customDescription}
               onChange={(e) => setCustomDescription(e.target.value)}
               rows={2}
               placeholder={t('combat.spellDescriptionPlaceholder', 'Opisz jak rzucasz zaklęcie, by uzyskać bonus kreatywności...')}
-              className="w-full px-2 py-1.5 rounded-md border border-outline-variant/15 bg-surface-container/40 text-xs text-on-surface placeholder:text-outline-variant/60 focus:outline-none focus:border-primary/30 resize-none"
+              className="w-full px-2 py-1.5 rounded-md border border-[rgba(197,154,255,0.12)] bg-[rgba(16,14,20,0.5)] text-xs text-on-surface placeholder:text-[rgba(197,154,255,0.35)] focus:outline-none focus:border-violet-500/40 resize-none"
             />
             <button
               onClick={handleExecute}
               className={`w-full px-3 py-2 text-xs font-bold uppercase tracking-wider border rounded-md transition-colors ${sc.detail.btn}`}
             >
-              {t('combat.execute', 'Execute')}
+              {selectedPreview
+                ? t('combat.preRoll.rollButton', 'Rzuć kośćmi!')
+                : t('combat.execute', 'Execute')}
             </button>
           </div>
         );
       })()}
       {/* Item detail */}
-      {selectedItem && (
+      {selectedItem && (() => {
+        const ith = ACTION_THEMES.inventory;
+        return (
         <div className="px-2 pb-2 space-y-1.5 animate-fade-in">
-          <div className="flex items-center gap-2 px-2 py-1.5 bg-tertiary/5 border border-tertiary/15 rounded-md">
-            <span className="material-symbols-outlined text-sm text-tertiary">inventory_2</span>
+          <div className={`px-3 py-2.5 ${ith.detail} border rounded-md`}>
+            <div className="flex items-start justify-between gap-3">
             <div className="flex-1 min-w-0">
-              <div className="text-xs font-bold text-tertiary truncate">{selectedItem.name}</div>
+              <div className={`font-headline text-xl tracking-wide leading-tight truncate ${ith.text}`}>{selectedItem.name}</div>
               {selectedItem.type && (
-                <div className="text-[10px] text-on-surface-variant leading-snug mt-0.5">{selectedItem.type}</div>
+                <div className="text-[10px] text-[rgba(220,200,255,0.6)] leading-snug mt-0.5">{selectedItem.type}</div>
               )}
+            </div>
+              <BackToActionsButton onClick={handleBackToActions} t={t} />
             </div>
           </div>
           <textarea
@@ -953,32 +1242,37 @@ export default function ActionModal({
             }}
             rows={2}
             placeholder={t('combat.useItemPlaceholder', 'Opisz jak używasz tego przedmiotu w walce...')}
-            className="w-full px-2 py-1.5 rounded-md border border-outline-variant/15 bg-surface-container/40 text-xs text-on-surface placeholder:text-outline-variant/60 focus:outline-none focus:border-tertiary/30 resize-none"
+            className={`w-full px-2 py-1.5 rounded-md border border-[rgba(197,154,255,0.12)] bg-[rgba(16,14,20,0.5)] text-xs text-on-surface placeholder:text-[rgba(197,154,255,0.35)] focus:outline-none ${ith.focus} resize-none`}
           />
-          <span className="text-[10px] text-on-surface-variant/40">Shift+Enter — wyślij</span>
           <button
             onClick={handleAiSubmit}
             disabled={!aiDescription.trim()}
-            className={`w-full flex items-center justify-center gap-1.5 px-3 py-2 text-xs font-bold uppercase tracking-wider rounded-md transition-colors ${
+            className={`w-full flex items-center justify-center gap-1.5 px-3 py-2 text-xs font-bold uppercase tracking-wider border rounded-md transition-colors ${
               aiDescription.trim()
-                ? 'bg-tertiary/15 text-tertiary border border-tertiary/20 hover:bg-tertiary/25'
-                : 'bg-surface-container/30 text-on-surface-variant/40 border border-outline-variant/10 cursor-not-allowed'
+                ? ith.btn
+                : 'bg-surface-container/30 text-on-surface-variant/40 border-outline-variant/10 cursor-not-allowed'
             }`}
           >
             <span className="material-symbols-outlined text-sm">bolt</span>
             Wykonaj
           </button>
+          <span className="text-[10px] text-[rgba(197,154,255,0.3)]">Shift+Enter — wyślij</span>
         </div>
-      )}
+        );
+      })()}
       {/* Custom action detail */}
-      {customActionOpen && (
+      {customActionOpen && (() => {
+        const cth = ACTION_THEMES.custom;
+        return (
         <div className="px-2 pb-2 space-y-1.5 animate-fade-in">
-          <div className="flex items-center gap-2 px-2 py-1.5 bg-amber-500/5 border border-amber-500/15 rounded-md">
-            <span className="material-symbols-outlined text-sm text-amber-400">edit_note</span>
+          <div className={`px-3 py-2.5 ${cth.detail} border rounded-md`}>
+            <div className="flex items-start justify-between gap-3">
             <div className="flex-1 min-w-0">
-              <div className="text-xs font-bold text-amber-400">
+              <div className={`font-headline text-xl tracking-wide leading-tight ${cth.text}`}>
                 {t('combat.customAction', 'Własna akcja')}
               </div>
+            </div>
+              <BackToActionsButton onClick={handleBackToActions} t={t} />
             </div>
           </div>
           <textarea
@@ -993,39 +1287,51 @@ export default function ActionModal({
             }}
             rows={2}
             placeholder={t('combat.customActionPlaceholder', 'Opisz co robisz w tej turze...')}
-            className="w-full px-2 py-1.5 rounded-md border border-outline-variant/15 bg-surface-container/40 text-xs text-on-surface placeholder:text-outline-variant/60 focus:outline-none focus:border-amber-500/30 resize-none"
+            className={`w-full px-2 py-1.5 rounded-md border border-[rgba(197,154,255,0.12)] bg-[rgba(16,14,20,0.5)] text-xs text-on-surface placeholder:text-[rgba(197,154,255,0.35)] focus:outline-none ${cth.focus} resize-none`}
           />
-          <span className="text-[10px] text-on-surface-variant/40">Shift+Enter — wyślij</span>
           <button
             onClick={handleAiSubmit}
             disabled={!aiDescription.trim()}
-            className={`w-full flex items-center justify-center gap-1.5 px-3 py-2 text-xs font-bold uppercase tracking-wider rounded-md transition-colors ${
+            className={`w-full flex items-center justify-center gap-1.5 px-3 py-2 text-xs font-bold uppercase tracking-wider border rounded-md transition-colors ${
               aiDescription.trim()
-                ? 'bg-amber-500/15 text-amber-400 border border-amber-500/20 hover:bg-amber-500/25'
-                : 'bg-surface-container/30 text-on-surface-variant/40 border border-outline-variant/10 cursor-not-allowed'
+                ? cth.btn
+                : 'bg-surface-container/30 text-on-surface-variant/40 border-outline-variant/10 cursor-not-allowed'
             }`}
           >
             <span className="material-symbols-outlined text-sm">bolt</span>
             Wykonaj
           </button>
+          <span className="text-[10px] text-[rgba(197,154,255,0.3)]">Shift+Enter — wyślij</span>
         </div>
-      )}
+        );
+      })()}
     </div>
-    {suggestionPanelConfig?.items?.length > 0 && (
+    {suggestionPanelConfig?.items?.length > 0 && (() => {
+      const suggestRgb = activeTheme?.glow || '197,154,255';
+      return (
       <div
-        className="bg-surface-container-high border border-outline-variant/25 rounded-lg shadow-2xl backdrop-blur-xl overflow-hidden flex flex-col max-h-[70vh]"
-        style={{ width: 220 }}
+        className="action-holo-panel overflow-hidden flex flex-col max-h-[70vh]"
+        style={{
+          width: 220,
+          boxShadow: `0 0 16px rgba(${suggestRgb},0.10), 0 0 3px rgba(${suggestRgb},0.14), 0 6px 24px rgba(0,0,0,0.45), inset 0 1px 0 rgba(255,255,255,0.03)`,
+          borderColor: `rgba(${suggestRgb},0.25)`,
+        }}
       >
-        <div className="px-2 py-1 text-[10px] font-bold uppercase tracking-wide text-on-surface-variant/80 border-b border-outline-variant/10">
+        <div
+          className="px-2.5 py-1.5 text-[10px] font-bold uppercase tracking-widest border-b border-[rgba(197,154,255,0.1)]"
+          style={{ color: `rgba(${suggestRgb},0.7)` }}
+        >
           {suggestionPanelConfig.title}
         </div>
         <SuggestionList
           items={suggestionPanelConfig.items}
           onSelect={suggestionPanelConfig.onSelect}
           onDelete={suggestionPanelConfig.onDelete}
+          accentRgb={suggestRgb}
         />
       </div>
-    )}
+      );
+    })()}
     </div>
   );
 }

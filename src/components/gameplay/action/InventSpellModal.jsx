@@ -44,8 +44,19 @@ const PREROLL_HOLD_MS = 1800;
 const RESULT_REVEAL_DELAY_MS = 600;
 /** ~7× default overlay speed so the throw reads clearly; stable `diceRoll` ref avoids effect resets mid-roll */
 const INVENT_SPELL_DICE_DURATION_MULT = 7.7;
+const INVENT_SPELL_DICE_THEME = {
+  materialColor: 0x5fd12f,
+  materialSpecular: 0x2f5a12,
+  labelColor: '#f2ffd8',
+  diceColor: '#0d4215',
+  ambientLightColor: 0xb7ff6a,
+  ambientLightIntensity: 0.62,
+  spotLightColor: 0xf1ffc7,
+  spotLightIntensity: 0.78,
+  deskColor: '#031b08',
+};
 
-export default function InventSpellModal({ campaignId, character = null, dispatch, onClose, onCorrectionsApplied }) {
+export default function InventSpellModal({ campaignId, character = null, dispatch, onClose, onAction = null }) {
   const { t } = useTranslation();
   const modalRef = useModalA11y(onClose);
   const [view, setView] = useState('form'); // form | analyzing | preroll | rolling | result
@@ -53,7 +64,6 @@ export default function InventSpellModal({ campaignId, character = null, dispatc
   const [error, setError] = useState(null);
   const [result, setResult] = useState(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [refetchTriggered, setRefetchTriggered] = useState(false);
   /** Applied to both k50 rolls on submit; LPM −10, PPM +10 */
   const [rollModifier, setRollModifier] = useState(0);
 
@@ -68,12 +78,6 @@ export default function InventSpellModal({ campaignId, character = null, dispatc
     () => (result?.successRoll != null ? { roll: result.successRoll } : null),
     [result?.successRoll],
   );
-
-  useEffect(() => {
-    if (!result || !success || refetchTriggered) return;
-    if (typeof onCorrectionsApplied === 'function') onCorrectionsApplied();
-    setRefetchTriggered(true);
-  }, [result, success, refetchTriggered, onCorrectionsApplied]);
 
   useEffect(() => {
     if (view !== 'preroll') return;
@@ -91,7 +95,6 @@ export default function InventSpellModal({ campaignId, character = null, dispatc
     setError(null);
     setResult(null);
     setIsSubmitting(false);
-    setRefetchTriggered(false);
   }, []);
 
   const handleSubmit = useCallback(async () => {
@@ -106,7 +109,6 @@ export default function InventSpellModal({ campaignId, character = null, dispatc
     setResult(null);
     setView('analyzing');
     setIsSubmitting(true);
-    setRefetchTriggered(false);
 
     try {
       const data = await apiClient.post(`/ai/campaigns/${campaignId}/invent-spell`, {
@@ -150,6 +152,14 @@ export default function InventSpellModal({ campaignId, character = null, dispatc
       setIsSubmitting(false);
     }
   }, [intent, campaignId, dispatch, character, isSubmitting, rollModifier, t]);
+
+  const handlePlayScene = useCallback(() => {
+    const spellName = result?.spell?.name;
+    if (typeof onAction === 'function' && spellName) {
+      onAction(`Próbuję nowo poznane zaklęcie „${spellName}"`, true);
+    }
+    onClose();
+  }, [result, onAction, onClose]);
 
   const diceTooltip = t('gameplay.inventSpellDiceTooltip', { modifier: formatModifier(rollModifier) });
 
@@ -316,6 +326,7 @@ export default function InventSpellModal({ campaignId, character = null, dispatc
                   sizeMultiplier={2.2}
                   durationMultiplier={INVENT_SPELL_DICE_DURATION_MULT}
                   variant="overlay"
+                  overlayTheme={INVENT_SPELL_DICE_THEME}
                   isVisible
                   skipOnClick
                   skipOnClickTitle={t('gameplay.inventSpellSkipDice', 'Kliknij, aby zakończyć animację')}
@@ -424,6 +435,16 @@ export default function InventSpellModal({ campaignId, character = null, dispatc
                 >
                   {t('gameplay.incidentClose')}
                 </button>
+                {success && result.spell?.name && onAction && (
+                  <button
+                    type="button"
+                    onClick={handlePlayScene}
+                    className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 text-xs font-label text-amber-200 bg-amber-500/10 hover:bg-amber-500/20 border border-amber-400/25 rounded-sm transition-all"
+                  >
+                    <span className="material-symbols-outlined text-sm">auto_stories</span>
+                    {t('gameplay.inventSpellPlayScene')}
+                  </button>
+                )}
                 <button
                   type="button"
                   onClick={resetToForm}

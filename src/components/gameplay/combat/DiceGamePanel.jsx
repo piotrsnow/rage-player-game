@@ -1,6 +1,7 @@
-import { useCallback } from 'react';
+import { useCallback, useEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useDiceGame } from '../../../hooks/useDiceGame';
+import { useMinigameAudio } from '../../../hooks/useMinigameAudio';
 
 const PIP_LAYOUTS = {
   1: [[1, 1]],
@@ -116,6 +117,7 @@ export default function DiceGamePanel({
   mpCharacters,
 }) {
   const { t } = useTranslation();
+  const playSfx = useMinigameAudio();
 
   const playerCombatant = combat.combatants.find((c) => c.type === 'player');
   const enemyCombatant = combat.combatants.find((c) => c.type === 'enemy');
@@ -141,8 +143,8 @@ export default function DiceGamePanel({
     commentary,
     combosHit,
     rolling,
-    raise,
-    play,
+    raise: rawRaise,
+    play: rawPlay,
     forfeit,
   } = useDiceGame({
     playerId: playerCombatant?.id || 'player',
@@ -158,6 +160,39 @@ export default function DiceGamePanel({
 
   const isFinished = phase === 'finished';
   const isBetting = phase === 'betting';
+
+  // ── SFX wrappers ──
+  const raise = useCallback(() => { playSfx('raise'); rawRaise(); }, [rawRaise, playSfx]);
+  const play = useCallback(() => { playSfx('diceShake'); rawPlay(); }, [rawPlay, playSfx]);
+
+  // ── SFX on phase transitions ──
+  const prevPhaseRef = useRef(phase);
+  const prevCountdownRef = useRef(countdownSec);
+
+  useEffect(() => {
+    if (countdownSec !== prevCountdownRef.current && phase === 'countdown' && countdownSec > 0) {
+      playSfx(countdownSec === 1 ? 'countdownLast' : 'countdown');
+    }
+    prevCountdownRef.current = countdownSec;
+  }, [countdownSec, phase, playSfx]);
+
+  useEffect(() => {
+    const prev = prevPhaseRef.current;
+    prevPhaseRef.current = phase;
+    if (prev === phase) return;
+
+    if (phase === 'rolling') playSfx('diceShake');
+    if (phase === 'round_result') {
+      playSfx('diceLand');
+      const combo = playerCombo || opponentCombo;
+      if (combo === 'dragon_eyes') playSfx('diceComboGood');
+      else if (combo === 'dog_luck') playSfx('diceComboBad');
+    }
+    if (phase === 'finished') {
+      const playerWon = winnerId === (playerCombatant?.id || 'player');
+      playSfx(playerWon ? 'success' : 'failure');
+    }
+  }, [phase, playerCombo, opponentCombo, winnerId, playerCombatant, playSfx]);
 
   function comboGlow(combo) {
     if (!combo) return null;
@@ -268,7 +303,11 @@ export default function DiceGamePanel({
       {/* ── Scoreboard header ── */}
       <div className="flex items-center justify-between text-xs font-label text-on-surface-variant px-1">
         <span>
-          {t('diceGame.round', 'Runda')} {round}/{totalRounds}
+          {t('diceGame.round', {
+            current: round,
+            total: totalRounds,
+            defaultValue: 'Runda {{current}}/{{total}}',
+          })}
         </span>
         <span className="font-headline text-sm text-on-surface tabular-nums">
           {playerScore} – {opponentScore}

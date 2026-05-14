@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
 import LpcSprite, { getAnimDirection } from '../../shared/LpcSprite';
+import { apiClient } from '../../../services/apiClient';
 
 const HEALTH_COLORS = {
   friendlyHigh: '#c59aff',
@@ -213,7 +214,7 @@ export default function CombatToken({
         <div className="combat-token__sprite-wrap" style={{ width: tokenSize, height: tokenSize }}>
           {hasSheet ? (
             <LpcSprite
-              sheetUrl={spriteSheetUrl}
+              sheetUrl={apiClient.resolveMediaUrl(spriteSheetUrl)}
               animation={lpcAnimation}
               width={tokenSize}
               height={tokenSize}

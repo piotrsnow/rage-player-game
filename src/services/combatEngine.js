@@ -82,11 +82,11 @@ function getMainWeapon(actor) {
 function getMovementAllowance(combatant) {
   if (combatant.movement) return combatant.movement;
   const zr = combatant.attributes?.zrecznosc;
-  if (zr) return Math.max(6, Math.floor(zr / 2) + 4);
+  if (zr) return Math.max(8, Math.floor(zr / 2) + 6);
   return gameData.DEFAULT_MOVEMENT;
 }
 
-/** Remaining Chebyshev movement budget this turn (matches moveCombatant). */
+/** Remaining cardinal movement budget this turn (matches moveCombatant). */
 export function getRemainingMovementPoints(actor) {
   if (!actor || actor.isDefeated) return 0;
   const moveMods = computeEffectiveMods(actor.activeEffects || []);
@@ -209,10 +209,12 @@ export function isCellPassableOnBattlefield(battlefield, destructibleHp, x, y) {
   return false;
 }
 
+const CARDINAL_DIRS = [{ dx: 0, dy: -1 }, { dx: 1, dy: 0 }, { dx: 0, dy: 1 }, { dx: -1, dy: 0 }];
+
 /**
  * A* pathfinding on the 16×9 grid respecting impassable tiles and occupied cells.
  * Returns an array of {x, y} cells from `from` to `to` (inclusive), or null if no path.
- * Uses Chebyshev distance (8-directional).
+ * Cardinal movement only (no diagonals).
  */
 export function findPath(battlefield, destructibleHp, from, to, occupiedSet) {
   const W = gameData.BATTLEFIELD_WIDTH;
@@ -225,10 +227,9 @@ export function findPath(battlefield, destructibleHp, from, to, occupiedSet) {
   const gScore = new Map();
   const cameFrom = new Map();
   gScore.set(fromKey, 0);
-  open[0].f = Math.max(Math.abs(to.x - from.x), Math.abs(to.y - from.y));
+  open[0].f = Math.abs(to.x - from.x) + Math.abs(to.y - from.y);
 
   while (open.length > 0) {
-    // Find node with lowest f
     let bestIdx = 0;
     for (let i = 1; i < open.length; i++) {
       if (open[i].f < open[bestIdx].f) bestIdx = i;
@@ -246,22 +247,19 @@ export function findPath(battlefield, destructibleHp, from, to, occupiedSet) {
       return path;
     }
 
-    for (let dx = -1; dx <= 1; dx++) {
-      for (let dy = -1; dy <= 1; dy++) {
-        if (dx === 0 && dy === 0) continue;
-        const nx = current.x + dx, ny = current.y + dy;
-        if (nx < 0 || nx >= W || ny < 0 || ny >= H) continue;
-        const nk = `${nx}:${ny}`;
-        if (!isCellPassableOnBattlefield(battlefield, destructibleHp, nx, ny)) continue;
-        if (occupiedSet && nk !== toKey && occupiedSet.has(nk)) continue;
+    for (const { dx, dy } of CARDINAL_DIRS) {
+      const nx = current.x + dx, ny = current.y + dy;
+      if (nx < 0 || nx >= W || ny < 0 || ny >= H) continue;
+      const nk = `${nx}:${ny}`;
+      if (!isCellPassableOnBattlefield(battlefield, destructibleHp, nx, ny)) continue;
+      if (occupiedSet && nk !== toKey && occupiedSet.has(nk)) continue;
 
-        const ng = current.g + 1;
-        if (ng < (gScore.get(nk) ?? Infinity)) {
-          gScore.set(nk, ng);
-          cameFrom.set(nk, ck);
-          const h = Math.max(Math.abs(to.x - nx), Math.abs(to.y - ny));
-          open.push({ x: nx, y: ny, g: ng, f: ng + h });
-        }
+      const ng = current.g + 1;
+      if (ng < (gScore.get(nk) ?? Infinity)) {
+        gScore.set(nk, ng);
+        cameFrom.set(nk, ck);
+        const h = Math.abs(to.x - nx) + Math.abs(to.y - ny);
+        open.push({ x: nx, y: ny, g: ng, f: ng + h });
       }
     }
   }
@@ -269,9 +267,9 @@ export function findPath(battlefield, destructibleHp, from, to, occupiedSet) {
 }
 
 /**
- * BFS flood-fill of reachable cells from `pos` within `range` steps,
+ * BFS flood-fill of reachable cells from `pos` within `range` cardinal steps,
  * respecting battlefield passability and occupied cells.
- * Returns a Set of "x:y" keys.
+ * Returns a Set of "x:y" keys (diamond/Manhattan shape).
  */
 export function getReachableCells(battlefield, destructibleHp, pos, range, occupiedSet) {
   const W = gameData.BATTLEFIELD_WIDTH;
@@ -284,18 +282,15 @@ export function getReachableCells(battlefield, destructibleHp, pos, range, occup
   while (queue.length > 0) {
     const { x, y, d } = queue.shift();
     if (d >= range) continue;
-    for (let dx = -1; dx <= 1; dx++) {
-      for (let dy = -1; dy <= 1; dy++) {
-        if (dx === 0 && dy === 0) continue;
-        const nx = x + dx, ny = y + dy;
-        if (nx < 0 || nx >= W || ny < 0 || ny >= H) continue;
-        const nk = `${nx}:${ny}`;
-        if (visited.has(nk)) continue;
-        if (!isCellPassableOnBattlefield(battlefield, destructibleHp, nx, ny)) continue;
-        if (occupiedSet && occupiedSet.has(nk)) continue;
-        visited.add(nk);
-        queue.push({ x: nx, y: ny, d: d + 1 });
-      }
+    for (const { dx, dy } of CARDINAL_DIRS) {
+      const nx = x + dx, ny = y + dy;
+      if (nx < 0 || nx >= W || ny < 0 || ny >= H) continue;
+      const nk = `${nx}:${ny}`;
+      if (visited.has(nk)) continue;
+      if (!isCellPassableOnBattlefield(battlefield, destructibleHp, nx, ny)) continue;
+      if (occupiedSet && occupiedSet.has(nk)) continue;
+      visited.add(nk);
+      queue.push({ x: nx, y: ny, d: d + 1 });
     }
   }
   return visited;
@@ -319,6 +314,79 @@ export function getOccupiedCells(combatants, excludeId = null) {
 
 export function isCellOccupied(combatants, x, y, excludeId = null) {
   return getOccupiedCells(combatants, excludeId).has(`${x}:${y}`);
+}
+
+/**
+ * BFS flood-fill returning all cells reachable within `budget` cardinal steps.
+ * Occupied cells are impassable. Returns Set<"x:y">.
+ */
+export function getCardinalReachable(start, budget, occupiedSet, width, height) {
+  const reachable = new Set();
+  const queue = [{ x: start.x, y: start.y, cost: 0 }];
+  const visited = new Map();
+  visited.set(`${start.x}:${start.y}`, 0);
+
+  while (queue.length > 0) {
+    const { x, y, cost } = queue.shift();
+    if (cost > 0) reachable.add(`${x}:${y}`);
+    if (cost >= budget) continue;
+
+    for (const { dx, dy } of CARDINAL_DIRS) {
+      const nx = x + dx;
+      const ny = y + dy;
+      if (nx < 0 || nx >= width || ny < 0 || ny >= height) continue;
+      const key = `${nx}:${ny}`;
+      if (occupiedSet.has(key)) continue;
+      const nextCost = cost + 1;
+      const prev = visited.get(key);
+      if (prev !== undefined && prev <= nextCost) continue;
+      visited.set(key, nextCost);
+      queue.push({ x: nx, y: ny, cost: nextCost });
+    }
+  }
+  return reachable;
+}
+
+/**
+ * BFS shortest cardinal path from `start` to `end`, avoiding occupied cells.
+ * Returns array of cells from start (exclusive) to end (inclusive), or null if unreachable.
+ */
+export function findCardinalPath(start, end, occupiedSet, width, height) {
+  if (start.x === end.x && start.y === end.y) return [];
+  const endKey = `${end.x}:${end.y}`;
+  if (occupiedSet.has(endKey)) return null;
+
+  const cameFrom = new Map();
+  const startKey = `${start.x}:${start.y}`;
+  cameFrom.set(startKey, null);
+  const queue = [{ x: start.x, y: start.y }];
+
+  while (queue.length > 0) {
+    const { x, y } = queue.shift();
+    const key = `${x}:${y}`;
+    if (key === endKey) {
+      const path = [];
+      let cur = endKey;
+      while (cur && cur !== startKey) {
+        const [cx, cy] = cur.split(':').map(Number);
+        path.push({ x: cx, y: cy });
+        cur = cameFrom.get(cur);
+      }
+      path.reverse();
+      return path;
+    }
+    for (const { dx, dy } of CARDINAL_DIRS) {
+      const nx = x + dx;
+      const ny = y + dy;
+      if (nx < 0 || nx >= width || ny < 0 || ny >= height) continue;
+      const nk = `${nx}:${ny}`;
+      if (cameFrom.has(nk)) continue;
+      if (nk !== endKey && occupiedSet.has(nk)) continue;
+      cameFrom.set(nk, key);
+      queue.push({ x: nx, y: ny });
+    }
+  }
+  return null;
 }
 
 export function isInMeleeRange(a, b) {
@@ -812,6 +880,7 @@ function createCombatantFromCharacter(character, id, type) {
     equippedArmour: character.equippedArmour || null,
     equippedShield: character.equippedShield || null,
     spriteUrl: character.spriteUrl || null,
+    spriteSheetUrl: character.spriteSheetUrl || null,
     portraitUrl: character.portraitUrl || null,
     species: character.species || character.race || null,
     gender: character.gender || null,
@@ -1860,6 +1929,7 @@ export function resolveEnemyTurns(combat) {
     pushesLeft: combat.pushesLeft ? { ...combat.pushesLeft } : {},
   };
   const results = [];
+  const movementEvents = [];
 
   while (state.turnIndex < state.combatants.length) {
     const current = state.combatants[state.turnIndex];
@@ -1888,7 +1958,6 @@ export function resolveEnemyTurns(combat) {
             const H = gameData.BATTLEFIELD_HEIGHT;
             const enemyOccupied = getOccupiedCells(state.combatants, current.id);
 
-            // Find the best passable cell adjacent to target
             let goalCell = tp;
             const adjCells = [];
             for (let dx = -1; dx <= 1; dx++) {
@@ -1913,9 +1982,10 @@ export function resolveEnemyTurns(combat) {
             if (path && path.length > 1) {
               const steps = Math.min(remaining, path.length - 1);
               const dest = path[steps];
-              // Verify tile scoring isn't negative (avoid hazard terrain tiles)
               const destScore = scoreTileAt(state.terrainTiles, dest.x, dest.y);
               if (destScore >= -1) {
+                const walkPath = path.slice(1, steps + 1);
+                movementEvents.push({ actorId: current.id, path: walkPath, type: 'walk' });
                 current.position = { x: Math.max(0, Math.min(W - 1, dest.x)), y: Math.max(0, Math.min(H - 1, dest.y)) };
                 current.movementUsed = (current.movementUsed || 0) + steps;
               }
@@ -1923,9 +1993,22 @@ export function resolveEnemyTurns(combat) {
           }
         }
       }
+
+      // Capture pre-manoeuvre position for charge path detection
+      const preManoeuvrePos = normalizePos(current.position);
       const { combat: updated, result } = resolveManoeuvre(state, current.id, action.manoeuvre, action.targetId);
       state = updated;
-      if (result) results.push(result);
+      if (result) {
+        const postActor = state.combatants.find(c => c.id === current.id);
+        const postPos = postActor ? normalizePos(postActor.position) : preManoeuvrePos;
+        if (postPos.x !== preManoeuvrePos.x || postPos.y !== preManoeuvrePos.y) {
+          const chargePath = _buildStraightPath(preManoeuvrePos, postPos);
+          if (chargePath.length > 0) {
+            movementEvents.push({ actorId: current.id, path: chargePath, type: 'charge' });
+          }
+        }
+        results.push(result);
+      }
     }
 
     state.turnIndex++;
@@ -1936,7 +2019,25 @@ export function resolveEnemyTurns(combat) {
     state = advanceRound(state);
   }
 
-  return { combat: state, results };
+  return { combat: state, results, movementEvents };
+}
+
+function _buildStraightPath(from, to) {
+  const path = [];
+  const dx = to.x - from.x;
+  const dy = to.y - from.y;
+  const sx = dx === 0 ? 0 : (dx > 0 ? 1 : -1);
+  const sy = dy === 0 ? 0 : (dy > 0 ? 1 : -1);
+  let cx = from.x + sx;
+  let cy = from.y + sy;
+  const maxSteps = Math.max(Math.abs(dx), Math.abs(dy));
+  for (let i = 0; i < maxSteps; i++) {
+    path.push({ x: cx, y: cy });
+    if (cx === to.x && cy === to.y) break;
+    cx += sx;
+    cy += sy;
+  }
+  return path;
 }
 
 // --- Combat end ---

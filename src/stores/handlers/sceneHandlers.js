@@ -21,11 +21,6 @@ export const sceneHandlers = {
     if (scene) scene.sceneCommand = action.payload.sceneCommand;
   },
 
-  UPDATE_SCENE_GRID: (draft, action) => {
-    const scene = draft.scenes.find((s) => s.id === action.payload.sceneId);
-    if (scene) scene.sceneGrid = action.payload.sceneGrid || scene.sceneGrid || null;
-  },
-
   ADD_CHAT_MESSAGE: (draft, action) => {
     draft.chatHistory.push(action.payload);
   },
@@ -100,6 +95,19 @@ export const sceneHandlers = {
     draft.quickBeatStreak = typeof consecutiveCount === 'number'
       ? consecutiveCount
       : (draft.quickBeatStreak || 0) + 1;
+  },
+
+  ADD_NEEDS_COMMENTARY: (draft, action) => {
+    const { id, commentaryText, needsSnapshot, timestamp } = action.payload;
+    const now = timestamp || Date.now();
+    draft.chatHistory.push({
+      id: `nc_${id}`,
+      role: 'system',
+      subtype: 'needs_commentary',
+      content: commentaryText,
+      needsSnapshot,
+      timestamp: now,
+    });
   },
 
   UPDATE_SCENE_ACTIONS: (draft, action) => {

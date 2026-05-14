@@ -133,7 +133,7 @@ export async function crudCampaignRoutes(app) {
     });
 
     const characterIds = await getCampaignCharacterIds(campaign.id);
-    const [scenes, characters, quickBeats] = await Promise.all([
+    const [scenes, characters, quickBeats, needsCommentaries] = await Promise.all([
       prisma.campaignScene.findMany({
         where: { campaignId: campaign.id },
         orderBy: { sceneIndex: 'asc' },
@@ -156,6 +156,18 @@ export async function crudCampaignRoutes(app) {
           createdAt: true,
         },
       }),
+      prisma.campaignNeedsCommentary.findMany({
+        where: { campaignId: campaign.id },
+        orderBy: { createdAt: 'asc' },
+        select: {
+          id: true,
+          sceneIndex: true,
+          characterId: true,
+          needsSnapshot: true,
+          commentaryText: true,
+          createdAt: true,
+        },
+      }),
     ]);
     const dedupedScenes = dedupeScenesByIndexAsc(scenes);
 
@@ -165,6 +177,7 @@ export async function crudCampaignRoutes(app) {
       characterIds,
       scenes: dedupedScenes,
       quickBeats,
+      needsCommentaries,
       characters,
     };
   });

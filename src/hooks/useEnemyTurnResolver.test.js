@@ -117,7 +117,7 @@ describe('resolveEnemyTurnStep — solo mode', () => {
       { actor: 'enemy_guard', outcome: 'miss' },
     ];
     const afterEnemies = { ...buildCombatState(), turnIndex: 0, round: 2 };
-    vi.mocked(resolveEnemyTurns).mockReturnValue({ combat: afterEnemies, results });
+    vi.mocked(resolveEnemyTurns).mockReturnValue({ combat: afterEnemies, results, movementEvents: [] });
 
     const deps = makeStepDeps();
     const ret = resolveEnemyTurnStep({
@@ -145,7 +145,7 @@ describe('resolveEnemyTurnStep — multiplayer host mode', () => {
   it('writes lastResults+lastResultsTs onto afterEnemies, forwards via onHostResolve, skips dispatch+chat', () => {
     const results = [{ actor: 'enemy_guard', outcome: 'hit', damage: 3 }];
     const afterEnemies = { ...buildCombatState(), turnIndex: 0, round: 2 };
-    vi.mocked(resolveEnemyTurns).mockReturnValue({ combat: afterEnemies, results });
+    vi.mocked(resolveEnemyTurns).mockReturnValue({ combat: afterEnemies, results, movementEvents: [] });
 
     const deps = makeStepDeps({ now: () => 42 });
     resolveEnemyTurnStep({
@@ -171,7 +171,7 @@ describe('resolveEnemyTurnStep — returns afterEnemies for onAfterSlide', () =>
       ...c,
       position: { x: c.position.x + 1, y: c.position.y },
     }));
-    vi.mocked(resolveEnemyTurns).mockReturnValue({ combat: afterEnemies, results: [] });
+    vi.mocked(resolveEnemyTurns).mockReturnValue({ combat: afterEnemies, results: [], movementEvents: [] });
 
     const deps = makeStepDeps();
     const ret = resolveEnemyTurnStep({ combat: originalCombat, isMultiplayer: false, ...deps });
@@ -181,7 +181,7 @@ describe('resolveEnemyTurnStep — returns afterEnemies for onAfterSlide', () =>
     expect(ret.afterEnemies.combatants[0].position.x).not.toBe(originalCombat.combatants[0].position.x);
   });
 
-  it('animates enemy movement at 500ms per grid cell', () => {
+  it('falls back to legacy slide animation when no movementEvents', () => {
     const originalCombat = buildCombatState();
     const afterEnemies = {
       ...buildCombatState(),
@@ -191,7 +191,7 @@ describe('resolveEnemyTurnStep — returns afterEnemies for onAfterSlide', () =>
           : c
       )),
     };
-    vi.mocked(resolveEnemyTurns).mockReturnValue({ combat: afterEnemies, results: [] });
+    vi.mocked(resolveEnemyTurns).mockReturnValue({ combat: afterEnemies, results: [], movementEvents: [] });
 
     const deps = makeStepDeps({ scheduleTokenAnim: vi.fn() });
     const ret = resolveEnemyTurnStep({ combat: originalCombat, isMultiplayer: false, ...deps });
@@ -200,5 +200,59 @@ describe('resolveEnemyTurnStep — returns afterEnemies for onAfterSlide', () =>
       enemy_guard: { durationMs: 1000 },
     });
     expect(ret.maxSlideDuration).toBe(1000);
+  });
+
+  it('skips legacy slide animation when movementEvents are present', () => {
+    const originalCombat = buildCombatState();
+    const afterEnemies = {
+      ...buildCombatState(),
+      combatants: originalCombat.combatants.map((c) => (
+        c.id === 'enemy_guard'
+          ? { ...c, position: { x: c.position.x - 2, y: c.position.y } }
+          : c
+      )),
+    };
+    const movementEvents = [
+      { actorId: 'enemy_guard', path: [{ x: 4, y: 3 }, { x: 3, y: 3 }], type: 'walk' },
+    ];
+    vi.mocked(resolveEnemyTurns).mockReturnValue({ combat: afterEnemies, results: [], movementEvents });
+
+    const deps = makeStepDeps({ scheduleTokenAnim: vi.fn() });
+    const ret = resolveEnemyTurnStep({ combat: originalCombat, isMultiplayer: false, ...deps });
+
+    expect(deps.scheduleTokenAnim).not.toHaveBeenCalled();
+    expect(ret.maxSlideDuration).toBe(0);
+    expect(ret.movementEvents).toEqual(movementEvents);
+  });
+});
+
+describe('resolveEnemyTurnStep — movementEvents passthrough', () => {
+  beforeEach(() => {
+    vi.mocked(resolveEnemyTurns).mockReset();
+  });
+
+  it('returns movementEvents from resolveEnemyTurns for step-by-step animation', () => {
+    const movementEvents = [
+      { actorId: 'enemy_guard', path: [{ x: 4, y: 3 }, { x: 3, y: 3 }, { x: 2, y: 3 }], type: 'walk' },
+    ];
+    const afterEnemies = { ...buildCombatState(), turnIndex: 0, round: 2 };
+    vi.mocked(resolveEnemyTurns).mockReturnValue({ combat: afterEnemies, results: [], movementEvents });
+
+    const deps = makeStepDeps();
+    const ret = resolveEnemyTurnStep({ combat: buildCombatState(), isMultiplayer: false, ...deps });
+
+    expect(ret.movementEvents).toBe(movementEvents);
+    expect(ret.movementEvents).toHaveLength(1);
+    expect(ret.movementEvents[0].path).toHaveLength(3);
+  });
+
+  it('returns empty movementEvents when engine provides none', () => {
+    const afterEnemies = { ...buildCombatState(), turnIndex: 0 };
+    vi.mocked(resolveEnemyTurns).mockReturnValue({ combat: afterEnemies, results: [] });
+
+    const deps = makeStepDeps();
+    const ret = resolveEnemyTurnStep({ combat: buildCombatState(), isMultiplayer: false, ...deps });
+
+    expect(ret.movementEvents).toEqual([]);
   });
 });

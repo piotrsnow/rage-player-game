@@ -1,6 +1,8 @@
 import { useTranslation } from 'react-i18next';
+import NeedIcon from '../NeedIcon.jsx';
 
-const NEED_ICONS = { hunger: 'restaurant', thirst: 'water_drop', bladder: 'wc', hygiene: 'shower', rest: 'hotel' };
+const NEED_KEYS = ['hunger', 'thirst', 'bladder', 'rest'];
+const NEED_ICONS = { hunger: 'restaurant', thirst: 'water_drop', rest: 'hotel' };
 
 export default function GMAssetsTab({ gameState }) {
   const { t } = useTranslation();
@@ -66,9 +68,11 @@ export default function GMAssetsTab({ gameState }) {
       {Object.keys(needs).length > 0 && (
         <Section title={t('gmModal.needs')} icon="self_improvement">
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-            {Object.entries(needs).map(([key, value]) => (
-              <NeedBar key={key} label={key} value={value} icon={NEED_ICONS[key]} t={t} />
-            ))}
+            {NEED_KEYS
+              .filter((key) => key in needs)
+              .map((key) => (
+                <NeedBar key={key} label={key} value={needs[key]} icon={NEED_ICONS[key]} t={t} />
+              ))}
           </div>
         </Section>
       )}
@@ -183,7 +187,7 @@ function NeedBar({ label, value, icon, t }) {
     <div>
       <div className="flex items-center justify-between mb-1">
         <div className="flex items-center gap-1.5">
-          {icon && <span className="material-symbols-outlined text-sm text-outline">{icon}</span>}
+          <NeedIcon needKey={label} icon={icon} className="text-sm text-outline" />
           <span className="text-xs font-label uppercase tracking-wider text-on-surface-variant capitalize">{label}</span>
         </div>
         <span className="text-xs font-bold tabular-nums text-on-surface-variant">{pct}</span>

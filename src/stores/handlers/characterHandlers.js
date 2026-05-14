@@ -1,7 +1,7 @@
 import { sanitizeMana } from '../../../shared/domain/mana.js';
 import { normalizeCharacter, normalizeCustomAttackPresets } from './_shared';
 import { calculateMaxWounds } from '../../services/gameState';
-import { SKILL_CAPS, CREATION_LIMITS, cumulativeCharXpThreshold } from '../../data/rpgSystem';
+import { SKILL_CAPS, CREATION_LIMITS } from '../../data/rpgSystem';
 
 export const characterHandlers = {
   UPDATE_CHARACTER: (draft, action) => {
@@ -107,27 +107,6 @@ export const characterHandlers = {
     const newMaxWounds = calculateMaxWounds(char.attributes.wytrzymalosc) + (char.bonusMaxWounds || 0);
     char.maxWounds = newMaxWounds;
     char.wounds = Math.min(char.wounds, newMaxWounds);
-  },
-
-  ADD_BADGE_XP: (draft, action) => {
-    const { xpValue, badge } = action.payload || {};
-    const char = draft.character;
-    if (!char) return;
-    if (badge) {
-      if (!Array.isArray(char.skillBadges)) char.skillBadges = [];
-      char.skillBadges.push(badge);
-    }
-    if (xpValue > 0) {
-      char.characterXp = (char.characterXp || 0) + xpValue;
-      let level = char.characterLevel || 1;
-      let attrPoints = char.attributePoints || 0;
-      while (char.characterXp >= cumulativeCharXpThreshold(level + 1)) {
-        level++;
-        attrPoints++;
-      }
-      char.characterLevel = level;
-      char.attributePoints = attrPoints;
-    }
   },
 
   SET_CHARACTER_LOCAL_ID: (draft, action) => {

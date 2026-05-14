@@ -4,7 +4,7 @@ import { applyWorldNotes, applyKnowledgeBase } from './worldKnowledge.js';
 import { applyNpcs } from './npcs.js';
 import { applyMapChanges, applyCurrentLocation } from './mapChanges.js';
 import { applyTimeAndNeeds, applyRestCrisisPenalty } from './timeAndNeeds.js';
-import { applyActiveEffects, applyFactionChanges, applyMapMode } from './worldSystems.js';
+import { applyActiveEffects, applyFactionChanges } from './worldSystems.js';
 import {
   applyCampaignEnd,
   applyCombatUpdate,
@@ -22,7 +22,7 @@ import { devLog } from '../../devEventLogStore';
  *   campaignEnd → character → quests → world notes → npcs → mapChanges →
  *   time/needs → knowledge-base auto-populate → rest-crisis penalty →
  *   world systems → combat/trade → act progression → currentLocation →
- *   narrative state → mapMode
+ *   narrative state
  *
  * The knowledge-base auto-populate reads `draft.world.npcs` AFTER npcs have
  * been processed, so it must come after `applyNpcs`. Rest-crisis penalty is
@@ -52,5 +52,4 @@ export function applyStateChangesHandler(draft, action) {
   applyActProgression(draft);
   applyCurrentLocation(draft, changes);
   applyNarrativeState(draft, changes);
-  applyMapMode(draft, changes);
 }

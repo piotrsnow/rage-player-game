@@ -1,6 +1,6 @@
 import { prisma } from '../lib/prisma.js';
 import { childLogger } from '../lib/logger.js';
-import { reconstructCharacterSnapshot } from './characterRelations.js';
+import { reconstructCharacterSnapshot, hydrateCustomSpells } from './characterRelations.js';
 import {
   generateNpcSheet,
   npcStatsNeedsBaseline,
@@ -40,7 +40,9 @@ export async function fetchCampaignCharacters(characterIds) {
       materials: true,
     },
   });
-  const byId = new Map(rows.map((r) => [r.id, reconstructCharacterSnapshot(r)]));
+  const snapshots = rows.map((r) => reconstructCharacterSnapshot(r));
+  await Promise.all(snapshots.map((s) => hydrateCustomSpells(s)));
+  const byId = new Map(snapshots.map((s) => [s.id, s]));
   return characterIds.map((id) => byId.get(id)).filter(Boolean);
 }
 

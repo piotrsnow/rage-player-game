@@ -245,7 +245,7 @@ GM NOTES rules:
 
 OTHER:
 - hookAdditions: do NOT include an id — the database assigns one.
-- needsRestoration: positive deltas IF character ate (+50-70 hunger), drank (+40-60 thirst), slept (+80-100 rest), bathed (+80 hygiene). null if none.
+- needsRestoration: positive deltas IF character ate (+50-70 hunger), drank (+40-60 thirst), slept (+80-100 rest), or used a toilet (+80-100 bladder). null if none.
 - mentionedLocations: place names spoken BY AN NPC INSIDE THE "Dialogue" BLOCK only — never extract from the "Narrative" block. Pick names ONLY from the "Allowed locations" list (verbatim, case-preserving). Names NOT on that list are silently skipped. Generic regions ("las", "góry", "miasto") never count. Empty array if no Dialogue block, no Allowed list, or no qualifying mentions. No artificial cap — extract every distinct allowed-list location named.
 
 Rules:

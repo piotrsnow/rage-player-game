@@ -21,6 +21,7 @@
  * - adding sound effect
  * - adding roll results to notation returned in after_roll callback
  * - adding 'd9' option (d10 to be added to d100 properly)
+ * - adding 'd5' option for RPGon d50 tens die
  */
 
 window.DICE = (function() {
@@ -42,6 +43,7 @@ window.DICE = (function() {
         ambient_light_intensity: 1,
         spot_light_color: 0xefefef,
         spot_light_intensity: 2.0,
+        dice_font: "'MedievalSharp', cursive",
         desk_color: '#101010', //canvas background
         desk_opacity: 0.5,
         use_shadows: true,
@@ -52,6 +54,12 @@ window.DICE = (function() {
 
     function apply_theme_options(options) {
         if (!options) return;
+
+        var should_refresh_materials =
+            options.materialColor != undefined ||
+            options.materialSpecular != undefined ||
+            options.labelColor != undefined ||
+            options.diceColor != undefined;
 
         if (options.materialColor != undefined) vars.material_options.color = options.materialColor;
         if (options.materialSpecular != undefined) vars.material_options.specular = options.materialSpecular;
@@ -64,17 +72,21 @@ window.DICE = (function() {
         if (options.deskColor != undefined) vars.desk_color = options.deskColor;
         if (options.useShadows != undefined) vars.use_shadows = options.useShadows;
         if (options.disableSpotLight != undefined) vars.disable_spot_light = options.disableSpotLight;
+        if (options.diceFont != undefined) vars.dice_font = options.diceFont;
+
+        if (should_refresh_materials) reset_material_cache();
     }
 
     const CONSTS = {
-        known_types: ['d4', 'd6', 'd8', 'd9', 'd10', 'd12', 'd20', 'd100'],
-        dice_face_range: { 'd4': [1, 4], 'd6': [1, 6], 'd8': [1, 8], 'd9': [0, 9], 'd10': [0, 9], 
+        known_types: ['d4', 'd5', 'd6', 'd8', 'd9', 'd10', 'd12', 'd20', 'd100'],
+        dice_face_range: { 'd4': [1, 4], 'd5': [0, 5], 'd6': [1, 6], 'd8': [1, 8], 'd9': [0, 9], 'd10': [0, 9], 
             'd12': [1, 12], 'd20': [1, 20], 'd100': [0, 9] },
-        dice_mass: { 'd4': 300, 'd6': 300, 'd8': 340, 'd9': 350, 'd10': 350, 'd12': 350, 'd20': 400, 'd100': 350 },
-        dice_inertia: { 'd4': 5, 'd6': 13, 'd8': 10, 'd9': 9, 'd10': 9, 'd12': 8, 'd20': 6, 'd100': 9 },
+        dice_mass: { 'd4': 300, 'd5': 300, 'd6': 300, 'd8': 340, 'd9': 350, 'd10': 350, 'd12': 350, 'd20': 400, 'd100': 350 },
+        dice_inertia: { 'd4': 5, 'd5': 13, 'd6': 13, 'd8': 10, 'd9': 9, 'd10': 9, 'd12': 8, 'd20': 6, 'd100': 9 },
         
         standart_d20_dice_face_labels: [' ', '0', '1', '2', '3', '4', '5', '6', '7', '8',
                 '9', '10', '11', '12', '13', '14', '15', '16', '17', '18', '19', '20'],
+        standart_d5_dice_face_labels: [' ', '00', '10', '20', '30', '40', ' '],
         standart_d100_dice_face_labels: [' ', '00', '10', '20', '30', '40', '50',
                 '60', '70', '80', '90'],
                 
@@ -557,6 +569,15 @@ window.DICE = (function() {
     // dice geometries
     let threeD_dice = {};
 
+    function reset_material_cache() {
+        if (!threeD_dice) return;
+        delete threeD_dice.d4_material;
+        delete threeD_dice.d5_material;
+        delete threeD_dice.d6_material;
+        delete threeD_dice.dice_material;
+        delete threeD_dice.d100_material;
+    }
+
     threeD_dice.create_d4 = function() {
         if (!this.d4_geometry) this.d4_geometry = create_d4_geometry(vars.scale * 1.2);
         if (!this.d4_material) this.d4_material = new THREE.MeshFaceMaterial(
@@ -564,11 +585,18 @@ window.DICE = (function() {
         return new THREE.Mesh(this.d4_geometry, this.d4_material);
     }
 
+    threeD_dice.create_d5 = function() {
+        if (!this.d5_geometry) this.d5_geometry = create_d6_geometry(vars.scale * 1.1);
+        if (!this.d5_material) this.d5_material = new THREE.MeshFaceMaterial(
+                create_dice_materials(CONSTS.standart_d5_dice_face_labels, vars.scale / 2, 0.9));
+        return new THREE.Mesh(this.d5_geometry, this.d5_material);
+    }
+
     threeD_dice.create_d6 = function() {
         if (!this.d6_geometry) this.d6_geometry = create_d6_geometry(vars.scale * 1.1);
-        if (!this.dice_material) this.dice_material = new THREE.MeshFaceMaterial(
-                create_dice_materials(CONSTS.standart_d20_dice_face_labels, vars.scale / 2, 0.9));
-        return new THREE.Mesh(this.d6_geometry, this.dice_material);
+        if (!this.d6_material) this.d6_material = new THREE.MeshFaceMaterial(
+                create_dice_materials(CONSTS.standart_d20_dice_face_labels, vars.scale / 2, 0.9, 0.85));
+        return new THREE.Mesh(this.d6_geometry, this.d6_material);
     }
 
     threeD_dice.create_d8 = function() {
@@ -613,14 +641,15 @@ window.DICE = (function() {
         return new THREE.Mesh(this.d10_geometry, this.d100_material);
     }
     
-    function create_dice_materials(face_labels, size, margin) {
+    function create_dice_materials(face_labels, size, margin, fontScale) {
+        fontScale = fontScale || 1;
         function create_text_texture(text, color, back_color) {
             if (text == undefined) return null;
             var canvas = document.createElement("canvas");
             var context = canvas.getContext("2d");
             var ts = calc_texture_size(size + size * 2 * margin) * 2;
             canvas.width = canvas.height = ts;
-            context.font = ts / (1 + 2 * margin) + "pt Arial";
+            context.font = (ts / (1 + 2 * margin)) * fontScale + "pt " + vars.dice_font;
             context.fillStyle = back_color;
             context.fillRect(0, 0, canvas.width, canvas.height);
             context.textAlign = "center";
@@ -647,7 +676,7 @@ window.DICE = (function() {
             var context = canvas.getContext("2d");
             var ts = calc_texture_size(size + margin) * 2;
             canvas.width = canvas.height = ts;
-            context.font = (ts - margin) * 0.5 + "pt Arial";
+            context.font = (ts - margin) * 0.5 + "pt " + vars.dice_font;
             context.fillStyle = back_color;
             context.fillRect(0, 0, canvas.width, canvas.height);
             context.textAlign = "center";
@@ -897,6 +926,10 @@ window.DICE = (function() {
         for (var i = 0, l = geom.faces.length; i < l; ++i) {
             var matindex = geom.faces[i].materialIndex;
             if (matindex == 0) continue;
+            if (dice.dice_type == 'd5') {
+                geom.faces[i].materialIndex = ((matindex - 1 + num) % 6 + 6) % 6 + 1;
+                continue;
+            }
             matindex += num - 1;
             while (matindex > r[1]) matindex -= r[1];
             while (matindex < r[0]) matindex += r[1];

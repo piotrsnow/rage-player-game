@@ -1,5 +1,4 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
-import { playBeerSfx } from '../services/beerDuelAudio';
 
 // ── Tunable constants ──
 export const BEER_DUEL_DURATION_MS = 90_000;
@@ -72,6 +71,7 @@ export function useBeerDuel({
   opponentName,
   difficulty = 'medium',
   isMultiplayer = false,
+  playSfx = () => {},
 }) {
   const [phase, setPhase] = useState('countdown');
   const [timeRemainingMs, setTimeRemainingMs] = useState(BEER_DUEL_DURATION_MS);
@@ -158,9 +158,9 @@ export function useBeerDuel({
           if (sec !== prevCountdownSecRef.current) {
             prevCountdownSecRef.current = sec;
             if (sec === 1) {
-              playBeerSfx('countdownLast');
+              playSfx('countdownLast');
             } else {
-              playBeerSfx('countdown');
+              playSfx('countdown');
             }
           }
           setCountdownSec(sec);
@@ -239,16 +239,16 @@ export function useBeerDuel({
         }
 
         if (sfxEliminated) {
-          playBeerSfx('eliminated');
+          playSfx('eliminated');
         } else if (sfxDanger) {
-          playBeerSfx('danger');
+          playSfx('danger');
         } else {
           if (sfxDrip && now - lastSfxTimeRef.current.drip >= SFX_THROTTLE_MS) {
-            playBeerSfx('drip');
+            playSfx('drip');
             lastSfxTimeRef.current.drip = now;
           }
           if (sfxSplat && now - lastSfxTimeRef.current.splat >= SFX_THROTTLE_MS) {
-            playBeerSfx('splat');
+            playSfx('splat');
             lastSfxTimeRef.current.splat = now;
           }
         }
@@ -300,7 +300,7 @@ export function useBeerDuel({
     }, TICK_INTERVAL_MS);
 
     return () => clearInterval(id);
-  }, [phase, playerId, opponentId, isMultiplayer, difficulty, drinkBeer]);
+  }, [phase, playerId, opponentId, isMultiplayer, difficulty, drinkBeer, playSfx]);
 
   // Determine winner when phase transitions to finished or someone is eliminated
   useEffect(() => {

@@ -262,6 +262,36 @@ export const GENERATE_SCENE_SCHEMA = {
   },
 };
 
+export const NEEDS_COMMENTARY_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    characterNeeds: {
+      type: 'object',
+      additionalProperties: true,
+      properties: {
+        hunger: { type: 'number' },
+        thirst: { type: 'number' },
+        bladder: { type: 'number' },
+        rest: { type: 'number' },
+      },
+    },
+    characterName: { type: ['string', 'null'], maxLength: 200 },
+    provider: PROVIDER_SCHEMA,
+    language: LANGUAGE_SCHEMA,
+    characterId: { type: ['string', 'null'], maxLength: 64 },
+    sceneIndex: { type: ['integer', 'null'] },
+    dmSettings: {
+      type: 'object',
+      additionalProperties: true,
+      properties: {
+        llmNanoTimeoutMs: { type: 'integer', minimum: 1000, maximum: 120000 },
+      },
+    },
+  },
+  required: ['characterNeeds'],
+};
+
 export const QUICK_BEAT_SCHEMA = {
   type: 'object',
   additionalProperties: false,

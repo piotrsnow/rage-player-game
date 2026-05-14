@@ -116,14 +116,6 @@ export function generateStateChangeMessages(stateChanges, state, t) {
     }
   }
 
-  if (Array.isArray(stateChanges.skillBadges) && stateChanges.skillBadges.length > 0) {
-    for (const badge of stateChanges.skillBadges) {
-      const name = typeof badge === 'string' ? badge : (badge?.name || badge?.id);
-      if (!name) continue;
-      msgs.push({ id: mkId(), role: 'system', subtype: 'skill_badge', content: t('system.skillBadgeAwarded', { name }), timestamp: ts });
-    }
-  }
-
   if (stateChanges.woundsChange != null && stateChanges.woundsChange !== 0) {
     if (stateChanges.woundsChange < 0) {
       msgs.push({ id: mkId(), role: 'system', subtype: 'damage', content: t('system.damageTaken', { name: charName, amount: Math.abs(stateChanges.woundsChange) }), timestamp: ts });

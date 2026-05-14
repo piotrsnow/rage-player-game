@@ -1,4 +1,5 @@
 import { useCallback, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { useLocation } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { useUltrawideBonus } from '../../hooks/useUltrawideBonus';
@@ -20,6 +21,7 @@ import ActiveEffectsRow from '../ui/ActiveEffectsRow';
 import NeedsPanel from '../gameplay/NeedsPanel';
 import SidebarPartyList from './SidebarPartyList';
 import SidebarAiCallLog from './SidebarAiCallLog';
+import BadgeModal from '../character/BadgeModal';
 
 export default function Sidebar() {
   const location = useLocation();
@@ -31,11 +33,13 @@ export default function Sidebar() {
   const soloParty = useGameParty();
   const soloActiveId = useGameSlice((s) => s.activeCharacterId);
   const timeStateSolo = useGameSlice((s) => s.world?.timeState);
+  const sceneCount = useGameSlice((s) => (Array.isArray(s.scenes) ? s.scenes.length : 0));
   const isGeneratingScene = useGameIsGeneratingScene();
   const dispatch = useGameDispatch();
   const mp = useMultiplayer();
   const { generateScene } = useAI();
   const [activeNeedKey, setActiveNeedKey] = useState(null);
+  const [badgeModalOpen, setBadgeModalOpen] = useState(false);
 
   const aiLogVisible = useAiCallLogStore((s) => s.sidebarVisible);
   const isMultiplayer = mp.state.isMultiplayer && mp.state.phase === 'playing';
@@ -98,6 +102,8 @@ Opisz bardzo konkretne konsekwencje tej decyzji dla fabuły: relacji, zasobów, 
     }
   };
 
+  const badgeCharacterId = character?.backendId || character?.id;
+
   const portraitRef = useRef(null);
   const portraitRaf = useRef(null);
 
@@ -150,9 +156,20 @@ Opisz bardzo konkretne konsekwencje tej decyzji dla fabuły: relacji, zasobów, 
           )}
         </div>
         <div className="flex items-center gap-3 mb-4 p-3 -mx-3 rounded-sm bg-surface-container/30 hover:bg-surface-container/50 transition-all duration-300 group">
-          <div className="w-10 h-10 bg-surface-container-high rounded-sm flex items-center justify-center border border-tertiary/20 group-hover:border-tertiary/40 group-hover:shadow-[0_0_12px_rgba(255,239,213,0.1)] transition-all duration-300">
-            <span className="material-symbols-outlined text-tertiary text-xl">shield</span>
-          </div>
+          {backendUser?.isAdmin ? (
+            <button
+              type="button"
+              onClick={() => { setBadgeData(null); setBadgeModalOpen(true); }}
+              title="Generuj badge"
+              className="w-10 h-10 bg-surface-container-high rounded-sm flex items-center justify-center border border-tertiary/20 group-hover:border-tertiary/40 group-hover:shadow-[0_0_12px_rgba(255,239,213,0.1)] hover:bg-tertiary/10 active:scale-95 transition-all duration-300 cursor-pointer"
+            >
+              <span className="material-symbols-outlined text-tertiary text-xl">shield</span>
+            </button>
+          ) : (
+            <div className="w-10 h-10 bg-surface-container-high rounded-sm flex items-center justify-center border border-tertiary/20 group-hover:border-tertiary/40 group-hover:shadow-[0_0_12px_rgba(255,239,213,0.1)] transition-all duration-300">
+              <span className="material-symbols-outlined text-tertiary text-xl">shield</span>
+            </div>
+          )}
           <div className="min-w-0">
             <div className="font-headline text-tertiary text-[1.70625rem] font-bold truncate leading-tight">{character.name}</div>
             <div className="text-[10px] text-on-surface-variant uppercase tracking-widest truncate">
@@ -173,7 +190,7 @@ Opisz bardzo konkretne konsekwencje tej decyzji dla fabuły: relacji, zasobów, 
         )}
         <div className="mt-4">
           <NeedsPanel
-            needs={character.needs || { hunger: 100, thirst: 100, bladder: 100, hygiene: 100, rest: 100 }}
+            needs={character.needs || { hunger: 100, thirst: 100, bladder: 100, rest: 100 }}
             timeState={timeState}
             onNeedAction={canTriggerNeedAction ? handleInstantNeedAction : null}
             actionLocked={Boolean(activeNeedKey)}
@@ -183,6 +200,15 @@ Opisz bardzo konkretne konsekwencje tej decyzji dla fabuły: relacji, zasobów, 
         <SidebarPartyList party={party} activeCharacterId={activeId} isMultiplayer={isMultiplayer} />
         {aiLogVisible && <SidebarAiCallLog />}
       </div>
+
+      {badgeModalOpen && badgeCharacterId && createPortal(
+        <BadgeModal
+          characterId={badgeCharacterId}
+          sceneCount={sceneCount}
+          onClose={() => setBadgeModalOpen(false)}
+        />,
+        document.body,
+      )}
     </aside>
   );
 }

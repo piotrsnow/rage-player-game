@@ -1,7 +1,7 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useBeerDuel } from '../../../hooks/useBeerDuel';
-import { playBeerSfx } from '../../../services/beerDuelAudio';
+import { useMinigameAudio } from '../../../hooks/useMinigameAudio';
 import { useCombatSprites } from '../../../hooks/useCombatSprites';
 import LpcSprite from '../../shared/LpcSprite';
 
@@ -280,6 +280,7 @@ export default function BeerDuelPanel({
   mpCharacters,
 }) {
   const { t } = useTranslation();
+  const playSfx = useMinigameAudio();
 
   const playerCombatant = combat.combatants.find((c) => c.type === 'player');
   const enemyCombatant = combat.combatants.find((c) => c.type === 'enemy');
@@ -303,6 +304,7 @@ export default function BeerDuelPanel({
     opponentName: enemyCombatant?.name || 'Opponent',
     difficulty: npcDifficulty,
     isMultiplayer,
+    playSfx,
   });
 
   const isPlaying = phase === 'playing';
@@ -311,25 +313,25 @@ export default function BeerDuelPanel({
 
   const handleDrink = useCallback(() => {
     drinkBeer();
-    playBeerSfx('gulp');
-  }, [drinkBeer]);
+    playSfx('gulp');
+  }, [drinkBeer, playSfx]);
 
   const handlePee = useCallback(() => {
     useRelief('pee');
-    playBeerSfx('relief');
-  }, [useRelief]);
+    playSfx('relief');
+  }, [useRelief, playSfx]);
 
   const handleVomit = useCallback(() => {
     useRelief('vomit');
-    playBeerSfx('relief');
-  }, [useRelief]);
+    playSfx('relief');
+  }, [useRelief, playSfx]);
 
   useEffect(() => {
     if (isFinished && !victoryPlayedRef.current) {
       victoryPlayedRef.current = true;
-      playBeerSfx('victory');
+      playSfx('victory');
     }
-  }, [isFinished]);
+  }, [isFinished, playSfx]);
 
   const buildSummary = useCallback(() => {
     const playerWon = winnerId === player.id;

@@ -303,27 +303,6 @@ function buildCampaignCreationPrompt(settings, language = 'en', { startSpawn = n
     ? `\n\nHUMOROUS TONE GUIDELINES: The humor must NOT rely on random absurdity, slapstick, or zaniness. Ground the campaign in a believable world and derive comedy from character flaws, social misunderstandings, irony, awkward situations, and moral dilemmas. Keep wit sharp but varied. Avoid repeating one joke template or one recurring comparison (for example constant tax/tax-collector jokes).`
     : '';
 
-  // sceneGrid is only rendered when the user has `sceneVisualization: 'map'`
-  // in app settings. Skip generating it otherwise — the field easily adds
-  // 500-1000 output tokens (tiles + entities) and is discarded on the FE
-  // for users on image/3d/canvas/none modes.
-  const wantsSceneGrid = settings.sceneVisualization === 'map';
-  const sceneGridSchema = wantsSceneGrid
-    ? `,
-    "sceneGrid": {
-      "width": 12,
-      "height": 12,
-      "tiles": [["W","W","W","W"],["W","P","F","E"],["W","F","I","W"],["W","W","W","W"]],
-      "entities": [
-        {"name": "Player Name", "type": "player", "x": 1, "y": 1, "marker": "@"},
-        {"name": "NPC Name", "type": "npc", "x": 2, "y": 2, "marker": "N"}
-      ]
-    }`
-    : '';
-  const sceneGridInstruction = wantsSceneGrid
-    ? '\nThe firstScene.sceneGrid field is MANDATORY: include a coherent 2D board (8-16 width/height), valid tiles, and entity coordinates for player + visible NPCs.'
-    : '';
-
   // G1 — encounter tier cap (passed from creator form / useGameState).
   // Maps to plainspoken guidance so the worldDescription/hook generator
   // avoids setting up boss-tier conflicts the scene pipeline will later
@@ -430,7 +409,7 @@ Respond with ONLY valid JSON:
     ],
     "soundEffect": "Short English ambient sound description or null",
     "musicPrompt": "Short English description of ideal instrumental background music for the opening scene",
-    "imagePrompt": "Short ENGLISH visual description of the scene for AI image generation (max 200 chars)"${sceneGridSchema},
+    "imagePrompt": "Short ENGLISH visual description of the scene for AI image generation (max 200 chars)",
     "atmosphere": {
       "weather": "clear | rain | snow | storm | fog | fire",
       "particles": "magic_dust | sparks | embers | arcane | none",
@@ -530,7 +509,5 @@ IMPORTANT for characterSuggestion:
 - Include backstory ONLY if it adds campaign-specific context the player wouldn't have written themselves.
 
 There is NO separate "narrative" field — all scene prose lives in dialogueSegments.
-The dialogueSegments array must cover the full opening scene broken into narration and dialogue chunks. Narration segments must NEVER contain quoted speech — always split dialogue into separate "dialogue" segments. Every dialogue segment MUST have a "gender" field ("male" or "female").${sceneGridInstruction}
-
-IMPORTANT for firstScene stateChanges (if included) or top-level initialMapMode: Include "mapMode" in the firstScene's context. The opening scene should establish the field-map mode: "trakt" (road/path), "pola" (open fields), "wnetrze" (interior), or "las" (forest). If the scene starts in a tavern, set "wnetrze"; if on a road, set "trakt"; if in a forest, set "las"; if in open countryside, set "pola".`;
+The dialogueSegments array must cover the full opening scene broken into narration and dialogue chunks. Narration segments must NEVER contain quoted speech — always split dialogue into separate "dialogue" segments. Every dialogue segment MUST have a "gender" field ("male" or "female").`;
 }

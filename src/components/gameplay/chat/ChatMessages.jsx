@@ -256,6 +256,22 @@ export function CombatCommentaryMessage({ message, narrator }) {
   );
 }
 
+export const NeedsCommentaryMessage = memo(function NeedsCommentaryMessage({ message }) {
+  return (
+    <div className="flex flex-col gap-1.5 animate-fade-in">
+      <div className="text-[10px] font-bold text-orange-300/80 uppercase tracking-widest flex items-center gap-1.5">
+        <span className="material-symbols-outlined text-[11px] leading-none text-orange-300/70">sentiment_stressed</span>
+        <span className="truncate">
+          {formatTimestamp(message.timestamp)}
+        </span>
+      </div>
+      <div className="rounded-r-lg border-l-2 border-orange-400/30 bg-orange-400/5 px-3 py-2">
+        <p className="text-xs text-orange-200/90 leading-snug italic whitespace-pre-line">{message.content}</p>
+      </div>
+    </div>
+  );
+});
+
 export const PlayerMessage = memo(function PlayerMessage({ message, isMe }) {
   const { t } = useTranslation();
   const displayName = message.playerName || t('chat.you');

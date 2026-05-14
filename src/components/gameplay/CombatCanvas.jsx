@@ -37,10 +37,13 @@ export default function CombatCanvas({
   onMoveToPosition,
   combatOver,
   isMyTurn = false,
+  isPlayerTurn = false,
+  currentTurn,
   myCombatantId,
   availableManoeuvres,
   savedCustomAttacks,
   onExecuteManoeuvre,
+  onDiceThrowExecute,
   onPersistCustomAttack,
   onRemoveCustomAttack,
   onRegenerateSprite,
@@ -87,6 +90,25 @@ export default function CombatCanvas({
     if (isMultiplayer && myPlayerId) return combat.combatants.find((c) => c.id === myPlayerId);
     return combat.combatants.find((c) => c.type === 'player');
   }, [combat.combatants, myCombatantId, isMultiplayer, myPlayerId]);
+
+  const turnBanner = useMemo(() => {
+    if (combatOver || !currentTurn) return null;
+    if (isPlayerTurn) {
+      return {
+        label: t('combat.yourTurn', 'Twoja tura'),
+        colorClass: 'text-primary',
+        shadow: 'rgba(197,154,255,0.9)',
+      };
+    }
+    if (currentTurn.type === 'enemy') {
+      return {
+        label: t('combat.enemyTurn', 'Tura wroga'),
+        colorClass: 'text-error',
+        shadow: 'rgba(255,110,132,0.9)',
+      };
+    }
+    return null;
+  }, [combatOver, currentTurn, isPlayerTurn, t]);
 
   const actionModalTarget = useMemo(() => {
     if (!actionModal?.targetId) return null;
@@ -332,10 +354,27 @@ export default function CombatCanvas({
     }
   }, [containerSize.w, containerSize.h, isMyTurn, combatOver, combatantAtCell, myCombatant, onSelectTarget, tokenRadius]);
 
+  const handleCanvasContextMenu = useCallback((e) => {
+    e.preventDefault();
+    if (!isMyTurn || combatOver) return;
+    const rect = canvasRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    const x = e.clientX - rect.left;
+    const y = e.clientY - rect.top;
+    const cell = pixelToCell(x, y, containerSize.w, containerSize.h);
+    if (!cell) return;
+    if (combatantAtCell(cell)) return;
+    onMoveToPosition?.(cell);
+  }, [containerSize.w, containerSize.h, isMyTurn, combatOver, combatantAtCell, onMoveToPosition]);
+
   const handleExecuteFromModal = useCallback((manoeuvreKey, targetId, customDesc, extraOpts) => {
-    onExecuteManoeuvre?.(manoeuvreKey, targetId, customDesc, extraOpts);
+    if (onDiceThrowExecute) {
+      onDiceThrowExecute(manoeuvreKey, targetId, customDesc, extraOpts);
+    } else {
+      onExecuteManoeuvre?.(manoeuvreKey, targetId, customDesc, extraOpts);
+    }
     setActionModal(null);
-  }, [onExecuteManoeuvre]);
+  }, [onExecuteManoeuvre, onDiceThrowExecute]);
 
   const handleMoveFromModal = useCallback((targetCell) => {
     onMoveToPosition?.(targetCell);
@@ -369,13 +408,29 @@ export default function CombatCanvas({
           style={{ display: 'block' }}
           onPointerMove={handleCanvasPointerMove}
           onClick={handleCanvasClick}
+          onContextMenu={handleCanvasContextMenu}
           onPointerLeave={() => { hoverCellRef.current = null; setTileTooltip(null); setHoveredCombatantId(null); }}
         />
+
+        {turnBanner && (
+          <div className="absolute left-1/2 top-[40%] z-30 pointer-events-none -translate-x-1/2 -translate-y-1/2">
+            <div
+              className={`font-black uppercase tracking-[0.16em] whitespace-nowrap ${turnBanner.colorClass}`}
+              style={{
+                fontFamily: 'NewRocker, cursive',
+                fontSize: 'clamp(1.5rem, 4vw, 2.4rem)',
+                textShadow: `0 0 18px ${turnBanner.shadow}, 0 2px 16px rgba(0,0,0,0.85)`,
+              }}
+            >
+              {turnBanner.label}
+            </div>
+          </div>
+        )}
 
         <div className="absolute inset-0 pointer-events-none">
           {tileTooltip && (
             <div
-              className="absolute z-20 px-2 py-1 rounded bg-surface-container/95 border border-outline-variant/30 shadow-lg text-[10px] whitespace-nowrap"
+              className="absolute z-20 px-2.5 py-1.5 rounded bg-surface-container/95 border border-outline-variant/30 shadow-lg text-xs whitespace-nowrap"
               style={{ left: tileTooltip.x, top: tileTooltip.y - cellSize * 0.7, transform: 'translate(-50%, -100%)' }}
             >
               <div className="font-bold text-on-surface">{tileTooltip.name}</div>

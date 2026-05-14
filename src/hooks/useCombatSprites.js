@@ -17,6 +17,10 @@ function buildPayload(combatant) {
   };
 }
 
+function needsGeneration(combatant) {
+  return !combatant.spriteSheetUrl;
+}
+
 function resolveSprites(raw) {
   const out = {};
   for (const [id, url] of Object.entries(raw)) {
@@ -52,7 +56,9 @@ export function useCombatSprites(combatants) {
 
     const fetchSprites = async () => {
       try {
-        const payload = combatants.map(buildPayload);
+        const toGenerate = combatants.filter(needsGeneration);
+        if (!toGenerate.length) return;
+        const payload = toGenerate.map(buildPayload);
         const data = await apiClient.post('/combat/sprites/generate', { combatants: payload });
 
         console.log('[useCombatSprites] response', { sprites: data?.sprites, spriteSheets: data?.spriteSheets });

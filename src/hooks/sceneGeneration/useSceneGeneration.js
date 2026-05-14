@@ -96,7 +96,7 @@ function humanizePlayerAction(action, t) {
 export function useSceneGeneration({ ensureMissingInventoryImages, ensureMissingSpellImages, ensureMissingNpcPortraits, imageGenEnabled, imageApiKey, imageProvider, imageStyle, darkPalette, imageSeriousness, imgKeyProvider }) {
   const { t } = useTranslation();
   const { state, dispatch, autoSave } = useGame();
-  const { settings, hasApiKey, voicePools, sceneModelConfig } = useSettings();
+  const { settings, hasApiKey, voicePools, sceneModelConfig, backendUser } = useSettings();
 
   const degradeStatsRef = useRef({ total: 0, truncated: 0, schema: 0, lastWarnAt: 0 });
   const sceneGenStartRef = useRef(null);
@@ -359,7 +359,7 @@ export function useSceneGeneration({ ensureMissingInventoryImages, ensureMissing
           dialogueSegments: finalSegments, soundEffect: result.soundEffect || null,
           musicPrompt: result.musicPrompt || null, imagePrompt: result.imagePrompt || null,
           fullImagePrompt: null,
-          sceneGrid: result.sceneGrid || null, musicUrl: null, image: null,
+          musicUrl: null, image: null,
           actions: result.suggestedActions || [], questOffers, chosenAction: playerAction,
           diceRoll: result.diceRoll || null, diceRolls: result.diceRolls || undefined, timestamp: Date.now(),
         };
@@ -408,9 +408,50 @@ export function useSceneGeneration({ ensureMissingInventoryImages, ensureMissing
           pollPendingCorrection(backendCampaignId, dispatch);
         }
 
+        // Auto-refresh badge every 5 scenes (admin only, fire-and-forget).
+        if (backendUser?.isAdmin && serverSceneIndex != null && serverSceneIndex > 0 && serverSceneIndex % 5 === 0) {
+          const badgeCharId = state.character?.backendId || state.character?.id;
+          if (badgeCharId) {
+            apiClient.post(`/characters/${badgeCharId}/badge`, {
+              force: true,
+              sceneFrom: Math.max(0, serverSceneIndex - 4),
+              sceneTo: serverSceneIndex,
+              language: 'pl',
+            }).catch(() => {});
+          }
+        }
+
         // FE-side scene compression removed with no-BYOK cleanup. Backend
         // scene pipeline runs its own memoryCompressor.js post-scene, so the
         // client no longer needs to summarize old scenes itself.
+
+        // Post-scene needs commentary — fire-and-forget nano call when any
+        // character need is critically low. The commentary is persisted by the
+        // backend and dispatched as a system chat message.
+        if (needsSystemEnabled && backendCampaignId) {
+          const postNeeds = state.character?.needs;
+          if (postNeeds) {
+            const anyCritical = ['hunger', 'thirst', 'bladder', 'rest'].some(
+              (k) => (postNeeds[k] ?? 100) < 10,
+            );
+            if (anyCritical) {
+              aiService.needsCommentaryViaBackendStream(backendCampaignId, {
+                characterNeeds: postNeeds,
+                characterName: state.character?.name || null,
+                provider: aiProvider,
+                language,
+                characterId: state.character?.backendId || null,
+                sceneIndex: serverSceneIndex ?? null,
+                dmSettings: settings.dmSettings || {},
+              }).then((ncResult) => {
+                if (ncResult?.commentaryText) {
+                  dispatch({ type: 'ADD_NEEDS_COMMENTARY', payload: ncResult });
+                  autoSave();
+                }
+              }).catch(() => {});
+            }
+          }
+        }
 
         // Deferred image
         if (!earlyImagePromise && imageGenEnabled && hasImageKey) {

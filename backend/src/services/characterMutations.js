@@ -56,7 +56,7 @@ function calculateMaxWounds(wytrzymalosc) {
 }
 
 function createDefaultNeeds() {
-  return { hunger: 100, thirst: 100, bladder: 100, hygiene: 100, rest: 100 };
+  return { hunger: 100, thirst: 100, bladder: 100, rest: 100 };
 }
 
 // ── Money helpers ──

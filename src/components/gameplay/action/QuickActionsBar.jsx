@@ -16,7 +16,21 @@ const TONE_STYLES = {
   amber:  'text-amber-300 hover:text-amber-200 bg-amber-500/12 hover:bg-amber-500/22 border-amber-400/30 hover:border-amber-300/55',
 };
 
-function GroupButton({ icon, label, hint = null, tone = 'neutral', disabled, items, onSelect, onRightClick = null, activeItemId = null }) {
+function GroupButton({
+  icon,
+  label,
+  hint = null,
+  tone = 'neutral',
+  disabled,
+  items,
+  onSelect,
+  onRightClick = null,
+  activeItemId = null,
+  buttonClassName = null,
+  activeButtonClassName = null,
+  iconClassName = 'text-[22px]',
+  menuClassName = 'left-0 bottom-full mb-2',
+}) {
   const [open, setOpen] = useState(false);
   const containerRef = useRef(null);
 
@@ -46,7 +60,7 @@ function GroupButton({ icon, label, hint = null, tone = 'neutral', disabled, ite
   if (visibleItems.length === 0) return null;
 
   const activeItem = activeItemId ? visibleItems.find((i) => (i.action || i.id) === activeItemId) : null;
-  const resolvedIcon = activeItem ? 'push_pin' : icon;
+  const resolvedIcon = activeItem ? activeItem.icon : icon;
   const resolvedTone = activeItem?.tone || tone;
 
   if (visibleItems.length === 1) {
@@ -74,13 +88,13 @@ function GroupButton({ icon, label, hint = null, tone = 'neutral', disabled, ite
         aria-expanded={open}
         onClick={() => setOpen((v) => !v)}
         disabled={disabled}
-        className={`shrink-0 inline-flex items-center justify-center w-11 h-11 border rounded-sm transition-all duration-200 hover:-translate-y-px hover:shadow-[0_10px_24px_rgba(0,0,0,0.3)] disabled:opacity-30 disabled:cursor-not-allowed ${TONE_STYLES[resolvedTone]} ${open ? 'ring-1 ring-primary/40' : ''} ${activeItem ? 'ring-1 ring-current/50' : ''}`}
+        className={`shrink-0 inline-flex items-center justify-center border rounded-sm transition-all duration-200 hover:-translate-y-px hover:shadow-[0_10px_24px_rgba(0,0,0,0.3)] disabled:opacity-30 disabled:cursor-not-allowed ${buttonClassName || 'w-11 h-11'} ${TONE_STYLES[resolvedTone]} ${open ? 'ring-1 ring-primary/40' : ''} ${activeItem ? `ring-1 ring-current/50 ${activeButtonClassName || ''}` : ''}`}
       >
-        <span className="material-symbols-outlined text-[22px] leading-none">{resolvedIcon}</span>
+        <span className={`material-symbols-outlined ${iconClassName} leading-none`}>{resolvedIcon}</span>
       </button>
 
       {open && (
-        <div className="absolute left-0 bottom-full mb-2 w-56 max-h-72 overflow-y-auto custom-scrollbar rounded-sm border border-outline-variant/20 bg-surface-container-highest/95 backdrop-blur-xl shadow-2xl z-40 p-1.5">
+        <div className={`absolute ${menuClassName} w-56 max-h-72 overflow-y-auto custom-scrollbar rounded-sm border border-outline-variant/20 bg-surface-container-highest/95 backdrop-blur-xl shadow-2xl z-40 p-1.5`}>
           <div className="px-2 py-1.5 border-b border-outline-variant/10 mb-1">
             <span className="block text-[10px] font-label uppercase tracking-widest text-on-surface-variant/70">
               {label}
@@ -146,16 +160,15 @@ export default function QuickActionsBar({
   onOpenSelfQuest,
   onOpenInventSpell,
   onOpenTravelMap,
+  onOpenWorldModal,
+  adjacentLocations = [],
+  onTravelToLocation,
   recruitableCount = 0,
   partyHasSlot = true,
   forceRollState = null,
   onForceRollLeft,
   onForceRollDouble,
   onForceRollRight,
-  onRegenerateActions = null,
-  isRegeneratingActions = false,
-  stickyTone = null,
-  onStickyTone = null,
 }) {
   const { t } = useTranslation();
   const tradeActive = useGameSlice((s) => s.trade?.active);
@@ -241,19 +254,6 @@ export default function QuickActionsBar({
       tone: 'pink',
       visible: recruitableCount > 0 && partyHasSlot && !!dispatch && !!onToggleRecruitPicker,
     },
-  ];
-
-  const toneItems = [
-    { id: 'thoughtful',   icon: 'psychology',      label: t('gameplay.actionTones.thoughtful'),   action: 'thoughtful',   tone: 'blue' },
-    { id: 'bold',         icon: 'local_fire_department', label: t('gameplay.actionTones.bold'),   action: 'bold',         tone: 'red' },
-    { id: 'stupid',       icon: 'sentiment_very_dissatisfied', label: t('gameplay.actionTones.stupid'), action: 'stupid', tone: 'yellow' },
-    { id: 'aggressive',   icon: 'flash_on',        label: t('gameplay.actionTones.aggressive'),   action: 'aggressive',   tone: 'red' },
-    { id: 'neutral',      icon: 'balance',         label: t('gameplay.actionTones.neutral'),      action: 'neutral',      tone: 'gray' },
-    { id: 'conciliatory', icon: 'handshake',       label: t('gameplay.actionTones.conciliatory'), action: 'conciliatory', tone: 'teal' },
-    { id: 'sleazy',       icon: 'sentiment_excited', label: t('gameplay.actionTones.sleazy'),     action: 'sleazy',       tone: 'pink' },
-    { id: 'empathetic',   icon: 'favorite',        label: t('gameplay.actionTones.empathetic'),   action: 'empathetic',   tone: 'purple' },
-    { id: 'absurd',       icon: 'theater_comedy',  label: t('gameplay.actionTones.absurd'),       action: 'absurd',       tone: 'orange' },
-    { id: 'zingers',      icon: 'chat_bubble',     label: t('gameplay.actionTones.zingers'),      action: 'zingers',      tone: 'amber' },
   ];
 
   const craftItems = [
@@ -369,19 +369,6 @@ export default function QuickActionsBar({
         items={craftItems}
       />
 
-      {onRegenerateActions && !isMultiplayer && (
-        <GroupButton
-          icon={isRegeneratingActions ? 'progress_activity' : 'casino'}
-          label={t('gameplay.regenerateActions', 'Zmień styl akcji')}
-          hint={t('gameplay.stickyToneHint')}
-          tone="yellow"
-          disabled={isDisabled || isRegeneratingActions}
-          items={toneItems}
-          onSelect={onRegenerateActions}
-          onRightClick={onStickyTone}
-          activeItemId={stickyTone}
-        />
-      )}
 
       {onOpenIncident && (
         <button
@@ -396,18 +383,81 @@ export default function QuickActionsBar({
         </button>
       )}
 
-      {onOpenTravelMap && (
-        <button
-          type="button"
-          aria-label={t('gameplay.travelMapButton')}
-          title={t('gameplay.travelMapButtonDescription')}
-          onClick={onOpenTravelMap}
-          disabled={isDisabled}
-          className={`shrink-0 inline-flex items-center justify-center w-11 h-11 border rounded-sm transition-all duration-200 hover:-translate-y-px hover:shadow-[0_10px_24px_rgba(0,0,0,0.3)] disabled:opacity-30 disabled:cursor-not-allowed ${TONE_STYLES.yellow}`}
-        >
-          <span className="material-symbols-outlined text-[22px] leading-none">map</span>
-        </button>
-      )}
+      <GroupButton
+        icon="public"
+        label={t('gameplay.worldGroup', 'Świat')}
+        tone="yellow"
+        disabled={isDisabled}
+        items={[
+          {
+            id: 'worldState',
+            icon: 'public',
+            label: t('worldState.title', 'Stan Świata'),
+            description: t('gameplay.worldGroupOpenWorld', 'BN-y, zadania, dziennik…'),
+            onClick: onOpenWorldModal,
+            tone: 'yellow',
+            visible: !!onOpenWorldModal,
+          },
+          {
+            id: 'travelMap',
+            icon: 'map',
+            label: t('gameplay.travelMapButton', 'Mapa podróży'),
+            description: t('gameplay.travelMapButtonDescription', 'Otwórz mapę lokacji'),
+            onClick: onOpenTravelMap,
+            tone: 'yellow',
+            visible: !!onOpenTravelMap,
+          },
+          ...adjacentLocations.map((loc) => ({
+            id: `travel-${loc.id}`,
+            icon: 'hiking',
+            label: loc.name,
+            description: t('gameplay.travelTo', { name: loc.name, defaultValue: `Podróżuj do ${loc.name}` }),
+            onClick: () => onTravelToLocation?.(loc.name),
+            tone: 'amber',
+            visible: true,
+          })),
+        ]}
+      />
     </div>
+  );
+}
+
+const TONE_ITEMS = [
+  { id: 'thoughtful',   icon: 'psychology',      action: 'thoughtful',   tone: 'blue' },
+  { id: 'bold',         icon: 'local_fire_department', action: 'bold',   tone: 'red' },
+  { id: 'stupid',       icon: 'sentiment_very_dissatisfied', action: 'stupid', tone: 'yellow' },
+  { id: 'aggressive',   icon: 'flash_on',        action: 'aggressive',   tone: 'red' },
+  { id: 'neutral',      icon: 'balance',         action: 'neutral',      tone: 'gray' },
+  { id: 'conciliatory', icon: 'handshake',       action: 'conciliatory', tone: 'teal' },
+  { id: 'sleazy',       icon: 'sentiment_excited', action: 'sleazy',     tone: 'pink' },
+  { id: 'empathetic',   icon: 'favorite',        action: 'empathetic',   tone: 'purple' },
+  { id: 'absurd',       icon: 'theater_comedy',  action: 'absurd',       tone: 'orange' },
+  { id: 'zingers',      icon: 'chat_bubble',     action: 'zingers',      tone: 'amber' },
+];
+
+export function ActionStyleButton({ disabled, isRegeneratingActions, stickyTone, onRegenerateActions, onStickyTone }) {
+  const { t } = useTranslation();
+  const items = TONE_ITEMS.map((item) => ({ ...item, label: t(`gameplay.actionTones.${item.id}`) }));
+  const handleRightClickTone = useCallback((tone) => {
+    onStickyTone?.(tone);
+    onRegenerateActions?.(tone);
+  }, [onStickyTone, onRegenerateActions]);
+
+  return (
+    <GroupButton
+      icon={isRegeneratingActions ? 'progress_activity' : 'psychology_alt'}
+      label={t('gameplay.regenerateActions', 'Styl Gry')}
+      hint={t('gameplay.stickyToneHint')}
+      tone="yellow"
+      disabled={disabled || isRegeneratingActions}
+      items={items}
+      onSelect={onRegenerateActions}
+      onRightClick={handleRightClickTone}
+      activeItemId={stickyTone}
+      buttonClassName="h-full aspect-square"
+      activeButtonClassName="animate-pulse"
+      iconClassName="text-[32px]"
+      menuClassName="right-full top-1/2 -translate-y-1/2 mr-2"
+    />
   );
 }

@@ -5,17 +5,17 @@ import { useEvent } from './useEvent';
 
 const AI_TURN_DELAY_MS = 2500;
 
-/**
- * Pure resolver step — runs the enemy turn logic and routes side effects
- * through injected callbacks. Extracted so it can be tested without React.
- * Returns `{ afterEnemies, enemyResults }` for introspection.
- */
 function normalizePos(p) {
   if (p && typeof p === 'object' && 'x' in p) return p;
   if (typeof p === 'number') return { x: p, y: 4 };
   return { x: 0, y: 0 };
 }
 
+/**
+ * Pure resolver step — runs the enemy turn logic and routes side effects
+ * through injected callbacks. Returns movementEvents for the caller to animate.
+ * Kept sync for unit testing; the React hook orchestrates async animation on top.
+ */
 export function resolveEnemyTurnStep({
   combat,
   isMultiplayer,
@@ -35,10 +35,10 @@ export function resolveEnemyTurnStep({
     positionsBefore[c.id] = normalizePos(c.position);
   }
 
-  const { combat: afterEnemies, results: enemyResults } = resolveEnemyTurns(combat);
+  const { combat: afterEnemies, results: enemyResults, movementEvents } = resolveEnemyTurns(combat);
 
   let maxSlideDuration = 0;
-  if (scheduleTokenAnim) {
+  if (scheduleTokenAnim && (!movementEvents || movementEvents.length === 0)) {
     const anims = {};
     for (const c of afterEnemies.combatants) {
       const before = positionsBefore[c.id];
@@ -65,13 +65,9 @@ export function resolveEnemyTurnStep({
   } else {
     dispatch({ type: 'UPDATE_COMBAT', payload: afterEnemies });
   }
-  return { afterEnemies, enemyResults, maxSlideDuration };
+  return { afterEnemies, enemyResults, maxSlideDuration, movementEvents: movementEvents || [], positionsBefore };
 }
 
-/**
- * Decides whether the enemy turn resolver should fire for the given combat
- * state. Exposed so tests can verify gating without spinning up React.
- */
 export function shouldScheduleEnemyTurn({ combat, combatOver, isMultiplayer, isHost }) {
   if (combatOver) return false;
   if (isMultiplayer && !isHost) return false;
@@ -82,12 +78,15 @@ export function shouldScheduleEnemyTurn({ combat, combatOver, isMultiplayer, isH
 
 export { AI_TURN_DELAY_MS };
 
-// Auto-resolves enemy turns when the current combatant is not a player.
-// Fixes deadlock when enemies win initiative or are first in a new round.
-//
-// In solo mode dispatches UPDATE_COMBAT; in multiplayer forwards through
-// onHostResolve (host-only). Uses useEvent so the timer body always sees
-// the latest combat state without re-scheduling on every render.
+function buildIntermediateState(baseCombat, actorId, stepPos) {
+  return {
+    ...baseCombat,
+    combatants: baseCombat.combatants.map(c =>
+      c.id === actorId ? { ...c, position: { x: stepPos.x, y: stepPos.y } } : c
+    ),
+  };
+}
+
 export function useEnemyTurnResolver({
   combat,
   combatOver,
@@ -108,21 +107,80 @@ export function useEnemyTurnResolver({
     const willCharge = current && current.type !== 'player' &&
       getEnemyAction(combat, current.id)?.manoeuvre === 'charge';
 
-    if (!willCharge && onBeforeResolve) {
-      await onBeforeResolve(combat);
+    const stepMs = getCombatMoveDurationMs(1);
+
+    // Resolve all enemy turns (mechancis + final state)
+    const positionsBefore = {};
+    for (const c of combat.combatants) {
+      positionsBefore[c.id] = normalizePos(c.position);
     }
 
-    const { afterEnemies, maxSlideDuration } = resolveEnemyTurnStep({
-      combat,
-      isMultiplayer,
-      dispatch,
-      onHostResolve,
-      addResultToLog,
-      dispatchCombatChatMessage,
-      setIsAwaitingAiTurn,
-      scheduleTokenAnim,
-      flushRoundEffectEvents,
-    });
+    const { combat: afterEnemies, results: enemyResults, movementEvents } = resolveEnemyTurns(combat);
+
+    // --- Phase 1: Animate step-by-step movement BEFORE showing results ---
+    if (movementEvents && movementEvents.length > 0) {
+      let walkState = combat;
+
+      for (const evt of movementEvents) {
+        for (let i = 0; i < evt.path.length; i++) {
+          const stepPos = evt.path[i];
+          walkState = buildIntermediateState(walkState, evt.actorId, stepPos);
+
+          if (scheduleTokenAnim) {
+            scheduleTokenAnim({ [evt.actorId]: { durationMs: stepMs } });
+          }
+
+          if (isMultiplayer) {
+            onHostResolve?.(walkState);
+          } else {
+            dispatch({ type: 'UPDATE_COMBAT', payload: walkState });
+          }
+
+          if (i < evt.path.length - 1) {
+            await new Promise(r => setTimeout(r, stepMs));
+          }
+        }
+
+        await new Promise(r => setTimeout(r, stepMs));
+      }
+    }
+
+    // --- Phase 2: Attack animation (after walk completes, before final state) ---
+    if (!willCharge && onBeforeResolve) {
+      await onBeforeResolve(afterEnemies);
+    }
+
+    // --- Phase 3: Dispatch final resolved state with logs/results ---
+    setIsAwaitingAiTurn(false);
+
+    let maxSlideDuration = 0;
+    if (scheduleTokenAnim && (!movementEvents || movementEvents.length === 0)) {
+      const anims = {};
+      for (const c of afterEnemies.combatants) {
+        const before = positionsBefore[c.id];
+        const after = normalizePos(c.position);
+        if (before && (before.x !== after.x || before.y !== after.y)) {
+          const dist = Math.max(Math.abs(after.x - before.x), Math.abs(after.y - before.y));
+          const duration = getCombatMoveDurationMs(dist);
+          anims[c.id] = { durationMs: duration };
+          if (duration > maxSlideDuration) maxSlideDuration = duration;
+        }
+      }
+      if (Object.keys(anims).length) scheduleTokenAnim(anims);
+    }
+
+    for (const er of enemyResults) {
+      if (!isMultiplayer) dispatchCombatChatMessage(er);
+      addResultToLog(er);
+    }
+    flushRoundEffectEvents?.(afterEnemies);
+    if (isMultiplayer) {
+      afterEnemies.lastResults = enemyResults;
+      afterEnemies.lastResultsTs = Date.now();
+      onHostResolve?.(afterEnemies);
+    } else {
+      dispatch({ type: 'UPDATE_COMBAT', payload: afterEnemies });
+    }
 
     if (willCharge && maxSlideDuration > 0 && onAfterSlide) {
       await new Promise((r) => setTimeout(r, maxSlideDuration + 50));

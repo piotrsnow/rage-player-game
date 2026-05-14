@@ -19,7 +19,6 @@ import { resolveKnownSpellDisplay } from '../../services/magicEngine';
 import { gameData } from '../../services/gameDataService';
 import SkillGainHistory from './SkillGainHistory';
 import FavoriteScenesList from './FavoriteScenesList';
-import BadgesSection from './BadgesSection';
 import LpcSprite from '../shared/LpcSprite';
 
 const SKILL_ICONS = {
@@ -390,11 +389,10 @@ function SkillsGrid({ character, t }) {
 }
 
 const NEEDS_META = [
-  { key: 'hunger', icon: 'restaurant' },
-  { key: 'thirst', icon: 'water_drop' },
-  { key: 'bladder', icon: 'wc' },
-  { key: 'hygiene', icon: 'shower' },
-  { key: 'rest', icon: 'bedtime' },
+  { key: 'hunger', color: 'hunger' },
+  { key: 'thirst', color: 'thirst' },
+  { key: 'bladder', color: 'bladder' },
+  { key: 'rest', color: 'rest' },
 ];
 
 function SpellsGrid({
@@ -802,6 +800,9 @@ export default function CharacterPanel({
   const canRegenerateSpellImage = !isMultiplayer && settings.itemImagesEnabled !== false;
   const [regeneratingSpellName, setRegeneratingSpellName] = useState(null);
   const [classifyingSpellSchools, setClassifyingSpellSchools] = useState(false);
+  const [generatingSprite, setGeneratingSprite] = useState(false);
+  const [spriteAnimation, setSpriteAnimation] = useState('idle_down');
+  const [localSpriteSheetUrl, setLocalSpriteSheetUrl] = useState(null);
 
   useEffect(() => {
     if (selectedItemId && !inventoryItems.some((i) => i.id === selectedItemId)) {
@@ -910,6 +911,42 @@ export default function CharacterPanel({
     }
   };
 
+  const characterBackendId = character.backendId || character.id;
+  const handleGenerateSprite = async (force = false) => {
+    console.log('[CharacterPanel] handleGenerateSprite', { characterBackendId, force, generatingSprite });
+    if (generatingSprite || !characterBackendId) return;
+    setGeneratingSprite(true);
+    try {
+      const data = await apiClient.post(`/characters/${characterBackendId}/sprite`, { force });
+      console.log('[CharacterPanel] sprite response', data);
+      if (data?.chargenAppearance) {
+        console.log('[CharacterPanel] sprite slots:', Object.keys(data.chargenAppearance.slots || {}));
+        console.table(
+          Object.entries(data.chargenAppearance.slots || {}).map(([slot, v]) => ({ slot, id: v.id, color: v.color })),
+        );
+      }
+      if (data?.spriteSheetUrl) {
+        setLocalSpriteSheetUrl(data.spriteSheetUrl);
+        if (dispatch) {
+          dispatch({ type: 'UPDATE_CHARACTER', payload: { spriteSheetUrl: data.spriteSheetUrl } });
+          if (autoSave) autoSave();
+        }
+      }
+    } catch (err) {
+      console.error('[CharacterPanel] sprite generation failed', err);
+    } finally {
+      setGeneratingSprite(false);
+    }
+  };
+
+  const SPRITE_ANIMATIONS = ['idle_down', 'idle_up', 'idle_left', 'idle_right', 'walk_down', 'walk_up', 'walk_left', 'walk_right'];
+  const cycleSpriteAnimation = () => {
+    setSpriteAnimation((prev) => {
+      const idx = SPRITE_ANIMATIONS.indexOf(prev);
+      return SPRITE_ANIMATIONS[(idx + 1) % SPRITE_ANIMATIONS.length];
+    });
+  };
+
   const spellPanel = (
     <SpellsGrid
       spells={knownSpells}
@@ -931,7 +968,7 @@ export default function CharacterPanel({
         <div className="lg:col-span-3 space-y-6 animate-fade-in">
           {!editingPortrait && (
             <div className="relative group">
-              <div className="absolute -inset-1 bg-gradient-to-tr from-primary-dim to-primary opacity-20 blur-xl group-hover:opacity-30 transition duration-500" />
+              <div className="absolute -inset-1 bg-gradient-to-tr from-primary-dim to-primary opacity-20 blur-xl group-hover:opacity-30 transition duration-500 pointer-events-none" />
               <div className="relative bg-surface-container-high border border-outline-variant/15 p-1 rounded-sm overflow-hidden">
                 {character.portraitUrl ? (
                   <img
@@ -965,19 +1002,6 @@ export default function CharacterPanel({
                   </div>
                 )}
               </div>
-              {character.spriteSheetUrl && (
-                <div className="mt-3 flex justify-center">
-                  <div className="bg-surface-container-lowest/50 border border-outline-variant/10 rounded-lg p-2">
-                    <LpcSprite
-                      sheetUrl={apiClient.resolveMediaUrl(character.spriteSheetUrl)}
-                      animation="idle_down"
-                      width={64}
-                      height={64}
-                      playing
-                    />
-                  </div>
-                </div>
-              )}
               {canEditPortrait && (
                 <button
                   onClick={() => setEditingPortrait(true)}
@@ -1050,6 +1074,57 @@ export default function CharacterPanel({
             </div>
           </div>
 
+          {!editingPortrait && (
+            <div className="relative">
+              {(localSpriteSheetUrl || character.spriteSheetUrl) ? (
+                <div
+                  className="w-full aspect-square bg-surface-container-low border border-outline-variant/10 rounded-sm flex items-center justify-center cursor-pointer hover:border-primary/30 transition-colors"
+                  onClick={cycleSpriteAnimation}
+                  role="button"
+                  tabIndex={0}
+                  onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') cycleSpriteAnimation(); }}
+                  title={t('character.cycleAnimation', { defaultValue: 'Zmień animację' })}
+                >
+                  <LpcSprite
+                    key={localSpriteSheetUrl || character.spriteSheetUrl}
+                    sheetUrl={apiClient.resolveMediaUrl(localSpriteSheetUrl || character.spriteSheetUrl)}
+                    animation={spriteAnimation}
+                    width={128}
+                    height={128}
+                    playing
+                  />
+                  {!isMultiplayer && (
+                    <button
+                      type="button"
+                      onClick={(e) => { e.stopPropagation(); handleGenerateSprite(true); }}
+                      disabled={generatingSprite}
+                      className="absolute top-2 right-2 flex items-center justify-center w-7 h-7 rounded-sm bg-surface-container-high/80 text-on-surface-variant/70 hover:text-primary border border-outline-variant/10 hover:border-primary/30 transition-all disabled:opacity-50 backdrop-blur-sm"
+                      title={t('character.regenerateSprite', { defaultValue: 'Regeneruj sprite' })}
+                    >
+                      <span className={`material-symbols-outlined text-sm ${generatingSprite ? 'animate-spin' : ''}`}>
+                        {generatingSprite ? 'progress_activity' : 'refresh'}
+                      </span>
+                    </button>
+                  )}
+                </div>
+              ) : !isMultiplayer && (
+                <button
+                  type="button"
+                  onClick={() => handleGenerateSprite(false)}
+                  disabled={generatingSprite}
+                  className="w-full aspect-square flex items-center justify-center gap-1.5 px-3 text-xs font-label text-on-surface-variant hover:text-primary bg-surface-container-low border border-outline-variant/10 hover:border-primary/30 rounded-sm transition-all hover:bg-surface-tint/10 disabled:opacity-50"
+                >
+                  <span className={`material-symbols-outlined text-sm ${generatingSprite ? 'animate-spin' : ''}`}>
+                    {generatingSprite ? 'progress_activity' : 'sprint'}
+                  </span>
+                  {generatingSprite
+                    ? t('character.generatingSprite', { defaultValue: 'Generuję...' })
+                    : t('character.generateSprite', { defaultValue: 'Generuj sprite' })}
+                </button>
+              )}
+            </div>
+          )}
+
           {settings.needsSystemEnabled && character.needs && (
             <div className="bg-surface-container-low p-6 border border-outline-variant/10 rounded-sm">
               <h3 className="text-tertiary font-headline mb-4 flex items-center gap-2">
@@ -1057,13 +1132,13 @@ export default function CharacterPanel({
                 {t('needs.title')}
               </h3>
               <div className="space-y-4">
-                {NEEDS_META.map(({ key }) => (
+                {NEEDS_META.map(({ key, color }) => (
                   <StatusBar
                     key={key}
                     label={t(`needs.${key}`)}
                     current={Math.round(character.needs[key] ?? 100)}
                     max={100}
-                    color="dynamic"
+                    color={color}
                   />
                 ))}
               </div>

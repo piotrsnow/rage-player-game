@@ -115,7 +115,7 @@ export function buildCodexSummaryBlock(world) {
 
 export function buildNeedsCrisisBlock({ needsSystemEnabled, characterNeeds }) {
   if (!needsSystemEnabled || !characterNeeds) return null;
-  const needNames = ['hunger', 'thirst', 'bladder', 'hygiene', 'rest'];
+  const needNames = ['hunger', 'thirst', 'bladder', 'rest'];
   const critNeeds = needNames.filter((k) => (characterNeeds[k] ?? 100) < 10);
   if (critNeeds.length === 0) return null;
 

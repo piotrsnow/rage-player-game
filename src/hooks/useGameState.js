@@ -145,7 +145,6 @@ export function useGameState() {
         dialogueSegments: firstDialogueSegments,
         soundEffect: aiResult.firstScene?.soundEffect || null,
         imagePrompt: aiResult.firstScene?.imagePrompt || null,
-        sceneGrid: aiResult.firstScene?.sceneGrid || null,
         image: null,
         actions: aiResult.firstScene?.suggestedActions || [],
         chosenAction: null,

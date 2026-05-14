@@ -112,7 +112,7 @@ export function buildCombatCampaignPayload({
     backstory: 'A seasoned traveller caught in a forest ambush.',
     characterLevel: 1,
     experience: 0,
-    needs: { hunger: 0, thirst: 0, bladder: 0, hygiene: 0, rest: 0 },
+    needs: { hunger: 0, thirst: 0, bladder: 0, rest: 0 },
     spells: { known: [] },
     titles: [],
     activeEffects: [],

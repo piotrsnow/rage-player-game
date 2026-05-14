@@ -97,6 +97,18 @@ export function parseBackendCampaign(full) {
     ).length;
   }
 
+  if (Array.isArray(full.needsCommentaries) && full.needsCommentaries.length > 0) {
+    const commentaryChat = full.needsCommentaries.map((nc) => ({
+      id: `nc_${nc.id}`,
+      role: 'system',
+      subtype: 'needs_commentary',
+      content: nc.commentaryText,
+      needsSnapshot: nc.needsSnapshot,
+      timestamp: new Date(nc.createdAt).getTime(),
+    }));
+    state.chatHistory = [...(state.chatHistory || []), ...commentaryChat];
+  }
+
   if (!state.campaign) state.campaign = {};
   state.campaign.backendId = full.id;
   if (full.userId) state.campaign.userId = full.userId;

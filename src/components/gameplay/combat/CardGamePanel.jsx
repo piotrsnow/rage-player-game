@@ -1,19 +1,20 @@
-import { useCallback } from 'react';
+import { useCallback, useEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useCardGame } from '../../../hooks/useCardGame';
+import { useMinigameAudio } from '../../../hooks/useMinigameAudio';
 
 const SUIT_CONFIG = {
-  hearts:   { symbol: '♥', color: 'text-red-500' },
-  diamonds: { symbol: '♦', color: 'text-red-500' },
-  clubs:    { symbol: '♣', color: 'text-white' },
-  spades:   { symbol: '♠', color: 'text-white' },
+  hearts:   { symbol: '♥', color: 'text-red-500', tint: 'bg-red-500/15' },
+  diamonds: { symbol: '♦', color: 'text-orange-300', tint: 'bg-orange-300/15' },
+  clubs:    { symbol: '♣', color: 'text-sky-200', tint: 'bg-sky-200/15' },
+  spades:   { symbol: '♠', color: 'text-purple-800', tint: 'bg-purple-700/20' },
 };
 
 function PlayingCard({ card, faceDown = false, animate = false }) {
   if (faceDown) {
     return (
-      <div className="w-12 h-16 rounded-md border border-emerald-500/30 bg-emerald-900/60 flex items-center justify-center shrink-0 -ml-3 first:ml-0 shadow-md">
-        <div className="w-8 h-12 rounded-sm border border-emerald-400/20 bg-[repeating-linear-gradient(45deg,transparent,transparent_3px,rgba(16,185,129,0.15)_3px,rgba(16,185,129,0.15)_6px)]" />
+      <div className="w-20 h-28 md:w-24 md:h-36 rounded-xl border-2 border-emerald-400/70 bg-emerald-900/60 flex items-center justify-center shrink-0 -ml-5 md:-ml-6 first:ml-0 shadow-2xl ring-1 ring-black/50">
+        <div className="w-14 h-24 md:w-16 md:h-32 rounded-lg border-2 border-emerald-300/35 bg-[repeating-linear-gradient(45deg,transparent,transparent_4px,rgba(16,185,129,0.15)_4px,rgba(16,185,129,0.15)_8px)]" />
       </div>
     );
   }
@@ -22,30 +23,33 @@ function PlayingCard({ card, faceDown = false, animate = false }) {
   return (
     <div
       className={`
-        w-12 h-16 rounded-md border border-white/15 bg-white/[0.08] backdrop-blur-sm
-        flex flex-col items-center justify-between py-1 px-0.5 shrink-0
-        -ml-3 first:ml-0 shadow-md
+        w-20 h-28 md:w-24 md:h-36 rounded-xl border-2 border-white/45 ${suit.tint} backdrop-blur-sm
+        flex flex-col items-center justify-between py-2 md:py-3 px-1.5 md:px-2 shrink-0
+        -ml-5 md:-ml-6 first:ml-0 shadow-2xl ring-1 ring-black/55
         ${animate ? 'animate-card-deal' : ''}
       `}
+      style={{ boxShadow: 'inset 0 1px 14px rgba(255,255,255,0.08), 0 18px 36px rgba(0,0,0,0.35)' }}
     >
-      <span className={`text-[10px] font-mono leading-none ${suit.color}`}>{card.rank}</span>
-      <span className={`text-lg leading-none ${suit.color}`}>{suit.symbol}</span>
-      <span className={`text-[10px] font-mono leading-none rotate-180 ${suit.color}`}>{card.rank}</span>
+      <span className={`text-sm md:text-base font-mono leading-none ${suit.color}`}>{card.rank}</span>
+      <span className={`text-4xl md:text-5xl leading-none ${suit.color}`}>{suit.symbol}</span>
+      <span className={`text-sm md:text-base font-mono leading-none rotate-180 ${suit.color}`}>{card.rank}</span>
     </div>
   );
 }
 
-function HandDisplay({ hand, total, name, isBust, showAll = true }) {
+function HandDisplay({ hand, total, name, isBust, showAll = true, align = 'left' }) {
+  const handAlignment = align === 'right' ? 'justify-end' : 'justify-start';
+
   return (
-    <div className="flex-1 flex flex-col items-center gap-2 min-w-0 relative">
+    <div className="flex-1 flex flex-col items-center gap-3 md:gap-4 min-w-0 relative">
       <div
-        className="text-sm font-accent text-on-surface-variant truncate max-w-full"
+        className="text-base md:text-xl font-headline text-on-surface-variant truncate max-w-full"
         style={{ textShadow: '0 1px 3px rgba(0,0,0,0.4)' }}
       >
         {name}
       </div>
 
-      <div className="flex items-end justify-center pl-3 min-h-[68px]">
+      <div className={`w-full flex items-end ${handAlignment} min-h-[124px] md:min-h-[156px]`}>
         {hand.map((card, i) => (
           <PlayingCard
             key={`${card.suit}-${card.rank}-${i}`}
@@ -55,7 +59,7 @@ function HandDisplay({ hand, total, name, isBust, showAll = true }) {
           />
         ))}
         {hand.length === 0 && (
-          <div className="w-12 h-16 rounded-md border border-dashed border-white/10" />
+          <div className="w-20 h-28 md:w-24 md:h-36 rounded-xl border border-dashed border-white/10" />
         )}
       </div>
 
@@ -66,7 +70,7 @@ function HandDisplay({ hand, total, name, isBust, showAll = true }) {
           </div>
         )}
         <span
-          className={`text-xl font-headline tabular-nums ${isBust ? 'text-red-400 opacity-0' : 'text-emerald-300'}`}
+          className={`text-4xl md:text-5xl font-headline tabular-nums ${isBust ? 'text-red-400 opacity-0' : 'text-emerald-300'}`}
           style={{ textShadow: '0 0 12px rgba(16, 185, 129, 0.4)' }}
         >
           {total != null ? total : '—'}
@@ -79,9 +83,9 @@ function HandDisplay({ hand, total, name, isBust, showAll = true }) {
 function CommentaryBubble({ name, text }) {
   if (!text) return null;
   return (
-    <div className="flex items-start gap-2 px-2 animate-fade-in">
-      <span className="text-xs font-accent text-emerald-400 shrink-0">{name}:</span>
-      <span className="text-xs font-body text-on-surface-variant/80 italic">{text}</span>
+    <div className="flex items-start gap-3 px-4 animate-fade-in">
+      <span className="text-sm md:text-base font-headline text-emerald-400 shrink-0">{name}:</span>
+      <span className="text-sm md:text-base font-headline text-on-surface-variant/80 italic">{text}</span>
     </div>
   );
 }
@@ -95,6 +99,7 @@ export default function CardGamePanel({
   mpCharacters,
 }) {
   const { t } = useTranslation();
+  const playSfx = useMinigameAudio();
 
   const playerCombatant = combat.combatants.find((c) => c.type === 'player');
   const enemyCombatant = combat.combatants.find((c) => c.type === 'enemy');
@@ -118,8 +123,8 @@ export default function CardGamePanel({
     goldDelta,
     winnerId,
     commentary,
-    hit,
-    stand,
+    hit: rawHit,
+    stand: rawStand,
     forfeit,
   } = useCardGame({
     playerId: playerCombatant?.id || 'player',
@@ -135,6 +140,37 @@ export default function CardGamePanel({
 
   const isPlaying = phase === 'player_turn';
   const isFinished = phase === 'finished';
+
+  // ── SFX on actions ──
+  const hit = useCallback(() => { playSfx('cardHit'); rawHit(); }, [rawHit, playSfx]);
+  const stand = useCallback(() => { playSfx('cardStand'); rawStand(); }, [rawStand, playSfx]);
+
+  // ── SFX on phase transitions ──
+  const prevPhaseRef = useRef(phase);
+  const prevCountdownRef = useRef(countdownSec);
+
+  useEffect(() => {
+    if (countdownSec !== prevCountdownRef.current && phase === 'countdown' && countdownSec > 0) {
+      playSfx(countdownSec === 1 ? 'countdownLast' : 'countdown');
+    }
+    prevCountdownRef.current = countdownSec;
+  }, [countdownSec, phase, playSfx]);
+
+  useEffect(() => {
+    const prev = prevPhaseRef.current;
+    prevPhaseRef.current = phase;
+    if (prev === phase) return;
+
+    if (phase === 'dealing') playSfx('cardDeal');
+    if (phase === 'opponent_turn' && playerBust) playSfx('cardBust');
+    if (phase === 'round_result') {
+      if (playerBust || opponentBust) playSfx('cardBust');
+    }
+    if (phase === 'finished') {
+      const playerWon = winnerId === (playerCombatant?.id || 'player');
+      playSfx(playerWon ? 'success' : winnerId == null ? 'failure' : 'failure');
+    }
+  }, [phase, playerBust, opponentBust, winnerId, playerCombatant, playSfx]);
 
   const buildSummary = useCallback(() => {
     const playerWon = winnerId === (playerCombatant?.id || 'player');
@@ -168,7 +204,7 @@ export default function CardGamePanel({
   const tie = winnerId === null;
 
   return (
-    <div className="flex flex-col gap-4 p-4 rounded-xl border border-emerald-500/25 bg-surface-container/80 backdrop-blur-md relative overflow-hidden animate-fade-in">
+    <div className="h-full flex flex-col justify-between gap-6 md:gap-7 p-6 md:p-8 rounded-2xl border border-emerald-500/25 bg-surface-container/85 backdrop-blur-md relative overflow-hidden animate-fade-in shadow-[0_20px_80px_rgba(0,0,0,0.45)]">
 
       {/* ── Countdown overlay ── */}
       {phase === 'countdown' && (
@@ -203,27 +239,27 @@ export default function CardGamePanel({
 
           <div className="flex items-center gap-6 text-sm">
             <div className="text-center">
-              <div className="text-on-surface-variant font-accent text-xs">{playerName}</div>
+              <div className="text-on-surface-variant font-headline text-xs">{playerName}</div>
               <div className="text-2xl font-headline text-emerald-300 mt-1">{playerScore}</div>
             </div>
-            <div className="font-accent text-lg text-on-surface-variant/50" style={{ textShadow: '0 1px 2px rgba(0,0,0,0.5)' }}>
+            <div className="font-headline text-lg text-on-surface-variant/50" style={{ textShadow: '0 1px 2px rgba(0,0,0,0.5)' }}>
               vs
             </div>
             <div className="text-center">
-              <div className="text-on-surface-variant font-accent text-xs">{opponentName}</div>
+              <div className="text-on-surface-variant font-headline text-xs">{opponentName}</div>
               <div className="text-2xl font-headline text-emerald-300 mt-1">{opponentScore}</div>
             </div>
           </div>
 
           {goldDelta !== 0 && (
-            <div className={`text-sm font-accent ${goldDelta > 0 ? 'text-amber-300' : 'text-red-400'}`}>
+            <div className={`text-sm font-mono ${goldDelta > 0 ? 'text-amber-300' : 'text-red-400'}`}>
               {goldDelta > 0 ? '+' : ''}{goldDelta} MK
             </div>
           )}
 
           <button
             onClick={() => onEndCombat?.(buildSummary())}
-            className="mt-2 px-6 py-2.5 rounded-lg font-accent text-sm
+            className="mt-2 px-6 py-2.5 rounded-lg font-headline text-sm
               border border-emerald-500/50 bg-emerald-600/25 text-emerald-200
               hover:bg-emerald-500/40 hover:border-emerald-400/70 hover:text-emerald-100
               hover:shadow-[0_0_16px_rgba(16,185,129,0.3)]
@@ -235,43 +271,48 @@ export default function CardGamePanel({
       )}
 
       {/* ── Scoreboard header ── */}
-      <div className="flex items-center justify-between text-xs font-label text-on-surface-variant px-1">
-        <span>
-          {t('cardGame.round', 'Runda')} {round}/{totalRounds}
+      <div className="relative flex items-center min-h-11 text-sm md:text-base font-headline text-on-surface-variant px-1">
+        <span className="shrink-0">
+          {t('cardGame.round', {
+            current: round,
+            total: totalRounds,
+            defaultValue: 'Runda {{current}}/{{total}}',
+          })}
         </span>
-        <span className="font-headline text-sm text-on-surface tabular-nums">
+        <span className="absolute left-1/2 -translate-x-1/2 font-mono text-3xl md:text-4xl text-on-surface tabular-nums">
           {playerScore} – {opponentScore}
         </span>
         {goldDelta !== 0 && (
-          <span className={`tabular-nums ${goldDelta > 0 ? 'text-amber-300' : 'text-red-400'}`}>
+          <span className={`ml-auto text-base md:text-lg font-mono tabular-nums ${goldDelta > 0 ? 'text-amber-300' : 'text-red-400'}`}>
             {goldDelta > 0 ? '+' : ''}{goldDelta} MK
           </span>
         )}
-        {goldDelta === 0 && <span />}
+        {goldDelta === 0 && <span className="ml-auto" />}
       </div>
 
       {/* ── Card table — two hands ── */}
-      <div className="flex items-start gap-0">
+      <div className="grid grid-cols-[minmax(0,1fr)_clamp(16.5rem,27vw,24rem)_minmax(0,1fr)] items-start gap-0">
         <HandDisplay
           hand={playerHand}
           total={playerTotal}
           name={playerName}
           isBust={playerBust}
+          align="right"
         />
 
-        <div className="flex flex-col items-center justify-start pt-6 px-1">
+        <div className="flex flex-col items-center justify-start pt-12 md:pt-16">
           <div
-            className="w-9 h-9 rounded-full border border-emerald-500/30 bg-emerald-500/10 flex items-center justify-center"
+            className="w-10 h-10 md:w-12 md:h-12 rounded-full border border-emerald-500/30 bg-emerald-500/10 flex items-center justify-center"
             style={{ boxShadow: '0 0 10px rgba(16, 185, 129, 0.15)' }}
           >
             <span
-              className="font-accent text-xs text-emerald-400/70"
+              className="font-headline text-xs md:text-sm text-emerald-400/70"
               style={{ textShadow: '0 0 6px rgba(16,185,129,0.3)' }}
             >
               vs
             </span>
           </div>
-          <div className="w-px flex-1 bg-gradient-to-b from-emerald-500/20 via-emerald-500/10 to-transparent mt-2" />
+          <div className="h-24 md:h-32 w-px bg-gradient-to-b from-emerald-500/20 via-emerald-500/10 to-transparent mt-2" />
         </div>
 
         <HandDisplay
@@ -280,6 +321,7 @@ export default function CardGamePanel({
           name={opponentName}
           isBust={opponentBust}
           showAll={opponentShowAll}
+          align="left"
         />
       </div>
 
@@ -287,43 +329,43 @@ export default function CardGamePanel({
       <CommentaryBubble name={opponentName} text={commentary} />
 
       {/* ── Action buttons ── */}
-      <div className="flex items-center justify-center gap-3">
+      <div className="flex items-center justify-center gap-4 md:gap-5">
         <button
           onClick={hit}
           disabled={!isPlaying}
-          className="flex items-center gap-1.5 px-4 py-2 rounded-lg font-accent text-sm
+          className="flex items-center gap-2 px-6 md:px-8 py-3 md:py-4 rounded-xl font-headline text-base md:text-lg
             border border-emerald-500/50 bg-emerald-600/20 text-emerald-300
             hover:bg-emerald-500/35 hover:border-emerald-400/70 hover:shadow-[0_0_12px_rgba(16,185,129,0.3)]
             active:scale-95 transition-all duration-150
             disabled:opacity-30 disabled:cursor-not-allowed disabled:scale-100"
         >
-          <span className="material-symbols-outlined" style={{ fontSize: 20 }}>add_card</span>
+          <span className="material-symbols-outlined text-2xl md:text-3xl">add_card</span>
           {t('cardGame.hit', 'Dobierz')}
         </button>
 
         <button
           onClick={stand}
           disabled={!isPlaying}
-          className="flex items-center gap-1.5 px-4 py-2 rounded-lg font-accent text-sm
+          className="flex items-center gap-2 px-6 md:px-8 py-3 md:py-4 rounded-xl font-headline text-base md:text-lg
             border border-blue-500/50 bg-blue-600/20 text-blue-300
             hover:bg-blue-500/35 hover:border-blue-400/70 hover:shadow-[0_0_12px_rgba(59,130,246,0.3)]
             active:scale-95 transition-all duration-150
             disabled:opacity-30 disabled:cursor-not-allowed disabled:scale-100"
         >
-          <span className="material-symbols-outlined" style={{ fontSize: 20 }}>front_hand</span>
+          <span className="material-symbols-outlined text-2xl md:text-3xl">front_hand</span>
           {t('cardGame.stand', 'Stój')}
         </button>
 
         <button
           onClick={forfeit}
           disabled={phase === 'finished' || phase === 'countdown'}
-          className="flex items-center gap-1.5 px-4 py-2 rounded-lg font-accent text-sm
+          className="flex items-center gap-2 px-6 md:px-8 py-3 md:py-4 rounded-xl font-headline text-base md:text-lg
             border border-rose-500/50 bg-rose-600/20 text-rose-300
             hover:bg-rose-500/35 hover:border-rose-400/70 hover:shadow-[0_0_12px_rgba(244,63,94,0.3)]
             active:scale-95 transition-all duration-150
             disabled:opacity-30 disabled:cursor-not-allowed disabled:scale-100"
         >
-          <span className="material-symbols-outlined" style={{ fontSize: 20 }}>logout</span>
+          <span className="material-symbols-outlined text-2xl md:text-3xl">logout</span>
           {t('cardGame.forfeit', 'Poddaj')}
         </button>
       </div>

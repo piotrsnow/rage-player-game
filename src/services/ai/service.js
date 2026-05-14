@@ -84,7 +84,6 @@ function postProcessCampaignResult(raw, repairedSegments, settings, language) {
       soundEffect: rawScene.soundEffect ?? null,
       musicPrompt: rawScene.musicPrompt ?? null,
       imagePrompt: rawScene.imagePrompt ?? null,
-      sceneGrid: rawScene.sceneGrid ?? null,
       atmosphere: rawScene.atmosphere && typeof rawScene.atmosphere === 'object' ? rawScene.atmosphere : {},
       journalEntries: Array.isArray(rawScene.journalEntries) ? rawScene.journalEntries : [],
     },
@@ -417,6 +416,63 @@ export const aiService = {
     } catch (e) {
       aiCallLog.fail(logId, e);
       throw e;
+    }
+  },
+
+  async needsCommentaryViaBackendStream(campaignId, {
+    characterNeeds,
+    characterName = null,
+    provider = 'openai',
+    language = 'pl',
+    characterId = null,
+    sceneIndex = null,
+    dmSettings = {},
+  } = {}) {
+    const baseUrl = apiClient.getBaseUrl();
+    const requestBody = {
+      characterNeeds,
+      characterName,
+      provider,
+      language,
+      characterId,
+      sceneIndex,
+      dmSettings,
+    };
+
+    try {
+      const response = await apiClient.fetchAuthed(`${baseUrl}/v1/ai/campaigns/${campaignId}/needs-commentary-stream`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(requestBody),
+      });
+      if (!response.ok) return null;
+
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let outcome = null;
+      let buffer = '';
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop();
+
+        for (const line of lines) {
+          if (!line.startsWith('data: ')) continue;
+          try {
+            const event = JSON.parse(line.slice(6));
+            if (event.type === 'complete') {
+              outcome = event.data;
+            }
+          } catch { /* ignore parse errors */ }
+        }
+        if (outcome) break;
+      }
+      return outcome;
+    } catch {
+      return null;
     }
   },
 

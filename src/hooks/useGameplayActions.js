@@ -4,9 +4,8 @@ import { storage } from '../services/storage';
 
 /**
  * Non-scene-gen action handlers for the gameplay page. Covers refresh,
- * scene-grid write-back, field-map turn rollup, share-link creation,
- * advancement modal open/close, error dismiss, and the (currently gated)
- * idle-world-event trigger.
+ * share-link creation, advancement modal open/close, error dismiss,
+ * and the (currently gated) idle-world-event trigger.
  *
  * `handleAction` (scene generation with overlay coordination) is deliberately
  * left in the page — it's tightly coupled to the overlay hook, the idle
@@ -51,22 +50,6 @@ export function useGameplayActions({
       setIsRefreshing(false);
     }
   }, [isRefreshing, readOnly, onRefresh, isMultiplayer, mp, campaign?.backendId, urlCampaignId, dispatch]);
-
-  const handleSceneGridChange = useCallback((sceneId, nextSceneGrid) => {
-    if (!sceneId || !nextSceneGrid) return;
-    const payload = { sceneId, sceneGrid: nextSceneGrid };
-    if (isMultiplayer) {
-      mp.dispatch({ type: 'UPDATE_SCENE_GRID', payload });
-      return;
-    }
-    dispatch({ type: 'UPDATE_SCENE_GRID', payload });
-    // Debounce nudge — frequent grid edits shouldn't hammer save.
-    setTimeout(() => autoSave(), 250);
-  }, [isMultiplayer, mp, dispatch, autoSave]);
-
-  // Faza 5 — handleFieldTurnReady removed (fieldMap procedural-terrain
-  // wywalony). No-op dla zachowania API z GameplayPage/ScenePanel.
-  const handleFieldTurnReady = useCallback(() => {}, []);
 
   const handleShare = useCallback(async () => {
     const backendId = campaign?.backendId;
@@ -113,9 +96,6 @@ export function useGameplayActions({
     // Refresh
     isRefreshing,
     handleRefresh,
-    // Scene grid / field map
-    handleSceneGridChange,
-    handleFieldTurnReady,
     // Share
     handleShare,
     shareCopied,

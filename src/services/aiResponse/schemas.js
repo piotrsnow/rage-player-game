@@ -139,22 +139,6 @@ const CallbackSchema = z.object({
   fired: z.boolean().optional().default(false),
 }).passthrough();
 
-const SceneGridEntitySchema = z.object({
-  name: z.string().min(1),
-  type: z.enum(['player', 'npc', 'enemy', 'ally', 'object']).optional().default('npc'),
-  x: z.number().int().min(0).optional(),
-  y: z.number().int().min(0).optional(),
-  marker: z.string().optional(),
-}).passthrough();
-
-const SceneGridSchema = z.object({
-  width: z.number().int().min(6).max(24).optional().default(12),
-  height: z.number().int().min(6).max(24).optional().default(12),
-  tiles: z.array(z.array(z.string())).optional().default([]),
-  legend: z.record(z.string(), z.any()).optional().default({}),
-  entities: z.array(SceneGridEntitySchema).optional().default([]),
-}).passthrough().nullable().optional();
-
 const QuestDeadlineSchema = z.object({
   day: z.number(),
   hour: z.number().optional().default(18),
@@ -313,11 +297,9 @@ const CombatCrySchema = z.object({
   text: z.string().min(1),
 }).passthrough();
 
-export const MAP_MODES = ['trakt', 'pola', 'wnetrze', 'las'];
 export const ROAD_VARIANTS = ['pola', 'las', 'miasto'];
 
 const StateChangesSchema = z.object({
-  mapMode: z.enum(MAP_MODES).optional(),
   roadVariant: z.enum(ROAD_VARIANTS).optional(),
   woundsChange: z.number().optional(),
   xp: z.number().optional(),
@@ -555,7 +537,6 @@ export const SceneResponseSchema = z.object({
   soundEffect: z.string().nullable().optional(),
   musicPrompt: z.string().nullable().optional(),
   imagePrompt: z.string().nullable().optional(),
-  sceneGrid: SceneGridSchema,
   atmosphere: AtmosphereSchema,
   suggestedActions: z.array(z.string()).length(3),
   questOffers: z.array(QuestOfferSchema).optional().default([]),
@@ -589,7 +570,6 @@ export const CampaignResponseSchema = z.object({
     soundEffect: z.string().nullable().optional(),
     musicPrompt: z.string().nullable().optional(),
     imagePrompt: z.string().nullable().optional(),
-    sceneGrid: SceneGridSchema,
     atmosphere: AtmosphereSchema,
     journalEntries: z.array(z.string()).optional().default([]),
   }).passthrough(),

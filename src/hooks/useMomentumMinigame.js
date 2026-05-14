@@ -24,7 +24,7 @@ function getMomentumDelta(ratio) {
 const TIMEOUT_PENALTY = -2;
 const RESULT_DISPLAY_MS = 3500;
 
-export function useMomentumMinigame({ dispatch, momentumBonus, sceneId }) {
+export function useMomentumMinigame({ dispatch, momentumBonus, sceneId, playSfx = () => {} }) {
   const [phase, setPhase] = useState('idle');
   const [countdownValue, setCountdownValue] = useState(0);
   const [diceVisible, setDiceVisible] = useState(false);
@@ -71,6 +71,7 @@ export function useMomentumMinigame({ dispatch, momentumBonus, sceneId }) {
 
     setPosition(randomPosition());
     setDiceVisible(true);
+    playSfx('targetAppear');
     visibleSinceRef.current = performance.now();
     visibleDurationRef.current = visibleMs;
 
@@ -78,19 +79,24 @@ export function useMomentumMinigame({ dispatch, momentumBonus, sceneId }) {
       setDiceVisible(false);
       cycleTimerRef.current = setTimeout(nextCycle, hiddenMs);
     }, visibleMs);
-  }, []);
+  }, [playSfx]);
 
   const enterCooldown = useCallback((delta, reactionMs) => {
     cleanup();
     setDiceVisible(false);
     applyDelta(delta);
+    if (reactionMs != null) {
+      playSfx(delta > 0 ? 'targetHit' : 'failure');
+    } else {
+      playSfx('timeout');
+    }
     setResult({ delta, reactionMs, ts: Date.now() });
     setPhase('cooldown');
     cooldownTimerRef.current = setTimeout(() => {
       setPhase('idle');
       setResult(null);
     }, RESULT_DISPLAY_MS);
-  }, [cleanup, applyDelta]);
+  }, [cleanup, applyDelta, playSfx]);
 
   const beginActivePhase = useCallback(() => {
     setPhase('active');
@@ -110,6 +116,7 @@ export function useMomentumMinigame({ dispatch, momentumBonus, sceneId }) {
 
     setPhase('countdown');
     setCountdownValue(COUNTDOWN_SECONDS);
+    playSfx('countdown');
 
     let remaining = COUNTDOWN_SECONDS;
     const tick = () => {
@@ -119,10 +126,11 @@ export function useMomentumMinigame({ dispatch, momentumBonus, sceneId }) {
         return;
       }
       setCountdownValue(remaining);
+      playSfx(remaining === 1 ? 'countdownLast' : 'countdown');
       countdownTimerRef.current = setTimeout(tick, 1000);
     };
     countdownTimerRef.current = setTimeout(tick, 1000);
-  }, [phase, beginActivePhase]);
+  }, [phase, beginActivePhase, playSfx]);
 
   const handleDiceClick = useCallback(() => {
     if (phase !== 'active' || !diceVisible) return;

@@ -183,7 +183,6 @@ model Character {
   fame           Int       @default(0)
   infamy         Int       @default(0)
   knownTitles    Json      @default("[]")
-  skillBadges    Json      @default("[]")
 
   createdAt DateTime @default(now()) @db.Timestamptz
   updatedAt DateTime @updatedAt @db.Timestamptz
@@ -364,11 +363,6 @@ model Campaign {
   // Shape: { correctedLocation?, locationReason?, npcCorrections[]? }
   pendingStateCorrection Json?
 
-  // One-shot badge award payload written by badgeEvaluator after periodic
-  // scene evaluations. FE polls GET .../pending-badge; player dismissal
-  // DELETEs it. Shape: { name, description, xpValue, imageUrl, earnedAt, sceneIndex, newLevel? }
-  pendingBadgeAward Json?
-
   createdAt DateTime @default(now()) @db.Timestamptz
   updatedAt DateTime @updatedAt @db.Timestamptz
 
@@ -395,6 +389,7 @@ model Campaign {
   favoriteScenes              FavoriteScene[]
   characterBadges             CharacterBadge[]
   quickBeats                  CampaignQuickBeat[]
+  needsCommentaries           CampaignNeedsCommentary[]
   incidents                   CampaignIncident[]
   snapshots                   CampaignSnapshot[]
   multiplayerSessions         MultiplayerSession[]
@@ -474,6 +469,20 @@ model CampaignQuickBeat {
 
   @@index([campaignId, createdAt])
   @@index([campaignId, parentSceneIndex])
+}
+
+model CampaignNeedsCommentary {
+  id             String   @id @default(uuid(7)) @db.Uuid
+  campaignId     String   @db.Uuid
+  sceneIndex     Int
+  characterId    String?  @db.Uuid
+  needsSnapshot  Json
+  commentaryText String   @db.Text
+  createdAt      DateTime @default(now()) @db.Timestamptz
+
+  campaign Campaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+
+  @@index([campaignId, createdAt])
 }
 
 // Per-character bookmarked scenes. Heart toggle in gameplay UI; surfaced as a

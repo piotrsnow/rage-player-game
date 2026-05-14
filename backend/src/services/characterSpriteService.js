@@ -126,12 +126,14 @@ async function ensureChargenSheet({ kind, id, userId, campaignId, force = false 
     }
   }
 
+  log.info({ kind, id, appearance: JSON.stringify(appearance), slots: Object.keys(appearance?.slots || {}) }, 'composing spritesheet');
+
   let buffer;
   try {
     const result = await composeSheetServer(appearance);
     buffer = result.buffer;
     if (result.warnings.length) {
-      log.debug({ kind, id, warnings: result.warnings }, 'chargen compose warnings');
+      log.warn({ kind, id, warnings: result.warnings }, 'chargen compose warnings');
     }
   } catch (err) {
     log.warn({ err, kind, id }, 'chargen compose failed');
@@ -164,7 +166,7 @@ async function ensureChargenSheet({ kind, id, userId, campaignId, force = false 
     },
   });
 
-  const sheetUrl = storeResult.url;
+  const sheetUrl = `${storeResult.url}?v=${Date.now()}`;
   await writeSheetFields(kind, id, {
     chargenAppearance: appearance,
     spriteSheetUrl: sheetUrl,
@@ -225,11 +227,12 @@ async function ensurePixelLabSprite({ kind, id, userId, campaignId, force = fals
 export async function ensureCharacterSprite({ kind, id, userId, campaignId, force = false }) {
   try {
     const result = await ensureChargenSheet({ kind, id, userId, campaignId, force });
-    if (result) return result.spriteSheetUrl;
+    if (result) return result;
   } catch (err) {
     log.debug({ err, kind, id }, 'chargen path unavailable, trying PixelLab');
   }
-  return ensurePixelLabSprite({ kind, id, userId, campaignId, force });
+  const spriteUrl = await ensurePixelLabSprite({ kind, id, userId, campaignId, force });
+  return spriteUrl ? { spriteSheetUrl: spriteUrl, chargenAppearance: null } : null;
 }
 
 /**

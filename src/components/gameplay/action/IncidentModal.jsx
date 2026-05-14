@@ -30,7 +30,7 @@ const TechnicalDetailsBlock = memo(function TechnicalDetailsBlock({ details, t }
 });
 
 // Buckets that backend (incidents.js) does NOT persist itself — they live
-// FE-only (combat HUD, mapMode, narrativeState, transient effects, etc.).
+// FE-only (combat HUD, narrativeState, transient effects, etc.).
 // We dispatch APPLY_STATE_CHANGES for these after a positive verdict so the
 // store mirrors them; backend-persisted buckets (character, quests, npcs,
 // location, codex, knowledge) are picked up by the parent's refetch.
@@ -38,7 +38,6 @@ const FE_ONLY_CORRECTION_BUCKETS = [
   'combatUpdate',
   'factionChanges',
   'activeEffects',
-  'mapMode',
   'narrativeState',
   'startTrade',
   'needsChanges',
@@ -83,7 +82,7 @@ export default function IncidentModal({ campaignId, dispatch = null, onClose, on
   // Server applied corrections atomically — we just refetch campaign state
   // so the FE store mirrors the new world. Single fire per result.
   // Also dispatch FE-only buckets that backend cannot persist (combat HUD,
-  // mapMode, narrativeState, etc.) so the store reflects them after the
+  // narrativeState, etc.) so the store reflects them after the
   // refetch overwrites the rest.
   useEffect(() => {
     if (!result || !result.appliedStateChanges || refetchTriggered) return;

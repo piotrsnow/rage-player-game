@@ -1,8 +1,8 @@
 import { shortId } from '../../../utils/ids';
 
 /**
- * Cross-cutting world systems: active magical/environmental effects,
- * faction standing, and the field-map rendering mode.
+ * Cross-cutting world systems: active magical/environmental effects
+ * and faction standing.
  */
 
 export function applyActiveEffects(draft, changes) {
@@ -37,11 +37,3 @@ export function applyFactionChanges(draft, changes) {
   }
 }
 
-/**
- * Faza 5 — fieldMap usunięty całkowicie. applyMapMode jest no-op
- * (zachowane jako export dla kompatybilności call-site w applyStateChangesHandler/index).
- * AI nadal może emitować `mapMode` w stateChanges (legacy schema), ale nic to nie zmienia.
- */
-export function applyMapMode(_draft, _changes) {
-  // intentionally empty — fieldMap removed.
-}

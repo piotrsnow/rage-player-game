@@ -43,7 +43,7 @@ function CombatLog({ combatLog, legacyLog, expanded = false }) {
   }
 
   return (
-    <div className={wrapperClass}>
+    <div className={wrapperClass} data-combat-log>
       <div className="text-sm font-headline uppercase tracking-wide text-on-surface-variant px-2.5 py-2 border-b border-outline-variant/10 shrink-0">
         {t('combat.battleProgress', 'Battle Progress')}
       </div>

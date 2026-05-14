@@ -42,7 +42,7 @@ function resolveColor(hint, colors) {
 
 // --- Item-key resolution (ported from mapapp/src/chargen/randomize.js) ---
 
-function resolveItemKey(manifest, slot, id, bodyType, headType, raceId) {
+function resolveItemKey(manifest, slot, id, bodyType, headType, raceId, { allowHidden = false } = {}) {
   const cat = manifest.categories?.[slot];
   if (!cat) return null;
   const hints = [raceId, 'human', 'human_alt', 'zombie', 'lizard', 'drake'];
@@ -54,8 +54,10 @@ function resolveItemKey(manifest, slot, id, bodyType, headType, raceId) {
   }
   for (const key of candidates) {
     const item = cat.items[key];
-    if (!item || item.chargen === false) continue;
+    if (!item) continue;
+    if (!allowHidden && item.chargen === false) continue;
     if (item.textures?.some(t => t.body === bodyType || t.head === headType)) return key;
+    if (item.textures?.some(t => !t.body && !t.head)) return key;
     if (id === 'none' || item.id === 'none') return key;
   }
   return null;
@@ -179,28 +181,69 @@ function resolveAppearance(manifest, raw) {
   const slots = {};
   for (const [slot, pick] of Object.entries(raw.slots || {})) {
     if (!pick?.id) continue;
-    const itemKey = resolveItemKey(manifest, slot, pick.id, bodyType, headType, raceId);
+    const itemKey = resolveItemKey(manifest, slot, pick.id, bodyType, headType, raceId, { allowHidden: true });
     if (!itemKey) continue;
     const item = manifest.categories[slot]?.items[itemKey];
     slots[slot] = { id: itemKey, color: resolveColor(pick.color || 'none', item?.primarycolors) };
   }
 
   ensureRequiredSlots(manifest, cfg, bodyType, headType, raceId, slots);
+  fillMissingSlots(manifest, cfg, bodyType, headType, raceId, slots);
 
   return ActorAppearanceSchema.parse({ race: raceId, config: cfg.id, bodyType, headType, slots });
 }
 
 function ensureRequiredSlots(manifest, cfg, bodyType, headType, raceId, slots) {
+  const ALLOW_HIDDEN = { allowHidden: true };
   if (!slots.body && Array.isArray(cfg.body) && cfg.body.length) {
-    const key = resolveItemKey(manifest, 'body', cfg.body[0], bodyType, headType, raceId);
+    const key = resolveItemKey(manifest, 'body', cfg.body[0], bodyType, headType, raceId, ALLOW_HIDDEN);
     if (key) {
       const item = manifest.categories.body?.items[key];
       slots.body = { id: key, color: item?.primarycolors?.[0] || 'none' };
     }
   }
+  if (!slots.head && Array.isArray(cfg.head) && cfg.head.length) {
+    const key = resolveItemKey(manifest, 'head', cfg.head[0], bodyType, headType, raceId, ALLOW_HIDDEN);
+    if (key) {
+      const item = manifest.categories.head?.items[key];
+      slots.head = { id: key, color: item?.primarycolors?.[0] || 'none' };
+    }
+  }
   if (!slots.shadow && Array.isArray(cfg.shadow) && cfg.shadow.length) {
-    const key = resolveItemKey(manifest, 'shadow', cfg.shadow[0], bodyType, headType, raceId);
+    const key = resolveItemKey(manifest, 'shadow', cfg.shadow[0], bodyType, headType, raceId, ALLOW_HIDDEN);
     if (key) slots.shadow = { id: key, color: 'body_shadow' };
+  }
+}
+
+function pickRandom(arr) { return arr[Math.floor(Math.random() * arr.length)]; }
+
+const MINIMUM_GEAR = ['shirt', 'pants', 'shoes'];
+
+function fillMissingSlots(manifest, cfg, bodyType, headType, raceId, slots) {
+  for (const slot of BOUND_SLOTS) {
+    if (slots[slot]) continue;
+    const allowed = cfg[slot];
+    if (!Array.isArray(allowed) || !allowed.length) continue;
+    const visible = allowed.filter(id => id !== 'none');
+    const pool = visible.length ? visible : allowed;
+    const id = pickRandom(pool);
+    const itemKey = resolveItemKey(manifest, slot, id, bodyType, headType, raceId, { allowHidden: true });
+    if (!itemKey) continue;
+    const item = manifest.categories[slot]?.items[itemKey];
+    const colors = item?.primarycolors;
+    slots[slot] = { id: itemKey, color: colors?.length ? pickRandom(colors) : 'none' };
+  }
+
+  for (const slot of MINIMUM_GEAR) {
+    if (slots[slot]) continue;
+    const cat = manifest.categories?.[slot];
+    if (!cat) continue;
+    const eligible = Object.entries(cat.items)
+      .filter(([, it]) => it.chargen !== false && it.textures?.some(t => t.body === bodyType || (!t.body && !t.head)));
+    if (!eligible.length) continue;
+    const [itemKey, item] = pickRandom(eligible);
+    const colors = item.primarycolors;
+    slots[slot] = { id: itemKey, color: colors?.length ? pickRandom(colors) : 'none' };
   }
 }
 
@@ -239,6 +282,7 @@ export function pickRandomAppearance(manifest, { race: raceHint, gender } = {}) 
   }
 
   ensureRequiredSlots(manifest, cfg, bodyType, headType, raceId, slots);
+  fillMissingSlots(manifest, cfg, bodyType, headType, raceId, slots);
 
   return ActorAppearanceSchema.parse({ race: raceId, config: cfg.id, bodyType, headType, slots });
 }

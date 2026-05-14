@@ -156,17 +156,17 @@ export async function saveCharacter(character) {
         lockedCampaignName: character.lockedCampaignName || null,
         lockedLocation: character.lockedLocation || null,
         statuses: character.statuses || [],
-        needs: character.needs || { hunger: 100, thirst: 100, bladder: 100, hygiene: 100, rest: 100 },
+        needs: character.needs || { hunger: 100, thirst: 100, bladder: 100, rest: 100 },
         // Narrative
         backstory: character.backstory || '',
         customAttackPresets: character.customAttackPresets || [],
         // Presentation
         portraitUrl: character.portraitUrl || '',
         spriteUrl: character.spriteUrl || '',
+        spriteSheetUrl: character.spriteSheetUrl || '',
         campaignCount: character.campaignCount || 0,
         voiceId: character.voiceId || '',
         voiceName: character.voiceName || '',
-        skillBadges: Array.isArray(character.skillBadges) ? character.skillBadges : [],
       };
 
       let saved;
@@ -255,8 +255,8 @@ const CHARACTER_EXPORT_FIELDS = [
   'inventory', 'materialBag', 'money', 'equipped',
   'statuses', 'needs',
   'backstory', 'customAttackPresets',
-  'portraitUrl', 'spriteUrl', 'voiceId', 'voiceName',
-  'skillBadges', 'titles', 'activeTitleId',
+  'portraitUrl', 'spriteUrl', 'spriteSheetUrl', 'voiceId', 'voiceName',
+  'titles', 'activeTitleId',
 ];
 
 export function exportCharacter(character) {

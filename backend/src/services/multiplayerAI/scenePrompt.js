@@ -6,7 +6,7 @@ export function buildMultiplayerScenePrompt(actions, isFirstScene = false, langu
     ? ', "needsChanges": {"hunger": 60}'
     : '';
   const needsPerCharDoc = needsSystemEnabled
-    ? '\nFor perCharacter needsChanges: use when a character satisfies a biological need (eating, drinking, toilet, bathing, resting). Value is an object of DELTAS: {"hunger": 60, "thirst": 40} means +60 hunger, +40 thirst. Typical: full meal +50-70 hunger, snack +20-30, drink +40-60 thirst, toilet +80-100 bladder, bath +60-80 hygiene, full sleep +70-90 rest, nap +20-30 rest. Omit needsChanges if no needs changed for that character.'
+    ? '\nFor perCharacter needsChanges: use when a character satisfies a biological need (eating, drinking, toilet, resting). Value is an object of DELTAS: {"hunger": 60, "thirst": 40} means +60 hunger, +40 thirst. Typical: full meal +50-70 hunger, snack +20-30, drink +40-60 thirst, toilet +80-100 bladder, full sleep +70-90 rest, nap +20-30 rest. Omit needsChanges if no needs changed for that character.'
     : '';
   const perCharExample = `"wounds": -3, "xp": 10, "newItems": [{"id": "item_unique_id", "name": "Dagger", "type": "weapon", "description": "A small, sharp blade", "rarity": "common"}], "removeItems": [], "moneyChange": {"gold": 0, "silver": -2, "copper": 0}${needsPerCharHint}`;
 

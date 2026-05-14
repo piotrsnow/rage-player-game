@@ -23,7 +23,8 @@ import {
   getRemainingMovementPoints,
   isInMeleeRange,
   getDistance,
-  computeAttackPreview,
+  getOccupiedCells,
+  findPath,
   pushObstacle,
 } from '../../services/combatEngine';
 import { getCombatMoveDurationMs } from '../../services/combatAnimationTiming';
@@ -35,10 +36,8 @@ import CombatantsList from './combat/CombatantsList';
 import CombatHeader from './combat/CombatHeader';
 import { TruceConfirmDialog, SurrenderConfirmDialog } from './combat/CombatConfirmDialogs';
 import CombatTurnStatus from './combat/CombatTurnStatus';
-import TurnAnnouncer from './combat/TurnAnnouncer';
 import CombatTelegraph from './combat/CombatTelegraph';
 import QuickActionBar from './combat/QuickActionBar';
-import PreRollPreview from './combat/PreRollPreview';
 import InitiativeBar from './combat/InitiativeBar';
 import { buildResultLogEntries, buildResultChatMessages, buildRoundEffectLogEntries } from './combat/combatLogBuilders';
 import { useEnemyTurnResolver } from '../../hooks/useEnemyTurnResolver';
@@ -52,6 +51,7 @@ import { addEffect, migrateStatusStrings } from '../../../shared/domain/statusEf
 import BeerDuelPanel from './combat/BeerDuelPanel';
 import CardGamePanel from './combat/CardGamePanel';
 import DiceGamePanel from './combat/DiceGamePanel';
+import CombatDiceThrow from './combat/CombatDiceThrow';
 
 const SKIRMISH_MODE_BEER_DUEL = 'beer_duel';
 const SKIRMISH_MODE_CARD_GAME = 'card_game';
@@ -201,23 +201,37 @@ export default function CombatPanel({
   const [isAwaitingAiTurn, setIsAwaitingAiTurn] = useState(false);
   const [actionAnim, setActionAnim] = useState(null);
   const [projectileAnim, setProjectileAnim] = useState(null);
-  const [pendingManoeuvre, setPendingManoeuvre] = useState(null);
   const [tokenAnimations, setTokenAnimations] = useState({});
+  const [isWalking, setIsWalking] = useState(false);
   const [scenePortalTarget, setScenePortalTarget] = useState(null);
-  const tokenAnimTimers = useRef([]);
+  const [diceThrowPending, setDiceThrowPending] = useState(null);
+  const diceThrowPendingRef = useRef(null);
+  const tokenAnimTimers = useRef(new Map());
+  const walkingRef = useRef(false);
+  const combatRef = useRef(combat);
+  combatRef.current = combat;
   const combatAudio = useCombatAudio(combat);
 
   const scheduleTokenAnim = useCallback((anims) => {
+    const entries = Object.entries(anims);
+    if (!entries.length) return;
+
     setTokenAnimations((prev) => ({ ...prev, ...anims }));
-    const maxDuration = Math.max(...Object.values(anims).map((a) => a.durationMs));
-    const timer = setTimeout(() => {
-      setTokenAnimations((prev) => {
-        const next = { ...prev };
-        for (const id of Object.keys(anims)) delete next[id];
-        return next;
-      });
-    }, maxDuration + 50);
-    tokenAnimTimers.current.push(timer);
+
+    for (const [id, anim] of entries) {
+      const previousTimer = tokenAnimTimers.current.get(id);
+      if (previousTimer) clearTimeout(previousTimer);
+
+      const timer = setTimeout(() => {
+        tokenAnimTimers.current.delete(id);
+        setTokenAnimations((prev) => {
+          const next = { ...prev };
+          delete next[id];
+          return next;
+        });
+      }, (anim.durationMs || 0) + 50);
+      tokenAnimTimers.current.set(id, timer);
+    }
   }, []);
 
   useEffect(() => {
@@ -260,11 +274,11 @@ export default function CombatPanel({
 
   const enrichedCombat = useMemo(() => {
     const enrichedCombatants = combat.combatants.map((c) => {
-      const sheetUrl = sheetMap[c.id] || null;
+      const sheetUrl = sheetMap[c.id]
+        || (c.spriteSheetUrl ? apiClient.resolveMediaUrl(c.spriteSheetUrl) : null);
       const legacyUrl = Object.prototype.hasOwnProperty.call(spriteMap, c.id)
         ? spriteMap[c.id]
         : (c.spriteUrl ? apiClient.resolveMediaUrl(c.spriteUrl) : null);
-      console.log(`[CombatPanel enrich] ${c.id} (${c.name})`, { sheetUrl, legacyUrl, origSpriteUrl: c.spriteUrl });
       return {
         ...c,
         spriteUrl: legacyUrl,
@@ -301,8 +315,19 @@ export default function CombatPanel({
     setCombatLog((prev) => prev.map((entry) => (entry.id === id ? { ...entry, ...patch } : entry)));
   }, []);
 
+  const prevInstanceKeyRef = useRef(null);
   const prevRoundRef = useRef(combat.round);
   useEffect(() => {
+    if (combatInstanceKey !== prevInstanceKeyRef.current) {
+      prevInstanceKeyRef.current = combatInstanceKey;
+      prevRoundRef.current = combat.round;
+      setCombatLog([{
+        type: 'round',
+        text: `${t('combat.round', 'Round')} ${combat.round}`,
+        id: `round_${combat.round}_${Date.now()}`,
+      }]);
+      return;
+    }
     if (combat.round !== prevRoundRef.current) {
       addLogEntry({
         type: 'round',
@@ -311,7 +336,7 @@ export default function CombatPanel({
       });
       prevRoundRef.current = combat.round;
     }
-  }, [combat.round, t, addLogEntry]);
+  }, [combat.round, combatInstanceKey, t, addLogEntry]);
 
   const addResultToLog = useCallback((result) => {
     if (!result) return;
@@ -384,6 +409,7 @@ export default function CombatPanel({
       missOffsetX: Math.cos(angle),
       missOffsetY: Math.sin(angle),
       ...(opts.spellVfxVariant != null ? { spellVfxVariant: opts.spellVfxVariant } : {}),
+      ...(opts.spellName ? { spellName: opts.spellName } : {}),
     });
     return new Promise((resolve) => setTimeout(() => {
       setProjectileAnim(null);
@@ -508,57 +534,93 @@ export default function CombatPanel({
       return;
     }
 
-    const actorId = isMultiplayer ? myPlayerId : 'player';
-    const preview = computeAttackPreview(combat, actorId, manoeuvreKey, targetId, {
-      customDescription: customDesc, ...extraOpts,
-    });
-    if (preview) {
-      setPendingManoeuvre({ key: manoeuvreKey, targetId, customDesc, extraOpts, preview });
-      return;
-    }
     return rawExecuteManoeuvre(manoeuvreKey, targetId, customDesc, extraOpts);
   }, [combat, isMultiplayer, myPlayerId, rawExecuteManoeuvre, isMyTurn, combatOver, dispatch, addLogEntry, t]);
 
-  const confirmManoeuvre = useCallback(async () => {
-    if (!pendingManoeuvre) return;
-    const { key, targetId, customDesc, extraOpts } = pendingManoeuvre;
-    setPendingManoeuvre((current) => current ? { ...current, resolving: true } : current);
-    const result = await rawExecuteManoeuvre(key, targetId, customDesc, extraOpts);
-    if (!result) {
-      setPendingManoeuvre(null);
-      return;
+  const handleDiceThrowExecute = useCallback((manoeuvreKey, targetId, customDesc, extraOpts = {}) => {
+    if (diceThrowPendingRef.current) return;
+    const pending = { manoeuvreKey, targetId, customDesc, extraOpts };
+    diceThrowPendingRef.current = pending;
+    setDiceThrowPending(pending);
+  }, []);
+
+  const handleDiceThrowDone = useCallback(() => {
+    const pending = diceThrowPendingRef.current;
+    diceThrowPendingRef.current = null;
+    setDiceThrowPending(null);
+    if (pending) {
+      handleExecuteManoeuvre(pending.manoeuvreKey, pending.targetId, pending.customDesc, pending.extraOpts);
     }
-    setPendingManoeuvre((current) => current ? { ...current, resolving: false, result } : current);
-  }, [pendingManoeuvre, rawExecuteManoeuvre]);
+  }, [handleExecuteManoeuvre]);
 
-  const cancelManoeuvre = useCallback(() => setPendingManoeuvre(null), []);
+  const diceThrowAnchorRect = useMemo(() => {
+    const el = document.querySelector('[data-combat-log]');
+    if (!el) return null;
+    return el.getBoundingClientRect();
+  }, [diceThrowPending]);
 
-  const handleMoveToPosition = useCallback((targetCell) => {
-    if (!isMyTurn || combatOver) return;
+  const handleMoveToPosition = useCallback(async (targetCell) => {
+    if (!isMyTurn || combatOver || walkingRef.current) return;
     const actorId = isMultiplayer ? myPlayerId : 'player';
-    const { combat: updated, moved, distance: dist } = moveCombatant(combat, actorId, targetCell);
-    if (!moved) return;
 
-    scheduleTokenAnim({ [actorId]: { durationMs: getCombatMoveDurationMs(dist) } });
+    const currentCombat = combatRef.current ?? combat;
+    const actor = currentCombat.combatants.find((c) => c.id === actorId);
+    if (!actor || actor.isDefeated) return;
 
-    const actor = updated.combatants.find((c) => c.id === actorId);
+    const pos = actor.position && typeof actor.position === 'object' ? actor.position : { x: 0, y: 0 };
+    const occupied = getOccupiedCells(currentCombat.combatants, actorId);
+    const fullPath = findPath(currentCombat.battlefield, currentCombat.destructibleHp, pos, targetCell, occupied);
+    if (!fullPath || fullPath.length < 2) return;
+
+    const path = fullPath.slice(1);
+    const remaining = getRemainingMovementPoints(actor);
+    if (path.length > remaining) return;
+
+    walkingRef.current = true;
+    setIsWalking(true);
+
+    const stepMs = getCombatMoveDurationMs(1);
+    let latestCombat = currentCombat;
+
+    for (let i = 0; i < path.length; i++) {
+      const { combat: updated, moved } = moveCombatant(latestCombat, actorId, path[i]);
+      if (!moved) break;
+      latestCombat = updated;
+
+      scheduleTokenAnim({ [actorId]: { durationMs: stepMs } });
+
+      if (isMultiplayer) {
+        onHostResolve?.(updated);
+      } else {
+        dispatch({ type: 'UPDATE_COMBAT', payload: updated });
+      }
+
+      if (i < path.length - 1) {
+        await new Promise((r) => setTimeout(r, stepMs));
+        latestCombat = combatRef.current ?? latestCombat;
+      }
+    }
+
+    const totalDist = path.length;
+    const finalActor = latestCombat.combatants.find((c) => c.id === actorId);
     const uid = shortId(4);
     addLogEntry({
       type: 'info',
-      actor: actor?.name || '?',
-      action: t('combat.movedAction', 'moved {{dist}} cells', { dist }),
+      actor: finalActor?.name || '?',
+      action: t('combat.movedAction', 'moved {{dist}} cells', { dist: totalDist }),
       target: '',
       actorColor: '#c59aff',
       id: `move_${uid}`,
     });
-    if (updated.mode === SKIRMISH_MODE_BEER_DUEL && updated.skirmish?.scoreByCombatantId) {
-      const beersRemaining = Number(updated.skirmish.beersRemaining) || 0;
-      const actorScore = Number(updated.skirmish.scoreByCombatantId?.[actorId]) || 0;
-      const prevActorScore = Number(combat.skirmish?.scoreByCombatantId?.[actorId]) || 0;
+
+    if (latestCombat.mode === SKIRMISH_MODE_BEER_DUEL && latestCombat.skirmish?.scoreByCombatantId) {
+      const beersRemaining = Number(latestCombat.skirmish.beersRemaining) || 0;
+      const actorScore = Number(latestCombat.skirmish.scoreByCombatantId?.[actorId]) || 0;
+      const prevActorScore = Number(currentCombat.skirmish?.scoreByCombatantId?.[actorId]) || 0;
       if (actorScore > prevActorScore) {
         addLogEntry({
           type: 'info',
-          actor: actor?.name || '?',
+          actor: finalActor?.name || '?',
           action: t('combat.beerCollectedLog', 'collected a beer ({{score}} total, {{remaining}} left)', {
             score: actorScore,
             remaining: beersRemaining,
@@ -570,31 +632,32 @@ export default function CombatPanel({
       }
     }
 
-    let payload = updated;
     if (
-      updated.mode === SKIRMISH_MODE_BEER_DUEL
-      && !isCombatOver(updated)
-      && actor
-      && !actor.bonusTurn
-      && getRemainingMovementPoints(actor) <= 0
+      latestCombat.mode === SKIRMISH_MODE_BEER_DUEL
+      && !isCombatOver(latestCombat)
+      && finalActor
+      && !finalActor.bonusTurn
+      && getRemainingMovementPoints(finalActor) <= 0
     ) {
-      payload = advanceTurn(updated);
-      flushRoundEffectEvents(payload);
+      const advancedPayload = advanceTurn(latestCombat);
+      flushRoundEffectEvents(advancedPayload);
       addLogEntry({
         type: 'info',
-        actor: actor?.name || '?',
+        actor: finalActor?.name || '?',
         action: t('combat.turnEndedNoMovement', 'ends turn (out of movement)'),
         target: '',
         actorColor: '#94a3b8',
         id: `turn_end_move_${uid}`,
       });
+      if (isMultiplayer) {
+        onHostResolve?.(advancedPayload);
+      } else {
+        dispatch({ type: 'UPDATE_COMBAT', payload: advancedPayload });
+      }
     }
 
-    if (isMultiplayer) {
-      onHostResolve?.(payload);
-    } else {
-      dispatch({ type: 'UPDATE_COMBAT', payload });
-    }
+    walkingRef.current = false;
+    setIsWalking(false);
   }, [combat, isMyTurn, combatOver, isMultiplayer, myPlayerId, dispatch, onHostResolve, t, addLogEntry, scheduleTokenAnim, flushRoundEffectEvents]);
 
   const handleSkipTurn = useCallback(() => {
@@ -626,8 +689,10 @@ export default function CombatPanel({
     projectileAnim,
     myCombatantId: myCombatant?.id,
     onExecuteManoeuvre: handleExecuteManoeuvre,
+    onMoveToPosition: handleMoveToPosition,
+    isWalking,
     onSkipTurn: handleSkipTurn,
-    enabled: true,
+    enabled: !diceThrowPending,
   });
 
   const handleAiAction = useCallback(async (actionText) => {
@@ -866,13 +931,6 @@ export default function CombatPanel({
 
   return (
     <div className="space-y-2" data-testid="combat-panel">
-      <TurnAnnouncer
-        currentTurn={currentTurn}
-        isMyTurn={isMyTurn}
-        combatOver={combatOver}
-        isMultiplayer={isMultiplayer}
-        round={combat.round}
-      />
       <CombatHeader
         round={combat.round}
         combatOver={combatOver}
@@ -902,18 +960,8 @@ export default function CombatPanel({
         isMyTurn={isMyTurn}
         combatOver={combatOver}
         onExecuteManoeuvre={handleExecuteManoeuvre}
-        disabled={!!actionAnim || !!projectileAnim || !!pendingManoeuvre}
+        disabled={!!actionAnim || !!projectileAnim || !!diceThrowPending}
       />
-
-      {pendingManoeuvre && (
-        <PreRollPreview
-          preview={pendingManoeuvre.preview}
-          result={pendingManoeuvre.result}
-          resolving={pendingManoeuvre.resolving}
-          onConfirm={confirmManoeuvre}
-          onCancel={cancelManoeuvre}
-        />
-      )}
 
       {!expandedLayout && (
         <CombatantsList
@@ -939,6 +987,14 @@ export default function CombatPanel({
         />
       )}
 
+      {diceThrowPending && (
+        <CombatDiceThrow
+          onDone={handleDiceThrowDone}
+          anchorRect={diceThrowAnchorRect}
+          spellName={diceThrowPending.manoeuvreKey === 'castSpell' ? diceThrowPending.extraOpts?.spellName : undefined}
+        />
+      )}
+
       {(expandedLayout || !scenePortalTarget) && (
         <CombatCanvas
           combat={enrichedCombat}
@@ -949,13 +1005,16 @@ export default function CombatPanel({
           onHoverCombatant={() => {}}
           onMoveToPosition={handleMoveToPosition}
           combatOver={combatOver}
-          isMyTurn={isMyTurn && !actionAnim && !projectileAnim}
+          isMyTurn={isMyTurn && !actionAnim && !projectileAnim && !isWalking && !diceThrowPending}
+          isPlayerTurn={isMyTurn}
+          currentTurn={currentTurn}
           myCombatantId={myCombatant?.id}
           availableManoeuvres={availableManoeuvres}
           actionAnim={actionAnim}
           projectileAnim={projectileAnim}
           savedCustomAttacks={savedCustomAttacks}
           onExecuteManoeuvre={handleExecuteManoeuvre}
+          onDiceThrowExecute={handleDiceThrowExecute}
           onPersistCustomAttack={persistCustomAttack}
           onRemoveCustomAttack={removeCustomAttack}
           onRegenerateSprite={regenerateSprite}
@@ -1012,13 +1071,16 @@ export default function CombatPanel({
               onHoverCombatant={() => {}}
               onMoveToPosition={handleMoveToPosition}
               combatOver={combatOver}
-              isMyTurn={isMyTurn && !actionAnim && !projectileAnim}
+              isMyTurn={isMyTurn && !actionAnim && !projectileAnim && !isWalking && !diceThrowPending}
+              isPlayerTurn={isMyTurn}
+              currentTurn={currentTurn}
               myCombatantId={myCombatant?.id}
               availableManoeuvres={availableManoeuvres}
               actionAnim={actionAnim}
               projectileAnim={projectileAnim}
               savedCustomAttacks={savedCustomAttacks}
               onExecuteManoeuvre={handleExecuteManoeuvre}
+              onDiceThrowExecute={handleDiceThrowExecute}
               onPersistCustomAttack={persistCustomAttack}
               onRemoveCustomAttack={removeCustomAttack}
               onRegenerateSprite={regenerateSprite}

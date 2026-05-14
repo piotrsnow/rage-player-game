@@ -118,7 +118,6 @@ export function mockSceneResponse() {
     cutscene: null,
     dilemma: null,
     questOffers: [],
-    sceneGrid: null,
   };
 }
 

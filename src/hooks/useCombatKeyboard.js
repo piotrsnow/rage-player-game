@@ -17,16 +17,24 @@ export function findClosestEnemy(combatants, actorId) {
   return best?.target || null;
 }
 
+const ARROW_DELTAS = {
+  ArrowUp: { dx: 0, dy: -1 }, ArrowDown: { dx: 0, dy: 1 },
+  ArrowLeft: { dx: -1, dy: 0 }, ArrowRight: { dx: 1, dy: 0 },
+  w: { dx: 0, dy: -1 }, s: { dx: 0, dy: 1 },
+  a: { dx: -1, dy: 0 }, d: { dx: 1, dy: 0 },
+};
+
 /**
  * Keyboard shortcut handler for the combat panel.
  *
  * Bindings:
- *   Enter / 1  — quick attack nearest enemy
- *   2          — defend
- *   3          — dodge
- *   4          — charge nearest enemy
- *   Space      — skip turn
- *   Escape     — close modal (via onEscape callback)
+ *   Arrows / WASD — move combatant one cell
+ *   Enter / 1     — quick attack nearest enemy
+ *   2             — defend
+ *   3             — dodge
+ *   4             — charge nearest enemy
+ *   Space         — skip turn
+ *   Escape        — close modal (via onEscape callback)
  */
 export function useCombatKeyboard({
   combat,
@@ -36,6 +44,8 @@ export function useCombatKeyboard({
   projectileAnim,
   myCombatantId,
   onExecuteManoeuvre,
+  onMoveToPosition,
+  isWalking,
   onSkipTurn,
   onEscape,
   enabled = true,
@@ -51,6 +61,17 @@ export function useCombatKeyboard({
     function handler(e) {
       if (actionAnim || projectileAnim) return;
       if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.isContentEditable) return;
+
+      const delta = ARROW_DELTAS[e.key];
+      if (delta && onMoveToPosition && !isWalking) {
+        const actor = combat.combatants.find(c => c.id === myCombatantId);
+        if (actor && !actor.isDefeated) {
+          const pos = actor.position ?? { x: 0, y: 0 };
+          e.preventDefault();
+          onMoveToPosition({ x: pos.x + delta.dx, y: pos.y + delta.dy });
+        }
+        return;
+      }
 
       switch (e.key) {
         case 'Enter':
@@ -97,7 +118,7 @@ export function useCombatKeyboard({
 
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
-  }, [enabled, isMyTurn, combatOver, actionAnim, projectileAnim, getClosest, onExecuteManoeuvre, onSkipTurn, onEscape]);
+  }, [enabled, isMyTurn, combatOver, actionAnim, projectileAnim, isWalking, combat.combatants, myCombatantId, getClosest, onExecuteManoeuvre, onMoveToPosition, onSkipTurn, onEscape]);
 
   return { getClosestEnemy: getClosest };
 }

@@ -8,6 +8,10 @@ let animMapPromise = null;
 
 function loadImage(url) {
   if (imageCache.has(url)) return imageCache.get(url);
+  const baseUrl = url.split('?')[0];
+  for (const key of imageCache.keys()) {
+    if (key.split('?')[0] === baseUrl && key !== url) imageCache.delete(key);
+  }
   const p = new Promise((resolve, reject) => {
     const img = new Image();
     img.crossOrigin = 'anonymous';

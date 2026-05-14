@@ -99,7 +99,7 @@
 
 :root {
   --font-body: 'MedievalSharp', cursive;
-  --font-headline: 'NewRocker', cursive;
+  --font-headline: 'NewRocker', 'Bitcount', cursive;
   --font-accent: 'SankofaDisplay', sans-serif;
   --font-mono: 'Bitcount', monospace;
 
@@ -917,6 +917,75 @@
   z-index: 3;
 }
 
+/* Combat action modal: holographic panel variant that supports overflow-y scroll */
+.action-holo-panel {
+  position: relative;
+  border: 1.5px solid rgba(197, 154, 255, 0.25);
+  border-radius: 14px;
+  background: linear-gradient(
+    135deg,
+    rgba(16, 14, 20, 0.92) 0%,
+    rgba(26, 18, 40, 0.86) 50%,
+    rgba(16, 14, 20, 0.92) 100%
+  );
+  backdrop-filter: blur(24px);
+  box-shadow:
+    0 0 18px rgba(197, 154, 255, 0.08),
+    0 0 4px rgba(197, 154, 255, 0.15),
+    0 8px 32px rgba(0, 0, 0, 0.5),
+    inset 0 1px 0 rgba(255, 255, 255, 0.04);
+  transition: box-shadow 0.3s ease, border-color 0.3s ease;
+}
+
+.action-holo-panel::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: conic-gradient(
+    from var(--holo-angle),
+    rgba(197, 154, 255, 0.04) 0%,
+    rgba(255, 200, 120, 0.03) 15%,
+    rgba(120, 220, 255, 0.04) 30%,
+    rgba(197, 154, 255, 0.04) 45%,
+    transparent 55%,
+    transparent 100%
+  );
+  animation: holoRotate 10s linear infinite;
+  pointer-events: none;
+  z-index: 0;
+}
+
+.action-holo-panel::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: linear-gradient(
+    105deg,
+    transparent 30%,
+    rgba(255, 255, 255, 0.015) 45%,
+    rgba(255, 255, 255, 0.03) 50%,
+    rgba(255, 255, 255, 0.015) 55%,
+    transparent 70%
+  );
+  animation: holoSheen 8s ease-in-out infinite;
+  pointer-events: none;
+  z-index: 0;
+}
+
+.action-holo-panel > * {
+  position: relative;
+  z-index: 1;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .action-holo-panel::before,
+  .action-holo-panel::after {
+    animation: none;
+  }
+}
+
 /* 3D flip card — transforms driven by JS for interactive tilt */
 .flip-card {
   perspective: 1200px;
@@ -1553,6 +1622,17 @@
 /* Damage shake */
 .combat-token--shake {
   animation: combatShake 0.4s ease-out;
+}
+
+/* ── Combat dice throw ── */
+
+.combat-dice-throw-stage {
+  position: fixed;
+  z-index: 90;
+  width: 320px;
+  height: 260px;
+  pointer-events: none;
+  animation: fadeIn 0.18s ease-out both;
 }
 
 /* Floating damage number */

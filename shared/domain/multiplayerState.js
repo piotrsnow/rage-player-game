@@ -83,7 +83,7 @@ export function applyMultiplayerSceneStateChanges(gameState, sceneResult, option
         updated.money = normalizeCoins(moneyToCopper(cur) + moneyToCopper(delta.moneyChange));
       }
       if (needsEnabled && delta.needsChanges) {
-        const needs = { ...(updated.needs || { hunger: 100, thirst: 100, bladder: 100, hygiene: 100, rest: 100 }) };
+        const needs = { ...(updated.needs || { hunger: 100, thirst: 100, bladder: 100, rest: 100 }) };
         for (const [key, val] of Object.entries(delta.needsChanges)) {
           if (key in needs) {
             needs[key] = Math.max(0, Math.min(100, (needs[key] ?? 100) + val));
@@ -374,8 +374,6 @@ export function applyMultiplayerSceneStateChanges(gameState, sceneResult, option
       return { ...quest, objectives };
     });
   }
-
-  // fieldMap / mapMode — no-op (fieldMap removed in Faza 5)
 
   // --- Narrative threading (parity with SP applyNarrativeState) ---
   if (Array.isArray(stateChanges.narrativeSeeds) && stateChanges.narrativeSeeds.length > 0) {

@@ -87,7 +87,10 @@ async function upsertCustomSpellIfNeeded(character, stateChanges, { campaignId, 
   }
 
   const spells = { ...(character.spells || { known: [], usageCounts: {}, scrolls: [], customKnown: [] }) };
-  spells.known = (spells.known || []).filter((n) => n !== spellName);
+  spells.known = [...(spells.known || [])];
+  if (!spells.known.includes(spellName)) {
+    spells.known.push(spellName);
+  }
   spells.customKnown = [...(spells.customKnown || [])];
   if (!spells.customKnown.includes(existing.id)) {
     spells.customKnown.push(existing.id);
@@ -129,8 +132,8 @@ export async function generateSceneStream(campaignId, playerAction, options = {}
 
   // LLM timeouts — bounds tail latency when a provider hangs. User-tunable via
   // DM Settings UI (llmPremiumTimeoutMs, llmNanoTimeoutMs). Defaults match a
-  // typical scene gen (5-15s normal, 30s+ spike on Claude Sonnet with full
-  // sceneGrid) plus a generous buffer. On timeout: premium emits LLM_TIMEOUT
+  // typical scene gen (5-15s normal, 30s+ spike on Claude Sonnet) plus a
+  // generous buffer. On timeout: premium emits LLM_TIMEOUT
   // SSE error; nano calls fall back silently (heuristic intent, skip summary).
   const llmPremiumTimeoutMs = Number(dmSettings?.llmPremiumTimeoutMs) || 45000;
   const llmNanoTimeoutMs = Number(dmSettings?.llmNanoTimeoutMs) || 15000;
@@ -362,8 +365,6 @@ export async function generateSceneStream(campaignId, playerAction, options = {}
 
     const systemPromptParts = buildLeanSystemPrompt(coreState, recentScenes, language, {
       dmSettings,
-      needsSystemEnabled,
-      characterNeeds,
       sceneCount,
       intentResult,
       livingWorldEnabled,
@@ -376,8 +377,6 @@ export async function generateSceneStream(campaignId, playerAction, options = {}
     const userPrompt = buildUserPrompt(playerAction, {
       resolvedMechanics,
       isFirstScene,
-      needsSystemEnabled,
-      characterNeeds,
       language,
       sceneCount,
       preRolls,
@@ -752,7 +751,6 @@ export async function generateSceneStream(campaignId, playerAction, options = {}
       prevLoc: preResolveLocationName,
       wrapupText: sceneResult.dialogueIfQuestTargetCompleted?.text || null,
       llmNanoTimeoutMs,
-      badgeFrequency: Number(dmSettings?.badgeFrequency) || 5,
       requestId,
     }).catch((err) =>
       log.error({ err, sceneId: savedScene.id }, 'Failed to enqueue post-scene work')

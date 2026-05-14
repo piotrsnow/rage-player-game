@@ -361,13 +361,11 @@ export async function inventSpellRoutes(fastify) {
         if (existing) customSpellId = existing.id;
       }
 
-      const stateChanges = customSpellId
-        ? { learnCustomSpellId: customSpellId }
-        : {
-          learnSpell: chosenSpellName,
-          ...(analyzed.spellIcon ? { learnSpellIcon: analyzed.spellIcon } : {}),
-          ...(spellCard?.school ? { learnSpellSchool: spellCard.school } : {}),
-        };
+      const stateChanges = {
+        learnSpell: chosenSpellName,
+        ...(analyzed.spellIcon ? { learnSpellIcon: analyzed.spellIcon } : {}),
+        ...(spellCard?.school ? { learnSpellSchool: spellCard.school } : {}),
+      };
       const updatedCharacter = applyCharacterStateChanges(activeCharacter, stateChanges);
 
       try {

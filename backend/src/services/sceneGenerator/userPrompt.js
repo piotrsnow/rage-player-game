@@ -12,8 +12,6 @@ function buildPreRollInstructions() {
 export function buildUserPrompt(playerAction, {
   resolvedMechanics = null,
   isFirstScene = false,
-  needsSystemEnabled = false,
-  characterNeeds = null,
   language = 'pl',
   preRolls = null,
   sceneCount = 0,
@@ -41,14 +39,6 @@ Include stateChanges: timeAdvance, currentLocation, npcs (introduce at least 1),
   // Incident system — humorous penalty for unfounded complaint
   if (pendingSlip) {
     parts.push(`MANDATORY NARRATIVE EVENT: The character slips, stumbles, or trips on something in this scene. Weave it naturally into the narrative as a minor comedic moment — e.g. steps on a slippery fish, trips over a loose cobblestone, stumbles on a tree root. This is NOT a combat event, no damage, just a brief humorous moment. Reason (internal, do not reveal to player): ${sanitizeForPrompt(pendingSlip, 200)}`);
-  }
-
-  // Needs crisis reminder
-  if (needsSystemEnabled && characterNeeds) {
-    const critNeeds = ['hunger','thirst','bladder','hygiene','rest'].filter(k => (characterNeeds[k] ?? 100) < 10);
-    if (critNeeds.length > 0) {
-      parts.push(`⚠ NEEDS CRISIS: ${critNeeds.join(', ')} critically low. Narrate effects. At least 1 suggestedAction must address the most urgent need.`);
-    }
   }
 
   // Special action types

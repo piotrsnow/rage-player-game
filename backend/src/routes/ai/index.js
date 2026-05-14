@@ -2,6 +2,7 @@ import { singleShotRoutes } from './singleShots.js';
 import { campaignStreamRoutes } from './campaignStream.js';
 import { sceneStreamRoutes } from './sceneStream.js';
 import { quickBeatStreamRoutes } from './quickBeatStream.js';
+import { needsCommentaryStreamRoutes } from './needsCommentaryStream.js';
 import { sceneRoutes } from './scenes.js';
 import { keyTestRoutes } from './keyTest.js';
 import { llmCallLogRoutes } from './llmCallLog.js';
@@ -31,6 +32,7 @@ export async function aiRoutes(fastify) {
   await fastify.register(campaignStreamRoutes);
   await fastify.register(sceneStreamRoutes);
   await fastify.register(quickBeatStreamRoutes);
+  await fastify.register(needsCommentaryStreamRoutes);
   await fastify.register(sceneRoutes);
   await fastify.register(keyTestRoutes);
   await fastify.register(llmCallLogRoutes);

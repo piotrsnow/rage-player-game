@@ -1,14 +1,14 @@
 import { useTranslation } from 'react-i18next';
+import NeedIcon from './NeedIcon.jsx';
 
 const NEEDS_CONFIG = [
-  { key: 'hunger', icon: 'restaurant', color: 'from-amber-600 to-amber-400', textColor: 'text-amber-400', critical: 15 },
+  { key: 'hunger', icon: 'restaurant', color: 'from-emerald-600 to-emerald-400', textColor: 'text-emerald-400', critical: 15 },
   { key: 'thirst', icon: 'water_drop', color: 'from-blue-600 to-blue-400', textColor: 'text-blue-400', critical: 15 },
-  { key: 'bladder', icon: 'wc', color: 'from-yellow-600 to-yellow-400', textColor: 'text-yellow-400', critical: 10 },
-  { key: 'hygiene', icon: 'shower', color: 'from-cyan-600 to-cyan-400', textColor: 'text-cyan-400', critical: 20 },
-  { key: 'rest', icon: 'bedtime', color: 'from-indigo-600 to-indigo-400', textColor: 'text-indigo-400', critical: 15 },
+  { key: 'bladder', color: 'from-yellow-600 to-yellow-400', textColor: 'text-yellow-400', critical: 10 },
+  { key: 'rest', icon: 'bedtime', color: 'from-blue-950 to-indigo-600', textColor: 'text-indigo-300', critical: 15 },
 ];
 
-const PERIOD_ICONS = { morning: 'wb_sunny', afternoon: 'light_mode', evening: 'wb_twilight', night: 'dark_mode' };
+const PERIOD_ICONS = { morning: 'wb_sunny', afternoon: 'light_mode', evening: 'wb_twilight', night: 'nights_stay' };
 
 export default function NeedsPanel({
   needs,
@@ -31,19 +31,19 @@ export default function NeedsPanel({
   return (
     <div className="animate-fade-in">
       <div className="flex items-center justify-between mb-2">
-        <p className="text-[10px] text-on-surface-variant font-label uppercase tracking-widest">
+        <p className="text-[11px] text-on-surface-variant font-label uppercase tracking-widest">
           {t('needs.title')}
         </p>
         {timeState && (
-          <div className="flex items-center gap-1.5 text-[10px] text-on-surface-variant font-label tabular-nums">
-            <span className="material-symbols-outlined text-xs opacity-60">{PERIOD_ICONS[period] || 'schedule'}</span>
+          <div className="flex items-center gap-1.5 text-[11px] text-on-surface-variant font-label tabular-nums">
+            <span className="material-symbols-outlined text-sm opacity-60">{PERIOD_ICONS[period] || 'schedule'}</span>
             <span>{t('worldState.day')} {day}</span>
             <span className="opacity-40">·</span>
             <span>{displayHour}</span>
           </div>
         )}
       </div>
-      <div className="grid grid-cols-5 gap-2">
+      <div className="grid grid-cols-4 gap-2">
         {NEEDS_CONFIG.map(({ key, icon, color, textColor, critical }) => {
           const value = needs[key] ?? 100;
           const isCritical = value <= critical;
@@ -54,7 +54,7 @@ export default function NeedsPanel({
             ? `${t(`needs.${key}`)}: ${pct}% — ${t('needs.instantActionHint')}`
             : `${t(`needs.${key}`)}: ${pct}%`;
           return (
-            <div key={key} className="flex flex-col items-center gap-1 group" title={title}>
+            <div key={key} className="flex flex-col items-center gap-1.5 group" title={title}>
               <button
                 type="button"
                 onClick={() => {
@@ -63,17 +63,17 @@ export default function NeedsPanel({
                 }}
                 disabled={!canTriggerAction}
                 aria-label={`${t(`needs.${key}`)} — ${t('needs.instantActionHint')}`}
-                className={`rounded-full transition-all ${
+                className={`inline-flex h-7 w-7 items-center justify-center rounded-full transition-all ${
                   canTriggerAction ? 'cursor-pointer hover:scale-110 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/60' : 'cursor-default'
                 }`}
               >
-                <span
-                  className={`material-symbols-outlined text-base ${
+                <NeedIcon
+                  needKey={isActionBusy ? null : key}
+                  icon={isActionBusy ? 'progress_activity' : icon}
+                  className={`text-[22px] ${
                     isCritical ? 'text-error animate-pulse drop-shadow-[0_0_4px_rgba(255,110,132,0.5)]' : textColor
                   } ${isActionBusy ? 'animate-spin' : ''} transition-all`}
-                >
-                  {isActionBusy ? 'progress_activity' : icon}
-                </span>
+                />
               </button>
               <div className="w-full h-1.5 bg-surface-container-highest rounded-full overflow-hidden">
                 <div
@@ -84,7 +84,7 @@ export default function NeedsPanel({
                 />
               </div>
               <span
-                className={`text-[9px] font-bold tabular-nums ${
+                className={`text-[10px] font-bold tabular-nums ${
                   isCritical ? 'text-error' : 'text-on-surface-variant'
                 }`}
               >

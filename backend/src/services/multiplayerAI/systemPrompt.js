@@ -2,7 +2,6 @@ const NEEDS_LABELS = {
   hunger: { low: 'hungry, distracted', critical: 'weak, dizzy, stomach pains' },
   thirst: { low: 'thirsty, dry mouth', critical: 'parched, cracked lips, fading' },
   bladder: { low: 'uncomfortable, fidgeting', critical: 'desperate, about to lose control', zero: 'lost control!' },
-  hygiene: { low: 'smelly, NPCs wrinkle noses', critical: 'terrible stench, NPCs recoil' },
   rest: { low: 'tired, yawning, slower reactions', critical: 'can barely keep eyes open, stumbling', zero: 'collapses from exhaustion' },
 };
 
@@ -116,13 +115,13 @@ export function buildMultiplayerSystemPrompt(gameState, settings, players, langu
     if (needsEnabled && c.needs) {
       const n = c.needs;
       const fmt = (k, v) => `${k}: ${v ?? 100}/100${(v ?? 100) < 15 ? ' [CRITICAL]' : (v ?? 100) < 30 ? ' [LOW]' : ''}`;
-      line += `\n  Needs: ${fmt('Hunger', n.hunger)}, ${fmt('Thirst', n.thirst)}, ${fmt('Bladder', n.bladder)}, ${fmt('Hygiene', n.hygiene)}, ${fmt('Rest', n.rest)}`;
+      line += `\n  Needs: ${fmt('Hunger', n.hunger)}, ${fmt('Thirst', n.thirst)}, ${fmt('Bladder', n.bladder)}, ${fmt('Rest', n.rest)}`;
     }
     return line;
   }).join('\n') || 'No characters defined yet.';
 
   const needsBlock = needsEnabled ? `
-NEEDS SYSTEM: ENABLED. Each character has biological needs (hunger, thirst, bladder, hygiene, rest) on a 0-100 scale (100=fully satisfied, 0=critical). Low needs should affect narrative and character behavior. When characters eat, drink, rest, bathe, or use a toilet, include needsChanges in their perCharacter entry.` : '';
+NEEDS SYSTEM: ENABLED. Each character has biological needs (hunger, thirst, bladder, rest) on a 0-100 scale (100=fully satisfied, 0=critical). Low needs should affect narrative and character behavior. When characters eat, drink, rest, or use a toilet, include needsChanges in their perCharacter entry.` : '';
 
   return `You are the Dungeon Master AI for a MULTIPLAYER campaign: "${campaign.name || 'Unnamed Campaign'}".
 

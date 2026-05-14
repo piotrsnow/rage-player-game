@@ -66,7 +66,6 @@ export function parseAIResponseLean(text) {
     diceRolls: Array.isArray(parsed.diceRolls) ? parsed.diceRolls : undefined,
     creativityBonus: Number.isFinite(parsed.creativityBonus) ? parsed.creativityBonus : 0,
     atmosphere: parsed.atmosphere || { weather: 'clear', mood: 'peaceful', lighting: 'natural' },
-    sceneGrid: parsed.sceneGrid || null,
     imagePrompt: parsed.imagePrompt || null,
     soundEffect: parsed.soundEffect || null,
     musicPrompt: parsed.musicPrompt || null,

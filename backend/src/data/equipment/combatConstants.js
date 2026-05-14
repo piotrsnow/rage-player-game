@@ -5,7 +5,7 @@
 export const MELEE_RANGE = 1;
 export const BATTLEFIELD_WIDTH = 16;
 export const BATTLEFIELD_HEIGHT = 9;
-export const DEFAULT_MOVEMENT = 8;
+export const DEFAULT_MOVEMENT = 10;
 
 export const MANOEUVRES = {
   attack: { name: 'Attack', type: 'offensive', skill: 'Melee (Basic)', opposed: 'Melee (Basic)', description: 'Standard melee attack using Weapon Skill', range: 'melee', modifiers: {} },

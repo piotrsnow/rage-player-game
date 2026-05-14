@@ -39,7 +39,7 @@ export function buildCampaignPayload({
     backstory: 'A traveller seeking fortune.',
     characterLevel: 1,
     experience: 0,
-    needs: { hunger: 0, thirst: 0, bladder: 0, hygiene: 0, rest: 0 },
+    needs: { hunger: 0, thirst: 0, bladder: 0, rest: 0 },
     spells: { known: [] },
     titles: [],
     activeEffects: [],
