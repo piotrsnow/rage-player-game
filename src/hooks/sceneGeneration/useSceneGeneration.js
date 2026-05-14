@@ -251,6 +251,11 @@ export function useSceneGeneration({ ensureMissingInventoryImages, ensureMissing
           dispatch({ type: 'APPLY_STATE_CHANGES', payload: { startTrade: result.stateChanges.startTrade } });
           stream.clearStreamingOutput();
           recordCompletedSceneGenTiming();
+          const elapsed = Date.now() - sceneGenStartRef.current;
+          const MIN_LOADER_MS = 400;
+          if (elapsed < MIN_LOADER_MS) {
+            await new Promise(r => setTimeout(r, MIN_LOADER_MS - elapsed));
+          }
           dispatch({ type: 'SET_GENERATING_SCENE', payload: false });
           return;
         }
@@ -324,7 +329,6 @@ export function useSceneGeneration({ ensureMissingInventoryImages, ensureMissing
           diceRoll: result.diceRoll || null, diceRolls: result.diceRolls || undefined, timestamp: Date.now(),
         };
         dispatch({ type: 'ADD_SCENE', payload: scene });
-        stream.clearStreamingOutput();
 
         // Early image resolve
         if (earlyImagePromise) {
@@ -341,6 +345,10 @@ export function useSceneGeneration({ ensureMissingInventoryImages, ensureMissing
         }
 
         dispatch({ type: 'ADD_CHAT_MESSAGE', payload: { id: `msg_${Date.now()}_dm`, role: 'dm', sceneId, content: result.narrative, scenePacing: result.scenePacing || 'exploration', dialogueSegments: finalSegments, rawAiSpeech, soundEffect: result.soundEffect || null, dialogueIfQuestTargetCompleted: result.dialogueIfQuestTargetCompleted || null, generationDurationMs: sceneGenerationDurationMs, responseSizeBytes: sceneResponseSizeBytes, timestamp: Date.now() } });
+        // Clear streaming output AFTER the DM chat message so the streaming
+        // bubble and the final message overlap in the same React batch — no
+        // flash of empty chat between streaming → final.
+        stream.clearStreamingOutput();
 
         // State changes
         applyNeedsAndRest(result, resolved, needsSystemEnabled);

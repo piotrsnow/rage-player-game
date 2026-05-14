@@ -1,100 +1,200 @@
-import { useEffect, useMemo } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useBeerDuel, BEER_DUEL_DURATION_MS } from '../../../hooks/useBeerDuel';
+import { useBeerDuel } from '../../../hooks/useBeerDuel';
 
-function StatBar({ value, max, colorClass }) {
+const COOLDOWN_RING_R = 19;
+const COOLDOWN_RING_C = 2 * Math.PI * COOLDOWN_RING_R;
+
+function StatBar({ value, max, label }) {
   const pct = Math.min(100, (value / max) * 100);
-  const bg =
-    pct >= 80 ? 'bg-red-500' :
-    pct >= 50 ? 'bg-yellow-500' :
-    'bg-emerald-500';
+  const isDanger = value >= 8;
+
   return (
-    <div className="h-4 w-full rounded-sm overflow-hidden bg-white/10 border border-white/10">
-      <div
-        className={`h-full transition-all duration-150 ${colorClass || bg}`}
-        style={{ width: `${pct}%` }}
-      />
+    <div className="flex items-center gap-2">
+      <span className="text-[11px] w-16 text-right text-on-surface-variant font-body truncate">
+        {label}
+      </span>
+      <div className="flex-1 relative">
+        <div
+          className={`h-3.5 w-full rounded-full overflow-hidden bg-white/[0.06] border border-white/[0.08] ${isDanger ? 'animate-beer-stat-danger' : ''}`}
+        >
+          <div
+            className="h-full rounded-full transition-all duration-200 ease-out"
+            style={{
+              width: `${pct}%`,
+              background: pct >= 80
+                ? 'linear-gradient(90deg, #ef4444, #dc2626)'
+                : pct >= 50
+                  ? 'linear-gradient(90deg, #eab308, #f59e0b)'
+                  : 'linear-gradient(90deg, #22c55e, #10b981)',
+              boxShadow: isDanger ? '0 0 8px rgba(239, 68, 68, 0.5)' : 'none',
+            }}
+          />
+        </div>
+      </div>
+      <span className="text-xs font-mono w-5 text-right tabular-nums text-on-surface-variant">
+        {value}
+      </span>
     </div>
   );
 }
 
-function CooldownButton({ label, onClick, cooldownUntil, disabled, className }) {
-  const now = Date.now();
-  const remaining = Math.max(0, (cooldownUntil || 0) - now);
-  const onCd = remaining > 0;
-  const cdSec = Math.ceil(remaining / 1000);
+function CooldownRing({ cooldownUntil, cooldownDuration }) {
+  const [progress, setProgress] = useState(0);
 
+  useEffect(() => {
+    if (!cooldownUntil) { setProgress(0); return; }
+    const id = setInterval(() => {
+      const now = Date.now();
+      const remaining = Math.max(0, cooldownUntil - now);
+      setProgress(remaining / cooldownDuration);
+      if (remaining <= 0) clearInterval(id);
+    }, 50);
+    return () => clearInterval(id);
+  }, [cooldownUntil, cooldownDuration]);
+
+  if (progress <= 0) return null;
+
+  const offset = COOLDOWN_RING_C * (1 - progress);
   return (
-    <button
-      onClick={onClick}
-      disabled={disabled || onCd}
-      className={`
-        relative px-4 py-2.5 rounded-md font-bold text-sm
-        transition-all duration-150
-        disabled:opacity-40 disabled:cursor-not-allowed
-        ${className}
-      `}
-    >
-      {label}
-      {onCd && (
-        <span className="absolute inset-0 flex items-center justify-center bg-black/60 rounded-md text-xs font-mono text-white/80">
-          {cdSec}s
-        </span>
-      )}
-    </button>
+    <svg className="absolute inset-0 -rotate-90 pointer-events-none" viewBox="0 0 44 44">
+      <circle
+        cx="22" cy="22" r={COOLDOWN_RING_R}
+        fill="none"
+        stroke="rgba(255,255,255,0.15)"
+        strokeWidth="3"
+      />
+      <circle
+        cx="22" cy="22" r={COOLDOWN_RING_R}
+        fill="none"
+        stroke="rgba(255,255,255,0.7)"
+        strokeWidth="3"
+        strokeDasharray={COOLDOWN_RING_C}
+        strokeDashoffset={offset}
+        strokeLinecap="round"
+        className="beer-cooldown-ring"
+      />
+    </svg>
   );
 }
 
-function PlayerColumn({ player, max, isLocal, onDrink, onPee, onVomit, disabled, t }) {
+function ActionButton({ icon, onClick, disabled, size = 44, colorClass, title, cooldownUntil, cooldownDuration }) {
+  const [gulping, setGulping] = useState(false);
+  const btnRef = useRef(null);
+
+  const handleClick = useCallback(() => {
+    if (disabled) return;
+    onClick?.();
+    setGulping(true);
+  }, [disabled, onClick]);
+
+  useEffect(() => {
+    if (!gulping) return;
+    const el = btnRef.current;
+    if (!el) return;
+    const handler = () => setGulping(false);
+    el.addEventListener('animationend', handler);
+    return () => el.removeEventListener('animationend', handler);
+  }, [gulping]);
+
+  const isOnCooldown = cooldownUntil && Date.now() < cooldownUntil;
+
   return (
-    <div className="flex-1 flex flex-col gap-3 min-w-0">
+    <div className="relative" style={{ width: size, height: size }}>
+      {cooldownUntil > 0 && (
+        <CooldownRing cooldownUntil={cooldownUntil} cooldownDuration={cooldownDuration} />
+      )}
+      <button
+        ref={btnRef}
+        onClick={handleClick}
+        disabled={disabled || isOnCooldown}
+        title={title}
+        className={`
+          relative w-full h-full rounded-full flex items-center justify-center
+          border-2 transition-all duration-150
+          disabled:opacity-30 disabled:cursor-not-allowed disabled:scale-100
+          hover:scale-110 active:scale-95
+          ${colorClass}
+          ${gulping ? 'animate-beer-gulp' : ''}
+        `}
+      >
+        <span
+          className="material-symbols-outlined"
+          style={{ fontSize: size > 48 ? 28 : 22 }}
+        >
+          {icon}
+        </span>
+      </button>
+    </div>
+  );
+}
+
+function BeerCount({ count }) {
+  return (
+    <div className="relative">
+      <div
+        key={count}
+        className="text-5xl font-headline tabular-nums leading-none text-amber-300 animate-beer-count-pop"
+        style={{ textShadow: '0 0 20px rgba(251, 191, 36, 0.4), 0 2px 4px rgba(0,0,0,0.5)' }}
+      >
+        {count}
+      </div>
+    </div>
+  );
+}
+
+function PlayerColumn({ player, max, isLocal, onDrink, onPee, onVomit, disabled, t, peeCD, vomitCD }) {
+  return (
+    <div className={`flex-1 flex flex-col gap-3 min-w-0 ${player.isEliminated ? 'beer-eliminated' : ''}`}>
       <div className="text-center">
-        <div className="text-sm text-on-surface-variant truncate">{player.name}</div>
-        <div className={`text-4xl font-black tabular-nums leading-none mt-1 ${player.isEliminated ? 'text-red-400 line-through' : 'text-amber-300'}`}>
-          {player.beersDrunk}
+        <div
+          className="text-sm font-accent text-on-surface-variant truncate"
+          style={{ textShadow: '0 1px 3px rgba(0,0,0,0.4)' }}
+        >
+          {player.name}
         </div>
-        <div className="text-[10px] text-on-surface-variant mt-0.5">{t('beerDuel.beers', 'piw')}</div>
+        <div className="mt-2 mb-1">
+          <BeerCount count={player.beersDrunk} />
+        </div>
+        <div className="text-[10px] text-on-surface-variant/60 font-body tracking-wider uppercase">
+          {t('beerDuel.beers', 'piw')}
+        </div>
       </div>
 
       <div className="space-y-1.5">
-        <div className="flex items-center gap-2">
-          <span className="text-[10px] w-14 text-right text-on-surface-variant">{t('beerDuel.pee', 'Sikanie')}</span>
-          <div className="flex-1">
-            <StatBar value={player.pee} max={max} />
-          </div>
-          <span className="text-xs font-mono w-6 text-right tabular-nums">{player.pee}</span>
-        </div>
-        <div className="flex items-center gap-2">
-          <span className="text-[10px] w-14 text-right text-on-surface-variant">{t('beerDuel.vomit', 'Rzyganie')}</span>
-          <div className="flex-1">
-            <StatBar value={player.vomit} max={max} />
-          </div>
-          <span className="text-xs font-mono w-6 text-right tabular-nums">{player.vomit}</span>
-        </div>
+        <StatBar value={player.pee} max={max} label={t('beerDuel.pee', 'Sikanie')} />
+        <StatBar value={player.vomit} max={max} label={t('beerDuel.vomit', 'Rzyganie')} />
       </div>
 
       {isLocal && (
-        <div className="flex flex-col gap-1.5 mt-1">
-          <button
+        <div className="flex items-center justify-center gap-3 mt-2">
+          <ActionButton
+            icon="wc"
+            onClick={onPee}
+            disabled={disabled || player.pee === 0}
+            cooldownUntil={player.peeCooldownUntil}
+            cooldownDuration={peeCD}
+            size={42}
+            colorClass="border-blue-500/50 bg-blue-600/20 text-blue-300 hover:bg-blue-500/30 hover:border-blue-400/70 hover:shadow-[0_0_12px_rgba(59,130,246,0.3)]"
+            title={t('beerDuel.toilet', 'TOALETA')}
+          />
+          <ActionButton
+            icon="sports_bar"
             onClick={onDrink}
             disabled={disabled}
-            className="px-3 py-2.5 rounded-md font-bold text-sm bg-amber-600 hover:bg-amber-500 text-white transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-          >
-            🍺 {t('beerDuel.drink', 'PIWO')}
-          </button>
-          <CooldownButton
-            label={`🚽 ${t('beerDuel.toilet', 'TOALETA')}`}
-            onClick={onPee}
-            cooldownUntil={player.peeCooldownUntil}
-            disabled={disabled || player.pee === 0}
-            className="bg-blue-700 hover:bg-blue-600 text-white"
+            size={56}
+            colorClass="border-amber-500/60 bg-amber-600/25 text-amber-300 hover:bg-amber-500/40 hover:border-amber-400/80 hover:shadow-[0_0_16px_rgba(245,158,11,0.4)]"
+            title={t('beerDuel.drink', 'PIWO')}
           />
-          <CooldownButton
-            label={`🤮 ${t('beerDuel.throwUp', 'RZYGANIE')}`}
+          <ActionButton
+            icon="sick"
             onClick={onVomit}
-            cooldownUntil={player.vomitCooldownUntil}
             disabled={disabled || player.vomit === 0}
-            className="bg-green-800 hover:bg-green-700 text-white"
+            cooldownUntil={player.vomitCooldownUntil}
+            cooldownDuration={vomitCD}
+            size={42}
+            colorClass="border-emerald-500/50 bg-emerald-600/20 text-emerald-300 hover:bg-emerald-500/30 hover:border-emerald-400/70 hover:shadow-[0_0_12px_rgba(16,185,129,0.3)]"
+            title={t('beerDuel.throwUp', 'RZYGANIE')}
           />
         </div>
       )}
@@ -145,7 +245,6 @@ export default function BeerDuelPanel({
   const isPlaying = phase === 'playing';
   const isFinished = phase === 'finished';
 
-  // Build a summary compatible with useCombatResolution when finished
   useEffect(() => {
     if (!isFinished) return;
 
@@ -181,17 +280,24 @@ export default function BeerDuelPanel({
     return () => clearTimeout(timer);
   }, [isFinished, winnerId, player, opponent, onEndCombat]);
 
-  const timerColor =
-    timeRemainingMs < 10_000 ? 'text-red-400 animate-pulse' :
+  const timerClasses =
+    timeRemainingMs < 10_000 ? 'text-red-400 animate-beer-timer-urgent' :
     timeRemainingMs < 30_000 ? 'text-yellow-300' :
     'text-on-surface';
 
+  const playerWon = winnerId === player.id;
+  const tie = winnerId === null;
+
   return (
-    <div className="flex flex-col gap-3 p-3 rounded-lg border border-yellow-500/20 bg-surface-container/80 backdrop-blur relative overflow-hidden">
+    <div className="flex flex-col gap-4 p-4 rounded-xl border border-amber-500/25 bg-surface-container/80 backdrop-blur-md relative overflow-hidden animate-beer-panel-in animate-beer-panel-glow">
       {/* Countdown overlay */}
       {phase === 'countdown' && (
-        <div className="absolute inset-0 z-20 flex items-center justify-center bg-black/70 backdrop-blur-sm">
-          <div className="text-7xl font-black text-amber-300 animate-bounce tabular-nums">
+        <div className="absolute inset-0 z-20 flex items-center justify-center bg-black/75 backdrop-blur-sm">
+          <div
+            key={countdownSec}
+            className="text-8xl font-headline text-amber-300 animate-beer-countdown"
+            style={{ textShadow: '0 0 40px rgba(251, 191, 36, 0.6), 0 4px 8px rgba(0,0,0,0.8)' }}
+          >
             {countdownSec}
           </div>
         </div>
@@ -199,27 +305,53 @@ export default function BeerDuelPanel({
 
       {/* Finished overlay */}
       {isFinished && (
-        <div className="absolute inset-0 z-20 flex flex-col items-center justify-center bg-black/70 backdrop-blur-sm gap-3">
-          <div className="text-2xl font-black text-amber-300">
-            {winnerId === null
+        <div className="absolute inset-0 z-20 flex flex-col items-center justify-center bg-black/75 backdrop-blur-sm gap-4 animate-fade-in">
+          {!tie && <div className="absolute inset-0 animate-beer-victory-sweep" />}
+
+          <div
+            className={`relative text-3xl font-headline ${playerWon ? 'text-amber-300' : tie ? 'text-on-surface-variant' : 'text-red-400'}`}
+            style={{
+              textShadow: playerWon
+                ? '0 0 30px rgba(251, 191, 36, 0.6), 0 2px 4px rgba(0,0,0,0.6)'
+                : '0 2px 4px rgba(0,0,0,0.6)',
+            }}
+          >
+            {tie
               ? t('beerDuel.draw', 'Remis!')
-              : winnerId === player.id
+              : playerWon
                 ? t('beerDuel.youWin', 'Wygrałeś!')
                 : t('beerDuel.youLose', 'Przegrałeś!')}
           </div>
-          <div className="flex gap-6 text-sm">
+
+          <div className="relative flex items-center gap-6 text-sm">
             <div className="text-center">
-              <div className="text-on-surface-variant">{player.name}</div>
-              <div className="text-2xl font-bold text-amber-300">{player.beersDrunk}</div>
+              <div className="text-on-surface-variant font-accent text-xs">{player.name}</div>
+              <div
+                className="text-3xl font-headline text-amber-300 mt-1"
+                style={{ textShadow: '0 0 12px rgba(251,191,36,0.3)' }}
+              >
+                {player.beersDrunk}
+              </div>
             </div>
-            <div className="text-on-surface-variant self-center">vs</div>
+            <div
+              className="font-accent text-lg text-on-surface-variant/50"
+              style={{ textShadow: '0 1px 2px rgba(0,0,0,0.5)' }}
+            >
+              vs
+            </div>
             <div className="text-center">
-              <div className="text-on-surface-variant">{opponent.name}</div>
-              <div className="text-2xl font-bold text-amber-300">{opponent.beersDrunk}</div>
+              <div className="text-on-surface-variant font-accent text-xs">{opponent.name}</div>
+              <div
+                className="text-3xl font-headline text-amber-300 mt-1"
+                style={{ textShadow: '0 0 12px rgba(251,191,36,0.3)' }}
+              >
+                {opponent.beersDrunk}
+              </div>
             </div>
           </div>
+
           {(player.isEliminated || opponent.isEliminated) && (
-            <div className="text-xs text-red-400">
+            <div className="relative text-xs text-red-400/80 font-body">
               {player.isEliminated && opponent.isEliminated
                 ? t('beerDuel.bothEliminated', 'Obaj nie wytrzymali!')
                 : player.isEliminated
@@ -232,13 +364,13 @@ export default function BeerDuelPanel({
 
       {/* Timer */}
       <div className="text-center">
-        <span className={`text-2xl font-mono font-bold tabular-nums ${timerColor}`}>
+        <span className={`text-2xl font-mono font-bold tabular-nums ${timerClasses}`}>
           {formatTime(timeRemainingMs)}
         </span>
       </div>
 
-      {/* Two-column layout */}
-      <div className="flex gap-4">
+      {/* Two-column layout with VS badge */}
+      <div className="flex items-start gap-0">
         <PlayerColumn
           player={player}
           max={constants.MAX_STAT}
@@ -248,9 +380,24 @@ export default function BeerDuelPanel({
           onVomit={() => useRelief('vomit')}
           disabled={!isPlaying}
           t={t}
+          peeCD={constants.PEE_COOLDOWN_MS}
+          vomitCD={constants.VOMIT_COOLDOWN_MS}
         />
 
-        <div className="w-px bg-white/10 self-stretch" />
+        <div className="flex flex-col items-center justify-start pt-6 px-1">
+          <div
+            className="w-9 h-9 rounded-full border border-amber-500/30 bg-amber-500/10 flex items-center justify-center"
+            style={{ boxShadow: '0 0 10px rgba(245, 158, 11, 0.15)' }}
+          >
+            <span
+              className="font-accent text-xs text-amber-400/70"
+              style={{ textShadow: '0 0 6px rgba(245,158,11,0.3)' }}
+            >
+              vs
+            </span>
+          </div>
+          <div className="w-px flex-1 bg-gradient-to-b from-amber-500/20 via-amber-500/10 to-transparent mt-2" />
+        </div>
 
         <PlayerColumn
           player={opponent}

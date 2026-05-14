@@ -10,6 +10,7 @@ import {
   TypingIndicator,
   QuickBeatMessage,
 } from './chat/ChatMessages';
+import { StreamingContent } from './chat/ChatMessageParts';
 import DiceRollCard from './DiceRollCard';
 import Tooltip from '../ui/Tooltip';
 
@@ -53,6 +54,7 @@ function SceneDivider() {
 export default function ChatPanel({
   messages = [],
   streamingNarrative = null,
+  streamingSegments = null,
   streamError = null,
   onRetryStream = null,
   onDismissStreamError = null,
@@ -220,8 +222,18 @@ export default function ChatPanel({
             </div>
           );
         })}
-        {/* Stream error — retry/dismiss UI (no partial narrative preview;
-            the final DM message appears via chatHistory after complete). */}
+        {/* Live streaming narrative bubble — visible while SSE is in progress */}
+        {!chatGate && streamingNarrative && !streamError && (
+          <div className="px-2 animate-fade-in">
+            <div className="text-[10px] font-bold text-primary uppercase tracking-widest mb-1">
+              {t('chat.dmAi')}
+            </div>
+            <div className="glass-panel p-3 border-l-2 border-primary/60 rounded-r-lg">
+              <StreamingContent narrative={streamingNarrative} segments={streamingSegments} />
+            </div>
+          </div>
+        )}
+        {/* Stream error — retry/dismiss UI */}
         {!chatGate && streamError && (
           <div className="px-2 animate-fade-in">
             <div className="flex flex-col gap-2">

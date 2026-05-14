@@ -146,6 +146,7 @@ export default function GameplayPage({ readOnly = false, shareToken = null, onRe
     sceneGenStartTime, lastSceneGenMs,
     earlyDiceRoll, clearEarlyDiceRoll,
     streamingNarrative,
+    streamingSegments,
     streamComplete,
     streamError, retryAfterStreamError, dismissStreamError,
     streamedBytes, avgSceneSizeBytes,
@@ -889,74 +890,81 @@ export default function GameplayPage({ readOnly = false, shareToken = null, onRe
         </div>
         )}
 
-        {isGeneratingScene && !readOnly && !(overlayText && isPlayerActionOverlayActive) && (
+        {(isGeneratingScene || quickBeat.isQuickBeatPending) && !readOnly && !(overlayText && isPlayerActionOverlayActive) && (
           <div className="shrink-0 px-4 md:px-6 pb-2">
             <SceneGenerationProgress
-              startTime={isMultiplayer ? mpSceneGenStartTime : sceneGenStartTime}
-              estimatedMs={lastSceneGenMs}
-              completing={streamingNarrative !== null}
-              streamedBytes={streamedBytes}
-              avgSceneSizeBytes={avgSceneSizeBytes}
+              startTime={isGeneratingScene ? (isMultiplayer ? mpSceneGenStartTime : sceneGenStartTime) : null}
+              estimatedMs={isGeneratingScene ? lastSceneGenMs : null}
+              completing={isGeneratingScene ? streamingNarrative !== null : false}
+              streamedBytes={isGeneratingScene ? streamedBytes : 0}
+              avgSceneSizeBytes={isGeneratingScene ? avgSceneSizeBytes : null}
             />
           </div>
         )}
 
         <div className="shrink-0 px-4 md:px-6 pb-2 pt-1">
-        {/* Action Panel */}
-        {currentScene && !isGeneratingScene && !(combat?.active) && !isViewingCompanion && !isReviewingPastScene && (!campaign?.status || campaign.status === 'active') && character?.status !== 'dead' && !mp.state.isDead && !readOnly && (
-          <div className={`px-2 animate-fade-in ${autoPlayer.isAutoPlaying && !autoPlayer.overlayAction && !isMultiplayer ? 'opacity-50 pointer-events-none' : autoPlayer.overlayAction ? 'pointer-events-none' : ''}`}>
-            <div className="flex items-center justify-between mb-2">
-              <label className="text-[10px] text-on-surface-variant font-label uppercase tracking-widest">
-                {autoPlayer.isAutoPlaying && !isMultiplayer ? t('autoPlayer.aiControlling') : t('gameplay.chooseAction')}
-              </label>
-              {!isMultiplayer && !autoPlayer.isAutoPlaying && (
-                <IdleTimer
-                  idleSeconds={idleTimer.idleSeconds}
-                  timerActive={idleTimer.timerActive}
-                  lastRoll={idleTimer.lastRoll}
-                  isRolling={idleTimer.isRolling}
-                  onManualCheck={idleTimer.triggerManualCheck}
-                  onMagicalEncounter={handleManualMagicalEncounter}
-                />
-              )}
+        {/* Action Panel — always in DOM, CSS-transitioned visibility */}
+        {(() => {
+          const actionPanelVisible = !!(currentScene && !isGeneratingScene && !(combat?.active) && !isViewingCompanion && !isReviewingPastScene && (!campaign?.status || campaign.status === 'active') && character?.status !== 'dead' && !mp.state.isDead && !readOnly);
+          return (
+          <div className={`transition-all duration-300 ease-in-out ${actionPanelVisible ? 'opacity-100 max-h-[500px]' : 'opacity-0 max-h-0 overflow-hidden pointer-events-none'}`}>
+          {currentScene && (
+            <div className={`px-2 ${autoPlayer.isAutoPlaying && !autoPlayer.overlayAction && !isMultiplayer ? 'opacity-50 pointer-events-none' : autoPlayer.overlayAction ? 'pointer-events-none' : ''}`}>
+              <div className="flex items-center justify-between mb-2">
+                <label className="text-[10px] text-on-surface-variant font-label uppercase tracking-widest">
+                  {autoPlayer.isAutoPlaying && !isMultiplayer ? t('autoPlayer.aiControlling') : t('gameplay.chooseAction')}
+                </label>
+                {!isMultiplayer && !autoPlayer.isAutoPlaying && (
+                  <IdleTimer
+                    idleSeconds={idleTimer.idleSeconds}
+                    timerActive={idleTimer.timerActive}
+                    lastRoll={idleTimer.lastRoll}
+                    isRolling={idleTimer.isRolling}
+                    onManualCheck={idleTimer.triggerManualCheck}
+                    onMagicalEncounter={handleManualMagicalEncounter}
+                  />
+                )}
+              </div>
+              <ActionPanel
+                key={currentScene.id || `scene-${scenes.length}`}
+                actions={currentScene.actions || currentScene.suggestedActions || []}
+                onAction={handleAction}
+                onQuickBeat={quickBeat.submitQuickBeat}
+                quickBeatStreak={quickBeat.quickBeatStreak}
+                quickBeatLimit={quickBeat.limit}
+                isQuickBeatLocked={quickBeat.isQuickBeatLocked}
+                isQuickBeatPending={quickBeat.isQuickBeatPending}
+                disabled={isGeneratingScene || quickBeat.isQuickBeatPending}
+                autoPlayerTypingText={autoPlayer.typingText}
+                npcs={filterNpcsHere(
+                  (isMultiplayer ? mpGameState?.world?.npcs : sWorld?.npcs) || [],
+                  isMultiplayer ? mpGameState?.world?.currentLocationRef : sWorld?.currentLocationRef,
+                  isMultiplayer ? mpGameState?.world?.currentLocation : sWorld?.currentLocation,
+                )}
+                character={character}
+                dilemma={currentScene.dilemma}
+                lastChosenAction={lastChosenAction}
+                multiplayerPlayers={isMultiplayer ? (mp.state.players || []) : []}
+                typingPlayers={isMultiplayer ? (mp.state.typingPlayers || {}) : {}}
+                dispatch={dispatch}
+                dictation={dictation}
+                campaignId={sCampaign?.backendId || urlCampaignId || null}
+                onIncidentCorrectionsApplied={handleIncidentCorrectionsApplied}
+                onProvidenceScene={handleProvidenceScene}
+                onOpenTravelMap={() => {
+                  setWorldModalInitialTab('map');
+                  setWorldModalOpen(true);
+                }}
+                onRegenerateActions={!isMultiplayer ? handleRegenerateActions : null}
+                isRegeneratingActions={isRegeneratingActions}
+                stickyTone={stickyTone}
+                onStickyTone={handleStickyTone}
+              />
             </div>
-            <ActionPanel
-              key={currentScene.id || `scene-${scenes.length}`}
-              actions={currentScene.actions || currentScene.suggestedActions || []}
-              onAction={handleAction}
-              onQuickBeat={quickBeat.submitQuickBeat}
-              quickBeatStreak={quickBeat.quickBeatStreak}
-              quickBeatLimit={quickBeat.limit}
-              isQuickBeatLocked={quickBeat.isQuickBeatLocked}
-              isQuickBeatPending={quickBeat.isQuickBeatPending}
-              disabled={isGeneratingScene || quickBeat.isQuickBeatPending}
-              autoPlayerTypingText={autoPlayer.typingText}
-              npcs={filterNpcsHere(
-                (isMultiplayer ? mpGameState?.world?.npcs : sWorld?.npcs) || [],
-                isMultiplayer ? mpGameState?.world?.currentLocationRef : sWorld?.currentLocationRef,
-                isMultiplayer ? mpGameState?.world?.currentLocation : sWorld?.currentLocation,
-              )}
-              character={character}
-              dilemma={currentScene.dilemma}
-              lastChosenAction={lastChosenAction}
-              multiplayerPlayers={isMultiplayer ? (mp.state.players || []) : []}
-              typingPlayers={isMultiplayer ? (mp.state.typingPlayers || {}) : {}}
-              dispatch={dispatch}
-              dictation={dictation}
-              campaignId={sCampaign?.backendId || urlCampaignId || null}
-              onIncidentCorrectionsApplied={handleIncidentCorrectionsApplied}
-              onProvidenceScene={handleProvidenceScene}
-              onOpenTravelMap={() => {
-                setWorldModalInitialTab('map');
-                setWorldModalOpen(true);
-              }}
-              onRegenerateActions={!isMultiplayer ? handleRegenerateActions : null}
-              isRegeneratingActions={isRegeneratingActions}
-              stickyTone={stickyTone}
-              onStickyTone={handleStickyTone}
-            />
+          )}
           </div>
-        )}
+          );
+        })()}
 
         {/* Trade Panel */}
         {sTrade?.active && !isViewingCompanion && !isReviewingPastScene && !readOnly && (
@@ -1158,6 +1166,7 @@ export default function GameplayPage({ readOnly = false, shareToken = null, onRe
         <ChatPanel
           messages={chatHistory}
           streamingNarrative={streamingNarrative}
+          streamingSegments={streamingSegments}
           streamError={streamError}
           onRetryStream={retryAfterStreamError}
           onDismissStreamError={dismissStreamError}

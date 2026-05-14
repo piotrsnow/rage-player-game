@@ -151,6 +151,7 @@ export default function ScenePanel({
   );
 
   const [displayedSrc, setDisplayedSrc] = useState(imageSrc);
+  const [previousSrc, setPreviousSrc] = useState(null);
   const [regenerateState, setRegenerateState] = useState('idle');
   const [promptCopied, setPromptCopied] = useState(false);
   const [isPromptExpanded, setIsPromptExpanded] = useState(false);
@@ -252,14 +253,13 @@ export default function ScenePanel({
     }
   }, [currentOverlayRolls.length]);
 
-  // Image swap policy: the old image disappears immediately when `imageSrc`
-  // goes away (scene transition, regenerate, img onError → null), leaving
-  // the placeholder/spinner visible. The new image preloads in the
-  // background and fades in once it's ready — no crossfade from the stale
-  // frame, no lingering preview from the previous scene.
+  // Image crossfade: keep the old image visible while the new one preloads,
+  // then fade the new one in on top. `previousSrc` is cleared after the CSS
+  // fade completes (onAnimationEnd). When `imageSrc` goes null (generating),
+  // keep whatever we had as a dim background instead of a blank placeholder.
   useEffect(() => {
     if (!imageSrc) {
-      setDisplayedSrc(null);
+      // No new image yet — keep old as dim background, don't clear.
       return;
     }
 
@@ -269,6 +269,7 @@ export default function ScenePanel({
     const img = new Image();
     img.onload = () => {
       if (cancelled) return;
+      setPreviousSrc(displayedSrc);
       setDisplayedSrc(imageSrc);
     };
     img.onerror = () => {};
@@ -281,6 +282,8 @@ export default function ScenePanel({
 
   const handleImageError = useCallback(() => {
     if (!scene?.id || !scene?.image) return;
+    setPreviousSrc(null);
+    setDisplayedSrc(null);
     dispatch({ type: 'UPDATE_SCENE_IMAGE', payload: { sceneId: scene.id, image: null } });
     onImageError?.(scene.id);
   }, [scene?.id, scene?.image, dispatch, onImageError]);
@@ -359,7 +362,7 @@ export default function ScenePanel({
 
   return (
     <SceneFrame>
-    <div data-testid="scene-panel" className="relative w-full h-[clamp(340px,calc(56vh+60px),840px)] rounded-lg overflow-hidden animate-fade-in">
+    <div data-testid="scene-panel" className="relative w-full h-[clamp(340px,calc(56vh+60px),840px)] rounded-lg overflow-hidden">
       {/* Dream overlay */}
       {scene.scenePacing === 'dream' && (
         <>
@@ -388,14 +391,32 @@ export default function ScenePanel({
         </Suspense>
       ) : (settings.sceneVisualization || 'image') === 'canvas' ? (
         <SceneCanvas scene={scene} />
-      ) : (settings.sceneVisualization || 'image') === 'image' && displayedSrc ? (
-        <img
-          key={displayedSrc}
-          src={displayedSrc}
-          alt="Scene"
-          className="absolute inset-0 w-full h-full object-cover animate-fade-in"
-          onError={handleImageError}
-        />
+      ) : (settings.sceneVisualization || 'image') === 'image' && (displayedSrc || previousSrc) ? (
+        <>
+          {/* Bottom layer: previous image (stays until crossfade completes) */}
+          {previousSrc && previousSrc !== displayedSrc && (
+            <img
+              src={previousSrc}
+              alt=""
+              className="absolute inset-0 w-full h-full object-cover"
+            />
+          )}
+          {/* Top layer: current image, fades in over the previous */}
+          {displayedSrc && (
+            <img
+              key={displayedSrc}
+              src={displayedSrc}
+              alt="Scene"
+              className={`absolute inset-0 w-full h-full object-cover ${previousSrc && previousSrc !== displayedSrc ? 'animate-fade-in' : ''}`}
+              onError={handleImageError}
+              onAnimationEnd={() => setPreviousSrc(displayedSrc)}
+            />
+          )}
+          {/* Dim overlay while new image is generating */}
+          {isGeneratingImage && (
+            <div className="absolute inset-0 bg-black/30 transition-opacity duration-500" />
+          )}
+        </>
       ) : (
         <div className="w-full h-full bg-gradient-to-br from-surface-container-high to-surface-container-lowest flex items-center justify-center">
           {isGeneratingImage && (settings.sceneVisualization || 'image') === 'image' ? (
