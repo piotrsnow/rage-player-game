@@ -169,8 +169,10 @@ model Character {
   customAttackPresets Json   @default("[]")
 
   portraitUrl   String @default("")
-  spriteUrl     String?
-  voiceId       String @default("")
+  spriteUrl         String?
+  chargenAppearance Json?
+  spriteSheetUrl    String?
+  voiceId           String @default("")
   voiceName     String @default("")
   campaignCount Int    @default(0)
 
@@ -334,6 +336,12 @@ model Campaign {
   // where the world reveals/manifests the correction, then clears it.
   // Shape: { summary: string[], narrativeComment: string|null }
   pendingProvidence Json?
+
+  // One-shot correction payload written by the post-scene nano auditor when
+  // it detects location/NPC state inconsistencies with the transcript. FE
+  // polls GET /v1/campaigns/:id/pending-correction which reads + clears.
+  // Shape: { correctedLocation?, locationReason?, npcCorrections[]? }
+  pendingStateCorrection Json?
 
   createdAt DateTime @default(now()) @db.Timestamptz
   updatedAt DateTime @updatedAt @db.Timestamptz
@@ -560,8 +568,10 @@ model CampaignNPC {
   creatureKind String?
   level        Int     @default(1)
   stats        Json    @default("{}")
-  portraitUrl  String?
-  spriteUrl    String?
+  portraitUrl       String?
+  spriteUrl         String?
+  chargenAppearance Json?
+  spriteSheetUrl    String?
 
   // Stable physical description (PL, ~1 sentence) used as the canonical
   // source for portrait generation and player-facing NPC modals.
@@ -1113,8 +1123,10 @@ model WorldNPC {
   race         String?
   creatureKind String?
   level        Int     @default(1)
-  stats        Json    @default("{}")
-  spriteUrl    String?
+  stats             Json    @default("{}")
+  spriteUrl         String?
+  chargenAppearance Json?
+  spriteSheetUrl    String?
 
   // Stable physical description (PL, ~1 sentence) used as the canonical
   // source for portrait generation and player-facing NPC modals.

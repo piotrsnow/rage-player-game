@@ -273,6 +273,13 @@ export const AI_TASK_CATEGORIES = [
     description: 'Judge whether NPC harm was justified.',
   },
   {
+    key: 'chargenAppearance',
+    label: 'Chargen appearance',
+    defaultTier: 'nano',
+    group: 'Images',
+    description: 'Pick LPC chargen appearance for a character or NPC.',
+  },
+  {
     key: 'auxiliary',
     label: 'Legacy auxiliary',
     defaultTier: 'standard',

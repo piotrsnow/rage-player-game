@@ -85,8 +85,10 @@ services:
       # http://xtts:5050 (when xtts service is running) or
       # http://host.docker.internal:5050 (when running natively on host).
       XTTS_URL: "${XTTS_URL:-}"
+      CHARGEN_ASSETS_PATH: "${CHARGEN_ASSETS_PATH:-/app/mapapp/public/chargen}"
     volumes:
       - media-data:/data/media
+      - ./mapapp/public/chargen:/app/mapapp/public/chargen:ro
     # Docker Compose Watch: `npm run dev:watch` syncs local source into the
     # running container and restarts the backend process on change. Frontend
     # assets are baked into the image at build time; a change under `src/`

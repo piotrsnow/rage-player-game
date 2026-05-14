@@ -1,15 +1,23 @@
-# Post-scene nano auditor — walidacja lokacji i NPC
+# Post-scene nano auditor — location + NPC state verification
+
+**Status: IMPLEMENTED** (solo flow; MP polling deferred)
 
 ## Problem
 
-Premium LLM czasem emituje `stateChanges` niespójne z narracją:
-- Zmienia lokację choć narracja opisuje że gracz zostaje w miejscu
-- NPCe mają błędny attitude/alive/disposition względem tego co mówią/robią w narracji
-- NPCe z narracji brakuje w `stateChanges.npcs[]` (lub odwrotnie — jest NPC którego nie ma w scenie)
+Premium LLM sometimes emits `stateChanges` inconsistent with its own narration:
+- Changes location even though narration describes the party staying put
+- NPCs have wrong attitude/alive/disposition relative to what happens in the transcript
+- NPCs mentioned in narration are missing from `stateChanges.npcs[]` (or vice versa)
 
-Istniejący `locationSanityCheck.js` łapie tylko proste heurystyki (brak movement cue, flip A→B→A). Nie czyta narracji i nie sprawdza NPC.
+The inline `locationSanityCheck.js` (step 5a2 in `generateSceneStream`) catches only two heuristic patterns (missing movement cue, A→B→A flip). It never reads the transcript and cannot catch subtler issues.
 
-## Architektura
+## Architecture
+
+Two-layer defense:
+
+1. **Inline heuristic** (`locationSanityCheck.js` in `generateSceneStream`, step 5a2) — zero-cost, catches the most egregious teleport hallucinations *before* the scene reaches FE. Stays as-is.
+
+2. **Post-scene nano auditor** (`sceneStateAuditor.js` in `postSceneWork`, Phase 1.5) — reads the actual transcript, calls nano to verify location + NPC consistency, writes corrections to DB, FE polls and applies.
 
 ```mermaid
 sequenceDiagram
@@ -21,15 +29,13 @@ sequenceDiagram
 
     BE->>FE: SSE complete (scene + stateChanges)
     BE->>PSW: enqueue (async)
-    FE->>FE: setTimeout(5s)
     PSW->>PSW: Phase 1 (embedding, processStateChanges, compress)
-    PSW->>Nano: auditSceneState(transcript, stateChanges, campaignNpcs)
+    PSW->>Nano: auditSceneState(transcript, stateChanges, npcs)
     Nano-->>PSW: corrections or null
     alt corrections found
         PSW->>DB: apply corrections + write pendingStateCorrection
     end
-    FE->>BE: GET /pending-correction
-    BE->>DB: read + clear pendingStateCorrection
+    FE->>BE: GET /pending-correction (5s delay, max 2 attempts)
     BE-->>FE: correction payload or null
     alt correction received
         FE->>FE: dispatch APPLY_STATE_CORRECTION
@@ -38,113 +44,79 @@ sequenceDiagram
 
 ## Backend
 
-### 1. Nowy plik: `backend/src/services/sceneGenerator/sceneStateAuditor.js`
+### `backend/src/services/sceneGenerator/sceneStateAuditor.js`
 
-Funkcja `auditSceneState({ sceneTranscript, stateChanges, playerAction, currentLocationName, campaignNpcs, provider, timeoutMs })`:
+**`auditSceneState()`** — calls `callNano` with:
+- Last ~1500 chars of transcript (dialogue + narration)
+- Player action text
+- `stateChanges.currentLocation` (what AI emitted)
+- `currentLocationName` (location BEFORE the scene)
+- `stateChanges.npcs[]` (emitted NPC changes)
+- Top 10 alive `CampaignNPC` rows (name, attitude, alive, disposition)
 
-- Wywołuje `callNano` z promptem który dostaje:
-  - Scene transcript (joined dialogueSegments)
-  - Player action
-  - `stateChanges.currentLocation` (co AI emitowało)
-  - `currentLocationName` (lokacja PRZED sceną)
-  - `stateChanges.npcs[]` (emitowane zmiany NPC)
-  - Lista istniejących `CampaignNPC` z ich stanem (name, attitude, alive, lastLocation)
+Nano responds with JSON: `{ locationOk, correctedLocation, locationReason, npcCorrections[] }`.
+- `npcCorrection`: `{ name, field, correctedValue, reason }`
+- Correctable fields: `attitude`, `alive`, `disposition`
+- Parse failure returns null (non-fatal)
 
-- Nano odpowiada JSON:
-```json
-{
-  "locationOk": true,
-  "correctedLocation": null,
-  "locationReason": null,
-  "npcCorrections": []
-}
-```
+**`applyAndPushCorrections()`** — applies corrections to DB:
+- Location: resolves via `resolveLocationByName`, updates `Campaign.currentLocation*`
+- NPCs: updates `CampaignNPC` rows for each correction
+- Writes the full correction payload to `Campaign.pendingStateCorrection` (one-shot JSONB, cleared on read)
 
-- Każda `npcCorrection`: `{ name, field, correctedValue, reason }`
-- Pola korygowalne: `attitude`, `alive`, `disposition`, `lastLocation`
-- Zod walidacja odpowiedzi; jeśli parsowanie się nie uda → return null (non-fatal)
+### Integration in `postSceneWork.js`
 
-Kluczowe: prompt musi być **krótki** (nano ma limit). Transcript skracamy do ~1500 znaków (ostatnie segmenty). NPC lista max 10 (obecni w scenie + top interacted).
+Phase 1.5 — after Phase 1 (`Promise.allSettled`) and quest XP/money, before `_locationSnapshot` write. Loads top-10 alive CampaignNPCs, calls `auditSceneState`, applies if corrections found. Non-fatal on failure.
 
-### 2. Integracja w `postSceneWork.js`
+### Prisma: `Campaign.pendingStateCorrection`
 
-Po Phase 1 (processStateChanges + compress), PRZED quest progress check:
+`Json?` column — one-shot JSONB payload, same pattern as `pendingSlip` / `pendingProvidence`. Written by auditor, read+cleared by the polling endpoint.
 
-```javascript
-// Phase 1.5: Scene state audit — nano verifies location + NPC consistency
-const auditResult = await auditSceneState({
-  sceneTranscript,
-  stateChanges,
-  playerAction,
-  currentLocationName: prevLoc,
-  campaignNpcs,
-  provider,
-  timeoutMs: llmNanoTimeoutMs,
-});
-if (auditResult?.corrections) {
-  await applyAndPushCorrections(campaignId, sceneId, auditResult.corrections);
-}
-```
+### Endpoint: `GET /v1/campaigns/:id/pending-correction`
 
-`applyAndPushCorrections`:
-- Jeśli `correctedLocation` !== null: update `Campaign.currentLocation*` (przez `resolveLocationByName`)
-- Jeśli `npcCorrections[]` niepuste: update każdego `CampaignNPC` (attitude/alive/disposition)
-- Write correction payload to `Campaign.pendingStateCorrection` (JSONB) — FE odbierze
-
-### 3. Schema: nowe pole w `Campaign`
-
-W `backend/prisma/schema.prisma`, model `Campaign`:
-
-```prisma
-pendingStateCorrection Json?
-```
-
-Migracja: `prisma migrate dev --name add-pending-state-correction`
-
-### 4. Nowy endpoint: `GET /v1/campaigns/:id/pending-correction`
-
-W `backend/src/routes/campaigns/crud.js` (lub nowy plik `corrections.js` w barrel):
-
+In `backend/src/routes/campaigns/corrections.js`:
 - Authenticated, owner-only
-- Read `campaign.pendingStateCorrection`
-- If not null: return it AND clear (set to null) in one operation
-- If null: return `{ correction: null }`
+- Reads `campaign.pendingStateCorrection`
+- If non-null: returns it AND clears to null atomically
+- If null: returns `{ correction: null }`
 
 ## Frontend
 
-### 5. Hook: `usePendingCorrection` lub inline w `useSceneGeneration`
+### Polling (`useSceneGeneration.js`)
 
-W `src/hooks/sceneGeneration/useSceneGeneration.js`:
+After scene complete + dispatch + autoSave, fires `pollPendingCorrection()` — fire-and-forget:
+- 5s delay, then `GET /campaigns/:id/pending-correction`
+- If null and attempts < 2, retry after another 5s
+- If correction received, `dispatch({ type: 'APPLY_STATE_CORRECTION', payload })` + devLog
 
-- Po otrzymaniu `complete` event (solo) — `setTimeout(5000)` → `GET /v1/campaigns/:id/pending-correction`
-- W multiplayer: w `src/contexts/multiplayer/useMpWsSubscription.js` po otrzymaniu scene via WS — ten sam `setTimeout(5000)` + fetch
+### Handler (`stateCorrectionHandler.js`)
 
-Jeśli correction != null → dispatch `APPLY_STATE_CORRECTION`
+Registered in `gameReducer.js` as `APPLY_STATE_CORRECTION`:
+- Updates `state.world.currentLocation` if `correction.location` present
+- Updates matching NPCs in `state.npcs[]` (attitude, alive, disposition)
+- Emits to devLog (`category: 'audit'`) for visibility in DevEventLogPanel
 
-### 6. Handler: `APPLY_STATE_CORRECTION` w store
+### Multiplayer
 
-W `src/stores/handlers/applyStateChangesHandler/`:
+MP polling deferred. The auditor runs on the host's backend (postSceneWork fires for MP scenes too), so `pendingStateCorrection` is written. Guests don't have solo-campaign polling — would need a WS event or MP-specific poll.
 
-- Nowy handler (lub w `sceneFlow.js`) który:
-  - Updatuje `state.world.currentLocation` jeśli `correctedLocation` podane
-  - Updatuje NPC w `state.npcs[]` jeśli `npcCorrections` podane (attitude, alive, disposition)
-  - Loguje korektę do devEventLog (widoczne w DevEventLogPanel)
+## Cost and risks
 
-## Kosztorys i ryzyka
+- **Latency**: 0ms added to scene delivery (fully async). Nano call ~1-2s, DB writes ~100ms. FE polls at 5s.
+- **Cost**: 1 nano call per scene (~0.001 USD). Prompt ~500-800 tokens, response ~100-200.
+- **Risk**: nano may hallucinate corrections. Mitigated by prompt instruction ("if unsure, return locationOk:true and empty npcCorrections") + all corrections logged to audit trail.
+- **Timing**: If Cloud Tasks is slow (>10s), correction may be missed by both FE poll attempts. Acceptable — next scene load would also pick it up.
 
-- **Latencja**: 0 dodanych do sceny (async). Nano call ~1-2s, razem z DB ~2-3s. FE odpytuje po 5s.
-- **Koszt**: 1 dodatkowy nano call per scene (~0.001 USD). Prompt ~500-800 tokenów, odpowiedź ~100-200.
-- **Ryzyko**: nano może sam halucynować korekty. Mitygacja: prompt instruuje "jeśli nie jesteś pewien, zwróć locationOk:true i puste npcCorrections". Dodatkowo: logujemy każdą korektę do audit trail.
-- **Timing**: FE poll po 5s może być za wcześnie jeśli Cloud Tasks jest wolny. Rozwiązanie: retry po kolejnych 5s jeśli `pendingStateCorrection` jest null a scena była <10s temu (max 2 retry).
+## Files
 
-## Pliki do zmiany / utworzenia
-
-| Plik | Operacja |
+| File | Role |
 |---|---|
-| `backend/prisma/schema.prisma` | Dodać `pendingStateCorrection Json?` do `Campaign` |
-| `backend/src/services/sceneGenerator/sceneStateAuditor.js` | **NOWY** — nano prompt + Zod + apply logic |
-| `backend/src/services/postSceneWork.js` | Integracja auditora po Phase 1 |
-| `backend/src/routes/campaigns/crud.js` | Nowy endpoint GET pending-correction |
-| `src/hooks/sceneGeneration/useSceneGeneration.js` | Delayed fetch po complete |
-| `src/contexts/multiplayer/useMpWsSubscription.js` | Delayed fetch po scene via WS |
-| `src/stores/handlers/applyStateChangesHandler/` | Handler APPLY_STATE_CORRECTION |
+| `backend/prisma/schema.prisma` | `Campaign.pendingStateCorrection Json?` |
+| `backend/src/services/sceneGenerator/sceneStateAuditor.js` | Nano prompt + apply logic |
+| `backend/src/services/postSceneWork.js` | Phase 1.5 integration |
+| `backend/src/routes/campaigns/corrections.js` | Polling endpoint |
+| `backend/src/routes/campaigns.js` | Barrel registration |
+| `src/hooks/sceneGeneration/useSceneGeneration.js` | `pollPendingCorrection` |
+| `src/stores/handlers/stateCorrectionHandler.js` | `APPLY_STATE_CORRECTION` handler |
+| `src/stores/gameReducer.js` | Handler registration |
+| `backend/src/services/sceneGenerator/locationSanityCheck.js` | Dead `checkGraphReachability` removed |

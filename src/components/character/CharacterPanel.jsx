@@ -20,6 +20,7 @@ import { gameData } from '../../services/gameDataService';
 import SkillGainHistory from './SkillGainHistory';
 import FavoriteScenesList from './FavoriteScenesList';
 import BadgesSection from './BadgesSection';
+import LpcSprite from '../shared/LpcSprite';
 
 const SKILL_ICONS = {
   'Walka wrecz': 'sports_martial_arts',
@@ -964,6 +965,19 @@ export default function CharacterPanel({
                   </div>
                 )}
               </div>
+              {character.spriteSheetUrl && (
+                <div className="mt-3 flex justify-center">
+                  <div className="bg-surface-container-lowest/50 border border-outline-variant/10 rounded-lg p-2">
+                    <LpcSprite
+                      sheetUrl={apiClient.resolveMediaUrl(character.spriteSheetUrl)}
+                      animation="idle_down"
+                      width={64}
+                      height={64}
+                      playing
+                    />
+                  </div>
+                </div>
+              )}
               {canEditPortrait && (
                 <button
                   onClick={() => setEditingPortrait(true)}

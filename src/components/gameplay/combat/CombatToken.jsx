@@ -1,4 +1,5 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
+import LpcSprite, { getAnimDirection } from '../../shared/LpcSprite';
 
 const HEALTH_COLORS = {
   friendlyHigh: '#c59aff',
@@ -108,6 +109,7 @@ export default function CombatToken({
   isHovered,
   turnsUntil,
   spriteUrl,
+  spriteSheetUrl,
   myCombatant,
   isActing,
   actDirection,
@@ -125,6 +127,7 @@ export default function CombatToken({
   const tokenSize = Math.round(cellSize * 1.2);
   const spriteImgSize = Math.round(cellSize * 1.05);
   const prevWoundsRef = useRef(c.wounds);
+  const prevPosRef = useRef({ x, y });
 
   useEffect(() => {
     if (prevWoundsRef.current !== undefined && c.wounds < prevWoundsRef.current) {
@@ -141,7 +144,28 @@ export default function CombatToken({
     setSpriteFailed(false);
   }, [spriteUrl]);
 
-  const showSpriteImage = Boolean(spriteUrl && !spriteFailed);
+  const isMoving = transitionDuration > 0 && (prevPosRef.current.x !== x || prevPosRef.current.y !== y);
+
+  useEffect(() => {
+    prevPosRef.current = { x, y };
+  }, [x, y]);
+
+  const lpcAnimation = useMemo(() => {
+    if (c.isDefeated) return 'die_down';
+    if (isActing && !shoveOffset) {
+      const dir = actDirection > 0 ? 'right' : actDirection < 0 ? 'left' : 'right';
+      return `slash_${dir}`;
+    }
+    if (isMoving) {
+      const dx = x - prevPosRef.current.x;
+      const dy = y - prevPosRef.current.y;
+      return `walk_${getAnimDirection(dx, dy)}`;
+    }
+    return 'idle_down';
+  }, [c.isDefeated, isActing, shoveOffset, actDirection, isMoving, x, y]);
+
+  const hasSheet = Boolean(spriteSheetUrl);
+  const showSpriteImage = Boolean(spriteUrl && !spriteFailed && !hasSheet);
   const showSpritePlaceholder = showSpriteImage && !spriteLoaded;
 
   const isShoving = !!shoveOffset;
@@ -153,7 +177,7 @@ export default function CombatToken({
     isHovered && !c.isDefeated && 'combat-token--hovered',
     c.isDefeated && 'combat-token--defeated',
     shaking && 'combat-token--shake',
-    spriteLoaded && 'combat-token--has-sprite',
+    (spriteLoaded || hasSheet) && 'combat-token--has-sprite',
     isShoving && 'combat-token--shoving',
     !isShoving && isActing && actDirection > 0 && 'combat-token--acting-right',
     !isShoving && isActing && actDirection < 0 && 'combat-token--acting-left',
@@ -187,31 +211,48 @@ export default function CombatToken({
         )}
 
         <div className="combat-token__sprite-wrap" style={{ width: tokenSize, height: tokenSize }}>
-          {showSpritePlaceholder && (
-            <div
-              className="combat-token__initials combat-token__sprite-placeholder"
-              aria-hidden="true"
-            >
-              {c.isDefeated ? '\u2620' : getInitials(c.name)}
-            </div>
-          )}
-          {showSpriteImage ? (
-            <img
-              className={`combat-token__sprite-img${spriteLoaded ? ' combat-token__sprite-img--visible' : ''}`}
-              src={spriteUrl}
-              alt={c.name}
-              draggable={false}
-              onLoad={() => setSpriteLoaded(true)}
-              onError={() => {
-                setSpriteFailed(true);
-                setSpriteLoaded(false);
-              }}
-              style={{ width: spriteImgSize, height: spriteImgSize }}
+          {hasSheet ? (
+            <LpcSprite
+              sheetUrl={spriteSheetUrl}
+              animation={lpcAnimation}
+              width={tokenSize}
+              height={tokenSize}
+              playing={!c.isDefeated}
+              fallback={
+                <div className="combat-token__initials">
+                  {c.isDefeated ? '\u2620' : getInitials(c.name)}
+                </div>
+              }
             />
           ) : (
-            <div className="combat-token__initials">
-              {c.isDefeated ? '\u2620' : getInitials(c.name)}
-            </div>
+            <>
+              {showSpritePlaceholder && (
+                <div
+                  className="combat-token__initials combat-token__sprite-placeholder"
+                  aria-hidden="true"
+                >
+                  {c.isDefeated ? '\u2620' : getInitials(c.name)}
+                </div>
+              )}
+              {showSpriteImage ? (
+                <img
+                  className={`combat-token__sprite-img${spriteLoaded ? ' combat-token__sprite-img--visible' : ''}`}
+                  src={spriteUrl}
+                  alt={c.name}
+                  draggable={false}
+                  onLoad={() => setSpriteLoaded(true)}
+                  onError={() => {
+                    setSpriteFailed(true);
+                    setSpriteLoaded(false);
+                  }}
+                  style={{ width: spriteImgSize, height: spriteImgSize }}
+                />
+              ) : (
+                <div className="combat-token__initials">
+                  {c.isDefeated ? '\u2620' : getInitials(c.name)}
+                </div>
+              )}
+            </>
           )}
 
           {c.advantage > 0 && !c.isDefeated && (

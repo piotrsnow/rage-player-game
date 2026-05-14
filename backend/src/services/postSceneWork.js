@@ -15,6 +15,7 @@ import { LOCATION_KIND_WORLD } from './locationRefs.js';
 import { extractGraphUpdate, validateGraphUpdate, applyGraphUpdate } from './locationGraph/index.js';
 import { setLlmCallUserId } from './llmCallLogger.js';
 import { checkQuestProgress } from './questProgressChecker.js';
+import { auditSceneState, applyAndPushCorrections } from './sceneGenerator/sceneStateAuditor.js';
 
 const log = childLogger({ module: 'postSceneWork' });
 
@@ -210,6 +211,32 @@ export async function handlePostSceneWork({
     } catch (err) {
       log.warn({ err: err?.message, campaignId, money: qm }, 'Quest money application failed (non-fatal)');
     }
+  }
+
+  // Phase 1.5: Scene state audit — nano verifies location + NPC consistency
+  // with the actual transcript. Corrections are applied to DB and written as
+  // a one-shot JSONB payload (pendingStateCorrection) for FE polling.
+  try {
+    const auditNpcs = await prisma.campaignNPC.findMany({
+      where: { campaignId, alive: true },
+      select: { name: true, attitude: true, alive: true, disposition: true },
+      orderBy: { updatedAt: 'desc' },
+      take: 10,
+    });
+    const auditResult = await auditSceneState({
+      sceneTranscript,
+      stateChanges,
+      playerAction,
+      currentLocationName: prevLoc,
+      campaignNpcs: auditNpcs,
+      provider,
+      timeoutMs: llmNanoTimeoutMs,
+    });
+    if (auditResult) {
+      await applyAndPushCorrections(campaignId, sceneId, auditResult);
+    }
+  } catch (err) {
+    log.warn({ err: err?.message, campaignId, sceneId }, 'Scene state audit failed (non-fatal)');
   }
 
   // Snapshot the post-Phase-1 location into the scene's stateChanges. Phase 1
