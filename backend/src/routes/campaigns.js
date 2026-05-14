@@ -2,6 +2,7 @@ import { publicCampaignRoutes } from './campaigns/public.js';
 import { crudCampaignRoutes } from './campaigns/crud.js';
 import { sharingCampaignRoutes } from './campaigns/sharing.js';
 import { recapCampaignRoutes } from './campaigns/recaps.js';
+import { correctionCampaignRoutes } from './campaigns/corrections.js';
 
 export {
   extractTotalCost,
@@ -16,5 +17,6 @@ export async function campaignRoutes(fastify) {
     app.register(crudCampaignRoutes);
     app.register(sharingCampaignRoutes);
     app.register(recapCampaignRoutes);
+    app.register(correctionCampaignRoutes);
   });
 }

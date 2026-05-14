@@ -22,6 +22,27 @@ import { stopAllDialogAudio } from '../../utils/readAloudExclusive';
 
 const RETRYABLE_CODES = new Set(['LLM_TIMEOUT', 'LLM_ERROR', 'OVERLOADED']);
 
+const CORRECTION_POLL_DELAY_MS = 5000;
+const CORRECTION_MAX_ATTEMPTS = 2;
+
+function pollPendingCorrection(campaignId, dispatch, attempt = 0) {
+  setTimeout(async () => {
+    try {
+      const res = await apiClient.request(`/campaigns/${campaignId}/pending-correction`);
+      if (res?.correction) {
+        devLog.emit({ category: 'audit', type: 'correction_received', label: 'Post-scene correction received', data: res.correction });
+        dispatch({ type: 'APPLY_STATE_CORRECTION', payload: res.correction });
+        return;
+      }
+      if (attempt + 1 < CORRECTION_MAX_ATTEMPTS) {
+        pollPendingCorrection(campaignId, dispatch, attempt + 1);
+      }
+    } catch {
+      // Non-fatal — polling failure should never block gameplay
+    }
+  }, CORRECTION_POLL_DELAY_MS);
+}
+
 // Master kill-switch for the speculative "early image" path below. When false,
 // we skip guessing the image from previous-scene + player-action and instead
 // wait for the AI's own narrative + imagePrompt to drive image generation
@@ -366,6 +387,12 @@ export function useSceneGeneration({ ensureMissingInventoryImages, ensureMissing
         devLog.emit({ category: 'pipeline', type: 'scene_gen_done', label: `Scene generation complete (${Date.now() - sceneGenStartRef.current}ms total)`, data: { totalMs: Date.now() - sceneGenStartRef.current, scenePacing: result.scenePacing, hasDiceRoll: !!result.diceRoll, questOffers: (result.questOffers || []).length } });
         dispatch({ type: 'SET_GENERATING_SCENE', payload: false });
         autoSave();
+
+        // Post-scene auditor polling — fire-and-forget delayed check for
+        // state corrections produced by the nano auditor in postSceneWork.
+        if (backendCampaignId) {
+          pollPendingCorrection(backendCampaignId, dispatch);
+        }
 
         // FE-side scene compression removed with no-BYOK cleanup. Backend
         // scene pipeline runs its own memoryCompressor.js post-scene, so the

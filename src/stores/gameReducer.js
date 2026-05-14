@@ -16,6 +16,7 @@ import { combatHandlers } from './handlers/combatHandlers';
 import { tradeCraftAlchemyHandlers } from './handlers/tradeCraftAlchemyHandlers';
 import { partyHandlers } from './handlers/partyHandlers';
 import { applyStateChangesHandler } from './handlers/applyStateChangesHandler';
+import { stateCorrectionHandler } from './handlers/stateCorrectionHandler';
 
 /**
  * Merged lookup map: action.type → handler function (draft, action) => void | newState.
@@ -34,6 +35,7 @@ const HANDLERS = {
   ...tradeCraftAlchemyHandlers,
   ...partyHandlers,
   APPLY_STATE_CHANGES: applyStateChangesHandler,
+  APPLY_STATE_CORRECTION: stateCorrectionHandler,
 };
 
 export function gameReducer(state, action) {

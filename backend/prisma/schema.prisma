@@ -335,6 +335,12 @@ model Campaign {
   // Shape: { summary: string[], narrativeComment: string|null }
   pendingProvidence Json?
 
+  // One-shot correction payload written by the post-scene nano auditor when
+  // it detects location/NPC state inconsistencies with the transcript. FE
+  // polls GET /v1/campaigns/:id/pending-correction which reads + clears.
+  // Shape: { correctedLocation?, locationReason?, npcCorrections[]? }
+  pendingStateCorrection Json?
+
   createdAt DateTime @default(now()) @db.Timestamptz
   updatedAt DateTime @updatedAt @db.Timestamptz
 
