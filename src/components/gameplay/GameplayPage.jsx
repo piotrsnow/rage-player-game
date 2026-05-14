@@ -36,6 +36,7 @@ import LoadingSpinner from '../ui/LoadingSpinner';
 import DidYouKnow from '../ui/DidYouKnow';
 import SceneGenerationProgress from './SceneGenerationProgress';
 import CombatPanel from './CombatPanel';
+import BeerDuelPanel from './combat/BeerDuelPanel';
 import MagicPanel from './MagicPanel';
 import TradePanel from './TradePanel';
 import CraftingPanel from './CraftingPanel';
@@ -76,6 +77,7 @@ import { filterNpcsHere } from '../../utils/npcLocation';
 import MainQuestCompleteModal from './MainQuestCompleteModal';
 import { ActionTagProvider } from '../../contexts/ActionTagContext';
 import { claimExclusiveReadAloud, stopAllDialogAudio } from '../../utils/readAloudExclusive';
+import { PLAY_SESSION_START_KEY } from '../../constants/sessionIntro';
 import WorldNewsPanel from './WorldNewsPanel';
 import { useCreatureEncounter } from '../../hooks/useCreatureEncounter';
 import CreatureEncounterModal from './CreatureEncounterModal';
@@ -178,6 +180,11 @@ export default function GameplayPage({ readOnly = false, shareToken = null, onRe
     document.documentElement.scrollTop = 0;
     document.body.scrollTop = 0;
   }, [urlCampaignId, readOnly, location.pathname, location.key]);
+
+  useEffect(() => {
+    sessionStorage.setItem(PLAY_SESSION_START_KEY, String(Date.now()));
+    return () => sessionStorage.removeItem(PLAY_SESSION_START_KEY);
+  }, []);
 
   const newestSceneId = scenes[scenes.length - 1]?.id || null;
   useLayoutEffect(() => {
@@ -886,6 +893,20 @@ export default function GameplayPage({ readOnly = false, shareToken = null, onRe
               onDismiss={() => dispatch({ type: 'CLEAR_LOCAL_DICE_ROLL' })}
             />
           )}
+          {combat?.active && combat.mode === 'beer_duel' && !isViewingCompanion && !isReviewingPastScene && !readOnly && (
+            <div className="absolute inset-0 z-30 flex items-center justify-center bg-black/40 backdrop-blur-[2px] rounded-xl overflow-hidden animate-fade-in">
+              <div className="w-full max-w-2xl px-4">
+                <BeerDuelPanel
+                  combat={combat}
+                  character={character}
+                  dispatch={dispatch}
+                  onEndCombat={combatHandlers.onEndCombat}
+                  isMultiplayer={isMultiplayer}
+                  mpCharacters={isMultiplayer ? mpGameState?.characters : undefined}
+                />
+              </div>
+            </div>
+          )}
         </div>
         </div>
         )}
@@ -1078,8 +1099,8 @@ export default function GameplayPage({ readOnly = false, shareToken = null, onRe
           </div>
         )}
 
-        {/* Combat Panel */}
-        {combat?.active && !isViewingCompanion && !isReviewingPastScene && !readOnly && (
+        {/* Combat Panel (non-beer-duel modes) */}
+        {combat?.active && combat.mode !== 'beer_duel' && !isViewingCompanion && !isReviewingPastScene && !readOnly && (
           <div className="px-2 animate-fade-in">
             <CombatPanel
               combat={combat}

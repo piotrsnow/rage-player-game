@@ -22,7 +22,6 @@ export function applyCharacterMutations(draft, changes) {
   applyRemovals(draft, changes);
   applyMoneyChange(draft, changes);
   applyCharacterEffects(draft, changes);
-  applySkillBadges(draft, changes);
   if (draft.character?.mana) draft.character.mana = sanitizeMana(draft.character.mana);
 }
 
@@ -269,10 +268,3 @@ function applyCharacterEffects(draft, changes) {
   }
 }
 
-function applySkillBadges(draft, changes) {
-  if (!Array.isArray(changes.skillBadges) || !changes.skillBadges.length || !draft.character) return;
-  if (!Array.isArray(draft.character.skillBadges)) draft.character.skillBadges = [];
-  for (const badge of changes.skillBadges) {
-    draft.character.skillBadges.push(badge);
-  }
-}

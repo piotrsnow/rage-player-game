@@ -233,10 +233,11 @@ export default function CombatPanel({
       const legacyUrl = Object.prototype.hasOwnProperty.call(spriteMap, c.id)
         ? spriteMap[c.id]
         : (c.spriteUrl ? apiClient.resolveMediaUrl(c.spriteUrl) : null);
+      console.log(`[CombatPanel enrich] ${c.id} (${c.name})`, { sheetUrl, legacyUrl, origSpriteUrl: c.spriteUrl });
       return {
         ...c,
         spriteUrl: legacyUrl,
-        spriteSheetUrl: sheetUrl || legacyUrl,
+        spriteSheetUrl: sheetUrl,
       };
     });
     return { ...combat, combatants: enrichedCombatants };

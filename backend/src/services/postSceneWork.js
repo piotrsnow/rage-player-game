@@ -16,6 +16,7 @@ import { extractGraphUpdate, validateGraphUpdate, applyGraphUpdate } from './loc
 import { setLlmCallUserId } from './llmCallLogger.js';
 import { checkQuestProgress } from './questProgressChecker.js';
 import { auditSceneState, applyAndPushCorrections } from './sceneGenerator/sceneStateAuditor.js';
+import { evaluatePeriodicBadge } from './badgeEvaluator.js';
 
 const log = childLogger({ module: 'postSceneWork' });
 
@@ -33,6 +34,7 @@ export async function handlePostSceneWork({
   prevLoc,
   wrapupText = null,
   llmNanoTimeoutMs,
+  badgeFrequency = 5,
   requestId,
 }) {
   log.info({ sceneId, campaignId, newLoc, prevLoc, requestId }, 'Post-scene work START');
@@ -237,6 +239,23 @@ export async function handlePostSceneWork({
     }
   } catch (err) {
     log.warn({ err: err?.message, campaignId, sceneId }, 'Scene state audit failed (non-fatal)');
+  }
+
+  // Periodic badge evaluation
+  const badgeFreq = badgeFrequency || 5;
+  if (scene.sceneIndex > 0 && scene.sceneIndex % badgeFreq === 0) {
+    try {
+      await evaluatePeriodicBadge({
+        campaignId,
+        sceneIndex: scene.sceneIndex,
+        freq: badgeFreq,
+        provider,
+        timeoutMs: llmNanoTimeoutMs,
+        userId: campaign.userId,
+      });
+    } catch (err) {
+      log.warn({ err: err?.message, campaignId }, 'Badge evaluation failed (non-fatal)');
+    }
   }
 
   // Snapshot the post-Phase-1 location into the scene's stateChanges. Phase 1

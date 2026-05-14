@@ -245,6 +245,20 @@ export const AI_TASK_CATEGORIES = [
     description: 'Character summary badge.',
   },
   {
+    key: 'badgeEvaluation',
+    label: 'Badge evaluation',
+    defaultTier: 'nano',
+    group: 'Characters',
+    description: 'Periodic medal evaluation from recent scenes.',
+  },
+  {
+    key: 'badgeImagePrompt',
+    label: 'Badge image prompt',
+    defaultTier: 'nano',
+    group: 'Images',
+    description: 'Build image prompt for a medal/badge icon.',
+  },
+  {
     key: 'postCampaignWorld',
     label: 'Post-campaign world',
     defaultTier: 'standard',

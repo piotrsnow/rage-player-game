@@ -55,12 +55,13 @@ export function useCombatSprites(combatants) {
         const payload = combatants.map(buildPayload);
         const data = await apiClient.post('/combat/sprites/generate', { combatants: payload });
 
+        console.log('[useCombatSprites] response', { sprites: data?.sprites, spriteSheets: data?.spriteSheets });
         if (!cancelled && data) {
           if (data.sprites) setSprites(resolveSprites(data.sprites));
           if (data.spriteSheets) setSpriteSheets(resolveSprites(data.spriteSheets));
         }
-      } catch {
-        // generation not configured or request failed — fall back to initials
+      } catch (err) {
+        console.warn('[useCombatSprites] fetch failed', err);
       }
     };
 

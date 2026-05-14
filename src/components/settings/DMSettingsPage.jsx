@@ -74,6 +74,38 @@ export default function DMSettingsPage({ onClose }) {
               </section>
             </div>
 
+            <div className="mt-8 animate-fade-in">
+              <div className="bg-surface-container-high/40 p-6 rounded-sm border-b border-outline-variant/15">
+                <div className="flex items-center justify-between mb-3">
+                  <div>
+                    <p className="font-headline text-tertiary flex items-center gap-2">
+                      <span className="material-symbols-outlined text-sm">military_tech</span>
+                      {t('settings.badgeFrequency', { defaultValue: 'Medale' })}
+                    </p>
+                    <p className="text-[10px] text-on-surface-variant font-label uppercase tracking-widest mt-1">
+                      {t('settings.badgeFrequencyDesc', { defaultValue: 'Co ile scen przyznawać medal' })}
+                    </p>
+                  </div>
+                  <span className="text-lg font-headline text-primary tabular-nums">
+                    {settings.dmSettings.badgeFrequency ?? 5}
+                  </span>
+                </div>
+                <input
+                  type="range"
+                  min={3}
+                  max={20}
+                  step={1}
+                  value={settings.dmSettings.badgeFrequency ?? 5}
+                  onChange={(e) => updateDMSettings({ badgeFrequency: Number(e.target.value) })}
+                  className="w-full accent-primary"
+                />
+                <div className="flex justify-between text-[9px] text-outline mt-1">
+                  <span>3</span>
+                  <span>20</span>
+                </div>
+              </div>
+            </div>
+
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mt-8 animate-fade-in">
               <div className="bg-surface-container-high/40 p-6 rounded-sm border-b border-outline-variant/15 flex items-center justify-between group hover:bg-surface-container-high transition-colors">
                 <div>

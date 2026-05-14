@@ -343,6 +343,11 @@ model Campaign {
   // Shape: { correctedLocation?, locationReason?, npcCorrections[]? }
   pendingStateCorrection Json?
 
+  // One-shot badge award payload written by badgeEvaluator after periodic
+  // scene evaluations. FE polls GET .../pending-badge; player dismissal
+  // DELETEs it. Shape: { name, description, xpValue, imageUrl, earnedAt, sceneIndex, newLevel? }
+  pendingBadgeAward Json?
+
   createdAt DateTime @default(now()) @db.Timestamptz
   updatedAt DateTime @updatedAt @db.Timestamptz
 

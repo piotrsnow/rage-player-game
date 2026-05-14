@@ -55,6 +55,9 @@ export default function GameplayHeader({
   favoriteSceneIds,
   onToggleFavoriteScene,
   campaignBackendId,
+  // badge award
+  hasPendingBadge,
+  onOpenBadgeModal,
 }) {
   const { t } = useTranslation();
 
@@ -238,6 +241,19 @@ export default function GameplayHeader({
           previous={previousLocSnapshot}
           onClick={(loc) => setLocationDetailName(loc?.name || null)}
         />
+        {!readOnly && hasPendingBadge && (
+          <Tooltip content={t('badge.pendingAward', { defaultValue: 'Nowy medal!' })} placement="bottom" variant="compact" asChild>
+            <button
+              onClick={onOpenBadgeModal}
+              aria-label={t('badge.pendingAward', { defaultValue: 'Nowy medal!' })}
+              className="relative flex items-center gap-1.5 px-3 py-1 text-amber-400 text-[10px] font-bold uppercase tracking-widest rounded-sm border border-amber-500/30 bg-amber-500/10 hover:bg-amber-500/20 transition-all animate-fade-in"
+            >
+              <span className="absolute -inset-0.5 rounded-sm bg-amber-500/20 blur-sm animate-pulse" />
+              <span className="relative material-symbols-outlined text-sm">military_tech</span>
+              <span className="relative">{t('badge.medal', { defaultValue: 'Medal' })}</span>
+            </button>
+          </Tooltip>
+        )}
         {!readOnly && attrPoints > 0 && (
           <button
             onClick={onOpenAdvancement}

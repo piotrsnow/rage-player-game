@@ -178,14 +178,10 @@ export function applyCharacterStateChanges(character, changes) {
     const skills = { ...(next.skills || {}) };
     let charXpGained = 0;
     const skillGains = [];
-    const newBadges = [];
 
     for (const [rawSkillName, xpGain] of Object.entries(changes.skillProgress)) {
       const skillName = canonicalizeSkillName(rawSkillName) || rawSkillName;
-      if (!SKILL_BY_NAME[skillName]) {
-        newBadges.push({ name: rawSkillName, earnedAt: new Date().toISOString(), redeemed: false });
-        continue;
-      }
+      if (!SKILL_BY_NAME[skillName]) continue;
       const current = skills[skillName] || { level: 0, xp: 0, cap: SKILL_CAPS.basic };
       const oldLevel = current.level || 0;
       let newXp = (current.xp ?? current.progress ?? 0) + xpGain;
@@ -220,14 +216,6 @@ export function applyCharacterStateChanges(character, changes) {
       next.attributePoints = attrPoints;
     }
 
-    if (newBadges.length > 0) {
-      next.skillBadges = [...(next.skillBadges || []), ...newBadges];
-    }
-  }
-
-  // ── Skill Badges (unknown skills converted to collectible medals) ──
-  if (Array.isArray(changes.skillBadges) && changes.skillBadges.length > 0) {
-    next.skillBadges = [...(next.skillBadges || []), ...changes.skillBadges];
   }
 
   // ── Spells ──

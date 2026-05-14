@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { apiClient } from '../../services/apiClient';
 
 // ── module-level caches ────────────────────────────────────────────
 const imageCache = new Map();
@@ -21,7 +22,8 @@ function loadImage(url) {
 function fetchAnimMap() {
   if (animMapCache) return Promise.resolve(animMapCache);
   if (animMapPromise) return animMapPromise;
-  animMapPromise = fetch('/v1/chargen/anim-map')
+  const base = apiClient.getBaseUrl() || '';
+  animMapPromise = fetch(`${base}/v1/chargen/anim-map`)
     .then((r) => r.json())
     .then((data) => { animMapCache = data.anim; return animMapCache; });
   return animMapPromise;
@@ -90,11 +92,12 @@ export default function LpcSprite({
     Promise.all([loadImage(sheetUrl), fetchAnimMap()])
       .then(([img, animMap]) => {
         if (cancelled) return;
+        console.log(`[LpcSprite] loaded OK`, { sheetUrl, imgSize: `${img.naturalWidth}x${img.naturalHeight}`, animKeys: Object.keys(animMap || {}).length });
         s.img = img;
         s.animMap = animMap;
         setReady(true);
       })
-      .catch(() => {});
+      .catch((err) => { console.warn('[LpcSprite] load FAILED', { sheetUrl, err: err?.message }); });
 
     return () => { cancelled = true; };
   }, [sheetUrl]);

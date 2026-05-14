@@ -752,6 +752,7 @@ export async function generateSceneStream(campaignId, playerAction, options = {}
       prevLoc: preResolveLocationName,
       wrapupText: sceneResult.dialogueIfQuestTargetCompleted?.text || null,
       llmNanoTimeoutMs,
+      badgeFrequency: Number(dmSettings?.badgeFrequency) || 5,
       requestId,
     }).catch((err) =>
       log.error({ err, sceneId: savedScene.id }, 'Failed to enqueue post-scene work')

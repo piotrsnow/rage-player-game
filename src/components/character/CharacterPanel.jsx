@@ -1175,17 +1175,7 @@ export default function CharacterPanel({
 
       {character?.skillBadges?.length > 0 && (
         <div className="mt-8 animate-fade-in">
-          <BadgesSection
-            badges={character.skillBadges}
-            skillIcons={SKILL_ICONS}
-            onRedeem={(index) => {
-              const rewards = ['attribute', 'mana', 'wounds'];
-              const reward = rewards[Math.floor(Math.random() * rewards.length)];
-              dispatch({ type: 'REDEEM_SKILL_BADGE', payload: { index, reward } });
-              if (autoSave) autoSave();
-              return reward;
-            }}
-          />
+          <BadgesSection badges={character.skillBadges} />
         </div>
       )}
 

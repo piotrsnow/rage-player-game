@@ -112,13 +112,5 @@ export function buildCharacterBlock(character) {
     lines.push(`Statuses: ${character.statuses.join(', ')}`);
   }
 
-  if (Array.isArray(character.skillBadges) && character.skillBadges.length > 0) {
-    const active = character.skillBadges.filter((b) => !b.redeemed).map((b) => b.name);
-    const redeemed = character.skillBadges.filter((b) => b.redeemed).map((b) => b.name);
-    if (active.length) lines.push(`Skill badges (earned, not yet redeemed): ${active.join(', ')}`);
-    if (redeemed.length) lines.push(`Skill badges (redeemed): ${redeemed.join(', ')}`);
-    lines.push('(When awarding a non-standard skill in skillsUsed, briefly praise the player\'s creative approach.)');
-  }
-
   return lines.join('\n');
 }

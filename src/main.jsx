@@ -13,8 +13,12 @@ import './index.css';
 
 const initialPath = window.location.pathname + window.location.search + window.location.hash;
 if (initialPath.startsWith('/play/')) {
-  captureEntryIntent(initialPath);
-  window.history.replaceState(null, '', '/');
+  const _t = sessionStorage.getItem('rpgon_play_session_start');
+  const playingLongEnough = _t && (Date.now() - Number(_t)) >= 10_000;
+  if (!playingLongEnough) {
+    captureEntryIntent(initialPath);
+    window.history.replaceState(null, '', '/');
+  }
 }
 
 ReactDOM.createRoot(document.getElementById('root')).render(
