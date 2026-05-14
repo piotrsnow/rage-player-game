@@ -63,6 +63,10 @@ Include stateChanges: timeAdvance, currentLocation, npcs (introduce at least 1),
   const isGeneralCombatInitiation = playerAction?.startsWith('[INITIATE COMBAT]');
   const isBeerDuelInitiation = playerAction?.startsWith('[INITIATE BEER DUEL');
   const beerDuelNpcNameMatch = playerAction?.match(/^\[INITIATE BEER DUEL:\s*(.+?)\]$/);
+  const isCardGameInitiation = playerAction?.startsWith('[INITIATE CARD_GAME');
+  const cardGameNpcNameMatch = playerAction?.match(/^\[INITIATE CARD_GAME:\s*(.+?)\]$/);
+  const isDiceGameInitiation = playerAction?.startsWith('[INITIATE DICE_GAME');
+  const diceGameNpcNameMatch = playerAction?.match(/^\[INITIATE DICE_GAME:\s*(.+?)\]$/);
   const attackNpcMatch = playerAction?.match(/^\[ATTACK:\s*(.+?)\]$/);
   const talkNpcMatch = playerAction?.match(/^\[TALK:\s*(.+?)\]$/);
   const creatureEncounterMatch = playerAction?.match(/^\[CREATURE_ENCOUNTER:\s*(.+?)\]\s*(.*)/s);
@@ -181,6 +185,20 @@ Keep it dramatic but fair. Include stateChanges. timeAdvance: 0.25h.`);
         extra = ` Player explicitly picked rival "${rival}" — they MUST appear as a beer-duel participant (enemy entry / enemyHints).`;
       }
       parts.push(`BEER DUEL INITIATED. MUST include combatUpdate with mode="beer_duel". Keep regular enemies array/enemyHints for participants, but this is NOT lethal combat. Set modeConfig.beerCountMin=20 and modeConfig.beerCountMax=30.${extra}`);
+    } else if (isCardGameInitiation) {
+      let extra = '';
+      if (cardGameNpcNameMatch) {
+        const rival = cardGameNpcNameMatch[1].trim();
+        extra = ` Player explicitly picked rival "${rival}" — they MUST appear as card game participant.`;
+      }
+      parts.push(`CARD GAME (OCZKO) INITIATED. MUST include combatUpdate with mode="card_game". Set modeConfig.anteGold=5 and modeConfig.rounds=5 and modeConfig.difficulty based on NPC personality.${extra}`);
+    } else if (isDiceGameInitiation) {
+      let extra = '';
+      if (diceGameNpcNameMatch) {
+        const rival = diceGameNpcNameMatch[1].trim();
+        extra = ` Player explicitly picked rival "${rival}" — they MUST appear as dice game participant.`;
+      }
+      parts.push(`DICE GAME INITIATED. MUST include combatUpdate with mode="dice_game". Set modeConfig.anteGold=5 and modeConfig.rounds=7 and modeConfig.difficulty based on NPC personality.${extra}`);
     } else if (isGeneralCombatInitiation) {
       parts.push(`COMBAT INITIATED. MUST include combatUpdate. PREFERRED: use enemyHints {location, budget, maxDifficulty, count, race} — engine selects from bestiary. Available races: ${BESTIARY_RACES_STR}. Available locations: ${BESTIARY_LOCATIONS_STR}.`);
     } else if (attackNpcMatch) {

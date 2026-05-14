@@ -93,6 +93,8 @@ export function getRemainingMovementPoints(actor) {
 
 export const SKIRMISH_MODE_COMBAT = 'combat';
 export const SKIRMISH_MODE_BEER_DUEL = 'beer_duel';
+export const SKIRMISH_MODE_CARD_GAME = 'card_game';
+export const SKIRMISH_MODE_DICE_GAME = 'dice_game';
 
 function spawnTerrainTiles(W, H, combatants) {
   const cfg = gameData.terrainSpawnConfig;
@@ -136,7 +138,10 @@ function spawnTerrainTiles(W, H, combatants) {
 }
 
 function normalizeSkirmishMode(mode) {
-  return mode === SKIRMISH_MODE_BEER_DUEL ? SKIRMISH_MODE_BEER_DUEL : SKIRMISH_MODE_COMBAT;
+  if (mode === SKIRMISH_MODE_BEER_DUEL) return SKIRMISH_MODE_BEER_DUEL;
+  if (mode === SKIRMISH_MODE_CARD_GAME) return SKIRMISH_MODE_CARD_GAME;
+  if (mode === SKIRMISH_MODE_DICE_GAME) return SKIRMISH_MODE_DICE_GAME;
+  return SKIRMISH_MODE_COMBAT;
 }
 
 export function getTileAt(terrainTiles, x, y) {
@@ -707,7 +712,7 @@ export function createCombatState(playerCharacter, enemies, allies = [], options
 
   const W = gameData.BATTLEFIELD_WIDTH;
   const H = gameData.BATTLEFIELD_HEIGHT;
-  const terrainTiles = mode === SKIRMISH_MODE_BEER_DUEL ? [] : spawnTerrainTiles(W, H, combatants);
+  const terrainTiles = (mode === SKIRMISH_MODE_BEER_DUEL || mode === SKIRMISH_MODE_CARD_GAME || mode === SKIRMISH_MODE_DICE_GAME) ? [] : spawnTerrainTiles(W, H, combatants);
 
   for (const c of combatants) {
     c.initiative = rollInitiative(c);
@@ -1400,7 +1405,7 @@ export function getCurrentTurnCombatant(combat) {
 
 export function isCombatOver(combat) {
   if (!combat?.combatants) return true;
-  if (combat.mode === SKIRMISH_MODE_BEER_DUEL) return false;
+  if (combat.mode === SKIRMISH_MODE_BEER_DUEL || combat.mode === SKIRMISH_MODE_CARD_GAME || combat.mode === SKIRMISH_MODE_DICE_GAME) return false;
   const activeEnemies = combat.combatants.filter((c) => c.type === 'enemy' && !c.isDefeated);
   const activeFriendly = combat.combatants.filter((c) => (c.type === 'player' || c.type === 'ally') && !c.isDefeated);
   return activeEnemies.length === 0 || activeFriendly.length === 0;
@@ -1408,7 +1413,7 @@ export function isCombatOver(combat) {
 
 export function isPlayerWinning(combat) {
   if (!combat?.combatants) return false;
-  if (combat.mode === SKIRMISH_MODE_BEER_DUEL) return false;
+  if (combat.mode === SKIRMISH_MODE_BEER_DUEL || combat.mode === SKIRMISH_MODE_CARD_GAME || combat.mode === SKIRMISH_MODE_DICE_GAME) return false;
   const activeFriendly = combat.combatants.filter((c) => (c.type === 'player' || c.type === 'ally') && !c.isDefeated);
   if (activeFriendly.length === 0) return false;
   const enemies = combat.combatants.filter((c) => c.type === 'enemy');

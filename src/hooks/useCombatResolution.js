@@ -62,6 +62,9 @@ export function buildCombatResolutionHandlers({
   const handleEndCombat = (summary) => {
     dispatch({ type: 'END_COMBAT' });
     const isBeerDuel = summary.mode === 'beer_duel';
+    const isCardGame = summary.mode === 'card_game';
+    const isDiceGame = summary.mode === 'dice_game';
+    const isMinigame = isBeerDuel || isCardGame || isDiceGame;
     const duelWinnerLabel = summary.skirmishSummary?.winnerName
       || (summary.skirmishSummary?.isTie ? 'draw' : 'nobody');
     const playerBeers = summary.skirmishSummary?.beersCollectedByPlayer || 0;
@@ -69,11 +72,15 @@ export function buildCombatResolutionHandlers({
 
     const combatJournal = isBeerDuel
       ? `Beer duel: player drank ${playerBeers} beers, opponent drank ${opponentBeers}. Winner: ${duelWinnerLabel}.`
+      : isCardGame
+      ? `Card game (Oczko): player ${summary.skirmishSummary?.playerScore || 0} - opponent ${summary.skirmishSummary?.opponentScore || 0}. Winner: ${summary.skirmishSummary?.winnerName || 'draw'}. Gold change: ${summary.skirmishSummary?.goldChange || 0} MK.`
+      : isDiceGame
+      ? `Dice game: player ${summary.skirmishSummary?.playerScore || 0} - opponent ${summary.skirmishSummary?.opponentScore || 0}. Winner: ${summary.skirmishSummary?.winnerName || 'draw'}. Gold change: ${summary.skirmishSummary?.goldChange || 0} MK.`
       : summary.playerSurvived
         ? `Combat: Victory — ${summary.enemiesDefeated}/${summary.totalEnemies} enemies defeated in ${summary.rounds} rounds.${formatWoundsText(summary.woundsChange)}`
         : `Combat: Defeat — fell after ${summary.rounds} rounds against ${summary.totalEnemies} enemies.`;
 
-    const isDead = !isBeerDuel && !summary.playerSurvived;
+    const isDead = !isMinigame && !summary.playerSurvived;
     if (isDead) {
       dispatch({ type: 'APPLY_STATE_CHANGES', payload: { journalEntries: [combatJournal], forceStatus: 'dead' } });
     } else {
@@ -88,6 +95,10 @@ export function buildCombatResolutionHandlers({
         subtype: isDead ? 'combat_death' : 'combat_end',
         content: isBeerDuel
           ? t('combat.beerDuelEnded', 'Beer duel ended. Winner: {{winner}}.', { winner: duelWinnerLabel })
+          : isCardGame
+          ? t('combat.cardGameEnded', 'Gra w oczko zakończona. Zwycięzca: {{winner}}.', { winner: summary.skirmishSummary?.winnerName || 'remis' })
+          : isDiceGame
+          ? t('combat.diceGameEnded', 'Gra w kości zakończona. Zwycięzca: {{winner}}.', { winner: summary.skirmishSummary?.winnerName || 'remis' })
           : isDead
           ? t('combat.playerDied', 'Your character has fallen in combat. Death is final.')
           : `${t('combat.endedAfterRounds', 'Combat ended after {{rounds}} rounds.', { rounds: summary.rounds })} ${summary.enemiesDefeated}/${summary.totalEnemies} ${t('combat.enemiesDefeated', 'enemies defeated')}. ${t('combat.youSurvived', 'You survived!')}`,
@@ -104,6 +115,10 @@ export function buildCombatResolutionHandlers({
     const combatResult = buildCombatResult(summary);
     const combatActionText = isBeerDuel
       ? `[BEER_DUEL_RESOLVED: winner=${duelWinnerLabel}; playerBeers=${playerBeers}; opponentBeers=${opponentBeers}]`
+      : isCardGame
+      ? `[CARD_GAME_RESOLVED: winner=${summary.skirmishSummary?.winnerName || 'draw'}; playerScore=${summary.skirmishSummary?.playerScore || 0}; opponentScore=${summary.skirmishSummary?.opponentScore || 0}; goldChange=${summary.skirmishSummary?.goldChange || 0}]`
+      : isDiceGame
+      ? `[DICE_GAME_RESOLVED: winner=${summary.skirmishSummary?.winnerName || 'draw'}; playerScore=${summary.skirmishSummary?.playerScore || 0}; opponentScore=${summary.skirmishSummary?.opponentScore || 0}; goldChange=${summary.skirmishSummary?.goldChange || 0}]`
       : `[Combat resolved: defeated ${summary.enemiesDefeated}/${summary.totalEnemies} enemies in ${summary.rounds} rounds.${formatWoundsText(summary.woundsChange) || ' Unscathed.'}]`;
 
     generateScene(combatActionText, false, false, false, { combatResult }).catch(() => {});

@@ -82,6 +82,8 @@ export default function ActionPanel({
   const [customAction, setCustomAction] = useState('');
   const [combatPickerOpen, setCombatPickerOpen] = useState(false);
   const [beerDuelPickerOpen, setBeerDuelPickerOpen] = useState(false);
+  const [cardGamePickerOpen, setCardGamePickerOpen] = useState(false);
+  const [diceGamePickerOpen, setDiceGamePickerOpen] = useState(false);
   const [tradePickerOpen, setTradePickerOpen] = useState(false);
   const [trainerPickerOpen, setTrainerPickerOpen] = useState(false);
   const [recruitPickerOpen, setRecruitPickerOpen] = useState(false);
@@ -303,15 +305,55 @@ export default function ActionPanel({
     onAction(`[INITIATE BEER DUEL:${npcName}]`, true);
   };
 
+  const handleCardGameGeneral = () => {
+    setCardGamePickerOpen(false);
+    onAction('[INITIATE CARD_GAME]', true);
+  };
+
+  const handleCardGameVsNpc = (npcName) => {
+    setCardGamePickerOpen(false);
+    onAction(`[INITIATE CARD_GAME:${npcName}]`, true);
+  };
+
+  const handleDiceGameGeneral = () => {
+    setDiceGamePickerOpen(false);
+    onAction('[INITIATE DICE_GAME]', true);
+  };
+
+  const handleDiceGameVsNpc = (npcName) => {
+    setDiceGamePickerOpen(false);
+    onAction(`[INITIATE DICE_GAME:${npcName}]`, true);
+  };
+
   const toggleCombatPicker = useCallback(() => {
     setBeerDuelPickerOpen(false);
+    setCardGamePickerOpen(false);
+    setDiceGamePickerOpen(false);
     setCombatPickerOpen((v) => !v);
   }, []);
 
   const toggleBeerDuelPicker = useCallback(() => {
     if (isMultiplayer) return;
     setCombatPickerOpen(false);
+    setCardGamePickerOpen(false);
+    setDiceGamePickerOpen(false);
     setBeerDuelPickerOpen((v) => !v);
+  }, [isMultiplayer]);
+
+  const toggleCardGamePicker = useCallback(() => {
+    if (isMultiplayer) return;
+    setCombatPickerOpen(false);
+    setBeerDuelPickerOpen(false);
+    setDiceGamePickerOpen(false);
+    setCardGamePickerOpen((v) => !v);
+  }, [isMultiplayer]);
+
+  const toggleDiceGamePicker = useCallback(() => {
+    if (isMultiplayer) return;
+    setCombatPickerOpen(false);
+    setBeerDuelPickerOpen(false);
+    setCardGamePickerOpen(false);
+    setDiceGamePickerOpen((v) => !v);
   }, [isMultiplayer]);
 
   const handleAttackNpc = (npcName) => {
@@ -503,6 +545,28 @@ export default function ActionPanel({
             />
           )}
 
+          {cardGamePickerOpen && !isMultiplayer && (
+            <CombatTargetPicker
+              npcs={npcs}
+              disabled={disabled}
+              variant="card_game"
+              onGeneral={handleCardGameGeneral}
+              onVsNpc={handleCardGameVsNpc}
+              onCancel={() => setCardGamePickerOpen(false)}
+            />
+          )}
+
+          {diceGamePickerOpen && !isMultiplayer && (
+            <CombatTargetPicker
+              npcs={npcs}
+              disabled={disabled}
+              variant="dice_game"
+              onGeneral={handleDiceGameGeneral}
+              onVsNpc={handleDiceGameVsNpc}
+              onCancel={() => setDiceGamePickerOpen(false)}
+            />
+          )}
+
           {tradePickerOpen && dispatch && (
             <TradeNpcPicker
               npcs={npcs}
@@ -618,6 +682,8 @@ export default function ActionPanel({
             onSuggestedAction={handleSuggestedAction}
             onToggleCombatPicker={toggleCombatPicker}
             onToggleBeerDuelPicker={toggleBeerDuelPicker}
+            onToggleCardGamePicker={toggleCardGamePicker}
+            onToggleDiceGamePicker={toggleDiceGamePicker}
             isMultiplayer={isMultiplayer}
             onToggleTradePicker={() => setTradePickerOpen((v) => !v)}
             onToggleTrainerPicker={() => setTrainerPickerOpen((v) => !v)}

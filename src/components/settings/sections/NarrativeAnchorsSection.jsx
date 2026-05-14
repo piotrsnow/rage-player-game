@@ -84,6 +84,35 @@ export default function NarrativeAnchorsSection({ dmSettings, updateDMSettings }
         displayValue={combatCommentaryLabel}
       />
 
+      <div className="mb-6">
+        <label className="flex items-center justify-between text-sm font-label text-on-surface mb-1.5">
+          {t('settings.minigameCommentaryMode', 'Komentarz w minigrach')}
+        </label>
+        <p className="text-[11px] text-on-surface-variant/70 mb-2">
+          {t('settings.minigameCommentaryModeDesc', 'Źródło komentarzy NPC podczas minigier (oczko, kości, piwny pojedynek).')}
+        </p>
+        <div className="flex gap-2">
+          {[
+            { value: 'pool', label: t('settings.commentaryPool', 'Losowe z puli'), icon: 'shuffle' },
+            { value: 'ai', label: t('settings.commentaryAi', 'AI (nano)'), icon: 'smart_toy' },
+          ].map(({ value, label, icon }) => (
+            <button
+              key={value}
+              type="button"
+              onClick={() => updateDMSettings({ minigameCommentaryMode: value })}
+              className={`flex-1 flex items-center justify-center gap-2 px-3 py-2 text-xs font-label border rounded-sm transition-all ${
+                (dmSettings.minigameCommentaryMode || 'pool') === value
+                  ? 'border-primary/40 bg-primary/15 text-primary'
+                  : 'border-outline-variant/20 bg-surface-container/60 text-on-surface-variant hover:border-primary/20'
+              }`}
+            >
+              <span className="material-symbols-outlined text-sm">{icon}</span>
+              {label}
+            </button>
+          ))}
+        </div>
+      </div>
+
       <Slider
         label={t('settings.playerFreedom')}
         description={t('settings.playerFreedomDesc')}

@@ -152,6 +152,38 @@ export function classifyIntentHeuristic(playerAction, { isFirstScene = false, en
     return { ...emptySelection(), _intent: 'combat', _combatMode: 'beer_duel' };
   }
 
+  // [INITIATE CARD_GAME: NpcName]
+  const cardGameNpcMatch = playerAction.match(/^\[INITIATE CARD_GAME:\s*(.+?)\]$/);
+  if (cardGameNpcMatch) {
+    return {
+      ...emptySelection(),
+      expand_npcs: [cardGameNpcMatch[1].trim()],
+      _intent: 'combat',
+      _combatMode: 'card_game',
+    };
+  }
+
+  // [INITIATE CARD_GAME]
+  if (playerAction.startsWith('[INITIATE CARD_GAME]')) {
+    return { ...emptySelection(), _intent: 'combat', _combatMode: 'card_game' };
+  }
+
+  // [INITIATE DICE_GAME: NpcName]
+  const diceGameNpcMatch = playerAction.match(/^\[INITIATE DICE_GAME:\s*(.+?)\]$/);
+  if (diceGameNpcMatch) {
+    return {
+      ...emptySelection(),
+      expand_npcs: [diceGameNpcMatch[1].trim()],
+      _intent: 'combat',
+      _combatMode: 'dice_game',
+    };
+  }
+
+  // [INITIATE DICE_GAME]
+  if (playerAction.startsWith('[INITIATE DICE_GAME]')) {
+    return { ...emptySelection(), _intent: 'combat', _combatMode: 'dice_game' };
+  }
+
   // [TALK: NpcName]
   const talkMatch = playerAction.match(/^\[TALK:\s*(.+?)\]$/);
   if (talkMatch) {

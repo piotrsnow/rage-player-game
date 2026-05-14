@@ -136,6 +136,8 @@ export default function QuickActionsBar({
   onSuggestedAction,
   onToggleCombatPicker,
   onToggleBeerDuelPicker,
+  onToggleCardGamePicker,
+  onToggleDiceGamePicker,
   isMultiplayer = false,
   onToggleTradePicker,
   onToggleTrainerPicker,
@@ -305,29 +307,50 @@ export default function QuickActionsBar({
         onSelect={onSuggestedAction}
       />
 
-      <button
-        type="button"
-        aria-label={t('gameplay.initiateCombat')}
-        title={t('gameplay.initiateCombat')}
-        onClick={onToggleCombatPicker}
+      <GroupButton
+        icon="swords"
+        label={t('gameplay.combatGroup', 'Potyczki')}
+        tone="red"
         disabled={isDisabled}
-        className={`shrink-0 inline-flex items-center justify-center w-11 h-11 border rounded-sm transition-all duration-200 hover:-translate-y-px hover:shadow-[0_10px_24px_rgba(0,0,0,0.3)] disabled:opacity-30 disabled:cursor-not-allowed ${TONE_STYLES.red}`}
-      >
-        <span className="material-symbols-outlined text-[22px] leading-none">swords</span>
-      </button>
-
-      {!isMultiplayer && onToggleBeerDuelPicker && (
-        <button
-          type="button"
-          aria-label={t('gameplay.initiateBeerDuel')}
-          title={t('gameplay.initiateBeerDuelDescription')}
-          onClick={onToggleBeerDuelPicker}
-          disabled={isDisabled}
-          className={`shrink-0 inline-flex items-center justify-center w-11 h-11 border rounded-sm transition-all duration-200 hover:-translate-y-px hover:shadow-[0_10px_24px_rgba(0,0,0,0.3)] disabled:opacity-30 disabled:cursor-not-allowed ${TONE_STYLES.yellow}`}
-        >
-          <span className="material-symbols-outlined text-[22px] leading-none">sports_bar</span>
-        </button>
-      )}
+        items={[
+          {
+            id: 'combat',
+            icon: 'swords',
+            label: t('gameplay.initiateCombat'),
+            description: t('gameplay.combatDescription', 'Regularna walka'),
+            onClick: onToggleCombatPicker,
+            tone: 'red',
+            visible: true,
+          },
+          {
+            id: 'beer_duel',
+            icon: 'sports_bar',
+            label: t('gameplay.initiateBeerDuel'),
+            description: t('gameplay.initiateBeerDuelDescription'),
+            onClick: onToggleBeerDuelPicker,
+            tone: 'yellow',
+            visible: !isMultiplayer && !!onToggleBeerDuelPicker,
+          },
+          {
+            id: 'card_game',
+            icon: 'style',
+            label: t('gameplay.initiateCardGame', 'Oczko'),
+            description: t('gameplay.initiateCardGameDescription', 'Gra karciana — kto bliżej 21?'),
+            onClick: onToggleCardGamePicker,
+            tone: 'teal',
+            visible: !isMultiplayer && !!onToggleCardGamePicker,
+          },
+          {
+            id: 'dice_game',
+            icon: 'casino',
+            label: t('gameplay.initiateDiceGame', 'Gra w kości'),
+            description: t('gameplay.initiateDiceGameDescription', 'Kto wyrzuci więcej?'),
+            onClick: onToggleDiceGamePicker,
+            tone: 'amber',
+            visible: !isMultiplayer && !!onToggleDiceGamePicker,
+          },
+        ]}
+      />
 
       <GroupButton
         icon="people"

@@ -58,7 +58,21 @@ function humanizePlayerAction(action, t) {
   if (action === '[PROVIDENCE_AFTER_INCIDENT]') return null;
   if (action.startsWith('[Combat resolved:')) return null;
   if (action.startsWith('[BEER_DUEL_RESOLVED:')) return null;
+  if (action.startsWith('[CARD_GAME_RESOLVED:')) return null;
+  if (action.startsWith('[DICE_GAME_RESOLVED:')) return null;
   if (action.startsWith('[CREATURE_FLEE_FAILED:')) return null;
+
+  const cardGameMatch = action.match(/^\[INITIATE CARD_GAME(?::\s*(.+?))?\]$/);
+  if (cardGameMatch)
+    return cardGameMatch[1]
+      ? t('gameplay.cardGameVsChat', { name: cardGameMatch[1], defaultValue: 'Proponuję grę w oczko z {{name}}!' })
+      : t('gameplay.cardGameChat', 'Proponuję grę w oczko!');
+
+  const diceGameMatch = action.match(/^\[INITIATE DICE_GAME(?::\s*(.+?))?\]$/);
+  if (diceGameMatch)
+    return diceGameMatch[1]
+      ? t('gameplay.diceGameVsChat', { name: diceGameMatch[1], defaultValue: 'Proponuję grę w kości z {{name}}!' })
+      : t('gameplay.diceGameChat', 'Proponuję grę w kości!');
 
   if (action === '[INITIATE COMBAT]')
     return t('gameplay.initiateCombatChat', 'Rzucam się do walki!');

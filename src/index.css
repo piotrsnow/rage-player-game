@@ -1924,6 +1924,59 @@
 }
 
 /* DidYouKnow holographic effects */
+/* Card game animations */
+@keyframes card-deal {
+  0% { opacity: 0; transform: translateX(-40px) translateY(-20px) scale(0.8); }
+  100% { opacity: 1; transform: translateX(0) translateY(0) scale(1); }
+}
+@keyframes card-flip {
+  0% { transform: rotateY(0deg); }
+  50% { transform: rotateY(90deg); }
+  100% { transform: rotateY(0deg); }
+}
+@keyframes card-bust {
+  0%, 100% { transform: translateX(0); }
+  20% { transform: translateX(-4px) rotate(-2deg); }
+  40% { transform: translateX(4px) rotate(2deg); }
+  60% { transform: translateX(-3px) rotate(-1deg); }
+  80% { transform: translateX(3px) rotate(1deg); }
+}
+
+.animate-card-deal { animation: card-deal 0.4s ease-out forwards; }
+.animate-card-flip { animation: card-flip 0.6s ease-in-out; }
+.animate-card-bust { animation: card-bust 0.5s ease-in-out; }
+
+/* Dice game animations */
+@keyframes dice-tumble {
+  0% { transform: rotate(0deg) scale(1); }
+  25% { transform: rotate(90deg) scale(1.1); }
+  50% { transform: rotate(180deg) scale(0.9); }
+  75% { transform: rotate(270deg) scale(1.1); }
+  100% { transform: rotate(360deg) scale(1); }
+}
+@keyframes dice-bounce {
+  0% { transform: translateY(0); }
+  40% { transform: translateY(-12px); }
+  60% { transform: translateY(-4px); }
+  80% { transform: translateY(-2px); }
+  100% { transform: translateY(0); }
+}
+@keyframes combo-fire {
+  0% { box-shadow: 0 0 0 rgba(245, 158, 11, 0); }
+  50% { box-shadow: 0 0 20px rgba(245, 158, 11, 0.6), 0 0 40px rgba(239, 68, 68, 0.3); }
+  100% { box-shadow: 0 0 8px rgba(245, 158, 11, 0.3); }
+}
+@keyframes raise-coin {
+  0% { transform: translateY(0) rotateY(0); opacity: 1; }
+  50% { transform: translateY(-20px) rotateY(180deg); opacity: 1; }
+  100% { transform: translateY(0) rotateY(360deg); opacity: 1; }
+}
+
+.animate-dice-tumble { animation: dice-tumble 1.2s ease-in-out; }
+.animate-dice-bounce { animation: dice-bounce 0.6s ease-out; }
+.animate-combo-fire { animation: combo-fire 0.8s ease-out forwards; }
+.animate-raise-coin { animation: raise-coin 0.6s ease-in-out; }
+
 @keyframes holoShimmer {
   0%   { background-position: 0% 0%; }
   50%  { background-position: 100% 100%; }

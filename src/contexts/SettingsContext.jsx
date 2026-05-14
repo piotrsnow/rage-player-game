@@ -178,6 +178,7 @@ const defaultSettings = {
     difficulty: 50,
     testsFrequency: 50,
     combatCommentaryFrequency: 3,
+    minigameCommentaryMode: 'pool',
     freedom: 50,
     narratorPoeticism: 50,
     narratorGrittiness: 30,

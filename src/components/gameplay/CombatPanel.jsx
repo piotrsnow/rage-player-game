@@ -49,8 +49,12 @@ import { useCombatSprites } from '../../hooks/useCombatSprites';
 import { apiClient } from '../../services/apiClient';
 import { addEffect, migrateStatusStrings } from '../../../shared/domain/statusEffects.js';
 import BeerDuelPanel from './combat/BeerDuelPanel';
+import CardGamePanel from './combat/CardGamePanel';
+import DiceGamePanel from './combat/DiceGamePanel';
 
 const SKIRMISH_MODE_BEER_DUEL = 'beer_duel';
+const SKIRMISH_MODE_CARD_GAME = 'card_game';
+const SKIRMISH_MODE_DICE_GAME = 'dice_game';
 
 function summarizeLogEntry(entry) {
   if (!entry || entry.type === 'round') return '';
@@ -150,6 +154,32 @@ export default function CombatPanel({
   if (combat.mode === SKIRMISH_MODE_BEER_DUEL) {
     return (
       <BeerDuelPanel
+        combat={combat}
+        character={character}
+        dispatch={dispatch}
+        onEndCombat={onEndCombat}
+        isMultiplayer={isMultiplayer}
+        mpCharacters={mpCharacters}
+      />
+    );
+  }
+
+  if (combat.mode === SKIRMISH_MODE_CARD_GAME) {
+    return (
+      <CardGamePanel
+        combat={combat}
+        character={character}
+        dispatch={dispatch}
+        onEndCombat={onEndCombat}
+        isMultiplayer={isMultiplayer}
+        mpCharacters={mpCharacters}
+      />
+    );
+  }
+
+  if (combat.mode === SKIRMISH_MODE_DICE_GAME) {
+    return (
+      <DiceGamePanel
         combat={combat}
         character={character}
         dispatch={dispatch}
@@ -361,7 +391,7 @@ export default function CombatPanel({
   }, [getCombatantCell]);
 
   const handleEnemyBeforeResolve = useCallback(async (currentCombat) => {
-    if (currentCombat?.mode === SKIRMISH_MODE_BEER_DUEL) return;
+    if (currentCombat?.mode === SKIRMISH_MODE_BEER_DUEL || currentCombat?.mode === SKIRMISH_MODE_CARD_GAME || currentCombat?.mode === SKIRMISH_MODE_DICE_GAME) return;
     const current = getCurrentTurnCombatant(currentCombat);
     if (!current || current.type === 'player') return;
     const playerTargets = currentCombat.combatants.filter(
@@ -382,7 +412,7 @@ export default function CombatPanel({
   }, [triggerActionAnim, triggerProjectileAnim]);
 
   const handleEnemyAfterSlide = useCallback(async (currentCombat) => {
-    if (currentCombat?.mode === SKIRMISH_MODE_BEER_DUEL) return;
+    if (currentCombat?.mode === SKIRMISH_MODE_BEER_DUEL || currentCombat?.mode === SKIRMISH_MODE_CARD_GAME || currentCombat?.mode === SKIRMISH_MODE_DICE_GAME) return;
     const current = getCurrentTurnCombatant(currentCombat);
     if (!current || current.type === 'player') return;
     const playerTargets = currentCombat.combatants.filter(

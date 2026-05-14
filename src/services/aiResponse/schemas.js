@@ -429,10 +429,13 @@ const StateChangesSchema = z.object({
   factionChanges: z.any().nullable().optional(),
   combatUpdate: z.object({
     active: z.boolean(),
-    mode: z.enum(['combat', 'beer_duel']).optional().default('combat'),
+    mode: z.enum(['combat', 'beer_duel', 'card_game', 'dice_game']).optional().default('combat'),
     modeConfig: z.object({
       beerCountMin: z.number().int().min(1).optional(),
       beerCountMax: z.number().int().min(1).optional(),
+      anteGold: z.number().int().min(1).optional(),
+      rounds: z.number().int().min(1).max(15).optional(),
+      difficulty: z.enum(['easy', 'medium', 'hard']).optional(),
     }).passthrough().nullable().optional(),
     enemies: z.array(z.object({
       name: z.string(),
