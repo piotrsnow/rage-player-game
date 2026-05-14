@@ -19,8 +19,22 @@ function buildFilename(campaignName, ext) {
   return `${safe}_${date}.${ext}`;
 }
 
+function resolveAuthor(msg, characterName) {
+  if (msg.role === 'player') return characterName || 'Gracz';
+  if (msg.role === 'dm') return 'Narrator';
+  if (msg.role === 'system') return 'System';
+  return msg.role;
+}
+
 export function exportAsJson(campaignState) {
   const { isLoading, error, isGeneratingScene, isGeneratingImage, ...data } = campaignState;
+  const charName = data.character?.name;
+  if (data.chatHistory?.length) {
+    data.chatHistory = data.chatHistory.map((msg) => ({
+      ...msg,
+      author: resolveAuthor(msg, charName),
+    }));
+  }
   const json = JSON.stringify(data, null, 2);
   const blob = new Blob([json], { type: 'application/json' });
   triggerDownload(blob, buildFilename(data.campaign?.name, 'json'));
@@ -93,7 +107,7 @@ export function exportAsMarkdown(campaignState) {
         lines.push('');
       }
       if (scene.chosenAction) {
-        lines.push(`**Player:** ${scene.chosenAction}`);
+        lines.push(`**${character?.name || 'Player'}:** ${scene.chosenAction}`);
         lines.push('');
       }
       if (scene.diceRoll) {
@@ -102,7 +116,16 @@ export function exportAsMarkdown(campaignState) {
         lines.push(`**Dice Roll:** ${d.skill} — d50 roll ${d.roll} vs target ${d.target || d.dc} — margin ${d.margin ?? 0} — ${outcome}`);
         lines.push('');
       }
-      if (scene.narrative) {
+      if (scene.dialogueSegments?.length) {
+        scene.dialogueSegments.forEach((seg) => {
+          if (seg.type === 'dialogue' && seg.character) {
+            lines.push(`**${seg.character}:** „${seg.text}"`);
+          } else {
+            lines.push(seg.text || '');
+          }
+        });
+        lines.push('');
+      } else if (scene.narrative) {
         lines.push(scene.narrative);
         lines.push('');
       }

@@ -8,7 +8,41 @@ import {
 } from '../../services/campaignRecap.js';
 import { RECAP_SAVE_SCHEMA } from './schemas.js';
 
+async function findBestRecap(campaignId) {
+  const all = await prisma.mediaAsset.findMany({
+    where: { campaignId, type: 'recap' },
+    select: { metadata: true, size: true, createdAt: true },
+    orderBy: { size: 'desc' },
+  });
+
+  let best = null;
+  let bestSize = 0;
+  for (const row of all) {
+    const meta = parseRecapMetadata(row.metadata);
+    const text = typeof meta.recap === 'string' ? meta.recap.trim() : '';
+    if (text.length > bestSize) {
+      best = { recap: text, cachedAt: row.createdAt, meta: meta.meta || {} };
+      bestSize = text.length;
+    }
+  }
+  return best;
+}
+
+export { findBestRecap };
+
 export async function recapCampaignRoutes(app) {
+  app.get('/:id/recaps/best', async (request, reply) => {
+    const campaign = await prisma.campaign.findFirst({
+      where: { id: request.params.id, userId: request.user.id },
+      select: { id: true },
+    });
+    if (!campaign) return reply.code(404).send({ error: 'Campaign not found' });
+
+    const best = await findBestRecap(campaign.id);
+    if (!best) return { found: false };
+    return { found: true, ...best };
+  });
+
   app.get('/:id/recaps', async (request, reply) => {
     const key = normalizeRecapCacheKey(request.query?.key);
     if (!key) return reply.code(400).send({ error: 'key is required' });

@@ -57,13 +57,14 @@ export async function adminLivingWorldRoutes(fastify) {
           companion: BOOL_STRING,
           locked: BOOL_STRING,
           locationId: ID_STRING,
+          campaignId: ID_STRING,
           limit: { type: 'integer', minimum: 1, maximum: 500, default: 100 },
           skip: { type: 'integer', minimum: 0, default: 0 },
         },
       },
     },
   }), async (request) => {
-    const { alive, companion, locked, locationId, limit, skip } = request.query;
+    const { alive, companion, locked, locationId, campaignId, limit, skip } = request.query;
     const where = {};
     if (alive === 'true') where.alive = true;
     if (alive === 'false') where.alive = false;
@@ -72,6 +73,7 @@ export async function adminLivingWorldRoutes(fastify) {
     if (locked === 'true') where.lockedByCampaignId = { not: null };
     if (locked === 'false') where.lockedByCampaignId = null;
     if (locationId) where.currentLocationId = locationId;
+    if (campaignId) where.campaignShadows = { some: { campaignId } };
 
     const [total, rows] = await Promise.all([
       prisma.worldNPC.count({ where }),
@@ -205,14 +207,22 @@ export async function adminLivingWorldRoutes(fastify) {
         additionalProperties: false,
         properties: {
           region: SHORT_STRING,
+          campaignId: ID_STRING,
           limit: { type: 'integer', minimum: 1, maximum: 1000, default: 200 },
         },
       },
     },
   }), async (request) => {
-    const { region, limit } = request.query;
+    const { region, campaignId, limit } = request.query;
     const where = {};
     if (region) where.region = region;
+    if (campaignId) {
+      const discovered = await prisma.campaignDiscoveredLocation.findMany({
+        where: { campaignId, locationKind: 'world' },
+        select: { locationId: true },
+      });
+      where.id = { in: discovered.map((d) => d.locationId) };
+    }
     const rows = await prisma.worldLocation.findMany({
       where,
       orderBy: { updatedAt: 'desc' },
@@ -1898,9 +1908,18 @@ export async function adminLivingWorldRoutes(fastify) {
     const typesToQuery = type ? [type] : ENTITY_TYPES;
     const queries = {};
 
+    const needsWorldLocFilter = campaignId && (typesToQuery.includes('WorldLocation'));
+    const campaignWorldLocIds = needsWorldLocFilter
+      ? (await prisma.campaignDiscoveredLocation.findMany({
+          where: { campaignId, locationKind: 'world' },
+          select: { locationId: true },
+        })).map((d) => d.locationId)
+      : null;
+
     if (typesToQuery.includes('WorldNPC')) {
       const where = {};
       if (searchFilter) where.name = searchFilter;
+      if (campaignId) where.campaignShadows = { some: { campaignId } };
       queries.WorldNPC = prisma.worldNPC.findMany({
         where, take: limit, skip, orderBy: { updatedAt: 'desc' },
         select: { id: true, name: true, role: true, alive: true, category: true, currentLocationId: true, updatedAt: true, globallyActive: true, softDeletedAt: true, originCampaignId: true },
@@ -1909,6 +1928,7 @@ export async function adminLivingWorldRoutes(fastify) {
     if (typesToQuery.includes('WorldLocation')) {
       const where = {};
       if (searchFilter) where.canonicalName = searchFilter;
+      if (campaignWorldLocIds) where.id = { in: campaignWorldLocIds };
       queries.WorldLocation = prisma.worldLocation.findMany({
         where, take: limit, skip, orderBy: { updatedAt: 'desc' },
         select: { id: true, canonicalName: true, locationType: true, region: true, parentLocationId: true, updatedAt: true, globallyActive: true, softDeletedAt: true, originCampaignId: true },
@@ -1995,8 +2015,14 @@ export async function adminLivingWorldRoutes(fastify) {
     // clicking a type zeros out every other counter. They DO honor scope
     // filters (search + campaignId) so the sidebar tracks the search results.
     const countWhere = {
-      WorldNPC: searchFilter ? { name: searchFilter } : {},
-      WorldLocation: searchFilter ? { canonicalName: searchFilter } : {},
+      WorldNPC: {
+        ...(searchFilter ? { name: searchFilter } : {}),
+        ...(campaignId ? { campaignShadows: { some: { campaignId } } } : {}),
+      },
+      WorldLocation: {
+        ...(searchFilter ? { canonicalName: searchFilter } : {}),
+        ...(campaignWorldLocIds ? { id: { in: campaignWorldLocIds } } : {}),
+      },
       Road: {},
       CampaignNPC: {
         ...(searchFilter ? { name: searchFilter } : {}),

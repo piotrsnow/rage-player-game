@@ -211,6 +211,7 @@ model CharacterBadge {
   name        String
   description String    @db.Text
   icon        String    @default("shield")
+  color       String?
   imageUrl    String?
   imagePrompt String?
   sceneFrom   Int?

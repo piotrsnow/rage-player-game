@@ -17,7 +17,7 @@ export default function CampaignViewerPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
-  const backendUrl = apiClient.getBaseUrl() || settings.backendUrl || '';
+  const backendUrl = apiClient.getBaseUrl() || settings.backendUrl || window.location.origin;
 
   const fetchAndLoad = useCallback(async (force = false) => {
     if (!force && loadedRef.current) return;

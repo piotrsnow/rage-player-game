@@ -303,9 +303,10 @@ export default function ActionPanel({
     onAction('[INITIATE BEER DUEL]', true);
   };
 
-  const handleBeerDuelVsNpc = (npcName) => {
+  const handleBeerDuelVsNpc = (npcNames) => {
     setBeerDuelPickerOpen(false);
-    onAction(`[INITIATE BEER DUEL:${npcName}]`, true);
+    const names = Array.isArray(npcNames) ? npcNames : [npcNames];
+    onAction(`[INITIATE BEER DUEL:${names.join(',')}]`, true);
   };
 
   const handleCardGameGeneral = () => {

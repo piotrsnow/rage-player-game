@@ -291,7 +291,7 @@ export default function CardGamePanel({
       </div>
 
       {/* ── Card table — two hands ── */}
-      <div className="grid grid-cols-[minmax(0,1fr)_clamp(16.5rem,27vw,24rem)_minmax(0,1fr)] items-start gap-0">
+      <div className="grid grid-cols-[minmax(0,1fr)_clamp(4rem,6vw,6rem)_minmax(0,1fr)] items-start gap-0">
         <HandDisplay
           hand={playerHand}
           total={playerTotal}

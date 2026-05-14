@@ -10,6 +10,7 @@ const GameplayPage = lazy(() => import('./components/gameplay/GameplayPage'));
 const JoinRoomPage = lazy(() => import('./components/multiplayer/JoinRoomPage'));
 const GalleryPage = lazy(() => import('./components/gallery/GalleryPage'));
 const CampaignViewerPage = lazy(() => import('./components/viewer/CampaignViewerPage'));
+const CampaignReaderPage = lazy(() => import('./components/reader/CampaignReaderPage'));
 const AdminPanelPage = lazy(() => import('./components/admin/panel/AdminPanelPage'));
 
 function RouteFallback() {
@@ -40,8 +41,24 @@ export default function App() {
             </Suspense>
           }
         />
+        <Route
+          path="/view/:shareToken/read"
+          element={
+            <Suspense fallback={<RouteFallback />}>
+              <CampaignReaderPage />
+            </Suspense>
+          }
+        />
 
         <Route element={<RequireAuth />}>
+          <Route
+            path="/read/:campaignId"
+            element={
+              <Suspense fallback={<RouteFallback />}>
+                <CampaignReaderPage />
+              </Suspense>
+            }
+          />
           <Route
             path="/create"
             element={

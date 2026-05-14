@@ -50,8 +50,10 @@
     "chooseManoeuvre": "Choose Manoeuvre",
     "selectTarget": "Select Target",
     "selectBeerDuelTarget": "Beer duel — opponents",
-    "generalBeerDuel": "General duel (AI picks rivals)",
+    "generalBeerDuel": "General duel (AI picks 2-3 rivals)",
     "beerDuelVsNpc": "Call out",
+    "beerDuelSelected": "Selected",
+    "beerDuelStartMulti": "Start duel ({{count}})",
     "execute": "Execute",
     "manoeuvres": {
       "attack": "Attack",
@@ -441,6 +443,8 @@
     "libraryNewerHintNoDate": "Newer library version available (Level {{level}})",
     "loadingWorld": "Loading world...",
     "loadingWorldHint": "Preparing your adventure, please wait",
+    "shareLink": "Share chronicle link",
+    "shareCopied": "Link copied!",
     "campaignNotFound": "Campaign not found. It may have been deleted.",
     "recentCampaigns": "Recent Campaigns",
     "showAllCampaigns": "All Campaigns",
@@ -570,8 +574,11 @@
     "youWin": "You win!",
     "youLose": "You lose!",
     "bothEliminated": "Both couldn't hold it!",
+    "allEliminated": "Nobody could hold it!",
     "playerEliminated": "You couldn't hold it...",
-    "opponentEliminated": "{{name}} couldn't hold it!"
+    "opponentEliminated": "{{name}} couldn't hold it!",
+    "someEliminated": "{{names}} couldn't hold it!",
+    "player": "Player"
   },
   "gameplay": {
     "loadingCampaign": "Loading campaign...",
@@ -729,6 +736,7 @@
     "attackNpcChat": "I attack {{name}}!",
     "beerDuelChat": "I propose a beer duel!",
     "beerDuelVsChat": "I propose a beer duel against {{name}}!",
+    "beerDuelVsMultiChat": "I propose a beer duel against {{names}}!",
     "continueDisabledTooltip": "You cannot pick “Continue” twice in a row. Choose another action or “Wait”.",
     "waitButton": "Wait",
     "waitAction": "[WAIT]",
@@ -992,6 +1000,8 @@
   "inventory": {
     "title": "Armory & Artifacts",
     "slots": "{{current}}/{{max}} Slots",
+    "sortByDate": "Sort by date found",
+    "newest": "Newest",
     "type": "Type:",
     "rarityCommon": "Common",
     "rarityUncommon": "Uncommon",
@@ -2597,6 +2607,31 @@
     "refresh": "Refresh campaign",
     "test": "Test"
   },
+  "reader": {
+    "loading": "Loading chronicle...",
+    "notFound": "Campaign not found",
+    "backendRequired": "Backend connection required",
+    "goHome": "Go to home page",
+    "scene": "Scene {{n}}",
+    "playerAction": "Player action",
+    "npc": "NPC",
+    "readChronicle": "Read chronicle",
+    "noScenes": "This campaign has no scenes yet.",
+    "autoPlay": "Auto-play",
+    "summary": "Summary",
+    "generateSummary": "Generate summary",
+    "generating": "Generating...",
+    "generatingBatch": "Generating batch {{current}}/{{total}}...",
+    "generateError": "Failed to generate summary.",
+    "summaryType": "Type",
+    "sentencesPerScene": "Sentences/scene",
+    "modeStory": "Story",
+    "modeDialogue": "Dialogue",
+    "modePoem": "Poem",
+    "modeReport": "Report",
+    "shareChronicle": "Share chronicle",
+    "linkCopied": "Read chronicle — link copied!"
+  },
   "trade": {
     "title": "Trade",
     "buy": "Buy",
@@ -2860,6 +2895,7 @@
   },
   "badges": {
     "title": "Badges",
+    "modalTitle": "Badge",
     "generate": "Generate badge",
     "generating": "Generating...",
     "empty": "No badges yet. Earn them during gameplay or generate one manually.",
@@ -2867,6 +2903,10 @@
     "alreadyClaimed": "Claimed +{{xp}} XP",
     "levelUp": "Leveled up to {{level}}!",
     "regenerateImage": "Regenerate image",
-    "generateAnother": "Another one"
+    "chatXpClaimed": "{{name}} — +{{xp}} XP",
+    "chatLevelUp": "{{name}} — +{{xp}} XP (Leveled up to {{level}}!)",
+    "generateAnother": "Another one",
+    "delete": "Delete",
+    "confirmDelete": "Are you sure?"
   }
 }

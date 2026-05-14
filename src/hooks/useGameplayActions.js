@@ -57,7 +57,7 @@ export function useGameplayActions({
     setShareLoading(true);
     try {
       const { shareToken } = await apiClient.post(`/campaigns/${backendId}/share`);
-      const url = `${window.location.origin}/view/${shareToken}`;
+      const url = `${window.location.origin}/view/${shareToken}/read`;
       await navigator.clipboard.writeText(url);
       setShareCopied(true);
       setTimeout(() => setShareCopied(false), 2500);

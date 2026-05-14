@@ -19,15 +19,15 @@ const OBJECTIVE_TYPE_COLORS = {
 function StatusIcon({ status, isNext }) {
   switch (status) {
     case 'done':
-      return <span className="material-symbols-outlined text-sm mt-0.5 text-primary">check_box</span>;
+      return <span className="material-symbols-outlined text-4xl mt-0.5 text-primary" title="Ukończone">check_box</span>;
     case 'failed':
-      return <span className="material-symbols-outlined text-sm mt-0.5 text-rose-400">cancel</span>;
+      return <span className="material-symbols-outlined text-4xl mt-0.5 text-rose-400" title="Nieudane">cancel</span>;
     case 'locked':
-      return <span className="material-symbols-outlined text-sm mt-0.5 text-outline/40">lock</span>;
+      return <span className="material-symbols-outlined text-4xl mt-0.5 text-outline/40" title="Zablokowane">lock</span>;
     case 'pending':
     default:
       return (
-        <span className={`material-symbols-outlined text-sm mt-0.5 ${isNext ? 'text-amber-300' : 'text-outline/30'}`}>
+        <span className={`material-symbols-outlined text-4xl mt-0.5 ${isNext ? 'text-amber-300' : 'text-outline/30'}`} title={isNext ? 'Następny krok' : 'Do zrobienia'}>
           {isNext ? 'play_arrow' : 'check_box_outline_blank'}
         </span>
       );
@@ -57,7 +57,7 @@ function ObjectiveTypeBadge({ obj, t, className = '' }) {
   if (!objectiveType) return null;
   const fallbackMark = obj?.objectiveType ? '' : ' ^';
   return (
-    <span className={`inline-block text-[9px] font-bold uppercase tracking-wider px-1 py-px rounded mr-1 align-middle ${className} ${OBJECTIVE_TYPE_COLORS[objectiveType] || ''}`}>
+    <span className={`inline-block text-xs font-headline uppercase tracking-wider px-2 py-0.5 rounded mr-2 align-middle ${className} ${OBJECTIVE_TYPE_COLORS[objectiveType] || ''}`}>
       {t(`quests.objectiveTypes.${objectiveType}`)}{fallbackMark}
     </span>
   );
@@ -180,16 +180,12 @@ export default function QuestDetailPanel({ selected, findNpc, onVerifyObjective,
       )}
 
       {selected.completionCondition && (
-        <div className="flex items-start gap-2 bg-primary/5 border border-primary/10 rounded-sm p-3 ml-1">
-          <span className={`material-symbols-outlined text-sm mt-0.5 ${questStatus === 'active' ? 'text-primary-dim' : 'text-outline'}`}>
-            emoji_events
-          </span>
-          <div>
-            <p className={`text-[10px] font-label uppercase tracking-widest ${questStatus === 'active' ? 'text-primary-dim' : 'text-outline'}`}>
-              {t('quests.completionCondition')}
-            </p>
-            <p className="text-sm text-on-surface mt-0.5 leading-relaxed">{selected.completionCondition}</p>
-          </div>
+        <div className="bg-primary/5 border border-primary/10 rounded-sm p-4 ml-1">
+          <p className={`flex items-center gap-2 text-base font-headline uppercase tracking-widest mb-1 ${questStatus === 'active' ? 'text-primary-dim' : 'text-outline'}`}>
+            {t('quests.completionCondition')}
+            <span className="material-symbols-outlined text-2xl">emoji_events</span>
+          </p>
+          <p className="text-lg text-on-surface leading-relaxed">{selected.completionCondition}</p>
         </div>
       )}
 
@@ -197,7 +193,15 @@ export default function QuestDetailPanel({ selected, findNpc, onVerifyObjective,
         const sections = questStatus === 'completed'
           ? { done: selected.objectives, pending: [], locked: [], failed: [], hiddenCount: 0, branchGroups: [] }
           : getVisibleObjectives(selected.objectives);
-        const { done, pending, locked, failed, hiddenCount, branchGroups } = sections;
+        const { hiddenCount, branchGroups } = sections;
+        const visibleSet = new Set([
+          ...sections.done.map((o) => o.id || o.nodeKey),
+          ...sections.pending.map((o) => o.id || o.nodeKey),
+          ...sections.locked.map((o) => o.id || o.nodeKey),
+          ...sections.failed.map((o) => o.id || o.nodeKey),
+        ]);
+        const pendingIds = new Set(sections.pending.map((o) => o.id || o.nodeKey));
+        const firstPendingKey = sections.pending[0] ? (sections.pending[0].id || sections.pending[0].nodeKey) : null;
         const rewardXp = selected.reward?.xp || 0;
         const objCount = selected.objectives.length;
         const xpPerObj = rewardXp > 0 && objCount > 0 ? Math.floor(rewardXp / (2 * objCount)) : 0;
@@ -216,33 +220,73 @@ export default function QuestDetailPanel({ selected, findNpc, onVerifyObjective,
               ))}
             </div>
           )}
-          {/* DONE — first */}
-          {done.map((obj) => (
-            <div key={obj.id || obj.nodeKey} className="group flex items-start gap-2 py-1 px-2 rounded-sm hover:bg-surface-container-highest/60 transition-colors">
-              <StatusIcon status="done" />
-              <div className="flex-1 min-w-0">
-                <p className="text-sm leading-relaxed text-on-surface-variant line-through">
-                  <ObjectiveTypeBadge obj={obj} t={t} className="no-underline" />
-                  {obj.description}
-                </p>
-              </div>
-              {xpPerObj > 0 && (
-                <span className={`shrink-0 text-[9px] font-label px-1 py-px rounded-sm ${obj.xpAwarded ? 'bg-primary/15 text-primary' : 'bg-surface-container/60 text-on-surface-variant/50'}`}>
-                  {obj.xpAwarded || xpPerObj} xp
-                </span>
-              )}
-              <ProgressLogButton obj={obj} onClick={() => setLogObjective(obj)} t={t} />
-            </div>
-          ))}
-          {/* PENDING DISCOVERED — first one is ▶ NEXT */}
-          {pending.map((obj, idx) => {
+          {selected.objectives.map((obj) => {
+            const key = obj.id || obj.nodeKey;
+            if (!visibleSet.has(key)) return null;
+            const status = objStatus(obj);
+            const isPending = pendingIds.has(key);
+            const isNext = key === firstPendingKey;
             const isVerifying = verifyingId === obj.id;
-            const isNext = idx === 0;
+
+            if (status === 'done') {
+              return (
+                <div key={key} className="group flex items-start gap-2 py-1 px-2 rounded-sm hover:bg-surface-container-highest/60 transition-colors">
+                  <StatusIcon status="done" />
+                  <div className="flex-1 min-w-0">
+                    <p className="text-lg font-accent leading-relaxed text-on-surface-variant line-through">
+                      <ObjectiveTypeBadge obj={obj} t={t} className="no-underline" />
+                      {obj.description}
+                    </p>
+                  </div>
+                  {xpPerObj > 0 && (
+                    <span className={`shrink-0 text-[9px] font-label px-1 py-px rounded-sm ${obj.xpAwarded ? 'bg-primary/15 text-primary' : 'bg-surface-container/60 text-on-surface-variant/50'}`}>
+                      {obj.xpAwarded || xpPerObj} xp
+                    </span>
+                  )}
+                  <ProgressLogButton obj={obj} onClick={() => setLogObjective(obj)} t={t} />
+                </div>
+              );
+            }
+
+            if (status === 'failed') {
+              return (
+                <div key={key} className="flex items-start gap-2 py-1 px-2 rounded-sm">
+                  <StatusIcon status="failed" />
+                  <div className="flex-1 min-w-0">
+                    <p className="text-lg font-accent leading-relaxed text-rose-300/80 line-through">
+                      <ObjectiveTypeBadge obj={obj} t={t} className="no-underline" />
+                      {obj.description}
+                    </p>
+                  </div>
+                </div>
+              );
+            }
+
+            if (status === 'locked') {
+              return (
+                <div key={key} className="flex items-start gap-2 py-1 px-2 rounded-sm opacity-60">
+                  <StatusIcon status="locked" />
+                  <div className="flex-1 min-w-0">
+                    <p className="text-lg font-accent leading-relaxed text-on-surface-variant italic">
+                      <ObjectiveTypeBadge obj={obj} t={t} />
+                      {obj.description}
+                    </p>
+                    {Array.isArray(obj.parents) && obj.parents.length > 0 && (
+                      <p className="text-[10px] text-outline/60 mt-0.5">
+                        {t('quests.requiresPrior', { defaultValue: 'Wymaga wcześniejszego kroku' })}
+                      </p>
+                    )}
+                  </div>
+                </div>
+              );
+            }
+
+            // pending
             return (
-              <div key={obj.id || obj.nodeKey} className="group flex items-start gap-2 py-1 px-2 rounded-sm hover:bg-surface-container-highest/60 transition-colors">
+              <div key={key} className="group flex items-start gap-2 py-1 px-2 rounded-sm hover:bg-surface-container-highest/60 transition-colors">
                 <StatusIcon status="pending" isNext={isNext} />
                 <div className="flex-1 min-w-0">
-                  <p className="text-sm leading-relaxed text-on-surface">
+                  <p className="text-lg font-accent leading-relaxed text-on-surface">
                     <ObjectiveTypeBadge obj={obj} t={t} />
                     {obj.description}
                     {obj.choiceLabel && (
@@ -290,36 +334,6 @@ export default function QuestDetailPanel({ selected, findNpc, onVerifyObjective,
               </div>
             );
           })}
-          {/* LOCKED + DISCOVERED — visible-locked: gracz wie że istnieje, ale parents niespełnione */}
-          {locked.map((obj) => (
-            <div key={obj.id || obj.nodeKey} className="flex items-start gap-2 py-1 px-2 rounded-sm opacity-60">
-              <StatusIcon status="locked" />
-              <div className="flex-1 min-w-0">
-                <p className="text-sm leading-relaxed text-on-surface-variant italic">
-                  <ObjectiveTypeBadge obj={obj} t={t} />
-                  {obj.description}
-                </p>
-                {Array.isArray(obj.parents) && obj.parents.length > 0 && (
-                  <p className="text-[10px] text-outline/60 mt-0.5">
-                    {t('quests.requiresPrior', { defaultValue: 'Wymaga wcześniejszego kroku' })}
-                  </p>
-                )}
-              </div>
-            </div>
-          ))}
-          {/* FAILED — terminal, ale widoczne (gracz musi wiedzieć że odpadło) */}
-          {failed.map((obj) => (
-            <div key={obj.id || obj.nodeKey} className="flex items-start gap-2 py-1 px-2 rounded-sm">
-              <StatusIcon status="failed" />
-              <div className="flex-1 min-w-0">
-                <p className="text-sm leading-relaxed text-rose-300/80 line-through">
-                  <ObjectiveTypeBadge obj={obj} t={t} className="no-underline" />
-                  {obj.description}
-                </p>
-              </div>
-            </div>
-          ))}
-          {/* HIDDEN COUNT — undiscovered reachable, "??? Nieznany krok" */}
           {hiddenCount > 0 && (
             <div className="flex items-center gap-2 py-1 px-2 text-outline/40 italic">
               <span className="material-symbols-outlined text-sm mt-0.5">help</span>
@@ -331,8 +345,7 @@ export default function QuestDetailPanel({ selected, findNpc, onVerifyObjective,
               </p>
             </div>
           )}
-          {/* STUCK hint — no pending objectives visible, but hidden steps remain */}
-          {pending.length === 0 && hiddenCount > 0 && questStatus === 'active' && (
+          {sections.pending.length === 0 && hiddenCount > 0 && questStatus === 'active' && (
             <div className="flex items-center gap-2 py-1.5 px-2 mt-1 bg-amber-500/5 border border-amber-500/15 rounded-sm">
               <span className="material-symbols-outlined text-sm text-amber-400">tips_and_updates</span>
               <p className="text-xs text-amber-300/80">

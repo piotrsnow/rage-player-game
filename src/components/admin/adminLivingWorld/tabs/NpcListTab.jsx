@@ -7,7 +7,7 @@ import { KV, Section, Empty } from '../shared/primitives';
 import { summarizePayload } from '../shared/summarizePayload';
 import { NPC_CATEGORY_COLORS } from './mapHelpers';
 
-export default function NpcListTab() {
+export default function NpcListTab({ campaignId = null }) {
   const [rows, setRows] = useState([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(false);
@@ -22,6 +22,7 @@ export default function NpcListTab() {
       if (filter.alive) q.set('alive', filter.alive);
       if (filter.companion) q.set('companion', filter.companion);
       if (filter.locked) q.set('locked', filter.locked);
+      if (campaignId) q.set('campaignId', campaignId);
       q.set('limit', '100');
       const res = await apiClient.get(`/v1/admin/livingWorld/npcs?${q}`);
       setRows(Array.isArray(res?.rows) ? res.rows : []);
@@ -29,7 +30,7 @@ export default function NpcListTab() {
     } finally {
       setLoading(false);
     }
-  }, [filter]);
+  }, [filter, campaignId]);
 
   useEffect(() => { refresh(); }, [refresh]);
 

@@ -350,6 +350,7 @@ const SUBTYPE_STYLES = {
   attribute_change:    { icon: 'fitness_center', color: 'text-amber-300', line: 'to-amber-300/30' },
   mana_max:            { icon: 'auto_fix_high', color: 'text-purple-300', line: 'to-purple-300/30' },
   skill_badge:         { icon: 'military_tech', color: 'text-violet-300', line: 'to-violet-300/30' },
+  badge_xp:            { icon: 'military_tech', color: 'text-amber-300', line: 'to-amber-300/40' },
   effect_added:        { icon: 'whatshot', color: 'text-cyan-300', line: 'to-cyan-300/30' },
   crafting_failed:     { icon: 'cancel', color: 'text-red-400', line: 'to-red-400/30' },
   alchemy_failed:      { icon: 'cancel', color: 'text-red-400', line: 'to-red-400/30' },
@@ -446,6 +447,19 @@ function styledSystemLineContent(subtype, content) {
     }
   }
 
+  if (subtype === 'badge_xp') {
+    const m = content.match(/^(.+?)(?:\s*—\s*\+(\d+)\s*XP)?$/);
+    if (m) {
+      const [, name, xp] = m;
+      return (
+        <>
+          <span className="text-amber-200 font-black">{name}</span>
+          {xp && <span className="text-yellow-200 font-black"> — +{xp} XP</span>}
+        </>
+      );
+    }
+  }
+
   return null;
 }
 
@@ -456,7 +470,8 @@ export const SystemMessage = memo(function SystemMessage({ message }) {
     const isLevelUp = message.subtype === 'level_up'
       || message.subtype === 'skill_levelup'
       || message.subtype === 'character_levelup'
-      || message.subtype === 'achievement_unlock';
+      || message.subtype === 'achievement_unlock'
+      || message.subtype === 'badge_xp';
     const hasCombatBadge = Boolean(message.combatBadgeText);
     const richLine = styledSystemLineContent(message.subtype, message.content);
     const useRichLine = Boolean(richLine);

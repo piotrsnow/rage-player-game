@@ -281,16 +281,16 @@ export default function GameplayHeader({
               </Tooltip>
             )}
             {campaign?.backendId && apiClient.isConnected() && (
-              <Tooltip content={shareCopied ? t('gameplay.shareCopied') : t('gameplay.share')} placement="bottom" variant="compact" asChild>
+              <Tooltip content={shareCopied ? t('reader.linkCopied') : t('reader.shareChronicle')} placement="bottom" variant="compact" asChild>
                 <button
                   onClick={handleShare}
                   disabled={shareLoading}
-                  aria-label={t('gameplay.share')}
+                  aria-label={t('reader.shareChronicle')}
                   className={`material-symbols-outlined text-sm transition-colors ${
                     shareCopied ? 'text-emerald-400' : shareLoading ? 'text-outline/50 animate-pulse' : 'text-outline hover:text-primary'
                   }`}
                 >
-                  {shareCopied ? 'check' : 'share'}
+                  {shareCopied ? 'check' : 'auto_stories'}
                 </button>
               </Tooltip>
             )}

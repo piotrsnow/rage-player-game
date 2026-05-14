@@ -15,6 +15,7 @@ import { useMultiplayer } from '../../contexts/MultiplayerContext';
 import { useSettings } from '../../contexts/SettingsContext';
 import { useAI } from '../../hooks/useAI';
 import { apiClient } from '../../services/apiClient';
+import { imageService } from '../../services/imageGen';
 import { useAiCallLogStore } from '../../stores/aiCallLogStore';
 import StatusBar from '../ui/StatusBar';
 import ActiveEffectsRow from '../ui/ActiveEffectsRow';
@@ -23,10 +24,21 @@ import SidebarPartyList from './SidebarPartyList';
 import SidebarAiCallLog from './SidebarAiCallLog';
 import BadgeModal from '../character/BadgeModal';
 
+const KNOWN_IMAGE_PROVIDERS = ['dalle', 'gpt-image', 'stability', 'gemini', 'sd-webui'];
+
+function preloadImage(url) {
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.onload = () => resolve(true);
+    img.onerror = () => resolve(false);
+    img.src = url;
+  });
+}
+
 export default function Sidebar() {
   const location = useLocation();
   const { t } = useTranslation();
-  const { backendUser } = useSettings();
+  const { backendUser, settings } = useSettings();
   const uwBonus = useUltrawideBonus();
   const campaign = useGameCampaign();
   const soloCharacter = useGameCharacter();
@@ -39,7 +51,10 @@ export default function Sidebar() {
   const mp = useMultiplayer();
   const { generateScene } = useAI();
   const [activeNeedKey, setActiveNeedKey] = useState(null);
-  const [badgeModalOpen, setBadgeModalOpen] = useState(false);
+  // badge flow: 'idle' | 'picking' | 'generating' | 'result'
+  const [badgePhase, setBadgePhase] = useState('idle');
+  const [badgeBadge, setBadgeBadge] = useState(null);
+  const [badgeRegenerating, setBadgeRegenerating] = useState(false);
 
   const aiLogVisible = useAiCallLogStore((s) => s.sidebarVisible);
   const isMultiplayer = mp.state.isMultiplayer && mp.state.phase === 'playing';
@@ -104,6 +119,84 @@ Opisz bardzo konkretne konsekwencje tej decyzji dla fabuły: relacji, zasobów, 
 
   const badgeCharacterId = character?.backendId || character?.id;
 
+  const badgeImageProvider = KNOWN_IMAGE_PROVIDERS.includes(settings.sceneImageTier)
+    ? settings.sceneImageTier
+    : (settings.imageProvider || 'dalle');
+  const badgeSdModel = settings.sdWebuiModel || null;
+
+  const handleShieldClick = () => {
+    if (!badgeCharacterId || badgePhase === 'generating') return;
+    setBadgeBadge(null);
+    setBadgePhase('picking');
+  };
+
+  const handleBadgeGenerate = async (sceneFrom, sceneTo) => {
+    setBadgePhase('generating');
+    try {
+      const res = await apiClient.post(`/characters/${badgeCharacterId}/badges/generate`, {
+        sceneFrom,
+        sceneTo,
+      });
+      let finalBadge = res;
+
+      if (res.imagePrompt && !res.imageUrl) {
+        try {
+          const imageUrl = await imageService.generatePlaygroundImage({
+            prompt: res.imagePrompt,
+            provider: badgeImageProvider,
+            sdModel: badgeSdModel,
+          });
+          if (imageUrl) {
+            await apiClient.post(
+              `/characters/${badgeCharacterId}/badges/${res.id}/regenerate-image`,
+              { imageUrl },
+            );
+            finalBadge = { ...res, imageUrl };
+          }
+        } catch { /* non-fatal */ }
+      }
+
+      if (finalBadge.imageUrl) {
+        await preloadImage(apiClient.resolveMediaUrl(finalBadge.imageUrl));
+      }
+
+      setBadgeBadge(finalBadge);
+      setBadgePhase('result');
+    } catch (err) {
+      console.error('[Sidebar] badge generation failed', err);
+      setBadgePhase('idle');
+    }
+  };
+
+  const handleBadgeRegenerate = async (badgeId) => {
+    if (badgeRegenerating || !badgeBadge?.imagePrompt) return;
+    setBadgeRegenerating(true);
+    try {
+      const imageUrl = await imageService.generatePlaygroundImage({
+        prompt: badgeBadge.imagePrompt,
+        provider: badgeImageProvider,
+        sdModel: badgeSdModel,
+      });
+      if (imageUrl) {
+        await apiClient.post(
+          `/characters/${badgeCharacterId}/badges/${badgeId}/regenerate-image`,
+          { imageUrl },
+        );
+        await preloadImage(apiClient.resolveMediaUrl(imageUrl));
+        setBadgeBadge((prev) => ({ ...prev, imageUrl }));
+      }
+    } catch { /* silent */ } finally {
+      setBadgeRegenerating(false);
+    }
+  };
+
+  const handleBadgeModalClose = () => {
+    if (badgePhase !== 'generating') {
+      setBadgePhase('idle');
+      setBadgeBadge(null);
+    }
+  };
+
   const portraitRef = useRef(null);
   const portraitRaf = useRef(null);
 
@@ -159,11 +252,16 @@ Opisz bardzo konkretne konsekwencje tej decyzji dla fabuły: relacji, zasobów, 
           {backendUser?.isAdmin ? (
             <button
               type="button"
-              onClick={() => { setBadgeData(null); setBadgeModalOpen(true); }}
+              onClick={handleShieldClick}
+              disabled={badgePhase === 'generating'}
               title="Generuj badge"
-              className="w-10 h-10 bg-surface-container-high rounded-sm flex items-center justify-center border border-tertiary/20 group-hover:border-tertiary/40 group-hover:shadow-[0_0_12px_rgba(255,239,213,0.1)] hover:bg-tertiary/10 active:scale-95 transition-all duration-300 cursor-pointer"
+              className="w-10 h-10 bg-surface-container-high rounded-sm flex items-center justify-center border border-tertiary/20 group-hover:border-tertiary/40 group-hover:shadow-[0_0_12px_rgba(255,239,213,0.1)] hover:bg-tertiary/10 active:scale-95 transition-all duration-300 cursor-pointer disabled:cursor-wait"
             >
-              <span className="material-symbols-outlined text-tertiary text-xl">shield</span>
+              {badgePhase === 'generating' ? (
+                <span className="material-symbols-outlined text-tertiary text-xl animate-[spin_2s_linear_infinite]">shield</span>
+              ) : (
+                <span className="material-symbols-outlined text-tertiary text-xl">shield</span>
+              )}
             </button>
           ) : (
             <div className="w-10 h-10 bg-surface-container-high rounded-sm flex items-center justify-center border border-tertiary/20 group-hover:border-tertiary/40 group-hover:shadow-[0_0_12px_rgba(255,239,213,0.1)] transition-all duration-300">
@@ -201,11 +299,15 @@ Opisz bardzo konkretne konsekwencje tej decyzji dla fabuły: relacji, zasobów, 
         {aiLogVisible && <SidebarAiCallLog />}
       </div>
 
-      {badgeModalOpen && badgeCharacterId && createPortal(
+      {(badgePhase === 'picking' || badgePhase === 'result') && badgeCharacterId && createPortal(
         <BadgeModal
           characterId={badgeCharacterId}
           sceneCount={sceneCount}
-          onClose={() => setBadgeModalOpen(false)}
+          badge={badgeBadge}
+          onGenerate={handleBadgeGenerate}
+          onRegenerate={handleBadgeRegenerate}
+          regenerating={badgeRegenerating}
+          onClose={handleBadgeModalClose}
         />,
         document.body,
       )}

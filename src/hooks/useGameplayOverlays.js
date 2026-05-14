@@ -129,8 +129,7 @@ export function useGameplayOverlays({
   }, [earlyDiceRoll, playerActionOverlayText, playerOverlayTypingDone]);
 
   // External API for the action handler — show the typewriter immediately.
-  // The narrator-stop effect in GameplayPage hushes any active TTS the moment
-  // playerActionOverlayText flips truthy, so we don't need to queue here.
+  // Narrator keeps playing until the new scene's narrative starts streaming.
   const showPlayerActionOverlay = useCallback((action) => {
     if (!action) return;
     setPlayerOverlayTypingDone(false);

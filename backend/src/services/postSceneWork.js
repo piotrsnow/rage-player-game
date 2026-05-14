@@ -240,15 +240,15 @@ export async function handlePostSceneWork({
     log.warn({ err: err?.message, campaignId, sceneId }, 'Scene state audit failed (non-fatal)');
   }
 
-  // Periodic badge generation — every 10 scenes, award a collectible badge.
-  if (scene.sceneIndex > 0 && scene.sceneIndex % 10 === 0 && campaign?.userId) {
+  // Periodic badge generation — every 7 scenes, award a collectible badge.
+  if (scene.sceneIndex > 0 && scene.sceneIndex % 7 === 0 && campaign?.userId) {
     const charIds = await getCampaignCharacterIds(campaignId).catch(() => []);
     for (const charId of charIds) {
       generateBadge({
         characterId: charId,
         userId: campaign.userId,
         campaignId,
-        sceneFrom: Math.max(0, scene.sceneIndex - 9),
+        sceneFrom: Math.max(0, scene.sceneIndex - 6),
         sceneTo: scene.sceneIndex,
         provider,
       }).catch((err) =>

@@ -676,17 +676,19 @@ function LoggedInBanner({ user }) {
         <div className="flip-card-front holo-card p-3 sm:p-5 lg:p-8 flex flex-col overflow-hidden">
           {/* Header: portrait + identity */}
           <div className="flex gap-3 sm:gap-4 lg:gap-5 items-start mb-1 sm:mb-2 lg:mb-3">
-            <div className="badge-portrait-frame w-20 sm:w-28 lg:w-36 shrink-0 rounded-lg overflow-visible bg-surface-container-lowest/60 flex items-center justify-center aspect-[3/4]">
-              {portraitSrc ? (
-                <img
-                  src={portraitSrc}
-                  alt={displayName}
-                  className="w-full h-full object-cover rounded-lg badge-portrait-hologram"
-                  onError={(e) => { e.target.style.display = 'none'; }}
-                />
-              ) : (
-                <span className="material-symbols-outlined text-6xl text-primary/40">person</span>
-              )}
+            <div className="badge-portrait-frame w-20 sm:w-28 lg:w-36 shrink-0 aspect-[3/4]">
+              <div className="w-full h-full rounded-lg overflow-hidden bg-surface-container-lowest/60 flex items-center justify-center relative z-[2]">
+                {portraitSrc ? (
+                  <img
+                    src={portraitSrc}
+                    alt={displayName}
+                    className="w-full h-full object-cover badge-portrait-hologram"
+                    onError={(e) => { e.target.style.display = 'none'; }}
+                  />
+                ) : (
+                  <span className="material-symbols-outlined text-6xl text-primary/40">person</span>
+                )}
+              </div>
             </div>
 
             <div className="min-w-0 flex-1 pt-1">

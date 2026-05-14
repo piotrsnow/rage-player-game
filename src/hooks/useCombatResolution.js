@@ -69,9 +69,12 @@ export function buildCombatResolutionHandlers({
       || (summary.skirmishSummary?.isTie ? 'draw' : 'nobody');
     const playerBeers = summary.skirmishSummary?.beersCollectedByPlayer || 0;
     const opponentBeers = summary.skirmishSummary?.opponentBeers || 0;
+    const opponentDetails = summary.skirmishSummary?.opponentDetails || [];
 
     const combatJournal = isBeerDuel
-      ? `Beer duel: player drank ${playerBeers} beers, opponent drank ${opponentBeers}. Winner: ${duelWinnerLabel}.`
+      ? opponentDetails.length > 1
+        ? `Beer duel (${opponentDetails.length} opponents): player drank ${playerBeers} beers. ${opponentDetails.map((o) => `${o.name}: ${o.beerPoints} beers`).join(', ')}. Winner: ${duelWinnerLabel}.`
+        : `Beer duel: player drank ${playerBeers} beers, opponent drank ${opponentBeers}. Winner: ${duelWinnerLabel}.`
       : isCardGame
       ? `Card game (Oczko): player ${summary.skirmishSummary?.playerScore || 0} - opponent ${summary.skirmishSummary?.opponentScore || 0}. Winner: ${summary.skirmishSummary?.winnerName || 'draw'}. Gold change: ${summary.skirmishSummary?.goldChange || 0} MK.`
       : isDiceGame
@@ -114,7 +117,9 @@ export function buildCombatResolutionHandlers({
 
     const combatResult = buildCombatResult(summary);
     const combatActionText = isBeerDuel
-      ? `[BEER_DUEL_RESOLVED: winner=${duelWinnerLabel}; playerBeers=${playerBeers}; opponentBeers=${opponentBeers}]`
+      ? opponentDetails.length > 1
+        ? `[BEER_DUEL_RESOLVED: winner=${duelWinnerLabel}; playerBeers=${playerBeers}; opponents=${opponentDetails.map((o) => `${o.name}:${o.beerPoints}`).join(',')}]`
+        : `[BEER_DUEL_RESOLVED: winner=${duelWinnerLabel}; playerBeers=${playerBeers}; opponentBeers=${opponentBeers}]`
       : isCardGame
       ? `[CARD_GAME_RESOLVED: winner=${summary.skirmishSummary?.winnerName || 'draw'}; playerScore=${summary.skirmishSummary?.playerScore || 0}; opponentScore=${summary.skirmishSummary?.opponentScore || 0}; goldChange=${summary.skirmishSummary?.goldChange || 0}]`
       : isDiceGame

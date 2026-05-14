@@ -152,11 +152,12 @@ export async function generateBadge({
 
   const systemPrompt = `You are a dark-fantasy RPG narrator who awards character badges.
 Generate a badge for the character based on their recent scenes.
-Return JSON with exactly four fields:
+Return JSON with exactly five fields:
 - "name": a short (2-4 words), punchy Polish badge name based on behavior (e.g. "Agresywny Palant", "Cień Nocy", "Mól Książkowy").
 - "description": 1-3 witty Polish sentences — Pratchett-style commentary on the character's exploits. Sharp, mocking, memorable.
 - "icon": one of these Material Symbols icon names that fits the badge: ${BADGE_ICONS.join(', ')}.
-- "imagePrompt": An English description for generating a round heraldic medal/emblem badge artwork. Dark fantasy style, ornate frame, symbolic imagery. DO NOT include any text or letters on the badge. 1-2 sentences.`;
+- "color": a vivid, saturated hex color (e.g. "#e63946", "#8b5cf6", "#f59e0b", "#10b981", "#3b82f6", "#ec4899") that represents the badge's mood/theme. MUST be a strong, vibrant color — never gray, never desaturated, never white or black. Think: fiery red for aggression, electric purple for magic, gold for achievement, emerald for nature, crimson for blood.
+- "imagePrompt": An English description (1-2 sentences) for generating a CIRCULAR badge illustration in bold comic-book / graphic-novel style. Depict an epic symbolic scene or object from the character's recent adventures — a dramatic moment, a weapon, a creature, an explosion, a magical artifact, a burning building etc. Thick ink outlines, vivid saturated colors, dynamic composition, halftone dots. Fill the entire circle edge-to-edge. NO people, NO characters, NO faces, NO hands, NO text, NO letters. Objects and scenes only.`;
 
   const userPrompt = `CHARACTER:\n${charContext}\n\nRECENT SCENES:\n${sceneTexts || 'No scenes yet — invent brief backstory events.'}`;
 
@@ -177,6 +178,7 @@ Return JSON with exactly four fields:
   const name = (parsed?.name || 'Odznaka').trim().slice(0, 100);
   const description = (parsed?.description || '').trim().slice(0, 1000);
   const icon = BADGE_ICONS.includes(parsed?.icon) ? parsed.icon : pickIcon();
+  const color = /^#[0-9a-fA-F]{6}$/.test(parsed?.color) ? parsed.color : null;
   const imagePrompt = (parsed?.imagePrompt || '').trim().slice(0, 2000) || null;
 
   let imageUrl = null;
@@ -191,6 +193,7 @@ Return JSON with exactly four fields:
       name,
       description,
       icon,
+      color,
       imageUrl,
       imagePrompt,
       sceneFrom,

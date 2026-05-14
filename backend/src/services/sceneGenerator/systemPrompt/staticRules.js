@@ -92,12 +92,14 @@ Before emitting stateChanges, mentally run this checklist against the narrative 
   5. Location — did the player move?
   6. Wounds — did any healing or non-combat damage happen? Emit woundsChange (positive=healing, negative=damage). Potion/herb → +3-5, rest/sleep → +2-4, magical healing/ritual → +5-10. If a consumable was used, ALSO emit removeItems.
   7. Mana — was a spell cast or mana restored? Casting → manaChange NEGATIVE (spell cost 1-5). Rest/meditation/potion → manaChange POSITIVE (short rest +2-3, full rest = full pool, mana potion +3-5). Also emit spellUsage:{"SpellName":1} for each spell cast.
+  8. Effects — did a spell, trap, poison, environmental hazard, or potion apply a lasting effect on the player? Emit characterEffects:[{action:"add", name, effect:{...}}]. Remove when narratively cured or expired: [{action:"remove", name:"Frozen"}]. Categories: buff/debuff/dot/control/mixed. Sources: spell/item/combat/trap/environmental/ai. Duration type "scenes" + remaining:2-4 for narrative effects. Mechanics: attributeMods, skillMods, testMod, damageReduction, dotDamage, dotHeal, restrictions (no_attack/no_movement/no_magic/skip_turn). Description: 1 sentence PL. Do NOT emit for trivial instant things (one-time damage/heal) — only lasting status changes. Effects auto-tick each scene.
 Emit stateChanges reflecting ALL of the above. Empty fields are OK only when the answer is genuinely "no".
 
 - timeAdvance: ALWAYS include {hoursElapsed: decimal}. Quick=0.25, action/combat=0.5, exploration=0.75-1, rest=2-4, sleep=6-8.
 - questUpdates: after writing dialogueSegments, ASK: did any ACTIVE OBJECTIVE get fulfilled IN THIS SCENE's narrative? Meeting the quest-giver, delivering an item, defeating a target, learning a named fact — all count. If yes, MUST emit [{questId, nodeKey?, objectiveId?, completed:true}]. questId = the id= value from the ACTIVE QUESTS block.
   * GRAPH MODE (Active Quests block shows [nodeKey] markers): use \`nodeKey\` (e.g. "spare_witch") — preferred and stable. Numeric \`objectiveId\` (legacy fallback) still works but DON'T mix.
   * LEGACY MODE (no [nodeKey] markers): \`objectiveId\` is the number shown before the objective (its array index, as a string). Numbers are NOT contiguous — completed objectives are hidden but their indices remain (e.g. you may see only "2." if 0 and 1 were already done). The ▶ NEXT marker points to the currently-pending objective.
+  Objectives CAN be completed out of order. If the player's action narratively fulfills objective 5 while objective 2 is still marked ▶ NEXT, emit questUpdates for objective 5. The ▶ NEXT marker indicates the suggested path, not a hard constraint. In graph mode, even a \`locked\` objective should be marked completed if the player genuinely accomplished it — the engine handles the graph update.
   NEVER leave questUpdates empty when the narrative resolved an objective — also emit dialogueIfQuestTargetCompleted to close the beat.
   * BACKGROUND QUESTS: side / personal / faction quests appear under "--- Background Quests ---" in the Active Quests block. Emit questUpdates for them on resolution exactly like main — but do NOT divert the scene's narrative onto them; they progress only when the player's action or dialog organically resolves an objective.
 - branchChoice (graph mode only): when narrative locks the player into one path of an XOR branch group (you saw "Branches active: <group> (player can choose: A | B)" in Active Quests), include \`branchChoice: { group, chosen }\` on the questUpdate that closes the chosen node. Sibling nodes auto-skip backend-side — DO NOT emit their state.
@@ -249,7 +251,8 @@ export function responseFormatBlock(language) {
     "learnSpell": null,
     "manaMaxChange": null,
     "addScroll": null,
-    "dungeonComplete": null
+    "dungeonComplete": null,
+    "characterEffects": [{"action":"add|remove","name":"EffectName","effect":{"id":"fx_<name>_1","name":"EffectName","source":"spell|item|combat|trap|environmental|ai","category":"buff|debuff|dot|control|mixed","duration":{"type":"scenes","remaining":2},"mechanics":{"attributeMods":{},"skillMods":{},"testMod":0,"damageReduction":0,"dotDamage":0,"dotHeal":0,"restrictions":[]},"stackable":false,"description":"Short PL description."}}]
   },
   "dialogueIfQuestTargetCompleted": null
 }

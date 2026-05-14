@@ -9,7 +9,7 @@ import Tooltip from '../ui/Tooltip';
 import Button from '../ui/Button';
 import { rarityColors, rarityGlows, typeIcons, SLOT_CONFIG, getEquippedSlot, getEquippableSlots } from './inventory/constants';
 
-const ITEMS_PER_PAGE = 16;
+const ITEMS_PER_PAGE = 20;
 
 function CoinDisplay({ value, label, color }) {
   return (
@@ -37,7 +37,8 @@ export default function Inventory({
   const { t } = useTranslation();
   const [showMaterialBag, setShowMaterialBag] = useState(false);
   const [page, setPage] = useState(1);
-  const maxSlots = 40;
+  const [sortByDate, setSortByDate] = useState(false);
+  const maxSlots = 60;
   const purse = money || { gold: 0, silver: 0, copper: 0 };
   const totalMaterials = materialBag.reduce((sum, m) => sum + (m.quantity || 1), 0);
 
@@ -45,12 +46,21 @@ export default function Inventory({
     if (onSelectItem) onSelectItem(id);
   };
 
+  const sortedItems = useMemo(() => {
+    if (!sortByDate) return items;
+    return [...items].sort((a, b) => {
+      const da = a.addedAt ? new Date(a.addedAt).getTime() : 0;
+      const db = b.addedAt ? new Date(b.addedAt).getTime() : 0;
+      return db - da;
+    });
+  }, [items, sortByDate]);
+
   const totalPages = Math.max(1, Math.ceil(maxSlots / ITEMS_PER_PAGE));
   const safePage = Math.min(page, totalPages);
   const pageItems = useMemo(() => {
     const start = (safePage - 1) * ITEMS_PER_PAGE;
-    return items.slice(start, start + ITEMS_PER_PAGE);
-  }, [items, safePage]);
+    return sortedItems.slice(start, start + ITEMS_PER_PAGE);
+  }, [sortedItems, safePage]);
   const slotsOnThisPage = Math.min(
     ITEMS_PER_PAGE,
     Math.max(0, maxSlots - (safePage - 1) * ITEMS_PER_PAGE)
@@ -95,6 +105,18 @@ export default function Inventory({
           <h3 className="text-tertiary font-headline text-xl">{t('inventory.backpackTitle', 'Plecak')}</h3>
           <div className="flex items-center gap-3">
             <button
+              onClick={() => setSortByDate((v) => !v)}
+              className={`flex items-center gap-1 px-2 py-1 text-[9px] font-label font-bold uppercase tracking-wider rounded-sm border transition-colors ${
+                sortByDate
+                  ? 'bg-primary/15 border-primary/30 text-primary'
+                  : 'bg-surface-container-highest/50 border-outline-variant/15 text-on-surface-variant hover:bg-primary/10 hover:border-primary/20 hover:text-primary'
+              }`}
+              title={t('inventory.sortByDate', 'Sort by date found')}
+            >
+              <span className="material-symbols-outlined text-[12px]">schedule</span>
+              {t('inventory.newest', 'Newest')}
+            </button>
+            <button
               onClick={() => setShowMaterialBag(true)}
               className="flex items-center gap-1.5 px-2.5 py-1 text-[9px] font-label font-bold uppercase tracking-wider rounded-sm bg-surface-container-highest/50 border border-outline-variant/15 text-on-surface-variant hover:bg-primary/10 hover:border-primary/20 hover:text-primary transition-colors"
             >
@@ -112,7 +134,7 @@ export default function Inventory({
           </div>
         </div>
 
-        <div className="grid grid-cols-4 gap-3">
+        <div className="grid grid-cols-4 gap-2.5">
           {pageItems.map((item) => {
             const rarityKey = item.rarity || item.availability || 'common';
             const rarity = rarityColors[rarityKey] || rarityColors.common;

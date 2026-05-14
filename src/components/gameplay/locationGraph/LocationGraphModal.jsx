@@ -69,6 +69,15 @@ export default function LocationGraphModal({ campaignId = null, onClose, openGen
 
   const [showOrphans, setShowOrphans] = useState(false);
 
+  const [campaignFilterId, setCampaignFilterId] = useState(null);
+  const [campaignList, setCampaignList] = useState([]);
+  useEffect(() => {
+    if (!worldMode || !isAdmin) return;
+    apiClient.get('/admin/livingWorld/campaigns?limit=200')
+      .then((res) => setCampaignList(Array.isArray(res?.rows) ? res.rows : []))
+      .catch(() => {});
+  }, [worldMode, isAdmin]);
+
   const campaignGraph = useLocationGraph(worldMode ? null : campaignId, {
     openGeneration,
     paused: worldMode,
@@ -100,7 +109,16 @@ export default function LocationGraphModal({ campaignId = null, onClose, openGen
     }
     return m;
   }, [graph.occupants, extraOccupantSprites]);
-  const entityBrowser = useEntityBrowser(worldMode ? null : campaignId);
+  const hiddenNodeIds = useMemo(() => {
+    if (!worldMode || !campaignFilterId) return null;
+    const set = new Set();
+    for (const node of graph.allNodes) {
+      if (!node.campaigns?.some((c) => c.id === campaignFilterId)) set.add(node.id);
+    }
+    return set.size > 0 ? set : null;
+  }, [worldMode, campaignFilterId, graph.allNodes]);
+
+  const entityBrowser = useEntityBrowser(worldMode ? (campaignFilterId || null) : campaignId);
   const spriteJob = useWorldGraphSpriteJob({
     onComplete: worldMode ? worldGraphHook.fetchGraph : undefined,
   });
@@ -393,6 +411,18 @@ export default function LocationGraphModal({ campaignId = null, onClose, openGen
             {modalTitle}
           </h2>
           <div className="flex items-center gap-2">
+            {worldMode && isAdmin && campaignList.length > 0 && (
+              <select
+                value={campaignFilterId || ''}
+                onChange={(e) => setCampaignFilterId(e.target.value || null)}
+                className="text-xs bg-surface-container/60 backdrop-blur-sm text-on-surface border border-outline-variant/25 rounded-sm px-2 py-1.5 max-w-[18rem] truncate"
+              >
+                <option value="">{t('locationGraph.campaignFilter.all', { defaultValue: 'Wszystkie kampanie' })}</option>
+                {campaignList.map((c) => (
+                  <option key={c.id} value={c.id}>{c.name || c.id.slice(0, 8)}</option>
+                ))}
+              </select>
+            )}
             {graph.loading && <span className="material-symbols-outlined text-sm text-primary animate-spin">progress_activity</span>}
             <button type="button" onClick={onClose} aria-label={t('common.close')} className="text-on-surface-variant hover:text-primary transition-colors">
               <span className="material-symbols-outlined">close</span>
@@ -459,6 +489,7 @@ export default function LocationGraphModal({ campaignId = null, onClose, openGen
                     snapToGrid={snapToGrid}
                     highlightedNodeId={currentLocationNode?.id || null}
                     highlightedAdjacentIds={highlightedAdjacentIds}
+                    dimmedNodeIds={hiddenNodeIds}
                   />
 
                   {showNodeForm && !graph.readOnly && (
@@ -623,7 +654,7 @@ export default function LocationGraphModal({ campaignId = null, onClose, openGen
             return (
               <Suspense fallback={<div className="flex-1 flex items-center justify-center text-on-surface-variant text-sm">Loading…</div>}>
                 <div className="flex-1 overflow-y-auto custom-scrollbar p-4">
-                  <AdminTab />
+                  <AdminTab campaignId={worldMode ? campaignFilterId : null} />
                 </div>
               </Suspense>
             );

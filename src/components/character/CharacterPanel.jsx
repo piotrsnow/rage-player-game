@@ -19,6 +19,7 @@ import { resolveKnownSpellDisplay } from '../../services/magicEngine';
 import { gameData } from '../../services/gameDataService';
 import SkillGainHistory from './SkillGainHistory';
 import FavoriteScenesList from './FavoriteScenesList';
+import BadgesSection from './BadgesSection';
 import LpcSprite from '../shared/LpcSprite';
 
 const SKILL_ICONS = {

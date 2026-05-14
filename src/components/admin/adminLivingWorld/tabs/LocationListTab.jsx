@@ -4,17 +4,19 @@ import ModalShell from '../shared/ModalShell';
 import EventList from '../shared/EventList';
 import { KV, Section, Empty } from '../shared/primitives';
 
-export default function LocationListTab() {
+export default function LocationListTab({ campaignId = null }) {
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(false);
   const [detailId, setDetailId] = useState(null);
 
   useEffect(() => {
     setLoading(true);
-    apiClient.get('/v1/admin/livingWorld/locations?limit=200')
+    const q = new URLSearchParams({ limit: '200' });
+    if (campaignId) q.set('campaignId', campaignId);
+    apiClient.get(`/v1/admin/livingWorld/locations?${q}`)
       .then((r) => setRows(Array.isArray(r?.rows) ? r.rows : []))
       .finally(() => setLoading(false));
-  }, []);
+  }, [campaignId]);
 
   return (
     <div>

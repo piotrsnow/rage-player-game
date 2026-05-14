@@ -14,6 +14,7 @@ import {
   getCampaignCharacterIds,
   getCharacterIdsForCampaigns,
 } from '../../services/campaignSync.js';
+import { findBestRecap } from './recaps.js';
 
 const ELEVENLABS_URL = 'https://api.elevenlabs.io/v1';
 
@@ -181,6 +182,18 @@ export async function publicCampaignRoutes(fastify) {
       scenes: dedupedScenes,
       characters,
     };
+  });
+
+  fastify.get('/share/:token/recaps/best', async (request, reply) => {
+    const campaign = await prisma.campaign.findUnique({
+      where: { shareToken: request.params.token },
+      select: { id: true },
+    });
+    if (!campaign) return reply.code(404).send({ error: 'Campaign not found' });
+
+    const best = await findBestRecap(campaign.id);
+    if (!best) return { found: false };
+    return { found: true, ...best };
   });
 
   fastify.post('/share/:token/tts', async (request, reply) => {

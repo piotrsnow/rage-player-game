@@ -3,7 +3,7 @@ import { calculateMaxWounds, normalizeMoney } from '../../../services/gameState'
 import { stackMaterials, stackInventory } from '../_shared';
 import { slugifyItemName } from '../../../../shared/domain/itemKeys.js';
 import { normalizeSpellMaterialIcon } from '../../../../shared/domain/spellMaterialIcons.js';
-import { addEffect, removeEffect, removeEffectsByName, migrateStatusStrings, deriveStatusNames } from '../../../../shared/domain/statusEffects.js';
+import { addEffect, removeEffect, removeEffectsByName, tickEffects, migrateStatusStrings, deriveStatusNames } from '../../../../shared/domain/statusEffects.js';
 import { normalizeSkillName } from '../../../services/diceRollInference.js';
 import { sanitizeMana } from '../../../../shared/domain/mana.js';
 
@@ -265,6 +265,24 @@ function applyCharacterEffects(draft, changes) {
   if (Array.isArray(changes.survivingEffects)) {
     draft.character.activeEffects = changes.survivingEffects;
     draft.character.statuses = deriveStatusNames(changes.survivingEffects);
+  }
+
+  // Tick scene-duration effects (decrement remaining, expire finished ones)
+  if (draft.character.activeEffects?.length) {
+    const { remaining, dotDamage, dotHeal } = tickEffects(
+      draft.character.activeEffects, 'scenes',
+    );
+    draft.character.activeEffects = remaining;
+    draft.character.statuses = deriveStatusNames(remaining);
+    if (dotDamage > 0) {
+      draft.character.wounds = Math.max(0, (draft.character.wounds ?? 0) - dotDamage);
+    }
+    if (dotHeal > 0 && draft.character.maxWounds) {
+      draft.character.wounds = Math.min(
+        draft.character.maxWounds,
+        (draft.character.wounds ?? 0) + dotHeal,
+      );
+    }
   }
 }
 

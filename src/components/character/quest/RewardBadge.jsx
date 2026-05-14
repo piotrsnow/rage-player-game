@@ -24,14 +24,12 @@ export default function RewardBadge({ reward, compact = false, t }) {
   }
 
   return (
-    <div className="flex items-start gap-2 bg-amber-500/8 border border-amber-500/15 rounded-sm p-3">
-      <span className="material-symbols-outlined text-sm text-amber-400 mt-0.5">paid</span>
-      <div>
-        <p className="text-[10px] font-label uppercase tracking-widest text-amber-400/80">
-          {t('quests.reward')}
-        </p>
-        <p className="text-xs text-on-surface mt-0.5 leading-relaxed">{text}</p>
-      </div>
+    <div className="bg-amber-500/8 border border-amber-500/15 rounded-sm p-4">
+      <p className="flex items-center gap-2 text-base font-headline uppercase tracking-widest text-amber-400/80 mb-1">
+        {t('quests.reward')}
+        <span className="material-symbols-outlined text-2xl">paid</span>
+      </p>
+      <p className="text-lg text-on-surface leading-relaxed">{text}</p>
     </div>
   );
 }

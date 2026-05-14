@@ -78,10 +78,15 @@ function humanizePlayerAction(action, t) {
     return t('gameplay.initiateCombatChat', 'Rzucam się do walki!');
 
   const beerMatch = action.match(/^\[INITIATE BEER DUEL(?::\s*(.+?))?\]$/);
-  if (beerMatch)
-    return beerMatch[1]
-      ? t('gameplay.beerDuelVsChat', { name: beerMatch[1], defaultValue: 'Proponuję pojedynek piwny z {{name}}!' })
-      : t('gameplay.beerDuelChat', 'Proponuję pojedynek piwny!');
+  if (beerMatch) {
+    if (beerMatch[1]) {
+      const names = beerMatch[1].split(',').map((n) => n.trim()).filter(Boolean);
+      return names.length > 1
+        ? t('gameplay.beerDuelVsMultiChat', { names: names.join(', '), defaultValue: 'Proponuję pojedynek piwny z {{names}}!' })
+        : t('gameplay.beerDuelVsChat', { name: names[0], defaultValue: 'Proponuję pojedynek piwny z {{name}}!' });
+    }
+    return t('gameplay.beerDuelChat', 'Proponuję pojedynek piwny!');
+  }
 
   const attackMatch = action.match(/^\[ATTACK:\s*(.+?)\]$/);
   if (attackMatch)

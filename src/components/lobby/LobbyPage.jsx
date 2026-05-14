@@ -535,6 +535,26 @@ export default function LobbyPage() {
     }
   };
 
+  const handleShare = async (id) => {
+    const target = campaigns.find((c) => c.id === id);
+    if (!target || target.source === 'local') return;
+    try {
+      let token = target.shareToken;
+      if (!token) {
+        const res = await apiClient.post(`/campaigns/${id}/share`);
+        token = res.shareToken;
+        setCampaigns((prev) =>
+          prev.map((c) => (c.id === id ? { ...c, shareToken: token } : c)),
+        );
+      }
+      const url = `${window.location.origin}/view/${token}/read`;
+      await navigator.clipboard.writeText(url);
+      return true;
+    } catch {
+      return false;
+    }
+  };
+
   const handleDelete = async (id) => {
     const target = campaigns.find((c) => c.id === id);
     if (target?.source === 'local') {
@@ -889,6 +909,7 @@ export default function LobbyPage() {
                   onLoad={() => { handleLoad(campaigns[0]); setShowAllCampaigns(false); }}
                   onDelete={() => handleDelete(campaigns[0].id)}
                   onTogglePublish={campaigns[0].source !== 'local' ? () => handleTogglePublish(campaigns[0].id) : undefined}
+                  onShare={campaigns[0].source !== 'local' ? () => handleShare(campaigns[0].id) : undefined}
                 />
               )}
               {campaigns.length > 1 && (
@@ -903,6 +924,7 @@ export default function LobbyPage() {
                   onLoad={() => { handleLoad(c); setShowAllCampaigns(false); }}
                   onDelete={() => handleDelete(c.id)}
                   onTogglePublish={c.source !== 'local' ? () => handleTogglePublish(c.id) : undefined}
+                  onShare={c.source !== 'local' ? () => handleShare(c.id) : undefined}
                 />
               ))}
             </div>

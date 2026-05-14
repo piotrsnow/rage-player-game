@@ -296,8 +296,9 @@ export function NarratorHeaderButtons({ message, narrator, activeAccentClass, id
 }
 
 /**
- * Renders streaming content: structured dialogueSegments when available,
- * otherwise falls back to narrative text with regex-based dialogue detection.
+ * Renders streaming content using structured dialogueSegments directly.
+ * Falls back to plain narration text (no quote detection) while segments
+ * haven't arrived yet in the partial JSON stream.
  */
 export function StreamingContent({ narrative, segments }) {
   const { t } = useTranslation();
@@ -344,6 +345,14 @@ export function StreamingContent({ narrative, segments }) {
 
   if (!narrative) return null;
 
+  return (
+    <p className="text-xs text-on-surface-variant leading-snug italic whitespace-pre-line">
+      {narrative}
+      <span className="inline-block w-1 h-3 bg-primary/70 animate-pulse ml-0.5 align-text-bottom" />
+    </p>
+  );
+
+  /* --- Old regex-based quote detection fallback (preserved for reference) ---
   const parts = [];
   const dialogueRegex = /[„"«]([^"»"]*)[""»]|"([^"]*)"/g;
   let lastIndex = 0;
@@ -387,4 +396,5 @@ export function StreamingContent({ narrative, segments }) {
       <span className="inline-block w-1 h-3 bg-primary/70 animate-pulse ml-0.5 align-text-bottom" />
     </>
   );
+  --- end old fallback --- */
 }

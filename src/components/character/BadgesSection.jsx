@@ -1,131 +1,60 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { useTranslation } from 'react-i18next';
 import { apiClient } from '../../services/apiClient';
-import { useModalA11y } from '../../hooks/useModalA11y';
+import { imageService } from '../../services/imageGen';
+import { useSettings } from '../../contexts/SettingsContext';
+import { useGameDispatch, useGameScenes } from '../../stores/gameSelectors';
+import BadgeModal from './BadgeModal';
 
-function BadgeClaimModal({ badge, onClaim, onRegenerate, onClose, claiming, regenerating }) {
-  const { t } = useTranslation();
-  const modalRef = useModalA11y(onClose);
-  const [xpResult, setXpResult] = useState(null);
+const BADGE_POLL_DELAY_MS = 6000;
+const BADGE_POLL_INTERVAL_MS = 4000;
+const BADGE_POLL_MAX_ATTEMPTS = 5;
 
-  const handleClaim = async () => {
-    const result = await onClaim(badge.id);
-    if (result) setXpResult(result);
-  };
+const KNOWN_IMAGE_PROVIDERS = ['dalle', 'gpt-image', 'stability', 'gemini', 'sd-webui'];
 
-  const claimed = badge.xpAwarded != null || xpResult;
+function preloadImage(url) {
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.onload = () => resolve(true);
+    img.onerror = () => resolve(false);
+    img.src = url;
+  });
+}
 
-  return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-4"
-      role="dialog"
-      aria-modal="true"
-      onClick={onClose}
-    >
-      <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
-      <div
-        ref={modalRef}
-        className="relative w-full max-w-sm bg-surface-container-highest/95 backdrop-blur-2xl border border-outline-variant/15 rounded-sm shadow-2xl animate-fade-in overflow-hidden"
-        onClick={(e) => e.stopPropagation()}
-      >
-        {badge.imageUrl ? (
-          <div className="relative w-full aspect-square bg-surface-container-high">
-            <img
-              src={apiClient.resolveMediaUrl(badge.imageUrl)}
-              alt={badge.name}
-              className="w-full h-full object-cover"
-              onError={(e) => { e.target.style.display = 'none'; }}
-            />
-            <div className="absolute inset-0 bg-gradient-to-t from-surface-dim via-transparent to-transparent" />
-          </div>
-        ) : (
-          <div className="w-full aspect-[3/2] bg-gradient-to-br from-surface-container to-surface-container-lowest flex items-center justify-center">
-            <span className="material-symbols-outlined text-8xl text-primary/20">{badge.icon || 'shield'}</span>
-          </div>
-        )}
-
-        <div className="p-5 space-y-4">
-          <div>
-            <h3 className="font-headline text-xl text-tertiary leading-tight">{badge.name}</h3>
-            <p className="text-on-surface-variant text-sm leading-relaxed mt-2">{badge.description}</p>
-          </div>
-
-          {xpResult ? (
-            <div className="text-center py-3 animate-fade-in">
-              <div className="inline-flex items-center gap-2 px-4 py-2 bg-primary/15 border border-primary/30 rounded-sm">
-                <span className="material-symbols-outlined text-primary text-lg">stars</span>
-                <span className="text-primary font-headline text-2xl">+{xpResult.xpAwarded} XP</span>
-              </div>
-              {xpResult.leveledUp && (
-                <p className="text-tertiary font-headline text-sm mt-2 animate-pulse">
-                  {t('badges.levelUp', { level: xpResult.newCharacterLevel })}
-                </p>
-              )}
-            </div>
-          ) : claimed ? (
-            <div className="text-center py-2">
-              <span className="text-on-surface-variant/60 text-sm">
-                {t('badges.alreadyClaimed', { xp: badge.xpAwarded })}
-              </span>
-            </div>
-          ) : (
-            <button
-              type="button"
-              onClick={handleClaim}
-              disabled={claiming}
-              className="w-full py-2.5 bg-primary/15 border border-primary/30 rounded-sm text-primary font-label uppercase tracking-wider text-sm hover:bg-primary/25 transition-colors disabled:opacity-40"
-            >
-              {claiming ? (
-                <span className="material-symbols-outlined text-base animate-spin">sync</span>
-              ) : (
-                t('badges.claimXp')
-              )}
-            </button>
-          )}
-
-          <div className="flex items-center justify-between">
-            {badge.imagePrompt && (
-              <button
-                type="button"
-                onClick={() => onRegenerate(badge.id)}
-                disabled={regenerating}
-                className="flex items-center gap-1 text-xs text-on-surface-variant/70 hover:text-tertiary transition-colors disabled:opacity-40"
-              >
-                <span className={`material-symbols-outlined text-sm ${regenerating ? 'animate-spin' : ''}`}>
-                  {regenerating ? 'progress_activity' : 'refresh'}
-                </span>
-                {t('badges.regenerateImage')}
-              </button>
-            )}
-            <button
-              type="button"
-              onClick={onClose}
-              className="text-xs text-on-surface-variant/70 hover:text-primary transition-colors ml-auto"
-            >
-              {t('common.close', 'Zamknij')}
-            </button>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
+function useImageProvider() {
+  const { settings } = useSettings();
+  const provider = KNOWN_IMAGE_PROVIDERS.includes(settings.sceneImageTier)
+    ? settings.sceneImageTier
+    : (settings.imageProvider || 'dalle');
+  return { provider, sdModel: settings.sdWebuiModel || null };
 }
 
 export default function BadgesSection({ characterId }) {
   const { t } = useTranslation();
+  const dispatch = useGameDispatch();
+  const scenes = useGameScenes();
+  const { provider, sdModel } = useImageProvider();
   const [badges, setBadges] = useState([]);
   const [loading, setLoading] = useState(true);
   const [generating, setGenerating] = useState(false);
   const [claiming, setClaiming] = useState(false);
   const [regenerating, setRegenerating] = useState(null);
   const [selectedBadge, setSelectedBadge] = useState(null);
+  const [preloadingBadgeId, setPreloadingBadgeId] = useState(null);
+  const [hoveredBadge, setHoveredBadge] = useState(null);
+  const [tooltipPos, setTooltipPos] = useState(null);
   const scrollRef = useRef(null);
+  const knownBadgeIdsRef = useRef(new Set());
+  const lastSceneCountRef = useRef(0);
 
   const fetchBadges = useCallback(async () => {
     if (!characterId) return;
     try {
       const data = await apiClient.get(`/characters/${characterId}/badges`);
-      setBadges(data.badges || []);
+      const fetched = data.badges || [];
+      setBadges(fetched);
+      knownBadgeIdsRef.current = new Set(fetched.map((b) => b.id));
     } catch {
       // silent
     } finally {
@@ -135,12 +64,89 @@ export default function BadgesSection({ characterId }) {
 
   useEffect(() => { fetchBadges(); }, [fetchBadges]);
 
+  useEffect(() => {
+    const sceneCount = scenes?.length || 0;
+    if (sceneCount <= lastSceneCountRef.current) {
+      lastSceneCountRef.current = sceneCount;
+      return;
+    }
+    lastSceneCountRef.current = sceneCount;
+
+    const sceneIndex = sceneCount - 1;
+    if (sceneIndex <= 0 || sceneIndex % 5 !== 0) return;
+    if (!characterId) return;
+
+    let cancelled = false;
+    let attempts = 0;
+
+    const poll = async () => {
+      if (cancelled) return;
+      try {
+        const data = await apiClient.get(`/characters/${characterId}/badges`);
+        const fetched = data.badges || [];
+        const newBadge = fetched.find(
+          (b) => !knownBadgeIdsRef.current.has(b.id) && b.imageUrl,
+        );
+        if (newBadge) {
+          setBadges(fetched);
+          knownBadgeIdsRef.current = new Set(fetched.map((b) => b.id));
+          await preloadImage(apiClient.resolveMediaUrl(newBadge.imageUrl));
+          if (!cancelled) setSelectedBadge(newBadge);
+          return;
+        }
+        const newBadgeNoImage = fetched.find(
+          (b) => !knownBadgeIdsRef.current.has(b.id),
+        );
+        if (newBadgeNoImage) {
+          setBadges(fetched);
+          knownBadgeIdsRef.current = new Set(fetched.map((b) => b.id));
+          if (!cancelled) setSelectedBadge(newBadgeNoImage);
+          return;
+        }
+      } catch { /* silent */ }
+
+      attempts++;
+      if (attempts < BADGE_POLL_MAX_ATTEMPTS && !cancelled) {
+        setTimeout(poll, BADGE_POLL_INTERVAL_MS);
+      }
+    };
+
+    const timer = setTimeout(poll, BADGE_POLL_DELAY_MS);
+    return () => { cancelled = true; clearTimeout(timer); };
+  }, [scenes?.length, characterId]);
+
+  const generateBadgeImageFE = useCallback(async (badge) => {
+    if (!badge?.imagePrompt) return badge;
+    try {
+      const imageUrl = await imageService.generatePlaygroundImage({
+        prompt: badge.imagePrompt,
+        provider,
+        sdModel,
+      });
+      if (imageUrl) {
+        await apiClient.post(
+          `/characters/${characterId}/badges/${badge.id}/regenerate-image`,
+          { imageUrl },
+        );
+        return { ...badge, imageUrl };
+      }
+    } catch { /* non-fatal */ }
+    return badge;
+  }, [characterId, provider, sdModel]);
+
   const handleGenerate = async () => {
     if (generating) return;
     setGenerating(true);
     try {
-      const badge = await apiClient.post(`/characters/${characterId}/badges/generate`, {});
+      let badge = await apiClient.post(`/characters/${characterId}/badges/generate`, {});
       setBadges((prev) => [badge, ...prev]);
+      if (badge.imagePrompt && !badge.imageUrl) {
+        badge = await generateBadgeImageFE(badge);
+        setBadges((prev) => prev.map((b) => b.id === badge.id ? badge : b));
+      }
+      if (badge.imageUrl) {
+        await preloadImage(apiClient.resolveMediaUrl(badge.imageUrl));
+      }
       setSelectedBadge(badge);
     } catch {
       // silent
@@ -155,6 +161,31 @@ export default function BadgesSection({ characterId }) {
     try {
       const result = await apiClient.post(`/characters/${characterId}/badges/${badgeId}/claim`, {});
       setBadges((prev) => prev.map((b) => b.id === badgeId ? { ...b, xpAwarded: result.xpAwarded } : b));
+
+      const badge = badges.find((b) => b.id === badgeId) || selectedBadge;
+      const badgeName = badge?.name || t('badges.title');
+      const contentKey = result.leveledUp ? 'badges.chatLevelUp' : 'badges.chatXpClaimed';
+      const contentOpts = result.leveledUp
+        ? { name: badgeName, xp: result.xpAwarded, level: result.newCharacterLevel }
+        : { name: badgeName, xp: result.xpAwarded };
+      dispatch({
+        type: 'ADD_CHAT_MESSAGE',
+        payload: {
+          id: `msg_${Date.now()}_badge_xp`,
+          role: 'system',
+          subtype: 'badge_xp',
+          content: t(contentKey, contentOpts),
+          timestamp: Date.now(),
+        },
+      });
+      dispatch({
+        type: 'UPDATE_CHARACTER',
+        payload: {
+          characterXp: result.newCharacterXp,
+          characterLevel: result.newCharacterLevel,
+        },
+      });
+
       return result;
     } catch {
       return null;
@@ -167,7 +198,12 @@ export default function BadgesSection({ characterId }) {
     if (regenerating) return;
     setRegenerating(badgeId);
     try {
-      const updated = await apiClient.post(`/characters/${characterId}/badges/${badgeId}/regenerate-image`, {});
+      const badge = badges.find((b) => b.id === badgeId) || selectedBadge;
+      if (!badge?.imagePrompt) return;
+      const updated = await generateBadgeImageFE(badge);
+      if (updated.imageUrl) {
+        await preloadImage(apiClient.resolveMediaUrl(updated.imageUrl));
+      }
       setBadges((prev) => prev.map((b) => b.id === badgeId ? { ...b, imageUrl: updated.imageUrl } : b));
       if (selectedBadge?.id === badgeId) {
         setSelectedBadge((prev) => ({ ...prev, imageUrl: updated.imageUrl }));
@@ -179,11 +215,29 @@ export default function BadgesSection({ characterId }) {
     }
   };
 
+  const handleDelete = async (badgeId) => {
+    try {
+      await apiClient.del(`/characters/${characterId}/badges/${badgeId}`);
+      setBadges((prev) => prev.filter((b) => b.id !== badgeId));
+      setSelectedBadge(null);
+    } catch { /* silent */ }
+  };
+
+  const handleBadgeTileClick = async (badge) => {
+    if (preloadingBadgeId) return;
+    if (badge.imageUrl) {
+      setPreloadingBadgeId(badge.id);
+      await preloadImage(apiClient.resolveMediaUrl(badge.imageUrl));
+      setPreloadingBadgeId(null);
+    }
+    setSelectedBadge(badge);
+  };
+
   if (loading) return null;
 
   return (
     <>
-      <div className="bg-surface-container-low p-6 border border-outline-variant/10 rounded-sm">
+      <div className="bg-surface-container-low p-6 border border-outline-variant/10 rounded-sm overflow-visible">
         <div className="flex items-center justify-between mb-4">
           <h3 className="text-tertiary font-headline flex items-center gap-2">
             <span className="material-symbols-outlined text-sm">military_tech</span>
@@ -207,46 +261,45 @@ export default function BadgesSection({ characterId }) {
             {t('badges.empty')}
           </p>
         ) : (
-          <div ref={scrollRef} className="flex gap-3 overflow-x-auto pb-2 scrollbar-thin">
+          <div ref={scrollRef} className="flex flex-wrap gap-3 pb-2 pt-3 px-2">
             {badges.map((badge) => {
               const claimed = badge.xpAwarded != null;
+              const isPreloading = preloadingBadgeId === badge.id;
               return (
                 <button
                   key={badge.id}
                   type="button"
-                  onClick={() => setSelectedBadge(badge)}
-                  className={`group shrink-0 w-28 flex flex-col items-center text-center transition-all rounded-sm border overflow-hidden ${
-                    claimed
-                      ? 'border-outline-variant/10 opacity-60 hover:opacity-80'
-                      : 'border-primary/20 hover:border-primary/40 animate-pulse-subtle'
-                  }`}
+                  onClick={() => handleBadgeTileClick(badge)}
+                  disabled={isPreloading}
+                  className="flex items-center justify-center transition-all"
+                  onMouseEnter={(e) => {
+                    const rect = e.currentTarget.getBoundingClientRect();
+                    setTooltipPos({ x: rect.left + rect.width / 2, y: rect.top });
+                    setHoveredBadge(badge);
+                  }}
+                  onMouseLeave={() => setHoveredBadge(null)}
                 >
-                  {badge.imageUrl ? (
-                    <div className="w-full aspect-square bg-surface-container-high relative">
-                      <img
-                        src={apiClient.resolveMediaUrl(badge.imageUrl)}
-                        alt={badge.name}
-                        className={`w-full h-full object-cover ${claimed ? 'grayscale' : ''}`}
-                        onError={(e) => { e.target.style.display = 'none'; }}
-                      />
-                      {!claimed && (
-                        <div className="absolute top-1 right-1 w-2.5 h-2.5 rounded-full bg-primary shadow-[0_0_6px_rgba(197,154,255,0.6)]" />
-                      )}
-                    </div>
-                  ) : (
-                    <div className={`w-full aspect-square flex items-center justify-center bg-surface-container-high/60 relative ${claimed ? 'grayscale' : ''}`}>
-                      <span className="material-symbols-outlined text-3xl text-primary/40">{badge.icon || 'shield'}</span>
-                      {!claimed && (
-                        <div className="absolute top-1 right-1 w-2.5 h-2.5 rounded-full bg-primary shadow-[0_0_6px_rgba(197,154,255,0.6)]" />
-                      )}
-                    </div>
-                  )}
-                  <div className="px-1.5 py-2 w-full">
-                    <span className="text-[10px] font-label uppercase tracking-wide text-on-surface-variant leading-tight line-clamp-2">
-                      {badge.name}
-                    </span>
-                    {claimed && (
-                      <span className="text-[9px] text-outline mt-0.5 block">+{badge.xpAwarded} XP</span>
+                  <div
+                    className={`badge-medal-frame badge-medal-hover w-28 h-28 rounded-full ${claimed ? 'badge-medal-claimed opacity-70 grayscale-[40%]' : 'badge-medal-breathe'}`}
+                    style={badge.color ? { '--badge-color': badge.color } : undefined}
+                  >
+                    {badge.imageUrl ? (
+                      isPreloading ? (
+                        <div className="w-full h-full flex items-center justify-center bg-surface-container-high">
+                          <span className="material-symbols-outlined text-xl text-primary/40 animate-spin">progress_activity</span>
+                        </div>
+                      ) : (
+                        <img
+                          src={apiClient.resolveMediaUrl(badge.imageUrl)}
+                          alt={badge.name}
+                          className="w-full h-full object-cover opacity-85"
+                          onError={(e) => { e.target.style.display = 'none'; }}
+                        />
+                      )
+                    ) : (
+                      <div className="w-full h-full flex items-center justify-center bg-surface-container-high/60">
+                        <span className="material-symbols-outlined text-2xl text-primary/40">{badge.icon || 'shield'}</span>
+                      </div>
                     )}
                   </div>
                 </button>
@@ -256,15 +309,37 @@ export default function BadgesSection({ characterId }) {
         )}
       </div>
 
-      {selectedBadge && (
-        <BadgeClaimModal
+      {hoveredBadge && tooltipPos && createPortal(
+        <div
+          className="badge-holo-tooltip pointer-events-none fixed whitespace-nowrap px-3 py-1.5 rounded text-center z-[9999] animate-fade-in"
+          style={{
+            '--badge-color': hoveredBadge.color || 'rgba(197, 154, 255, 0.9)',
+            left: tooltipPos.x,
+            top: tooltipPos.y - 8,
+            transform: 'translate(-50%, -100%)',
+          }}
+        >
+          <span className="block text-base font-label uppercase tracking-wide leading-tight" style={{ color: hoveredBadge.color || 'rgba(197, 154, 255, 0.9)' }}>
+            {hoveredBadge.name}
+          </span>
+          {hoveredBadge.xpAwarded != null && (
+            <span className="block text-xs mt-0.5" style={{ color: hoveredBadge.color || 'rgba(197, 154, 255, 0.7)', opacity: 0.7 }}>+{hoveredBadge.xpAwarded} XP</span>
+          )}
+        </div>,
+        document.body,
+      )}
+
+      {selectedBadge && createPortal(
+        <BadgeModal
           badge={selectedBadge}
           onClaim={handleClaim}
           onRegenerate={handleRegenerate}
+          onDelete={handleDelete}
           onClose={() => setSelectedBadge(null)}
           claiming={claiming}
           regenerating={regenerating === selectedBadge.id}
-        />
+        />,
+        document.body,
       )}
     </>
   );

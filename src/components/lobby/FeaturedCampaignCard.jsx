@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import CampaignCardCover from './CampaignCardCover';
 
@@ -20,10 +21,12 @@ const genreGradients = {
   Horror: 'from-error/5 to-transparent',
 };
 
-export default function FeaturedCampaignCard({ campaign, onLoad, onDelete, onTogglePublish, loading, disabled }) {
+export default function FeaturedCampaignCard({ campaign, onLoad, onDelete, onTogglePublish, onShare, loading, disabled }) {
   const { t, i18n } = useTranslation();
+  const navigate = useNavigate();
   const [deleteState, setDeleteState] = useState('idle');
   const [publishing, setPublishing] = useState(false);
+  const [shareCopied, setShareCopied] = useState(false);
 
   const lastPlayed = new Date(campaign.lastSaved).toLocaleDateString(
     i18n.language === 'pl' ? 'pl-PL' : undefined,
@@ -106,6 +109,42 @@ export default function FeaturedCampaignCard({ campaign, onLoad, onDelete, onTog
                     ? 'opacity-0 group-hover:opacity-100 translate-x-2 group-hover:translate-x-0'
                     : 'opacity-100 translate-x-0'
                 }`}>
+                  {deleteState === 'idle' && (campaign.sceneCount || 0) > 0 && (
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        navigate(`/read/${campaign.id}`);
+                      }}
+                      title={t('reader.readChronicle')}
+                      className="p-1 rounded-sm text-outline hover:text-primary hover:bg-primary/10 transition-colors"
+                    >
+                      <span className="material-symbols-outlined text-sm">auto_stories</span>
+                    </button>
+                  )}
+                  {deleteState === 'idle' && onShare && (
+                    <button
+                      type="button"
+                      onClick={async (e) => {
+                        e.stopPropagation();
+                        const ok = await onShare();
+                        if (ok) {
+                          setShareCopied(true);
+                          setTimeout(() => setShareCopied(false), 2000);
+                        }
+                      }}
+                      title={shareCopied ? t('lobby.shareCopied') : t('lobby.shareLink')}
+                      className={`p-1 rounded-sm transition-colors ${
+                        shareCopied
+                          ? 'text-primary'
+                          : 'text-outline hover:text-primary hover:bg-primary/10'
+                      }`}
+                    >
+                      <span className="material-symbols-outlined text-sm">
+                        {shareCopied ? 'check' : 'share'}
+                      </span>
+                    </button>
+                  )}
                   {deleteState === 'idle' && onTogglePublish && (
                     <button
                       type="button"

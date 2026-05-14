@@ -761,7 +761,30 @@ Return JSON with exactly three fields, all written in ${isPolish ? 'Polish' : 'E
     };
   });
 
-  fastify.post('/:id/badges/:badgeId/regenerate-image', { schema: { params: BADGE_ID_PARAMS } }, async (request, reply) => {
+  fastify.delete('/:id/badges/:badgeId', { schema: { params: BADGE_ID_PARAMS } }, async (request, reply) => {
+    const character = await prisma.character.findFirst({
+      where: { id: request.params.id, userId: request.user.id },
+      select: { id: true },
+    });
+    if (!character) return reply.code(404).send({ error: 'Character not found' });
+
+    const result = await prisma.characterBadge.deleteMany({
+      where: { id: request.params.badgeId, characterId: character.id },
+    });
+    if (result.count === 0) return reply.code(404).send({ error: 'Badge not found' });
+    return reply.code(204).send();
+  });
+
+  fastify.post('/:id/badges/:badgeId/regenerate-image', {
+    schema: {
+      params: BADGE_ID_PARAMS,
+      body: {
+        type: 'object',
+        properties: { imageUrl: { type: 'string', maxLength: 2000 } },
+        additionalProperties: false,
+      },
+    },
+  }, async (request, reply) => {
     const character = await prisma.character.findFirst({
       where: { id: request.params.id, userId: request.user.id },
       select: { id: true },
@@ -772,6 +795,15 @@ Return JSON with exactly three fields, all written in ${isPolish ? 'Polish' : 'E
       where: { id: request.params.badgeId, characterId: character.id },
     });
     if (!badge) return reply.code(404).send({ error: 'Badge not found' });
+
+    const clientUrl = request.body?.imageUrl;
+    if (clientUrl) {
+      await prisma.characterBadge.update({
+        where: { id: badge.id },
+        data: { imageUrl: clientUrl },
+      });
+      return { ...badge, imageUrl: clientUrl };
+    }
 
     try {
       const updated = await regenerateBadgeImage(badge.id, request.user.id);

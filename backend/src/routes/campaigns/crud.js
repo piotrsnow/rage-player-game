@@ -52,7 +52,7 @@ export async function crudCampaignRoutes(app) {
       select: {
         id: true, name: true, genre: true, tone: true,
         totalCost: true, lastSaved: true, createdAt: true,
-        isPublic: true,
+        isPublic: true, shareToken: true,
       },
       orderBy: { lastSaved: 'desc' },
     });
@@ -115,6 +115,7 @@ export async function crudCampaignRoutes(app) {
         sceneCovers: pickRandomSceneCovers(sceneCoversMap.get(c.id), 5),
         totalCost: c.totalCost || 0,
         isPublic: c.isPublic,
+        shareToken: c.shareToken || null,
       };
     });
   });

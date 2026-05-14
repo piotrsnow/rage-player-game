@@ -49,8 +49,10 @@
     "chooseManoeuvre": "Wybierz manewr",
     "selectTarget": "Wybierz cel",
     "selectBeerDuelTarget": "Pojedynek piwny — przeciwnicy",
-    "generalBeerDuel": "Ogólny pojedynek (wybór przez AI)",
+    "generalBeerDuel": "Ogólny pojedynek (AI wybiera 2-3)",
     "beerDuelVsNpc": "Na melanż",
+    "beerDuelSelected": "Wybrany",
+    "beerDuelStartMulti": "Rozpocznij pojedynek ({{count}})",
     "execute": "Wykonaj",
     "manoeuvres": {
       "attack": "Atak",
@@ -433,6 +435,8 @@
     "libraryNewerHintNoDate": "W bibliotece jest nowsza wersja (Poziom {{level}})",
     "loadingWorld": "Wczytywanie świata...",
     "loadingWorldHint": "Przygotowuję twoją przygodę, proszę o cierpliwość",
+    "shareLink": "Udostępnij link do kroniki",
+    "shareCopied": "Link skopiowany!",
     "campaignNotFound": "Nie znaleziono kampanii. Mogła zostać usunięta.",
     "recentCampaigns": "Ostatnie kampanie",
     "showAllCampaigns": "Wszystkie kampanie",
@@ -560,8 +564,11 @@
     "youWin": "Wygrałeś!",
     "youLose": "Przegrałeś!",
     "bothEliminated": "Obaj nie wytrzymali!",
+    "allEliminated": "Nikt nie wytrzymał!",
     "playerEliminated": "Nie wytrzymałeś...",
-    "opponentEliminated": "{{name}} nie wytrzymał!"
+    "opponentEliminated": "{{name}} nie wytrzymał!",
+    "someEliminated": "{{names}} nie wytrzymali!",
+    "player": "Gracz"
   },
   "gameplay": {
     "loadingCampaign": "Wczytywanie kampanii...",
@@ -722,6 +729,7 @@
     "attackNpcChat": "Atakuję {{name}}!",
     "beerDuelChat": "Proponuję pojedynek piwny!",
     "beerDuelVsChat": "Proponuję pojedynek piwny z {{name}}!",
+    "beerDuelVsMultiChat": "Proponuję pojedynek piwny z {{names}}!",
     "continueDisabledTooltip": "Nie można dwukrotnie z rzędu wybrać „Dalej”. Wybierz inną akcję lub „Czekaj”.",
     "waitButton": "Czekaj",
     "waitAction": "[WAIT]",
@@ -986,6 +994,8 @@
     "title": "Zbrojownia i Artefakty",
     "backpackTitle": "Plecak",
     "slots": "{{current}}/{{max}} Miejsc",
+    "sortByDate": "Sortuj od najnowszych",
+    "newest": "Najnowsze",
     "type": "Typ:",
     "rarityCommon": "Zwykły",
     "rarityUncommon": "Niepospolity",
@@ -2256,6 +2266,31 @@
     "refresh": "Odśwież kampanię",
     "test": "Test"
   },
+  "reader": {
+    "loading": "Ładowanie kroniki...",
+    "notFound": "Kampania nie została znaleziona",
+    "backendRequired": "Wymagane połączenie z backendem",
+    "goHome": "Wróć na stronę główną",
+    "scene": "Scena {{n}}",
+    "playerAction": "Akcja gracza",
+    "npc": "NPC",
+    "readChronicle": "Czytaj kronikę",
+    "noScenes": "Ta kampania nie ma jeszcze żadnych scen.",
+    "autoPlay": "Autoodtwarzanie",
+    "summary": "Streszczenie",
+    "generateSummary": "Generuj streszczenie",
+    "generating": "Generowanie...",
+    "generatingBatch": "Generowanie partii {{current}}/{{total}}...",
+    "generateError": "Nie udało się wygenerować streszczenia.",
+    "summaryType": "Typ",
+    "sentencesPerScene": "Zdania/scena",
+    "modeStory": "Opowieść",
+    "modeDialogue": "Dialog",
+    "modePoem": "Wiersz",
+    "modeReport": "Raport",
+    "shareChronicle": "Udostępnij kronikę",
+    "linkCopied": "Czytaj kronikę — link skopiowany!"
+  },
   "trade": {
     "title": "Handel",
     "buy": "Kup",
@@ -2559,6 +2594,7 @@
   },
   "badges": {
     "title": "Odznaki",
+    "modalTitle": "Odznaka",
     "generate": "Generuj odznakę",
     "generating": "Generuję...",
     "empty": "Brak odznak. Zdobywaj je podczas gry lub wygeneruj ręcznie.",
@@ -2566,6 +2602,10 @@
     "alreadyClaimed": "Odebrano +{{xp}} XP",
     "levelUp": "Awans na poziom {{level}}!",
     "regenerateImage": "Regeneruj obrazek",
-    "generateAnother": "Kolejna"
+    "chatXpClaimed": "{{name}} — +{{xp}} XP",
+    "chatLevelUp": "{{name}} — +{{xp}} XP (Awans na poz. {{level}}!)",
+    "generateAnother": "Kolejna",
+    "delete": "Usuń",
+    "confirmDelete": "Na pewno?"
   }
 }

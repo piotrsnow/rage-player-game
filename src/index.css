@@ -986,6 +986,78 @@
   }
 }
 
+/* Badge portrait — desaturated with animated metallic border */
+.badge-portrait-frame {
+  position: relative;
+  padding: 2px;
+  border-radius: 10px;
+  background:
+    linear-gradient(135deg,
+      rgba(160, 140, 180, 0.35) 0%,
+      rgba(220, 210, 240, 0.55) 25%,
+      rgba(180, 170, 200, 0.30) 50%,
+      rgba(240, 230, 255, 0.60) 75%,
+      rgba(160, 140, 180, 0.35) 100%
+    );
+  background-size: 300% 300%;
+  animation: metallicShift 4s ease-in-out infinite;
+}
+
+.badge-portrait-frame::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background:
+    conic-gradient(
+      from var(--metallic-angle, 0deg),
+      rgba(255, 255, 255, 0.08) 0%,
+      rgba(200, 190, 220, 0.25) 10%,
+      rgba(255, 255, 255, 0.40) 20%,
+      rgba(180, 170, 200, 0.15) 35%,
+      rgba(255, 255, 255, 0.06) 50%,
+      rgba(200, 190, 220, 0.20) 65%,
+      rgba(255, 255, 255, 0.35) 80%,
+      rgba(180, 170, 200, 0.12) 90%,
+      rgba(255, 255, 255, 0.08) 100%
+    );
+  animation: metallicRotate 6s linear infinite;
+  pointer-events: none;
+  z-index: 1;
+}
+
+.badge-portrait-hologram {
+  filter: saturate(0.15) brightness(0.78) contrast(1.08);
+  transition: filter 0.4s ease;
+}
+
+.flip-card:hover .badge-portrait-hologram {
+  filter: saturate(0.3) brightness(0.84) contrast(1.04);
+}
+
+@keyframes metallicShift {
+  0%, 100% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+}
+
+@keyframes metallicRotate {
+  from { --metallic-angle: 0deg; }
+  to { --metallic-angle: 360deg; }
+}
+
+@property --metallic-angle {
+  syntax: '<angle>';
+  initial-value: 0deg;
+  inherits: false;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .badge-portrait-frame,
+  .badge-portrait-frame::before {
+    animation: none;
+  }
+}
+
 /* 3D flip card — transforms driven by JS for interactive tilt */
 .flip-card {
   perspective: 1200px;
@@ -1237,39 +1309,163 @@
   animation: micPulse 1.5s ease-in-out infinite;
 }
 
-/* Badge portrait: hologram desaturation + electric frame */
-.badge-portrait-hologram {
-  filter: saturate(0.25) brightness(1.1);
-  opacity: 0.7;
-  mix-blend-mode: luminosity;
-}
-
-.badge-portrait-frame {
+/* Badge medal: circular frame with holographic metallic border */
+.badge-medal-frame {
   position: relative;
-  border: 1.5px solid rgba(197, 154, 255, 0.25);
+  border-radius: 50%;
+  border: 5px solid var(--badge-color, rgba(197, 154, 255, 0.5));
   box-shadow:
-    inset 0 0 12px rgba(197, 154, 255, 0.1),
-    0 0 8px rgba(120, 220, 255, 0.08);
+    0 0 28px color-mix(in srgb, var(--badge-color, rgba(197, 154, 255, 1)) 28%, transparent),
+    0 0 10px rgba(120, 220, 255, 0.22),
+    0 0 4px rgba(255, 200, 120, 0.18),
+    inset 0 0 28px color-mix(in srgb, var(--badge-color, rgba(197, 154, 255, 1)) 12%, transparent),
+    0 4px 24px rgba(0, 0, 0, 0.55);
 }
 
-.badge-portrait-frame::before {
+.badge-medal-frame > img,
+.badge-medal-frame > div {
+  border-radius: 50%;
+  overflow: hidden;
+  position: relative;
+  z-index: 1;
+  -webkit-mask-image: radial-gradient(circle, #fff 45%, transparent 72%);
+  mask-image: radial-gradient(circle, #fff 45%, transparent 72%);
+}
+
+.badge-medal-hover {
+  transform: scale(1);
+  transition: transform 0.5s ease-out;
+}
+
+.badge-medal-hover:hover {
+  animation: badgeOrganicSpin 2.5s ease-in-out infinite;
+  transition: none;
+}
+
+.badge-medal-breathe {
+  animation: badgeBreathe 3s ease-in-out infinite;
+}
+
+.badge-medal-breathe:hover {
+  animation: badgeOrganicSpin 2.5s ease-in-out infinite;
+  transition: none;
+}
+
+@keyframes badgeBreathe {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.04); }
+}
+
+.badge-holo-tooltip {
+  background: linear-gradient(
+    135deg,
+    color-mix(in srgb, var(--badge-color, rgba(197, 154, 255, 1)) 15%, rgba(10, 8, 16, 0.92)),
+    rgba(10, 8, 16, 0.95)
+  );
+  border: 1px solid color-mix(in srgb, var(--badge-color, rgba(197, 154, 255, 1)) 40%, transparent);
+  box-shadow:
+    0 4px 16px rgba(0, 0, 0, 0.5),
+    0 0 12px color-mix(in srgb, var(--badge-color, rgba(197, 154, 255, 1)) 15%, transparent);
+  backdrop-filter: blur(8px);
+}
+
+@keyframes badgeOrganicSpin {
+  0% { transform: rotate(0deg) scale(1.04); }
+  25% { transform: rotate(4deg) scale(1.06); }
+  50% { transform: rotate(0deg) scale(1.04); }
+  75% { transform: rotate(-4deg) scale(1.06); }
+  100% { transform: rotate(0deg) scale(1.04); }
+}
+
+.badge-medal-frame::before {
   content: '';
   position: absolute;
-  inset: -2px;
+  inset: -8px;
   border-radius: inherit;
-  padding: 2px;
+  padding: 8px;
   background: conic-gradient(
     from var(--holo-angle, 0deg),
-    rgba(120, 220, 255, 0.5) 0%,
-    transparent 12%,
-    transparent 25%,
-    rgba(197, 154, 255, 0.5) 33%,
-    transparent 45%,
-    transparent 58%,
-    rgba(120, 220, 255, 0.4) 66%,
+    color-mix(in srgb, var(--badge-color, rgba(197, 154, 255, 1)) 70%, rgba(255, 255, 255, 0.6)) 0%,
+    color-mix(in srgb, var(--badge-color, rgba(197, 154, 255, 1)) 50%, transparent) 15%,
+    color-mix(in srgb, var(--badge-color, rgba(197, 154, 255, 1)) 80%, rgba(255, 255, 255, 0.4)) 30%,
+    transparent 42%,
+    color-mix(in srgb, var(--badge-color, rgba(197, 154, 255, 1)) 65%, rgba(255, 255, 255, 0.3)) 55%,
+    color-mix(in srgb, var(--badge-color, rgba(197, 154, 255, 1)) 45%, transparent) 68%,
     transparent 78%,
-    transparent 90%,
-    rgba(197, 154, 255, 0.3) 100%
+    color-mix(in srgb, var(--badge-color, rgba(197, 154, 255, 1)) 75%, rgba(255, 255, 255, 0.5)) 90%,
+    color-mix(in srgb, var(--badge-color, rgba(197, 154, 255, 1)) 60%, transparent) 100%
+  );
+  -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  animation: badgeElectricSpin 3.5s linear infinite;
+  pointer-events: none;
+  z-index: 4;
+}
+
+.badge-medal-frame::after {
+  content: '';
+  position: absolute;
+  inset: -3px;
+  border-radius: inherit;
+  background:
+    radial-gradient(ellipse at 25% 15%, rgba(255, 255, 255, 0.12) 0%, transparent 40%),
+    radial-gradient(ellipse at 75% 85%, color-mix(in srgb, var(--badge-color, rgba(197, 154, 255, 1)) 25%, transparent) 0%, transparent 40%);
+  animation: badgeHoloFlicker 3s ease-in-out infinite;
+  pointer-events: none;
+  z-index: 4;
+}
+
+.badge-medal-claimed::before,
+.badge-medal-claimed::after {
+  animation: none;
+}
+
+@keyframes badgeElectricSpin {
+  to { --holo-angle: 360deg; }
+}
+
+@keyframes badgeHoloFlicker {
+  0%, 100% { opacity: 0.5; }
+  25% { opacity: 1; }
+  50% { opacity: 0.35; }
+  75% { opacity: 0.85; }
+}
+
+.badge-medal-frame-lg {
+  position: relative;
+  border-radius: 50%;
+  border: 5px solid var(--badge-color, rgba(197, 154, 255, 0.65));
+  box-shadow:
+    0 0 36px color-mix(in srgb, var(--badge-color, rgba(197, 154, 255, 1)) 35%, transparent),
+    0 0 14px rgba(120, 220, 255, 0.28),
+    0 0 6px rgba(255, 200, 120, 0.22),
+    inset 0 0 32px color-mix(in srgb, var(--badge-color, rgba(197, 154, 255, 1)) 15%, transparent),
+    0 6px 32px rgba(0, 0, 0, 0.6);
+}
+
+.badge-medal-frame-lg::before {
+  content: '';
+  position: absolute;
+  inset: -6px;
+  border-radius: inherit;
+  padding: 6px;
+  background: conic-gradient(
+    from var(--holo-angle, 0deg),
+    rgba(255, 200, 120, 0.95) 0%,
+    rgba(197, 154, 255, 0.85) 8%,
+    rgba(255, 255, 255, 0.5) 14%,
+    rgba(120, 220, 255, 0.85) 22%,
+    rgba(255, 200, 120, 0.4) 30%,
+    transparent 38%,
+    rgba(197, 154, 255, 0.8) 48%,
+    rgba(255, 255, 255, 0.45) 54%,
+    rgba(120, 220, 255, 0.75) 62%,
+    transparent 70%,
+    rgba(255, 200, 120, 0.85) 80%,
+    rgba(197, 154, 255, 0.75) 90%,
+    rgba(120, 220, 255, 0.65) 100%
   );
   -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
   mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
@@ -1280,28 +1476,18 @@
   z-index: 4;
 }
 
-.badge-portrait-frame::after {
+.badge-medal-frame-lg::after {
   content: '';
   position: absolute;
-  inset: 0;
+  inset: -3px;
   border-radius: inherit;
   background:
-    radial-gradient(ellipse at 30% 20%, rgba(120, 220, 255, 0.08) 0%, transparent 50%),
-    radial-gradient(ellipse at 70% 80%, rgba(197, 154, 255, 0.06) 0%, transparent 50%);
-  animation: badgeHoloFlicker 4s ease-in-out infinite;
+    radial-gradient(ellipse at 20% 10%, rgba(255, 255, 255, 0.18) 0%, transparent 35%),
+    radial-gradient(ellipse at 80% 90%, rgba(197, 154, 255, 0.15) 0%, transparent 35%),
+    radial-gradient(ellipse at 50% 50%, rgba(120, 220, 255, 0.10) 0%, transparent 55%);
+  animation: badgeHoloFlicker 2.5s ease-in-out infinite;
   pointer-events: none;
   z-index: 4;
-}
-
-@keyframes badgeElectricSpin {
-  to { --holo-angle: 360deg; }
-}
-
-@keyframes badgeHoloFlicker {
-  0%, 100% { opacity: 0.6; }
-  25% { opacity: 1; }
-  50% { opacity: 0.4; }
-  75% { opacity: 0.9; }
 }
 
 /* Sidebar player portrait: ornamental arcane frame + magic shimmer */
@@ -1978,6 +2164,55 @@
   background: linear-gradient(90deg, transparent 0%, rgba(251, 191, 36, 0.15) 25%, rgba(251, 191, 36, 0.3) 50%, rgba(251, 191, 36, 0.15) 75%, transparent 100%);
   background-size: 200% 100%;
   animation: beerVictorySweep 2s ease-in-out infinite;
+}
+
+/* Beer duel — floating feedback text */
+@keyframes beerFloatUp {
+  0%   { opacity: 1; transform: translateY(0) scale(1); }
+  70%  { opacity: 1; transform: translateY(-40px) scale(1.1); }
+  100% { opacity: 0; transform: translateY(-60px) scale(0.9); }
+}
+.animate-beer-float-up {
+  animation: beerFloatUp 0.8s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+  pointer-events: none;
+}
+
+/* Beer duel — milestone flash (full beer completed) */
+@keyframes beerMilestoneFlash {
+  0%   { opacity: 0; transform: scale(0.5); }
+  40%  { opacity: 1; transform: scale(1.3); }
+  70%  { transform: scale(0.95); }
+  100% { opacity: 0; transform: scale(1); }
+}
+.animate-beer-milestone {
+  animation: beerMilestoneFlash 1s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+  pointer-events: none;
+}
+
+/* Beer duel — new beer icon zoom-in entrance */
+@keyframes beerIconEnter {
+  0%   { opacity: 0; transform: scale(5); }
+  60%  { opacity: 1; transform: scale(0.85); }
+  80%  { transform: scale(1.1); }
+  100% { opacity: 1; transform: scale(1); }
+}
+.animate-beer-icon-enter {
+  animation: beerIconEnter 1.5s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+/* Beer duel — trap warning shake */
+@keyframes beerTrapWarn {
+  0%, 100% { transform: translateX(0) scale(1); }
+  10%  { transform: translateX(-4px) scale(1.05); }
+  20%  { transform: translateX(4px) scale(1.05); }
+  30%  { transform: translateX(-3px) scale(1.03); }
+  40%  { transform: translateX(3px) scale(1.03); }
+  50%  { transform: translateX(-2px) scale(1.02); }
+  60%  { transform: translateX(2px) scale(1.02); }
+  70%  { transform: translateX(0) scale(1); }
+}
+.animate-beer-trap-warn {
+  animation: beerTrapWarn 0.25s ease-in-out;
 }
 
 /* Beer duel — ambient panel glow */

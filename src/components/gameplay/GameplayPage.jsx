@@ -581,18 +581,16 @@ export default function GameplayPage({ readOnly = false, shareToken = null, onRe
     || narrator.playbackState === narrator.STATES.LOADING
     || diceIsActive;
 
-  // Cut leftover narration only when the player starts a new turn (player
-  // action overlay mounts). For typewriterAction / autoPlayer overlays we
-  // intentionally don't stop the narrator: those overlays appear ALONGSIDE a
-  // freshly-queued scene narration that we want to keep playing so the
-  // typewriter can fastFinish as soon as audio reaches PLAYING.
+  // Cut leftover narration when the new scene's narrative starts streaming in
+  // (not when the player sends the action — let the old scene keep playing
+  // during the action overlay / dice animation period).
   useEffect(() => {
-    if (overlays.playerActionOverlayText) {
+    if (streamingNarrative) {
       narrator.stop();
       try { window.speechSynthesis?.cancel(); } catch {}
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [!!overlays.playerActionOverlayText]);
+  }, [!!streamingNarrative]);
 
   useCampaignLoader({ campaign, isMultiplayer, readOnly, urlCampaignId, dispatch, navigate });
 
@@ -926,7 +924,7 @@ export default function GameplayPage({ readOnly = false, shareToken = null, onRe
             <div className="absolute inset-0 z-30 flex items-center justify-center bg-black/45 backdrop-blur-[2px] rounded-xl overflow-hidden animate-fade-in">
               <div className={`w-full px-4 ${
                 sceneOverlayMinigameMode === 'beer_duel'
-                  ? 'max-w-2xl'
+                  ? 'max-w-[90rem]'
                   : sceneOverlayMinigameMode === 'card_game'
                     ? 'max-w-[72rem] h-[88%]'
                     : 'max-w-3xl'

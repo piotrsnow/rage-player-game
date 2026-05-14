@@ -17,7 +17,7 @@
 
 import { slugifyItemName } from '../../../shared/domain/itemKeys.js';
 import { normalizeSpellMaterialIcon } from '../../../shared/domain/spellMaterialIcons.js';
-import { addEffect, removeEffect, removeEffectsByName, migrateStatusStrings, deriveStatusNames } from '../../../shared/domain/statusEffects.js';
+import { addEffect, removeEffect, removeEffectsByName, tickEffects, migrateStatusStrings, deriveStatusNames } from '../../../shared/domain/statusEffects.js';
 import { SKILL_BY_NAME, canonicalizeSkillName } from './diceResolver.js';
 import { sanitizeMana } from '../../../shared/domain/mana.js';
 import { moneyToCopper, normalizeCoins } from '../../../shared/domain/currency.js';
@@ -367,6 +367,19 @@ export function applyCharacterStateChanges(character, changes) {
       next.statuses = changes.statuses;
     } else {
       next.statuses = changes.statuses;
+    }
+  }
+
+  // ── Tick scene-duration effects ──
+  if (next.activeEffects?.length) {
+    const { remaining, dotDamage, dotHeal } = tickEffects(next.activeEffects, 'scenes');
+    next.activeEffects = remaining;
+    next.statuses = deriveStatusNames(remaining);
+    if (dotDamage > 0) {
+      next.wounds = Math.max(0, (next.wounds ?? 0) - dotDamage);
+    }
+    if (dotHeal > 0 && next.maxWounds) {
+      next.wounds = Math.min(next.maxWounds, (next.wounds ?? 0) + dotHeal);
     }
   }
 

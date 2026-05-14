@@ -34,6 +34,7 @@ export default forwardRef(function GraphCanvas({
   addingNode, onCanvasClick, addingEdge, onEdgeSourceClick,
   positionOverrides, onNodeDragEnd, snapToGrid,
   highlightedNodeId = null, highlightedAdjacentIds = null,
+  dimmedNodeIds = null,
   occupantSpriteMap = {},
   occupantSpriteSheetMap = {},
   /** 'auto' = geo from regionX/Y when spread exists, else force; 'geo' | 'force' = fixed basis */
@@ -396,6 +397,7 @@ g[data-node]:hover .npc-token,
         <g filter="url(#ambient-glow)" opacity={0.4} pointerEvents="none">
           {nodes.map((node) => {
             if (!node.nodeImageUrl) return null;
+            if (dimmedNodeIds?.has?.(node.id)) return null;
             const pos = getNodePos(node.id);
             if (!pos) return null;
             const r = getNodeRadius(node.scale ?? 5);
@@ -415,6 +417,7 @@ g[data-node]:hover .npc-token,
         </g>
 
         {!edgesOnTop && edges.map((edge) => {
+          if (dimmedNodeIds && (dimmedNodeIds.has(edge.fromId) || dimmedNodeIds.has(edge.toId))) return null;
           const fromPos = getNodePos(edge.fromId);
           const toPos = getNodePos(edge.toId);
           if (!fromPos || !toPos) return null;
@@ -444,6 +447,7 @@ g[data-node]:hover .npc-token,
           const locOccupants = occupantsByLocation.get(node.id) || [];
           const isHighlightedCurrent = highlightedNodeId === node.id;
           const isHighlightedAdjacent = highlightedAdjacentIds?.has?.(node.id) && !isHighlightedCurrent;
+          if (dimmedNodeIds?.has?.(node.id) && !isSelected) return null;
           const nodeCursor = addingEdge || addingNode
             ? 'crosshair'
             : 'pointer';
@@ -730,6 +734,7 @@ g[data-node]:hover .npc-token,
         })}
 
         {edgesOnTop && edges.map((edge) => {
+          if (dimmedNodeIds && (dimmedNodeIds.has(edge.fromId) || dimmedNodeIds.has(edge.toId))) return null;
           const fromPos = getNodePos(edge.fromId);
           const toPos = getNodePos(edge.toId);
           if (!fromPos || !toPos) return null;

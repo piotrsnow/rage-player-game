@@ -62,7 +62,7 @@ export default function QuestLog({ active = [], completed = [], npcs = [], onVer
       </div>
 
       <div className="flex gap-5 min-h-[200px] flex-1">
-        <div className="w-1/4 min-w-0 space-y-1 overflow-y-auto max-h-[60vh] pr-1 scrollbar-thin">
+        <div className="w-1/4 min-w-0 space-y-2.5 overflow-y-auto max-h-[60vh] pr-1 scrollbar-thin">
           {sortedActive.map((quest) => (
             <QuestListItem
               key={quest.id}

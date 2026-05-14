@@ -225,7 +225,15 @@ export async function processQuestObjectiveUpdates(campaignId, questUpdates, alr
       }
 
       const updateData = {};
-      if (update.completed) updateData.status = 'done';
+      if (update.completed) {
+        if (targetObj.status === 'locked') {
+          log.info(
+            { campaignId, questId: quest.questId, nodeKey: targetObj.nodeKey },
+            'Out-of-order objective completion: locked → done',
+          );
+        }
+        updateData.status = 'done';
+      }
       if (typeof update.addProgress === 'number') {
         updateData.progress = (targetObj.progress || 0) + update.addProgress;
       }

@@ -171,8 +171,14 @@ Keep it dramatic but fair. Include stateChanges. timeAdvance: 0.25h.`);
     if (isBeerDuelInitiation) {
       let extra = '';
       if (beerDuelNpcNameMatch) {
-        const rival = beerDuelNpcNameMatch[1].trim();
-        extra = ` Player explicitly picked rival "${rival}" — they MUST appear as a beer-duel participant (enemy entry / enemyHints).`;
+        const rivals = beerDuelNpcNameMatch[1].split(',').map((n) => n.trim()).filter(Boolean);
+        if (rivals.length === 1) {
+          extra = ` Player explicitly picked rival "${rivals[0]}" — they MUST appear as a beer-duel participant (enemy entry / enemyHints).`;
+        } else {
+          extra = ` Player explicitly picked rivals: ${rivals.map((r) => `"${r}"`).join(', ')} — ALL of them MUST appear as beer-duel participants in the enemies array.`;
+        }
+      } else {
+        extra = ' This is a general beer duel — AI MUST pick 2-3 opponents from NPCs present at the location and include ALL of them in the enemies array. Minimum 2 opponents.';
       }
       parts.push(`BEER DUEL INITIATED. MUST include combatUpdate with mode="beer_duel". Keep regular enemies array/enemyHints for participants, but this is NOT lethal combat. Set modeConfig.beerCountMin=20 and modeConfig.beerCountMax=30.${extra}`);
     } else if (isCardGameInitiation) {

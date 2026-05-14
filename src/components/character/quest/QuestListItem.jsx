@@ -18,7 +18,7 @@ export default function QuestListItem({ quest, isSelected, onSelect, t }) {
     <button
       type="button"
       onClick={() => onSelect(quest.id)}
-      className={`w-full text-left px-3 py-2.5 rounded-sm transition-all ${
+      className={`w-full text-left px-5 py-5 rounded-sm transition-all ${
         ready
           ? isSelected
             ? 'bg-amber-500/15 border border-amber-500/30'
@@ -28,8 +28,8 @@ export default function QuestListItem({ quest, isSelected, onSelect, t }) {
             : 'bg-surface-container-highest/50 border border-outline-variant/10 hover:bg-surface-container-highest hover:border-outline-variant/20'
       }`}
     >
-      <div className="flex items-center gap-2">
-        <span className={`material-symbols-outlined text-sm shrink-0 ${
+      <div className="flex items-center gap-3">
+        <span className={`material-symbols-outlined text-lg shrink-0 ${
           isFailedQuest ? 'text-rose-400'
           : isStalled ? 'text-amber-400'
           : ready ? 'text-amber-400'
@@ -38,7 +38,7 @@ export default function QuestListItem({ quest, isSelected, onSelect, t }) {
         }`}>
           {isFailedQuest ? 'cancel' : isStalled ? 'pause_circle' : ready ? 'assignment_return' : 'task_alt'}
         </span>
-        <span className={`text-sm font-headline truncate flex-1 ${
+        <span className={`text-lg font-headline truncate flex-1 ${
           isFailedQuest ? 'text-rose-300/80 line-through'
           : isStalled ? 'text-amber-300'
           : ready ? 'text-amber-300'
@@ -79,17 +79,17 @@ export function CompletedQuestItem({ quest, isSelected, onSelect, t }) {
     <button
       type="button"
       onClick={() => onSelect(quest.id)}
-      className={`w-full text-left px-3 py-2.5 rounded-sm transition-all ${
+      className={`w-full text-left px-5 py-5 rounded-sm transition-all ${
         isSelected
           ? 'bg-emerald-500/10 border border-emerald-500/20'
           : 'bg-surface-dim/30 border border-outline-variant/5 opacity-60 hover:opacity-80'
       }`}
     >
-      <div className="flex items-center gap-2">
-        <span className={`material-symbols-outlined text-sm shrink-0 ${isSelected ? 'text-emerald-400' : 'text-outline'}`}>
+      <div className="flex items-center gap-3">
+        <span className={`material-symbols-outlined text-lg shrink-0 ${isSelected ? 'text-emerald-400' : 'text-outline'}`}>
           check_circle
         </span>
-        <span className={`text-sm font-headline truncate flex-1 ${isSelected ? 'text-emerald-300' : 'text-on-surface line-through'}`}>
+        <span className={`text-lg font-headline truncate flex-1 ${isSelected ? 'text-emerald-300' : 'text-on-surface line-through'}`}>
           {quest.name}
         </span>
         {quest.reward?.xp > 0 && (

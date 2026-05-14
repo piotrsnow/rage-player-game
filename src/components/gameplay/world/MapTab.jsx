@@ -3,11 +3,19 @@ import { useTranslation } from 'react-i18next';
 import { useCharacterSprites } from '../../../hooks/useCharacterSprites';
 import { useCurrentLocationNode } from '../../../hooks/useCurrentLocationNode';
 import { useLocationGraph } from '../../../hooks/useLocationGraph';
+import { useNodeImageBulkGeneration } from '../../../hooks/useNodeImageBulkGeneration';
 import { useGameScenes } from '../../../stores/gameSelectors';
+import { useSettings } from '../../../contexts/SettingsContext.jsx';
 import { isQuietScene } from '../../../services/quietSceneCheck';
 import { apiClient } from '../../../services/apiClient';
 import {
+  forceDirectedLayout,
+  GRAPH_LAYOUT_W,
+  GRAPH_LAYOUT_H,
+} from '../../../services/graphLayout.js';
+import {
   loadGraphLayout,
+  saveGraphLayout,
   GRAPH_LAYOUT_STORAGE_PREFIX,
   GRAPH_LAYOUT_STORAGE_CHANGED,
 } from '../../../utils/graphLayoutStorage.js';
@@ -17,6 +25,7 @@ import InspectorPanel from '../locationGraph/InspectorPanel.jsx';
 
 export default function MapTab({ campaignId, onTravel }) {
   const { t } = useTranslation();
+  const { settings } = useSettings();
   const graph = useLocationGraph(campaignId);
   const currentNode = useCurrentLocationNode(graph);
   const scenes = useGameScenes();
@@ -56,6 +65,29 @@ export default function MapTab({ campaignId, onTravel }) {
     }
     return m;
   }, [occupants]);
+
+  const bulkImageGen = useNodeImageBulkGeneration({
+    campaignId,
+    onNodeComplete: useCallback((nodeId, url) => {
+      graph.updateNode(nodeId, { nodeImageUrl: url });
+    }, [graph]),
+  });
+
+  const stdProvider = ['dalle', 'gpt-image', 'stability', 'gemini', 'sd-webui'].includes(settings.sceneImageTier)
+    ? settings.sceneImageTier
+    : null;
+
+  const handleAutoLayout = useCallback(() => {
+    const nodeIds = nodes.map((n) => n.id);
+    const edgeLinks = edges.map((e) => ({ from: e.fromId, to: e.toId }));
+    const layoutMap = forceDirectedLayout(nodeIds, edgeLinks, {
+      width: GRAPH_LAYOUT_W, height: GRAPH_LAYOUT_H,
+    });
+    const overrides = {};
+    layoutMap.forEach((pos, id) => { overrides[id] = pos; });
+    setPositionOverrides(overrides);
+    saveGraphLayout(campaignId, overrides, false);
+  }, [nodes, edges, campaignId]);
 
   useEffect(() => {
     setPositionOverrides(loadGraphLayout(campaignId).overrides);
@@ -112,6 +144,14 @@ export default function MapTab({ campaignId, onTravel }) {
     }
   }, []);
 
+  const handleNodeDragEnd = useCallback((nodeId, pos) => {
+    setPositionOverrides((prev) => {
+      const next = { ...prev, [nodeId]: pos };
+      saveGraphLayout(campaignId, next, false);
+      return next;
+    });
+  }, [campaignId]);
+
   const REQUIRED_CALM_SCENES = 0;
   const canAttemptDistantTravel = REQUIRED_CALM_SCENES === 0
     || scenes.slice(-REQUIRED_CALM_SCENES).every(isQuietScene);
@@ -162,19 +202,30 @@ export default function MapTab({ campaignId, onTravel }) {
         </div>
       </div>
 
-      <div className="flex-1 relative min-w-0 bg-black/40 rounded-sm border border-amber-900/30 ring-1 ring-amber-700/10 shadow-[inset_0_0_40px_rgba(120,53,15,0.15),inset_0_0_80px_rgba(0,0,0,0.3)]">
-        <GraphCanvas
-          ref={canvasRef}
-          nodes={nodes}
-          edges={edges}
-          occupants={occupants}
-          occupantSpriteMap={occupantSpriteMap}
-          occupantSpriteSheetMap={occupantSpriteSheetMap}
-          selected={selected}
-          onSelect={setSelected}
-          positionOverrides={positionOverrides}
-          highlightedNodeId={currentNode?.id || null}
-          highlightedAdjacentIds={adjacentIds}
+      <div className="flex-1 flex flex-col min-w-0">
+        <div className="flex-1 relative bg-black/40 rounded-sm border border-amber-900/30 ring-1 ring-amber-700/10 shadow-[inset_0_0_40px_rgba(120,53,15,0.15),inset_0_0_80px_rgba(0,0,0,0.3)]">
+          <GraphCanvas
+            ref={canvasRef}
+            nodes={nodes}
+            edges={edges}
+            occupants={occupants}
+            occupantSpriteMap={occupantSpriteMap}
+            occupantSpriteSheetMap={occupantSpriteSheetMap}
+            selected={selected}
+            onSelect={setSelected}
+            positionOverrides={positionOverrides}
+            onNodeDragEnd={handleNodeDragEnd}
+            highlightedNodeId={currentNode?.id || null}
+            highlightedAdjacentIds={adjacentIds}
+          />
+        </div>
+        <MapToolbar
+          onAutoLayout={handleAutoLayout}
+          bulkImageGen={bulkImageGen}
+          nodes={allNodes || nodes}
+          stdProvider={stdProvider}
+          sdModel={settings.sdWebuiModel || null}
+          t={t}
         />
       </div>
 
@@ -210,6 +261,103 @@ export default function MapTab({ campaignId, onTravel }) {
           />
         )}
       </div>
+    </div>
+  );
+}
+
+const BULK_PROVIDER_OPTIONS = [
+  { id: 'pixellab', label: 'PixelLab', icon: 'auto_fix_high' },
+  { id: 'standard', label: 'Standard', icon: 'image' },
+];
+
+function MapToolbar({ onAutoLayout, bulkImageGen, nodes, stdProvider, sdModel, t }) {
+  const [showProviderMenu, setShowProviderMenu] = useState(false);
+  const { start, cancel, clearProgress, isActive, progress } = bulkImageGen;
+  const missingCount = nodes ? nodes.filter((n) => !n.nodeImageUrl).length : 0;
+
+  return (
+    <div className="flex items-center gap-2.5 px-3 py-2 border-t border-outline-variant/10 text-xs">
+      <button
+        type="button"
+        onClick={onAutoLayout}
+        title={t('locationGraph.toolbar.autoLayout', { defaultValue: 'Ułóż graf' })}
+        className="flex items-center gap-1 px-3 py-1.5 rounded-sm hover:bg-white/5 text-on-surface-variant transition-colors uppercase tracking-widest"
+      >
+        <span className="material-symbols-outlined text-sm">hub</span>
+        {t('locationGraph.toolbar.autoLayout', { defaultValue: 'Ułóż graf' })}
+      </button>
+
+      <div className="w-px h-5 bg-outline-variant/20" />
+
+      {isActive && progress ? (
+        <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-sm bg-tertiary/10 border border-tertiary/20 text-tertiary text-xs">
+            <span className="material-symbols-outlined text-sm animate-spin">progress_activity</span>
+            <span>{progress.done}/{progress.total}</span>
+            {progress.failed > 0 && <span className="text-red-400">({progress.failed} err)</span>}
+            <span className="text-tertiary/50">{Math.round(((progress.done + progress.failed) / progress.total) * 100)}%</span>
+          </div>
+          <button
+            type="button"
+            onClick={cancel}
+            className="flex items-center gap-1 px-2 py-1 rounded-sm bg-red-500/10 border border-red-500/20 hover:bg-red-500/20 text-red-400 text-xs transition-colors"
+          >
+            <span className="material-symbols-outlined text-sm">stop</span>
+            Stop
+          </button>
+        </div>
+      ) : progress && (progress.status === 'completed' || progress.status === 'cancelled') ? (
+        <div className="flex items-center gap-2">
+          <span className={`text-xs ${progress.status === 'completed' ? 'text-green-400' : 'text-yellow-400'}`}>
+            {progress.status === 'completed'
+              ? `Gotowe: ${progress.done}${progress.failed ? `, err: ${progress.failed}` : ''}`
+              : 'Anulowano'}
+          </span>
+          <button type="button" onClick={clearProgress} className="text-outline hover:text-on-surface text-xs">×</button>
+        </div>
+      ) : (
+        <div className="relative">
+          <button
+            type="button"
+            onClick={() => setShowProviderMenu((v) => !v)}
+            disabled={missingCount === 0}
+            title={t('locationGraph.toolbar.generateAllImages', { defaultValue: 'Generuj wszystkie obrazki' })}
+            className="flex items-center gap-1 px-3 py-1.5 rounded-sm bg-tertiary/10 border border-tertiary/20 hover:bg-tertiary/20 text-tertiary text-xs transition-colors uppercase tracking-widest disabled:opacity-50"
+          >
+            <span className="material-symbols-outlined text-sm">auto_awesome</span>
+            {t('locationGraph.toolbar.generateAllImages', { defaultValue: 'Generuj wszystkie' })}
+            {missingCount > 0 && <span className="text-tertiary/50 ml-0.5">({missingCount})</span>}
+          </button>
+          {showProviderMenu && (
+            <>
+              <div className="fixed inset-0 z-40" onClick={() => setShowProviderMenu(false)} />
+              <div className="absolute bottom-full left-0 mb-1 bg-surface-container-highest border border-outline-variant/20 rounded-sm shadow-xl py-1 min-w-[160px] z-50">
+                {BULK_PROVIDER_OPTIONS.map((opt) => (
+                  <button
+                    key={opt.id}
+                    type="button"
+                    onClick={() => {
+                      setShowProviderMenu(false);
+                      if (opt.id === 'pixellab') {
+                        start(nodes, { provider: 'pixellab' });
+                      } else {
+                        start(nodes, {
+                          provider: stdProvider || 'dalle',
+                          sdModel: (stdProvider || 'dalle') === 'sd-webui' ? sdModel : null,
+                        });
+                      }
+                    }}
+                    className="w-full text-left px-3 py-1.5 text-xs hover:bg-white/10 text-on-surface transition-colors flex items-center gap-2"
+                  >
+                    <span className="material-symbols-outlined text-sm">{opt.icon}</span>
+                    {opt.label}
+                  </button>
+                ))}
+              </div>
+            </>
+          )}
+        </div>
+      )}
     </div>
   );
 }
