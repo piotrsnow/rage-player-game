@@ -108,6 +108,12 @@ export const sceneHandlers = {
     if (scene) scene.actions = actions;
   },
 
+  UPDATE_SCENE_FIELD_MAP: (draft, action) => {
+    const { sceneId, fieldMapTiles } = action.payload;
+    const scene = draft.scenes.find((s) => s.id === sceneId);
+    if (scene) scene.fieldMapTiles = fieldMapTiles;
+  },
+
   UPDATE_SCENE_QUEST_OFFER: (draft, action) => {
     const { sceneId, offerId, status } = action.payload;
     const scene = draft.scenes.find((s) => s.id === sceneId);

@@ -1,7 +1,8 @@
 import { useRef, useEffect, useCallback, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import LpcSprite from '../shared/LpcSprite';
+import LpcSprite, { getAnimDirection } from '../shared/LpcSprite';
 import { apiClient } from '../../services/apiClient';
+import { useGameCampaign, useGameSlice, useGameDispatch } from '../../stores/gameSelectors';
 import { resolveBiome } from '../../effects/biomeResolver';
 import { filterNpcsHere } from '../../utils/npcLocation';
 import { generateFieldTiles } from './combat/generateFieldTiles';
@@ -18,6 +19,7 @@ import { useFieldMapKeyboard } from '../../hooks/useFieldMapKeyboard';
 const DEFAULT_WIDTH = 28;
 const DEFAULT_HEIGHT = 16;
 const ASPECT_RATIO = DEFAULT_WIDTH / DEFAULT_HEIGHT;
+const WALK_ANIM_MS = 400;
 
 function getInitials(name) {
   if (!name) return '??';
@@ -26,7 +28,7 @@ function getInitials(name) {
   return name.slice(0, 2).toUpperCase();
 }
 
-function buildEntities(characterName, npcsHere, multiplayerPlayers, gridW, gridH) {
+function buildEntities(characterName, playerSpriteSheet, npcsHere, multiplayerPlayers, gridW, gridH, aiEntities) {
   const entities = [];
   const occupied = new Set();
 
@@ -50,18 +52,23 @@ function buildEntities(characterName, npcsHere, multiplayerPlayers, gridW, gridH
     return { x, y };
   }
 
-  // Player at center
-  const pc = Math.floor(gridW / 2);
-  const pr = Math.floor(gridH / 2);
+  const aiMap = new Map();
+  if (Array.isArray(aiEntities)) {
+    for (const ae of aiEntities) aiMap.set(ae.id, ae);
+  }
+
+  const playerAi = aiMap.get('__player__');
+  const pc = playerAi?.x ?? Math.floor(gridW / 2);
+  const pr = playerAi?.y ?? Math.floor(gridH / 2);
   const playerPos = placeAt(pc, pr);
   entities.push({
     id: '__player__',
     name: characterName || 'Player',
     type: 'player',
+    spriteSheetUrl: playerSpriteSheet || null,
     ...playerPos,
   });
 
-  // Multiplayer players nearby
   for (const mp of multiplayerPlayers) {
     if (!mp.characterName) continue;
     const pos = placeAt(playerPos.x + 1, playerPos.y);
@@ -74,16 +81,21 @@ function buildEntities(characterName, npcsHere, multiplayerPlayers, gridW, gridH
     });
   }
 
-  // NPCs scattered around
   for (let i = 0; i < npcsHere.length; i++) {
     const npc = npcsHere[i];
-    const angle = (i / Math.max(1, npcsHere.length)) * Math.PI * 2;
-    const dist = 3 + Math.floor(i / 4);
-    const nx = pc + Math.round(Math.cos(angle) * dist);
-    const ny = pr + Math.round(Math.sin(angle) * dist);
-    const clampX = Math.max(1, Math.min(gridW - 2, nx));
-    const clampY = Math.max(1, Math.min(gridH - 2, ny));
-    const pos = placeAt(clampX, clampY);
+    const npcId = `npc_${npc.name || i}`;
+    const npcAi = aiMap.get(npcId);
+    let nx, ny;
+    if (npcAi) {
+      nx = npcAi.x;
+      ny = npcAi.y;
+    } else {
+      const angle = (i / Math.max(1, npcsHere.length)) * Math.PI * 2;
+      const dist = 3 + Math.floor(i / 4);
+      nx = Math.max(1, Math.min(gridW - 2, pc + Math.round(Math.cos(angle) * dist)));
+      ny = Math.max(1, Math.min(gridH - 2, pr + Math.round(Math.sin(angle) * dist)));
+    }
+    const pos = placeAt(nx, ny);
 
     let type = 'neutral';
     if (npc.disposition != null) {
@@ -92,7 +104,7 @@ function buildEntities(characterName, npcsHere, multiplayerPlayers, gridW, gridH
     }
 
     entities.push({
-      id: `npc_${npc.name || i}`,
+      id: npcId,
       name: npc.name || `NPC ${i + 1}`,
       type,
       spriteSheetUrl: npc.spriteSheetUrl || null,
@@ -103,8 +115,8 @@ function buildEntities(characterName, npcsHere, multiplayerPlayers, gridW, gridH
   return entities;
 }
 
-function TokenOverlay({ entity, x, y, cellSize, isPlayer }) {
-  const tokenSize = Math.round(cellSize * 1.1);
+function TokenOverlay({ entity, x, y, cellSize, isPlayer, animation }) {
+  const tokenSize = Math.round(cellSize * 1.2);
   const ringColor = entity.type === 'player' ? COLORS.playerRing
     : entity.type === 'ally' ? COLORS.allyRing
     : entity.type === 'enemy' ? COLORS.enemyRing
@@ -135,10 +147,10 @@ function TokenOverlay({ entity, x, y, cellSize, isPlayer }) {
         {hasSheet ? (
           <LpcSprite
             sheetUrl={apiClient.resolveMediaUrl(entity.spriteSheetUrl)}
-            animation="idle_down"
+            animation={animation}
             width={tokenSize}
             height={tokenSize}
-            playing={false}
+            playing={true}
             fallback={
               <span className="field-map-token__initials">{getInitials(entity.name)}</span>
             }
@@ -166,6 +178,11 @@ export default function FieldMapCanvas({
   const [containerSize, setContainerSize] = useState({ w: 800, h: 450 });
   const animRef = useRef({ particles: [] });
   const rafRef = useRef(0);
+  const fetchedRef = useRef(null);
+
+  const campaign = useGameCampaign();
+  const dispatch = useGameDispatch();
+  const playerSpriteSheet = useGameSlice((s) => s.character?.spriteSheetUrl);
 
   const gridW = DEFAULT_WIDTH;
   const gridH = DEFAULT_HEIGHT;
@@ -178,11 +195,12 @@ export default function FieldMapCanvas({
     return resolveBiome(locationName, narrative, imagePrompt);
   }, [world?.currentLocation, scene?.narrative, scene?.imagePrompt]);
 
-  // Generate deterministic tiles
-  const tiles = useMemo(
-    () => generateFieldTiles(biomeKey, gridW, gridH, scene?.id || 'default'),
-    [biomeKey, gridW, gridH, scene?.id],
-  );
+  // Use persisted AI tiles when available, procedural as fallback
+  const persisted = scene?.fieldMapTiles;
+  const tiles = useMemo(() => {
+    if (persisted?.tiles) return persisted.tiles;
+    return generateFieldTiles(biomeKey, gridW, gridH, scene?.id || 'default');
+  }, [persisted, biomeKey, gridW, gridH, scene?.id]);
 
   // NPCs at current location
   const npcsHere = useMemo(
@@ -192,19 +210,54 @@ export default function FieldMapCanvas({
 
   // Entity list — mutable local state for movement
   const [entities, setEntities] = useState(() =>
-    buildEntities(characterName, npcsHere, multiplayerPlayers, gridW, gridH),
+    buildEntities(characterName, playerSpriteSheet, npcsHere, multiplayerPlayers, gridW, gridH, persisted?.entities),
   );
+
+  // Per-entity animation state
+  const [entityAnims, setEntityAnims] = useState({});
+  const animTimersRef = useRef({});
 
   // Rebuild entities when scene/NPCs change
   useEffect(() => {
-    setEntities(buildEntities(characterName, npcsHere, multiplayerPlayers, gridW, gridH));
-  }, [characterName, npcsHere, multiplayerPlayers, gridW, gridH]);
+    setEntities(buildEntities(characterName, playerSpriteSheet, npcsHere, multiplayerPlayers, gridW, gridH, persisted?.entities));
+  }, [characterName, playerSpriteSheet, npcsHere, multiplayerPlayers, gridW, gridH, persisted]);
 
-  // Movement handler
+  // Lazy-fetch field map from backend when not persisted
+  useEffect(() => {
+    if (persisted || !scene?.id || !campaign?.id) return;
+    if (scene.subtype === 'quick_beat') return;
+    const sceneIndex = scene.sceneIndex;
+    if (sceneIndex == null) return;
+    if (fetchedRef.current === scene.id) return;
+    fetchedRef.current = scene.id;
+
+    apiClient.generateFieldMap(campaign.id, sceneIndex)
+      .then((data) => {
+        if (data?.tiles) {
+          dispatch({ type: 'UPDATE_SCENE_FIELD_MAP', payload: { sceneId: scene.id, fieldMapTiles: data } });
+        }
+      })
+      .catch(() => {});
+  }, [scene?.id, scene?.sceneIndex, scene?.subtype, persisted, campaign?.id, dispatch]);
+
+  // Movement handler with walk animation
   const handleMove = useCallback((entityId, nx, ny) => {
-    setEntities((prev) =>
-      prev.map((e) => (e.id === entityId ? { ...e, x: nx, y: ny } : e)),
-    );
+    setEntities((prev) => {
+      const ent = prev.find(e => e.id === entityId);
+      if (!ent) return prev;
+      const dx = nx - ent.x;
+      const dy = ny - ent.y;
+      const dir = getAnimDirection(dx, dy);
+
+      setEntityAnims((a) => ({ ...a, [entityId]: `walk_${dir}` }));
+
+      if (animTimersRef.current[entityId]) clearTimeout(animTimersRef.current[entityId]);
+      animTimersRef.current[entityId] = setTimeout(() => {
+        setEntityAnims((a) => ({ ...a, [entityId]: `idle_${dir}` }));
+      }, WALK_ANIM_MS);
+
+      return prev.map((e) => (e.id === entityId ? { ...e, x: nx, y: ny } : e));
+    });
   }, []);
 
   useFieldMapKeyboard({
@@ -309,6 +362,7 @@ export default function FieldMapCanvas({
               y={pos.y}
               cellSize={cellSize}
               isPlayer={pos.entity.id === '__player__'}
+              animation={entityAnims[pos.entity.id] || 'idle_down'}
             />
           ))}
         </div>

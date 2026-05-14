@@ -56,6 +56,7 @@ export const SCENE_CLIENT_SELECT = {
   suggestedActions: true, dialogueSegments: true,
   imagePrompt: true, fullImagePrompt: true, imageUrl: true, soundEffect: true,
   diceRoll: true, stateChanges: true, scenePacing: true,
+  fieldMapTiles: true,
   createdAt: true,
 };
 

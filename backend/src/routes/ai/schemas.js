@@ -396,6 +396,15 @@ export const REPUTATION_NARRATIVE_SCHEMA = {
   required: ['character', 'campaignDigest'],
 };
 
+export const FIELD_MAP_SCHEMA = {
+  type: 'object',
+  properties: {
+    campaignId: { type: 'string', format: 'uuid' },
+    sceneIndex: { type: 'string', pattern: '^\\d+$' },
+  },
+  required: ['campaignId', 'sceneIndex'],
+};
+
 export const SCENE_IMAGE_PATCH_SCHEMA = {
   type: 'object',
   additionalProperties: false,
