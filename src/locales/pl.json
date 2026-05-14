@@ -571,6 +571,7 @@
     "conjuringVision": "Przywoływanie wizji...",
     "generatingImage": "Generowanie Obrazu",
     "regenerateImage": "Wygeneruj ponownie",
+    "fieldMapMoveHint": "WASD / Strzałki — ruch",
     "copyImagePrompt": "Skopiuj prompt obrazka",
     "imagePromptTooltip": "Prompt obrazka — kliknij, aby skopiować",
     "imagePromptCopied": "Skopiowano!",

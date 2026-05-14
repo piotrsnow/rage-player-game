@@ -10,6 +10,7 @@ import LoadingSpinner from '../ui/LoadingSpinner';
 import SceneCanvas from './SceneCanvas';
 import DiceRollCard from './DiceRollCard';
 import HighlightedNarrative, { splitIntoSentences } from './scene/HighlightedNarrative';
+import FieldMapCanvas from './FieldMapCanvas';
 
 const Scene3DPanel = lazy(() => import('./Scene3D/Scene3DPanel'));
 
@@ -391,6 +392,14 @@ export default function ScenePanel({
         </Suspense>
       ) : (settings.sceneVisualization || 'image') === 'canvas' ? (
         <SceneCanvas scene={scene} />
+      ) : (settings.sceneVisualization || 'image') === 'map' ? (
+        <FieldMapCanvas
+          scene={scene}
+          world={world}
+          characterName={characterName}
+          interactive={interactiveMap}
+          multiplayerPlayers={multiplayerPlayers}
+        />
       ) : (settings.sceneVisualization || 'image') === 'image' && (displayedSrc || previousSrc) ? (
         <>
           {/* Bottom layer: previous image (stays until crossfade completes) */}

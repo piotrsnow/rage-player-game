@@ -1988,3 +1988,48 @@
   50%  { background-position: -50% 0; }
   100% { background-position: 200% 0; }
 }
+
+/* ── Field Map tokens ── */
+
+.field-map-token {
+  position: absolute;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  pointer-events: none;
+  z-index: 10;
+  transition: left 0.18s ease-out, top 0.18s ease-out;
+}
+
+.field-map-token__ring {
+  border-radius: 50%;
+  border: 2px solid;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: radial-gradient(circle at 40% 35%, #1a1525, #0e0e10);
+}
+
+.field-map-token__initials {
+  font-size: 11px;
+  font-weight: 700;
+  color: #c59aff;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  user-select: none;
+}
+
+.field-map-token__name {
+  margin-top: 1px;
+  font-size: 8px;
+  font-weight: 600;
+  color: rgba(255, 251, 254, 0.7);
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.9);
+  white-space: nowrap;
+  max-width: 60px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-align: center;
+  letter-spacing: 0.02em;
+}

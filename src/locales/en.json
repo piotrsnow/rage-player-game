@@ -581,6 +581,7 @@
     "conjuringVision": "Conjuring vision...",
     "generatingImage": "Generating Image",
     "regenerateImage": "Regenerate image",
+    "fieldMapMoveHint": "WASD / Arrows to move",
     "copyImagePrompt": "Copy image prompt",
     "imagePromptTooltip": "Image prompt — click to copy",
     "imagePromptCopied": "Copied!",
