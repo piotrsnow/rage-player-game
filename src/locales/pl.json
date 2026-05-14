@@ -2561,5 +2561,15 @@
       "resetLayout": "Resetuj ręczne rozmieszczenie węzłów do automatycznego układu",
       "autoLayout": "Ułóż węzły grafu wg połączeń"
     }
+  },
+  "badges": {
+    "title": "Odznaki",
+    "generate": "Generuj odznakę",
+    "generating": "Generuję...",
+    "empty": "Brak odznak. Zdobywaj je podczas gry lub wygeneruj ręcznie.",
+    "claimXp": "Odbierz XP",
+    "alreadyClaimed": "Odebrano +{{xp}} XP",
+    "levelUp": "Awans na poziom {{level}}!",
+    "regenerateImage": "Regeneruj obrazek"
   }
 }

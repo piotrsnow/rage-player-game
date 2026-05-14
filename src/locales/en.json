@@ -2862,5 +2862,15 @@
       "resetLayout": "Reset manual node positions to automatic layout",
       "autoLayout": "Arrange nodes by connections"
     }
+  },
+  "badges": {
+    "title": "Badges",
+    "generate": "Generate badge",
+    "generating": "Generating...",
+    "empty": "No badges yet. Earn them during gameplay or generate one manually.",
+    "claimXp": "Claim XP",
+    "alreadyClaimed": "Claimed +{{xp}} XP",
+    "levelUp": "Leveled up to {{level}}!",
+    "regenerateImage": "Regenerate image"
   }
 }

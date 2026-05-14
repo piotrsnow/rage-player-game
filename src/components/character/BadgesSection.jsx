@@ -1,120 +1,269 @@
-import { useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { apiClient } from '../../services/apiClient';
-import Tooltip from '../ui/Tooltip';
-import ScenePreviewModal from './ScenePreviewModal';
+import { useModalA11y } from '../../hooks/useModalA11y';
 
-function BadgeTooltip({ badge, t }) {
-  const date = badge.earnedAt ? new Date(badge.earnedAt) : null;
-  const dateStr = date
-    ? `${date.toLocaleDateString()} ${date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`
-    : '';
+function BadgeClaimModal({ badge, onClaim, onRegenerate, onClose, claiming, regenerating }) {
+  const { t } = useTranslation();
+  const modalRef = useModalA11y(onClose);
+  const [xpResult, setXpResult] = useState(null);
+
+  const handleClaim = async () => {
+    const result = await onClaim(badge.id);
+    if (result) setXpResult(result);
+  };
+
+  const claimed = badge.xpAwarded != null || xpResult;
 
   return (
-    <div className="space-y-1.5 max-w-xs">
-      <div className="flex items-center gap-1.5">
-        <span className="material-symbols-outlined text-amber-400 text-sm">military_tech</span>
-        <span className="text-amber-400 font-bold text-sm">{badge.name}</span>
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center p-4"
+      role="dialog"
+      aria-modal="true"
+      onClick={onClose}
+    >
+      <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
+      <div
+        ref={modalRef}
+        className="relative w-full max-w-sm bg-surface-container-highest/95 backdrop-blur-2xl border border-outline-variant/15 rounded-sm shadow-2xl animate-fade-in overflow-hidden"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {badge.imageUrl ? (
+          <div className="relative w-full aspect-square bg-surface-container-high">
+            <img
+              src={apiClient.resolveMediaUrl(badge.imageUrl)}
+              alt={badge.name}
+              className="w-full h-full object-cover"
+              onError={(e) => { e.target.style.display = 'none'; }}
+            />
+            <div className="absolute inset-0 bg-gradient-to-t from-surface-dim via-transparent to-transparent" />
+          </div>
+        ) : (
+          <div className="w-full aspect-[3/2] bg-gradient-to-br from-surface-container to-surface-container-lowest flex items-center justify-center">
+            <span className="material-symbols-outlined text-8xl text-primary/20">{badge.icon || 'shield'}</span>
+          </div>
+        )}
+
+        <div className="p-5 space-y-4">
+          <div>
+            <h3 className="font-headline text-xl text-tertiary leading-tight">{badge.name}</h3>
+            <p className="text-on-surface-variant text-sm leading-relaxed mt-2">{badge.description}</p>
+          </div>
+
+          {xpResult ? (
+            <div className="text-center py-3 animate-fade-in">
+              <div className="inline-flex items-center gap-2 px-4 py-2 bg-primary/15 border border-primary/30 rounded-sm">
+                <span className="material-symbols-outlined text-primary text-lg">stars</span>
+                <span className="text-primary font-headline text-2xl">+{xpResult.xpAwarded} XP</span>
+              </div>
+              {xpResult.leveledUp && (
+                <p className="text-tertiary font-headline text-sm mt-2 animate-pulse">
+                  {t('badges.levelUp', { level: xpResult.newCharacterLevel })}
+                </p>
+              )}
+            </div>
+          ) : claimed ? (
+            <div className="text-center py-2">
+              <span className="text-on-surface-variant/60 text-sm">
+                {t('badges.alreadyClaimed', { xp: badge.xpAwarded })}
+              </span>
+            </div>
+          ) : (
+            <button
+              type="button"
+              onClick={handleClaim}
+              disabled={claiming}
+              className="w-full py-2.5 bg-primary/15 border border-primary/30 rounded-sm text-primary font-label uppercase tracking-wider text-sm hover:bg-primary/25 transition-colors disabled:opacity-40"
+            >
+              {claiming ? (
+                <span className="material-symbols-outlined text-base animate-spin">sync</span>
+              ) : (
+                t('badges.claimXp')
+              )}
+            </button>
+          )}
+
+          <div className="flex items-center justify-between">
+            {badge.imagePrompt && (
+              <button
+                type="button"
+                onClick={() => onRegenerate(badge.id)}
+                disabled={regenerating}
+                className="flex items-center gap-1 text-xs text-on-surface-variant/70 hover:text-tertiary transition-colors disabled:opacity-40"
+              >
+                <span className={`material-symbols-outlined text-sm ${regenerating ? 'animate-spin' : ''}`}>
+                  {regenerating ? 'progress_activity' : 'refresh'}
+                </span>
+                {t('badges.regenerateImage')}
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={onClose}
+              className="text-xs text-on-surface-variant/70 hover:text-primary transition-colors ml-auto"
+            >
+              {t('common.close', 'Zamknij')}
+            </button>
+          </div>
+        </div>
       </div>
-      {badge.description && (
-        <p className="text-xs text-on-surface-variant/80">{badge.description}</p>
-      )}
-      {badge.xpValue > 0 && (
-        <p className="text-xs text-amber-300 font-bold">+{badge.xpValue} XP</p>
-      )}
-      {dateStr && (
-        <p className="text-[10px] text-outline/60 tabular-nums">{dateStr}</p>
-      )}
-      {badge.campaignId && badge.sceneIndex != null && (
-        <p className="text-[10px] text-outline/50 italic">
-          {t('character.badgeFromScene', { index: badge.sceneIndex + 1, defaultValue: 'Ze sceny #{{index}}' })}
-        </p>
-      )}
     </div>
   );
 }
 
-function BadgeCard({ badge, onClick, t }) {
-  const imageUrl = badge.imageUrl ? apiClient.resolveMediaUrl(badge.imageUrl) : null;
-  const canNavigate = !!(badge.campaignId && badge.sceneIndex != null);
-
-  return (
-    <Tooltip content={<BadgeTooltip badge={badge} t={t} />} placement="top" delay={150}>
-      <button
-        type="button"
-        onClick={canNavigate ? onClick : undefined}
-        disabled={!canNavigate}
-        className="group flex flex-col items-center w-20 transition-all hover:scale-105 disabled:cursor-default"
-        aria-label={badge.name}
-      >
-        <div className="relative w-14 h-14 rounded-full border-2 border-amber-500/30 bg-surface-container-high/50 flex items-center justify-center overflow-hidden shadow-[0_0_8px_rgba(245,158,11,0.1)] group-hover:border-amber-400/60 transition-colors">
-          {imageUrl ? (
-            <img
-              src={imageUrl}
-              alt={badge.name}
-              className="w-full h-full object-cover"
-              onError={(e) => { e.target.style.display = 'none'; e.target.nextSibling.style.display = 'flex'; }}
-            />
-          ) : null}
-          <div className={`${imageUrl ? 'hidden' : 'flex'} items-center justify-center w-full h-full`}>
-            <span className="material-symbols-outlined text-2xl text-amber-400/70">military_tech</span>
-          </div>
-        </div>
-        <span className="text-[9px] text-on-surface-variant/70 font-label uppercase tracking-wide mt-1.5 leading-tight text-center line-clamp-2">
-          {badge.name}
-        </span>
-        {badge.xpValue > 0 && (
-          <span className="text-[8px] text-amber-400/60 tabular-nums font-bold">
-            +{badge.xpValue} XP
-          </span>
-        )}
-      </button>
-    </Tooltip>
-  );
-}
-
-export default function BadgesSection({ badges }) {
+export default function BadgesSection({ characterId }) {
   const { t } = useTranslation();
-  const [scenePreview, setScenePreview] = useState(null);
+  const [badges, setBadges] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [generating, setGenerating] = useState(false);
+  const [claiming, setClaiming] = useState(false);
+  const [regenerating, setRegenerating] = useState(null);
+  const [selectedBadge, setSelectedBadge] = useState(null);
+  const scrollRef = useRef(null);
 
-  if (!Array.isArray(badges) || badges.length === 0) return null;
+  const fetchBadges = useCallback(async () => {
+    if (!characterId) return;
+    try {
+      const data = await apiClient.get(`/characters/${characterId}/badges`);
+      setBadges(data.badges || []);
+    } catch {
+      // silent
+    } finally {
+      setLoading(false);
+    }
+  }, [characterId]);
+
+  useEffect(() => { fetchBadges(); }, [fetchBadges]);
+
+  const handleGenerate = async () => {
+    if (generating) return;
+    setGenerating(true);
+    try {
+      const badge = await apiClient.post(`/characters/${characterId}/badges/generate`, {});
+      setBadges((prev) => [badge, ...prev]);
+      setSelectedBadge(badge);
+    } catch {
+      // silent
+    } finally {
+      setGenerating(false);
+    }
+  };
+
+  const handleClaim = async (badgeId) => {
+    if (claiming) return null;
+    setClaiming(true);
+    try {
+      const result = await apiClient.post(`/characters/${characterId}/badges/${badgeId}/claim`, {});
+      setBadges((prev) => prev.map((b) => b.id === badgeId ? { ...b, xpAwarded: result.xpAwarded } : b));
+      return result;
+    } catch {
+      return null;
+    } finally {
+      setClaiming(false);
+    }
+  };
+
+  const handleRegenerate = async (badgeId) => {
+    if (regenerating) return;
+    setRegenerating(badgeId);
+    try {
+      const updated = await apiClient.post(`/characters/${characterId}/badges/${badgeId}/regenerate-image`, {});
+      setBadges((prev) => prev.map((b) => b.id === badgeId ? { ...b, imageUrl: updated.imageUrl } : b));
+      if (selectedBadge?.id === badgeId) {
+        setSelectedBadge((prev) => ({ ...prev, imageUrl: updated.imageUrl }));
+      }
+    } catch {
+      // silent
+    } finally {
+      setRegenerating(null);
+    }
+  };
+
+  if (loading) return null;
 
   return (
     <>
-      <div className="bg-surface-container-low p-6 border border-amber-500/15 rounded-sm">
+      <div className="bg-surface-container-low p-6 border border-outline-variant/10 rounded-sm">
         <div className="flex items-center justify-between mb-4">
-          <h3 className="text-amber-400 font-headline flex items-center gap-2">
+          <h3 className="text-tertiary font-headline flex items-center gap-2">
             <span className="material-symbols-outlined text-sm">military_tech</span>
-            {t('character.skillBadges', { defaultValue: 'Medale' })}
-            <span className="text-xs text-outline/60 tabular-nums font-normal">
-              ({badges.length})
-            </span>
+            {t('badges.title')}
           </h3>
+          <button
+            type="button"
+            onClick={handleGenerate}
+            disabled={generating}
+            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-label text-on-surface-variant hover:text-primary border border-outline-variant/15 hover:border-primary/30 rounded-sm transition-all hover:bg-surface-tint/10 disabled:opacity-40"
+          >
+            <span className={`material-symbols-outlined text-sm ${generating ? 'animate-spin' : ''}`}>
+              {generating ? 'progress_activity' : 'add_circle'}
+            </span>
+            {generating ? t('badges.generating') : t('badges.generate')}
+          </button>
         </div>
 
-        <div className="flex flex-wrap gap-4">
-          {badges.map((badge, idx) => (
-            <BadgeCard
-              key={`${badge.name}-${badge.earnedAt || idx}`}
-              badge={badge}
-              onClick={() => setScenePreview(badge)}
-              t={t}
-            />
-          ))}
-        </div>
+        {badges.length === 0 ? (
+          <p className="text-on-surface-variant/50 text-sm text-center py-4">
+            {t('badges.empty')}
+          </p>
+        ) : (
+          <div ref={scrollRef} className="flex gap-3 overflow-x-auto pb-2 scrollbar-thin">
+            {badges.map((badge) => {
+              const claimed = badge.xpAwarded != null;
+              return (
+                <button
+                  key={badge.id}
+                  type="button"
+                  onClick={() => setSelectedBadge(badge)}
+                  className={`group shrink-0 w-28 flex flex-col items-center text-center transition-all rounded-sm border overflow-hidden ${
+                    claimed
+                      ? 'border-outline-variant/10 opacity-60 hover:opacity-80'
+                      : 'border-primary/20 hover:border-primary/40 animate-pulse-subtle'
+                  }`}
+                >
+                  {badge.imageUrl ? (
+                    <div className="w-full aspect-square bg-surface-container-high relative">
+                      <img
+                        src={apiClient.resolveMediaUrl(badge.imageUrl)}
+                        alt={badge.name}
+                        className={`w-full h-full object-cover ${claimed ? 'grayscale' : ''}`}
+                        onError={(e) => { e.target.style.display = 'none'; }}
+                      />
+                      {!claimed && (
+                        <div className="absolute top-1 right-1 w-2.5 h-2.5 rounded-full bg-primary shadow-[0_0_6px_rgba(197,154,255,0.6)]" />
+                      )}
+                    </div>
+                  ) : (
+                    <div className={`w-full aspect-square flex items-center justify-center bg-surface-container-high/60 relative ${claimed ? 'grayscale' : ''}`}>
+                      <span className="material-symbols-outlined text-3xl text-primary/40">{badge.icon || 'shield'}</span>
+                      {!claimed && (
+                        <div className="absolute top-1 right-1 w-2.5 h-2.5 rounded-full bg-primary shadow-[0_0_6px_rgba(197,154,255,0.6)]" />
+                      )}
+                    </div>
+                  )}
+                  <div className="px-1.5 py-2 w-full">
+                    <span className="text-[10px] font-label uppercase tracking-wide text-on-surface-variant leading-tight line-clamp-2">
+                      {badge.name}
+                    </span>
+                    {claimed && (
+                      <span className="text-[9px] text-outline mt-0.5 block">+{badge.xpAwarded} XP</span>
+                    )}
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        )}
       </div>
 
-      {scenePreview && (
-        <ScenePreviewModal
-          campaignId={scenePreview.campaignId}
-          sceneIndex={scenePreview.sceneIndex}
-          header={
-            <div className="flex items-center gap-2">
-              <span className="material-symbols-outlined text-amber-400 text-base">military_tech</span>
-              <span className="text-sm text-amber-400 font-bold">{scenePreview.name}</span>
-            </div>
-          }
-          onClose={() => setScenePreview(null)}
+      {selectedBadge && (
+        <BadgeClaimModal
+          badge={selectedBadge}
+          onClaim={handleClaim}
+          onRegenerate={handleRegenerate}
+          onClose={() => setSelectedBadge(null)}
+          claiming={claiming}
+          regenerating={regenerating === selectedBadge.id}
         />
       )}
     </>

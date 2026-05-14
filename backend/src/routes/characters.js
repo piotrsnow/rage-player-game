@@ -9,6 +9,14 @@ import { toCanonicalStoragePath } from '../services/urlCanonical.js';
 import { callAIJson, parseJsonOrNull } from '../services/aiJsonCall.js';
 import { loadUserApiKeys } from '../services/apiKeyService.js';
 import { SCENE_CLIENT_SELECT, normalizeSceneAssetUrls } from '../services/campaignSerialize.js';
+import { generateBadge, regenerateBadgeImage } from '../services/badgeGenerator.js';
+
+function cumulativeCharXpThreshold(targetLevel) {
+  if (targetLevel <= 1) return 0;
+  let sum = 0;
+  for (let k = 2; k <= targetLevel; k++) sum += 5 * k * k;
+  return sum;
+}
 
 async function aggregateDiceStats(prisma, campaignIds) {
   const empty = { totalRolls: 0, successes: 0, failures: 0, critSuccesses: 0, critFailures: 0, avgRoll: 0, bestSkill: null, worstSkill: null };
@@ -635,6 +643,135 @@ Return JSON with exactly three fields, all written in ${isPolish ? 'Polish' : 'E
     } catch (err) {
       const status = err.statusCode || 502;
       return reply.code(status).send({ error: err.message, code: err.code || 'AI_REQUEST_FAILED' });
+    }
+  });
+
+  // ── Badge collection ────────────────────────────────────────────────
+
+  const BADGE_ID_PARAMS = {
+    type: 'object',
+    required: ['id', 'badgeId'],
+    properties: {
+      id: { type: 'string', format: 'uuid' },
+      badgeId: { type: 'string', format: 'uuid' },
+    },
+  };
+
+  fastify.get('/:id/badges', { schema: { params: CHARACTER_ID_PARAMS } }, async (request, reply) => {
+    const character = await prisma.character.findFirst({
+      where: { id: request.params.id, userId: request.user.id },
+      select: { id: true },
+    });
+    if (!character) return reply.code(404).send({ error: 'Character not found' });
+
+    const badges = await prisma.characterBadge.findMany({
+      where: { characterId: character.id },
+      orderBy: { earnedAt: 'desc' },
+    });
+    return { badges };
+  });
+
+  fastify.post('/:id/badges/generate', {
+    schema: {
+      params: CHARACTER_ID_PARAMS,
+      body: {
+        type: 'object',
+        additionalProperties: false,
+        properties: {
+          campaignId: { type: 'string', format: 'uuid' },
+          sceneFrom: { type: 'integer', minimum: 0 },
+          sceneTo: { type: 'integer', minimum: 0 },
+        },
+      },
+    },
+  }, async (request, reply) => {
+    const character = await prisma.character.findFirst({
+      where: { id: request.params.id, userId: request.user.id },
+      select: { id: true },
+    });
+    if (!character) return reply.code(404).send({ error: 'Character not found' });
+
+    let userApiKeys = null;
+    try { userApiKeys = await loadUserApiKeys(prisma, request.user.id); } catch {}
+
+    try {
+      const badge = await generateBadge({
+        characterId: character.id,
+        userId: request.user.id,
+        campaignId: request.body?.campaignId || null,
+        sceneFrom: request.body?.sceneFrom ?? null,
+        sceneTo: request.body?.sceneTo ?? null,
+        userApiKeys,
+      });
+      return reply.code(201).send(badge);
+    } catch (err) {
+      const status = err.statusCode || 502;
+      return reply.code(status).send({ error: err.message, code: err.code || 'AI_REQUEST_FAILED' });
+    }
+  });
+
+  fastify.post('/:id/badges/:badgeId/claim', { schema: { params: BADGE_ID_PARAMS } }, async (request, reply) => {
+    const character = await prisma.character.findFirst({
+      where: { id: request.params.id, userId: request.user.id },
+      select: { id: true, characterXp: true, characterLevel: true, attributePoints: true },
+    });
+    if (!character) return reply.code(404).send({ error: 'Character not found' });
+
+    const badge = await prisma.characterBadge.findFirst({
+      where: { id: request.params.badgeId, characterId: character.id },
+    });
+    if (!badge) return reply.code(404).send({ error: 'Badge not found' });
+    if (badge.xpAwarded != null) return reply.code(409).send({ error: 'Badge already claimed' });
+
+    const level = character.characterLevel || 1;
+    const levelCost = 5 * (level + 1) * (level + 1);
+    const maxReward = Math.max(1, Math.floor(levelCost / 2));
+    const reward = Math.floor(Math.random() * (maxReward + 1));
+
+    let charXp = (character.characterXp || 0) + reward;
+    let charLevel = level;
+    let attrPoints = character.attributePoints || 0;
+    while (charXp >= cumulativeCharXpThreshold(charLevel + 1)) {
+      charLevel++;
+      attrPoints++;
+    }
+
+    await prisma.$transaction([
+      prisma.characterBadge.update({
+        where: { id: badge.id },
+        data: { xpAwarded: reward },
+      }),
+      prisma.character.update({
+        where: { id: character.id },
+        data: { characterXp: charXp, characterLevel: charLevel, attributePoints: attrPoints },
+      }),
+    ]);
+
+    return {
+      xpAwarded: reward,
+      newCharacterXp: charXp,
+      newCharacterLevel: charLevel,
+      leveledUp: charLevel > level,
+    };
+  });
+
+  fastify.post('/:id/badges/:badgeId/regenerate-image', { schema: { params: BADGE_ID_PARAMS } }, async (request, reply) => {
+    const character = await prisma.character.findFirst({
+      where: { id: request.params.id, userId: request.user.id },
+      select: { id: true },
+    });
+    if (!character) return reply.code(404).send({ error: 'Character not found' });
+
+    const badge = await prisma.characterBadge.findFirst({
+      where: { id: request.params.badgeId, characterId: character.id },
+    });
+    if (!badge) return reply.code(404).send({ error: 'Badge not found' });
+
+    try {
+      const updated = await regenerateBadgeImage(badge.id, request.user.id);
+      return updated;
+    } catch (err) {
+      return reply.code(502).send({ error: err.message });
     }
   });
 }

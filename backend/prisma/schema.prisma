@@ -199,9 +199,30 @@ model Character {
   skillGains      CharacterSkillGain[]
   materials       CharacterMaterial[]
   favoriteScenes  FavoriteScene[]
+  badges          CharacterBadge[]
 
   @@index([userId])
   @@index([lockedCampaignId])
+}
+
+model CharacterBadge {
+  id          String    @id @default(uuid(7)) @db.Uuid
+  characterId String    @db.Uuid
+  campaignId  String?   @db.Uuid
+  name        String
+  description String    @db.Text
+  icon        String    @default("shield")
+  imageUrl    String?
+  imagePrompt String?
+  sceneFrom   Int?
+  sceneTo     Int?
+  xpAwarded   Int?
+  earnedAt    DateTime  @default(now()) @db.Timestamptz
+
+  character Character @relation(fields: [characterId], references: [id], onDelete: Cascade)
+  campaign  Campaign? @relation(fields: [campaignId], references: [id], onDelete: SetNull)
+
+  @@index([characterId, earnedAt])
 }
 
 // F4 — skills as a child table. Atomic UPDATE xp = xp + delta WHERE
@@ -372,6 +393,7 @@ model Campaign {
   locationEdges               LocationEdge[]
   campaignEdges               CampaignEdge[]
   favoriteScenes              FavoriteScene[]
+  characterBadges             CharacterBadge[]
   quickBeats                  CampaignQuickBeat[]
   incidents                   CampaignIncident[]
   snapshots                   CampaignSnapshot[]

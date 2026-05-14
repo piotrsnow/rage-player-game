@@ -1173,9 +1173,9 @@ export default function CharacterPanel({
         </div>
       )}
 
-      {character?.skillBadges?.length > 0 && (
+      {(character?.backendId || character?.id) && (
         <div className="mt-8 animate-fade-in">
-          <BadgesSection badges={character.skillBadges} />
+          <BadgesSection characterId={character.backendId || character.id} />
         </div>
       )}
 
