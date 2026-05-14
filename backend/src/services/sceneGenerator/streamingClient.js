@@ -203,8 +203,8 @@ async function callAnthropicStreaming(messages, { model, temperature = 0.8, maxT
 /**
  * Run the 2-stage pipeline with streaming. Returns parsed scene via callback events.
  */
-export async function runTwoStagePipelineStreaming(systemPromptParts, userPrompt, contextBlocks, { provider = 'openai', model, apiKey, signal } = {}, onChunk) {
-  const { text: contextSection, estTokens } = buildContextSection(contextBlocks);
+export async function runTwoStagePipelineStreaming(systemPromptParts, userPrompt, contextBlocks, { provider = 'openai', model, apiKey, signal, intent = 'freeform' } = {}, onChunk) {
+  const { text: contextSection, estTokens } = buildContextSection(contextBlocks, { intent });
   const dynamicFull = (systemPromptParts.dynamicSuffix || '') + (contextSection || '');
 
   const usedModel = model || (provider === 'openai' ? config.aiModels.premium.openai : config.aiModels.premium.anthropic);

@@ -23,7 +23,7 @@ const TOKEN_HARD_CAP = 12_000;
  * Returns `{ text, estTokens }` — callers that only need the string can
  * destructure or fall back to the `.text` property.
  */
-export function buildContextSection(contextBlocks) {
+export function buildContextSection(contextBlocks, { intent = 'freeform' } = {}) {
   if (!contextBlocks) return { text: '', estTokens: 0 };
 
   const parts = [];
@@ -167,12 +167,10 @@ export function buildContextSection(contextBlocks) {
           }
         }
       }
-      // Round B (Phase 4b) — NPC hearsay policy. Each key NPC gets a list
-      // of locations they are authorized to reveal in dialog (own location
-      // + 1-hop edges + explicit WorldNpcKnownLocation grants). Premium MUST NOT reveal
-      // other locations from this NPC; processStateChanges enforces via the
-      // `locationMentioned` bucket policy check.
-      if (Array.isArray(lw.hearsayByNpc) && lw.hearsayByNpc.length > 0) {
+      // Round B (Phase 4b) — NPC hearsay policy. Skipped for combat/stealth
+      // intents where NPCs fight, not talk. Saves ~200-500 tokens.
+      const skipDialogContext = intent === 'combat' || intent === 'stealth';
+      if (!skipDialogContext && Array.isArray(lw.hearsayByNpc) && lw.hearsayByNpc.length > 0) {
         lines.push('');
         lines.push('## [NPC_KNOWLEDGE] — miejsca, o których każdy NPC MOŻE mówić');
         lines.push('Jeśli gracz pyta o miejsce, NPC może ujawnić TYLKO lokacje z własnej listy. Inne miejsca: NPC mówi "nie wiem" lub spekuluje bez szczegółów. Gdy NPC faktycznie ujawnia lokację, emit `stateChanges.locationMentioned: [{locationRef, locationName, byCampaignNpcId, byNpcId}]` — copy locationRef and locationName EXACTLY from this list.');
@@ -187,13 +185,8 @@ export function buildContextSection(contextBlocks) {
         }
       }
 
-      // Stage 1+2 — NPC memory. Unified block combining baseline (seeded in
-      // seedWorld.js + Phase 11-promoted cross-campaign memories) with lived
-      // experience from THIS campaign (CampaignNPC.experienceLog — written by
-      // `npcMemoryUpdates` handler). Flavor for dialog, NOT policy-enforced.
-      // Source prefix lets premium distinguish "always knew" vs "learned in
-      // this playthrough".
-      if (Array.isArray(lw.memoryByNpc) && lw.memoryByNpc.length > 0) {
+      // Stage 1+2 — NPC memory. Skipped alongside hearsay for combat/stealth.
+      if (!skipDialogContext && Array.isArray(lw.memoryByNpc) && lw.memoryByNpc.length > 0) {
         lines.push('');
         lines.push('## [NPC_MEMORY] — co każdy NPC wie, pamięta i uważa');
         lines.push('Każdy NPC ma stałe przekonania + osobiste doświadczenia. Część jest publiczna, część NPC ujawni tylko zaufanej osobie lub przy mocnej perswazji. Nie powtarzaj dosłownie — zaadaptuj do stylu NPC. Prefiks `(zawsze)` = stałe przekonanie / baseline; `(ta kampania)` = coś, co NPC PRZEŻYŁ z graczem w trakcie tej rozgrywki (zawsze bierz pod uwagę zanim wygenerujesz dialog). Jeśli nowe wydarzenie w scenie kształtuje dalszy obraz NPC — emit `npcMemoryUpdates`.');
@@ -215,7 +208,9 @@ export function buildContextSection(contextBlocks) {
       // edge of this campaign's worldBounds. New non-canonical locations
       // emitted beyond the boundary are silently rejected by processTopLevelEntry,
       // so this hint steers narration toward feasible directions.
-      if (lw.worldBoundsHint) {
+      // Only emitted for travel intent — non-travel scenes don't need
+      // cardinal distance info (~80 tokens saved).
+      if (intent === 'travel' && lw.worldBoundsHint) {
         const h = lw.worldBoundsHint;
         lines.push('');
         lines.push(`## [WORLD BOUNDS]`);
@@ -250,12 +245,12 @@ export function buildContextSection(contextBlocks) {
       }
     }
 
-    // Phase A — SEEDED SETTLEMENTS. Lists the canonical settlements this
-    // world already has (capital + per-campaign hamlets/villages/towns/cities)
-    // with distance-from-current so premium prefers reuse over inventing a
-    // new settlement. Mid-play settlement creation is hard-blocked in
-    // processTopLevelEntry; this block is the carrot side of the rule.
-    if (lw.seededSettlements?.entries?.length) {
+    // Phase A — SEEDED SETTLEMENTS. Only relevant when the player might
+    // reference/travel to other locations (travel/freeform/first_scene).
+    // Pure combat/stealth/dialogue scenes don't need the full settlement
+    // catalog (~100-300 tokens saved).
+    const SETTLEMENT_INTENTS = new Set(['travel', 'freeform', 'first_scene']);
+    if (SETTLEMENT_INTENTS.has(intent) && lw.seededSettlements?.entries?.length) {
       lines.push('');
       lines.push('## SEEDED SETTLEMENTS (reuse these — do NOT invent new hamlets/villages/towns/cities/capitals)');
       for (const s of lw.seededSettlements.entries) {

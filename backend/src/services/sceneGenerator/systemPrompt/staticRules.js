@@ -23,7 +23,13 @@ export function executionOrderBlock() {
 Never narrate an outcome that contradicts the dice result. Never emit stateChanges that contradict the narrative.`;
 }
 
-export function coreRulesBlock() {
+export function coreRulesBlock({ creativityEligible = true } = {}) {
+  const creativitySection = creativityEligible
+    ? `- creativityBonus (TOP-LEVEL, int 0-20): ONLY for player_input_kind=custom.
+  0 = blank / single generic word. 1-4 = minimal effort. 5-8 = solid (environment, specific approach, personality). 9-13 = creative (combines multiple elements, references game state). 14-17 = brilliant (non-obvious exploitation). 18-20 = masterful (tactically + narratively rich, perfectly in-character).
+  BIAS UPWARD: if in doubt, pick the higher tier. Quality > length, detail > vagueness.
+  Score BEFORE resolving dice, then ADD to every skill-check total.`
+    : `- creativityBonus MUST be 0 (player did not type a custom action — suggested/auto/system).`;
   return `## CORE RULES
 - Dice/skill checks: may be engine-resolved (see user prompt) or self-resolved using pre-rolled d50 values.
 - If engine-resolved: narrate the provided result. DO NOT recalculate.
@@ -34,19 +40,9 @@ export function coreRulesBlock() {
 - Consequences: risky actions generate reputation/disposition/resource/wound/rumor consequences. Criminal acts accumulate heat (guards, bounties, higher prices).
 - NPC disposition: engine calculates bonuses. Reflect attitude in narration (≥15=friendly, ≤-15=hostile). Trust builds slow, breaks fast.
 - Currency: 1ZK=20SK=240MK and 1SK=12MK. stateChanges.moneyChange for purchase costs (negative deltas). For income/loot use stateChanges.rewards with type:'money'. Engine validates affordability.
-- Character XP is NOT awarded per scene. XP cascades from skill level-ups. Quest XP is awarded incrementally: half split across objectives (on completion of each), other half on quest completion. Do NOT emit stateChanges.xp for quest rewards — the engine handles it automatically.
+- Character XP is NOT awarded per scene. XP cascades from skill level-ups. Quest XP is awarded incrementally. Do NOT emit stateChanges.xp.
 - The world is grim and perilous. Death is real. Consequences are lasting.
-- creativityBonus (TOP-LEVEL, int 0-20): ONLY for player_input_kind=custom (suggested/auto=ALWAYS 0).
-  Reward players who INVEST in describing HOW they act — tactical thinking, environment use, character voice, in-world logic.
-  0 = blank / single generic word ("atakuję", "idę").
-  1-4 = minimal effort — short sentence, no tactical or narrative detail.
-  5-8 = solid — uses environment, names a specific approach, or shows character personality.
-  9-13 = creative — combines multiple elements (skill+environment, bluff+knowledge, tactical positioning), references game state (inventory, NPC relationships, earlier events).
-  14-17 = brilliant — an approach the GM wouldn't have thought of, exploits the situation in a clever non-obvious way, or weaves multiple game systems together.
-  18-20 = masterful — a plan that makes the GM grin; tactically sound, narratively rich, and perfectly in-character. Should happen a few times per session for an engaged player.
-  BIAS UPWARD: if in doubt between two tiers, pick the higher one. The system REWARDS creativity — don't be stingy.
-  Quality > length, but detail > vagueness. "Rzucam piaskiem w oczy strażnika i próbuję go ogłuszyć rękojeścią" (specific, tactical, uses environment) = 9-13, not 5-8.
-  Score creativityBonus BEFORE resolving any dice in this scene, then ADD it to every skill-check total (both engine-resolved and self-resolved). Narrate success/failure based on the total WITH creativity already included.`;
+${creativitySection}`;
 }
 
 export function scenePacingBlock() {
@@ -82,67 +78,82 @@ Return exactly 3 suggestedActions in PC voice (1st person, e.g. ${example}). At 
 Ground actions in the character's actual capabilities: never suggest spellcasting if mana=0 or item use if item is not in Inventory. Skills at level 0 are fine — the character can attempt anything, they're just unskilled.`;
 }
 
-export function stateChangesRulesBlock() {
+/**
+ * stateChanges rules — split into base (always) + conditional slices.
+ * Quest/magic/location slices are injected only when the scene needs them.
+ * The response-format JSON schema still shows ALL fields so the model
+ * knows the shape; these prose rules just explain WHEN and HOW to fill them.
+ */
+export function stateChangesBaseBlock() {
   return `## [CRITICAL] MANDATORY stateChanges RULES
 Before emitting stateChanges, mentally run this checklist against the narrative you just wrote:
-  1. Time — how much time passed in the scene? (timeAdvance)
-  2. Quest — did any ACTIVE objective just get fulfilled? (questUpdates + dialogueIfQuestTargetCompleted)
-  3. NPCs — disposition shift, introduction, or location change for any NPC named in the scene?
-  4. Items / Money — did the narrative describe the character GAINING any named object (note, herb, key, pouch, dagger, letter, artifact…)? → newItems MUST contain it. Anonymous loot (no specific name) → rewards. Money → moneyChange or rewards type:'money'. ZERO narrated acquisitions may go unmatched.
-  5. Location — did the player move?
-  6. Wounds — did any healing or non-combat damage happen? Emit woundsChange (positive=healing, negative=damage). Potion/herb → +3-5, rest/sleep → +2-4, magical healing/ritual → +5-10. If a consumable was used, ALSO emit removeItems.
-  7. Mana — was a spell cast or mana restored? Casting → manaChange NEGATIVE (spell cost 1-5). Rest/meditation/potion → manaChange POSITIVE (short rest +2-3, full rest = full pool, mana potion +3-5). Also emit spellUsage:{"SpellName":1} for each spell cast.
+  1. Time — how much time passed? (timeAdvance)
+  2. NPCs — disposition shift, introduction, or location change for any NPC named in the scene?
+  3. Items / Money — did the narrative describe the character GAINING any named object? → newItems MUST contain it. Anonymous loot → rewards. Money → moneyChange or rewards type:'money'. ZERO narrated acquisitions may go unmatched.
+  4. Wounds — healing or non-combat damage? Emit woundsChange (positive=healing, negative=damage). Potion/herb → +3-5, rest/sleep → +2-4, magical healing/ritual → +5-10. If a consumable was used, ALSO emit removeItems.
 Emit stateChanges reflecting ALL of the above. Empty fields are OK only when the answer is genuinely "no".
 
 - timeAdvance: ALWAYS include {hoursElapsed: decimal}. Quick=0.25, action/combat=0.5, exploration=0.75-1, rest=2-4, sleep=6-8.
-- questUpdates: after writing dialogueSegments, ASK: did any ACTIVE OBJECTIVE get fulfilled IN THIS SCENE's narrative? Meeting the quest-giver, delivering an item, defeating a target, learning a named fact — all count. If yes, MUST emit [{questId, nodeKey?, objectiveId?, completed:true}]. questId = the id= value from the ACTIVE QUESTS block.
-  * GRAPH MODE (Active Quests block shows [nodeKey] markers): use \`nodeKey\` (e.g. "spare_witch") — preferred and stable. Numeric \`objectiveId\` (legacy fallback) still works but DON'T mix.
-  * LEGACY MODE (no [nodeKey] markers): \`objectiveId\` is the number shown before the objective (its array index, as a string). Numbers are NOT contiguous — completed objectives are hidden but their indices remain (e.g. you may see only "2." if 0 and 1 were already done). The ▶ NEXT marker points to the currently-pending objective.
-  NEVER leave questUpdates empty when the narrative resolved an objective — also emit dialogueIfQuestTargetCompleted to close the beat.
-  * BACKGROUND QUESTS: side / personal / faction quests appear under "--- Background Quests ---" in the Active Quests block. Emit questUpdates for them on resolution exactly like main — but do NOT divert the scene's narrative onto them; they progress only when the player's action or dialog organically resolves an objective.
-- branchChoice (graph mode only): when narrative locks the player into one path of an XOR branch group (you saw "Branches active: <group> (player can choose: A | B)" in Active Quests), include \`branchChoice: { group, chosen }\` on the questUpdate that closes the chosen node. Sibling nodes auto-skip backend-side — DO NOT emit their state.
-- Quest completion: add to completedQuests as soon as the quest's completionCondition is narratively satisfied in this scene (turn-in NPC if the quest has one, otherwise objective fulfillment is sufficient). Always use the id= shown for the quest.
-
-- DIEGETIC REVEALS (graph mode only): every objective starts with \`discovered=false\`. Player UI shows them as "???". When the narrative explicitly conveys information about a future step — NPC dialog, found letter, overheard conversation, discovered clue — emit \`objectiveReveals: [{questId, nodeKey, revealSource}]\`. Reveals are STICKY (once discovered = always discovered). Reveals CAN PRECEDE UNLOCKS: if an NPC mentions a still-locked node, still emit objectiveReveals — the node will be visible in the UI as 🔒 with hint, and pop into pending automatically when parents complete. NEVER reveal because "the player should know" or for pacing — let narrative drive discovery. When the player completes their current visible objective and asks "what next" or seeks guidance, surface a narrative reason (NPC mentions it, clue found, etc.) and emit objectiveReveals for the NEXT logical step only.
-- BRANCH REVEALS (graph mode only): each option in an XOR group must be individually revealed. Emit \`branchGroupReveals: [{questId, branchGroup, revealedNodeKeys, revealSource}]\` when an NPC offers alternatives or a scene presents a choice. Without a reveal, the UI hides the choice entirely — players will see only the "default" path you originally revealed.
-- QUEST GIVER FIRST CONTACT: the FIRST root objective (parents=[]) is auto-revealed by the system at quest creation. DO NOT emit objectiveReveals for ALL root nodes at creation. The player should discover subsequent steps through narrative events — NPC dialog, clues, letters, overheard conversations. Reveal ONE objective at a time when the narrative naturally uncovers it.
-- questMutations (rare, narrative override): \`[{questId, mutation: "stall"|"fail"|"reroute", reason}]\`. Use ONLY when narration EXPLICITLY disrupts a quest (questgiver dies on-screen via your prose, target location is destroyed). Most disruptions are detected backend-side from npc agent loop ticks — do NOT emit unless your dialogueSegments narrate the disruption.
-- questOffers (full schema): \`[{id, name, description, type, questGiverId, turnInNpcId, relatedHookId?, relatedNpcRefs?, completionCondition, objectives}]\`. Each objective is a graph node:
-  \`{nodeKey, objectiveType, description, parents?, branchType?, branchGroup?, choiceLabel?, placeholderHint?, failsOn?}\`.
-  * objectiveType (REQUIRED): one of "kill", "escort", "fetch", "deliver", "craft", "explore", "interact", "survive", "gather". Categorises the objective for the player's UI.
-  * nodeKey: snake_case [a-z0-9_]{1,40}, unique within quest. Stable refs LLM uses across scenes.
-  * parents: nodeKeys that must be \`done\` before this node unlocks. Empty parents = root node = pending immediately.
-  * branchType: "and" (default — equivalent to AND chain), "path" (XOR — chosen sibling closes the others), "or" (any-of group).
-  * branchGroup: id of the XOR/OR group (e.g. "witch_resolution") — siblings share it.
-  * failsOn.npcDead: list of NPC names — if any dies (on-screen or via off-screen tick), backend stalls the quest.
-  * placeholderHint: optional vague hint shown to player as "??? — <hint>" before reveal (e.g. "??? — coś związanego z lasem"). Default: just "???".
-  When emitting from a Pending quest opportunity hook, copy questGiverId from the hook and include relatedHookId. Side/personal quests in living-world MUST have ≥2 objectives + ≥1 branch group with branchType="path" when relations contradict (NPC vs NPC conflict). Min 2 objectives, max 12.
-- rewards: for ANONYMOUS roll-table loot where YOU don't pick a specific name — just type + tier. Array of [{type, rarity?, category?, quantity?, context?}]. type: 'material'|'weapon'|'armour'|'shield'|'gear'|'medical'|'money'|'potion'|'misc'|'consumable'. rarity: 'common'|'uncommon'|'rare'. category: materials only ('metal'|'wood'|'fabric'|'herb'|'liquid'|'misc'). quantity: 'one'|'few'|'some'|'many'. context: 'loot'|'found'|'gift' (NO 'quest_reward' — quest rewards are applied automatically on completedQuests using the quest's defined reward, do NOT duplicate via rewards[]). Do NOT specify item names — engine resolves them into concrete items.
-- newItems: ANY NAMED item the character gains — notes, letters, keys, herbs, found weapons, gifts, loot with a specific name, quest MacGuffins, artifacts, picked-up objects. {id, name, type, description}. id is auto-assigned — do NOT invent your own. type: 'weapon'|'armor'|'shield'|'accessory'|'consumable'|'material'|'misc'. CONSISTENCY RULE: if dialogueSegments describe the character GAINING, PICKING UP, or RECEIVING a named item, stateChanges.newItems MUST contain a matching entry — no exceptions. Anonymous drops without a name → use rewards.
-- removeItems: array of item UUIDs from character's Inventory [id] tags. Use the EXACT id shown in square brackets.
+- rewards: for ANONYMOUS roll-table loot — just type + tier. Array of [{type, rarity?, category?, quantity?, context?}]. type: 'material'|'weapon'|'armour'|'shield'|'gear'|'medical'|'money'|'potion'|'misc'|'consumable'. rarity: 'common'|'uncommon'|'rare'. category: materials only ('metal'|'wood'|'fabric'|'herb'|'liquid'|'misc'). quantity: 'one'|'few'|'some'|'many'. context: 'loot'|'found'|'gift' (NO 'quest_reward' — quest rewards are applied automatically on completedQuests, do NOT duplicate). Do NOT specify item names — engine resolves them.
+- newItems: ANY NAMED item the character gains. {id, name, type, description}. id is auto-assigned — do NOT invent. type: 'weapon'|'armor'|'shield'|'accessory'|'consumable'|'material'|'misc'. CONSISTENCY RULE: if dialogueSegments describe GAINING a named item, newItems MUST match — no exceptions. Anonymous drops → use rewards.
+- removeItems: array of item UUIDs from Inventory [id] tags. Use the EXACT id shown.
+- removeItemsByName: [{name, quantity}] fallback when UUIDs aren't visible.
 - moneyChange: {gold,silver,copper} NEGATIVE deltas for purchases only. For income/loot use rewards with type:'money'.
-- npcs: {action:"introduce"|"update", campaignNpcId?, name, gender, role, personality, appearance, dialect, attitude, location, dispositionChange, relationships:[{npcId?,npcName,type}], race?, creatureKind?, level?, statsOverride?}. When updating an existing NPC, ALWAYS include \`campaignNpcId\` from its [id: ...] tag in context. gender MUST be "male" or "female" — never "unknown", never omitted. dispositionChange scales with margin: lucky/great success +3-5, success +1-2, failure -1-2, hard failure -3-5.
-  * race: "Human"|"Dwarf"|"Halfling"|"Orc" — REQUIRED for regular mortal NPCs on "introduce". Elfy są zablokowane — nie emituj elfów.
-  * creatureKind: wolny tekst dla istot fabularnych (zjawa, sfinks, demon, potwór, duch) ZAMIAST race. Emituj creatureKind TYLKO gdy fabuła wymaga nietypowej istoty; reguła: każdy NPC ma albo race albo creatureKind, nigdy oba.
-  * level: 1-30 — opcjonalne. Zwykli mieszkańcy 1-3, weterani/rzemieślnicy 4-6, postacie kluczowe 7-10, bossowie 10+. Jeśli pominiesz, backend dobierze poziom z category. Ważni NPC mogą dodać keyNpc:true.
-  * statsOverride: OPCJONALNY, tylko dla wyjątkowych postaci (arcymag, boss, legendarny mistrz). Kształt: {attributes?:{sila,inteligencja,charyzma,zrecznosc,wytrzymalosc,szczescie}, skills?:{"Nazwa":level}, weapons?:["..."], traits?:["..."], armourDR?, maxWounds?, mana?:{current,max}}. Podawaj tylko pola które realnie chcesz podnieść/zmienić — backend dopełni resztę deterministycznie.
-  * Nie wymagaj podawania statów — backend generuje pełną kartę postaci z rasy+roli+poziomu. Emituj race/creatureKind/level a ewentualny statsOverride tylko gdy postać jest naprawdę wyróżniająca się.
-  * appearance: WYMAGANE przy "introduce" — JEDNO zdanie po polsku opisujące fizyczny wygląd (budowa, włosy, twarz, ubiór, charakterystyczny detal). To jest kanoniczny rysopis NPC — używany przy generowaniu portretu i pokazywany graczowi. Stabilny: nie zmieniaj go przy "update", chyba że fabularnie się zmienił (zranienie, nowe ubranie, transformacja).
-  * dialect: WYMAGANE przy "introduce" — JEDNO zdanie po polsku opisujące JAK NPC mówi: gwara/akcent (góralska, kresowa, miejski slang), rejestr (chłopski/kupiecki/szlachecki/książkowy), charakterystyczne zwroty lub przekleństwa. Spójne z rolą i charakterem. Stabilne: nie zmieniaj przy "update".
-- npcMemoryUpdates: [{campaignNpcId?, npcName, memory, importance?, actionType?}] — emit ONLY gdy coś narracyjnie znaczącego dzieje się z/dla NPC, co by zapamiętał. ALWAYS include \`campaignNpcId\` from the NPC's [id: ...] tag when available. 1 zdanie z perspektywy NPC. importance: 'major' = trwała zmiana relacji, 'minor' = drobne wrażenie (default: minor). SKIP dla small talk / routine. Max ~3 per scene.
-  * actionType (optional): "killed" | "saved" | "betrayed" | "aided" | "insulted" | "broke_promise" | "kept_promise". Include when the memory describes a directional act FROM player TO this NPC. This routes through relationshipRipple service — connected NPCs (brother, lover, rival) auto-react with disposition shifts and their own memory entries ("Słyszał, że <player> zabił mojego brata"). SKIP for routine observations. Use sparingly — high-impact events only.
-- locationMentioned: [{locationRef?, locationName, byCampaignNpcId?, byNpcId}] — emit whenever a scene NPC NAMES OR DESCRIBES a location to the player. Include \`locationRef\` (e.g. "world:uuid" or "campaign:uuid") from context [id: ...] tags when available. \`byCampaignNpcId\` is the speaker NPC's UUID; \`byNpcId\` is the speaker's name (kept for compat). If a [NPC_KNOWLEDGE] block lists allowed locations for the speaker, only mention those; otherwise the NPC narrates "doesn't know / speculates" and you DO NOT emit.
-- currentLocation: emit ONLY when the player ARRIVES at a different location THIS scene. Value is the EXACT canonical name from the [TRAVEL] block / sublocation entry / [DUNGEON ROOM] exits. NEVER invent a name.
-- currentLocationRef: REQUIRED when emitting currentLocation. Copy the [ref: ...] tag from context verbatim. Format: "kind:uuid". Omit ONLY for invented wandering flavor-names (free-vector movement where no POI exists).
-- skillsUsed: ["SkillName"] — skills the PC actively used or exercised in this scene. Max 3. ALWAYS emit at least 1 skill unless the scene is pure passive dialogue with zero challenge. Skills at level 0 are VALID — the character is learning by doing. Pick the skill that best fits the action:
-  riding/mounted travel = Jezdziectwo, swimming/crossing water = Plywanie, finding a path = Nawigacja, climbing/jumping = Atletyka, wilderness survival/foraging = Przetrwanie, tracking = Tropienie, noticing details = Spostrzegawczosc, acrobatic dodge = Akrobatyka, persuading = Perswazja, lying = Blef, bartering = Handel, performing = Wystepy, flirting = Flirt, leading = Przywodztwo, intimidating = Zastraszanie, crafting/repairing = Rzemioslo, alchemy/potions = Alchemia, medicine/first aid = Medycyna, lockpicking = Otwieranie zamkow, pickpocketing = Kradziez kieszonkowa, traps = Pulapki i mechanizmy, sneaking = Skradanie, enduring pain/cold/fatigue = Odpornosc, resisting giving up = Upartosc, drinking contest = Picie alkoholu, gambling = Hazard, praying = Modlitwa, gut feeling = Przeczucie, flexing/showing off strength = Prezenie sie, kicking down doors = Wywazanie drzwi, tactics/battle planning = Taktyka, monster lore = Wiedza o potworach, nature lore = Wiedza o naturze, general knowledge = Wiedza ogolna, lucky break = Fart.
-- actionDifficulty: "easy"|"medium"|"hard"|"veryHard"|"extreme".
-- dungeonComplete: {name, summary ≤400 chars} when the player has CLEARED the final room of a dungeon (all encounters resolved, boss defeated, exit reached). Promotes to global.
-- dialogueIfQuestTargetCompleted: TOP-LEVEL field (not inside stateChanges). If this scene resolves a QUEST OBJECTIVE (questUpdates with completed:true) OR completes a quest entirely (completedQuests), emit an object { text, speakerType, speakerName? }:
-  * text: 1-3 sentences that (a) close the story beat that just resolved, AND (b) if the quest still has unfinished objectives, NATURALLY TEE UP THE NEXT ONE — reference the next objective's location/NPC/reason so the player understands WHY they now need to do it. Example: "Kowal dziękuje ci za narzędzia. 'Teraz, gdy wiesz gdzie szukać, powinieneś odwiedzić kaplicę w Yeralden — jakiś mnich może wiedzieć więcej o tej pieczęci.'" If no more objectives remain (quest fully done) or campaign is ending, close naturally without forcing a new hook.
-  * speakerType: 'narrator'|'npc'|'companion'. Prefer 'npc' when the quest-giver is in the scene, 'companion' when a companion is with the player, otherwise 'narrator'.
-  * speakerName: NPC/companion name when speakerType≠'narrator'; omit for narrator.
-  Tone: reflective, conclusive. Polish in PL campaigns. Null/omit when no quest objective resolved. Plays AFTER main dialogueSegments as short epilogue.`;
+- npcs: {action:"introduce"|"update", campaignNpcId?, name, gender, role, personality, appearance, dialect, attitude, location, dispositionChange, relationships:[{npcId?,npcName,type}], race?, creatureKind?, level?, statsOverride?}. When updating an existing NPC, ALWAYS include \`campaignNpcId\` from its [id: ...] tag. gender MUST be "male" or "female" — never "unknown", never omitted. dispositionChange scales with margin: lucky/great success +3-5, success +1-2, failure -1-2, hard failure -3-5.
+  * race: "Human"|"Dwarf"|"Halfling"|"Orc" — REQUIRED for regular mortal NPCs on "introduce". Elfy są zablokowane.
+  * creatureKind: wolny tekst dla istot fabularnych ZAMIAST race. Każdy NPC ma albo race albo creatureKind, nigdy oba.
+  * level: 1-30 — opcjonalne. Zwykli mieszkańcy 1-3, weterani 4-6, postacie kluczowe 7-10, bossowie 10+. Pominięcie → backend dobierze.
+  * statsOverride: OPCJONALNY, tylko dla wyjątkowych postaci. Kształt: {attributes?, skills?, weapons?, traits?, armourDR?, maxWounds?, mana?}. Podawaj tylko zmieniane pola.
+  * appearance: WYMAGANE przy "introduce" — JEDNO zdanie po polsku (budowa, włosy, twarz, ubiór, detal). Stabilne: nie zmieniaj przy "update" bez fabularnego powodu.
+  * dialect: WYMAGANE przy "introduce" — JEDNO zdanie po polsku (gwara/rejestr/zwroty). Stabilne.
+- npcMemoryUpdates: [{campaignNpcId?, npcName, memory, importance?, actionType?}] — emit ONLY gdy coś narracyjnie znaczącego dzieje się z/dla NPC. 1 zdanie z perspektywy NPC. importance: 'major'|'minor' (default: minor). SKIP dla small talk. Max ~3 per scene.
+  * actionType (optional): "killed"|"saved"|"betrayed"|"aided"|"insulted"|"broke_promise"|"kept_promise". Routes through relationshipRipple service. Use sparingly — high-impact events only.
+- skillsUsed: ["SkillName"] — max 3. ALWAYS emit at least 1 unless pure passive dialogue. Level 0 skills are VALID. Pick the best fit:
+  riding=Jezdziectwo, swimming=Plywanie, navigation=Nawigacja, climbing=Atletyka, survival=Przetrwanie, tracking=Tropienie, noticing=Spostrzegawczosc, dodge=Akrobatyka, persuading=Perswazja, lying=Blef, bartering=Handel, performing=Wystepy, flirting=Flirt, leading=Przywodztwo, intimidating=Zastraszanie, crafting=Rzemioslo, alchemy=Alchemia, medicine=Medycyna, lockpicking=Otwieranie zamkow, pickpocketing=Kradziez kieszonkowa, traps=Pulapki i mechanizmy, sneaking=Skradanie, endurance=Odpornosc, willpower=Upartosc, drinking=Picie alkoholu, gambling=Hazard, praying=Modlitwa, gut feeling=Przeczucie, flexing=Prezenie sie, kicking doors=Wywazanie drzwi, tactics=Taktyka, monsters=Wiedza o potworach, nature=Wiedza o naturze, general=Wiedza ogolna, luck=Fart.
+- actionDifficulty: "easy"|"medium"|"hard"|"veryHard"|"extreme".`;
+}
+
+export function stateChangesQuestBlock() {
+  return `## QUEST stateChanges RULES
+- questUpdates: did any ACTIVE OBJECTIVE get fulfilled? If yes, MUST emit [{questId, nodeKey?, objectiveId?, completed:true}]. questId = the id= from ACTIVE QUESTS.
+  * GRAPH MODE ([nodeKey] markers): use \`nodeKey\` — preferred and stable. Numeric \`objectiveId\` still works but DON'T mix.
+  * LEGACY MODE (no [nodeKey]): \`objectiveId\` is the number shown before the objective (array index as string). ▶ NEXT = currently-pending.
+  NEVER leave questUpdates empty when the narrative resolved an objective — also emit dialogueIfQuestTargetCompleted.
+  * BACKGROUND QUESTS: emit questUpdates on resolution exactly like main — but do NOT divert the scene.
+- branchChoice (graph mode only): when narrative locks the player into one XOR path, include \`branchChoice: { group, chosen }\`. Siblings auto-skip backend-side.
+- Quest completion: add to completedQuests when completionCondition is satisfied this scene. Use the id= shown.
+- DIEGETIC REVEALS (graph mode only): objectives start \`discovered=false\` (shown as "???"). When narrative conveys info about a future step, emit \`objectiveReveals: [{questId, nodeKey, revealSource}]\`. Reveals are STICKY and CAN PRECEDE UNLOCKS. NEVER reveal for pacing — only when narrative justifies it. Reveal ONE at a time.
+- BRANCH REVEALS (graph mode only): emit \`branchGroupReveals: [{questId, branchGroup, revealedNodeKeys, revealSource}]\` when alternatives are presented. Without reveal, UI hides the choice.
+- QUEST GIVER FIRST CONTACT: first root objective is auto-revealed. DO NOT reveal ALL roots at creation. Reveal through narrative events — one at a time.
+- questMutations (rare): \`[{questId, mutation: "stall"|"fail"|"reroute", reason}]\`. ONLY when narration EXPLICITLY disrupts a quest.
+- questOffers (full schema): \`[{id, name, description, type, questGiverId, turnInNpcId, relatedHookId?, relatedNpcRefs?, completionCondition, objectives}]\`. Each objective:
+  \`{nodeKey, objectiveType, description, parents?, branchType?, branchGroup?, choiceLabel?, placeholderHint?, failsOn?}\`.
+  * objectiveType (REQUIRED): "kill"|"escort"|"fetch"|"deliver"|"craft"|"explore"|"interact"|"survive"|"gather".
+  * nodeKey: snake_case [a-z0-9_]{1,40}, unique within quest.
+  * parents: nodeKeys that must be \`done\` first. Empty = root = pending immediately.
+  * branchType: "and" (default), "path" (XOR), "or" (any-of). branchGroup: group id for XOR/OR siblings.
+  * failsOn.npcDead: NPC names that stall quest on death.
+  * placeholderHint: optional "??? — <hint>". Min 2 objectives, max 12.
+- dialogueIfQuestTargetCompleted: TOP-LEVEL field. If quest objective resolved OR quest completed, emit { text, speakerType, speakerName? }.
+  * text: 1-3 sentences closing the beat + teeing up the next objective.
+  * speakerType: 'narrator'|'npc'|'companion'. speakerName when ≠'narrator'.
+  Null when no quest objective resolved.`;
+}
+
+export function stateChangesMagicBlock() {
+  return `## MAGIC stateChanges RULES
+- manaChange: NEGATIVE delta for spells cast (−1 cantrip, −2 basic, −3 advanced, −5 powerful). POSITIVE for rest/meditation/potion (short rest +2-3, full rest = full pool, potion +3-5). Also emit spellUsage:{"SpellName":1} for every spell cast.
+- learnSpell: spell name when character learns a new spell this scene.
+- manaMaxChange: integer increase to max mana pool (rare — magic breakthrough only).
+- addScroll: scroll data when character finds a spell scroll.`;
+}
+
+export function stateChangesLocationBlock() {
+  return `## LOCATION stateChanges RULES
+- locationMentioned: [{locationRef?, locationName, byCampaignNpcId?, byNpcId}] — emit whenever an NPC NAMES a location to the player. Copy \`locationRef\` from context [id: ...] tags. If [NPC_KNOWLEDGE] lists allowed locations, only mention those; otherwise NPC says "nie wiem".
+- currentLocation: emit ONLY when the player ARRIVES at a different location THIS scene. Value is the EXACT canonical name from [TRAVEL]/sublocation/[DUNGEON ROOM] exits. NEVER invent a name.
+- currentLocationRef: REQUIRED with currentLocation. Copy [ref: ...] verbatim. Format: "kind:uuid". Omit ONLY for wandering flavor-names.
+- dungeonComplete: {name, summary ≤400 chars} when player CLEARED the final dungeon room.`;
 }
 
 export function actionRulesBlock() {

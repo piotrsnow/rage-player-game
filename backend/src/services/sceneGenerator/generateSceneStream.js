@@ -371,6 +371,7 @@ export async function generateSceneStream(campaignId, playerAction, options = {}
       questGiverHint,
       magicExposure,
       playerAction,
+      creativityEligible,
     });
 
     const userPrompt = buildUserPrompt(playerAction, {
@@ -416,7 +417,7 @@ export async function generateSceneStream(campaignId, playerAction, options = {}
     try {
       sceneResult = await runTwoStagePipelineStreaming(
         systemPromptParts, userPrompt, contextBlocks,
-        { provider, model: effectiveModel, apiKey: providerApiKey, signal: premiumController.signal },
+        { provider, model: effectiveModel, apiKey: providerApiKey, signal: premiumController.signal, intent: intentResult._intent || 'freeform' },
         (text) => onEvent({ type: 'chunk', text }),
       );
     } finally {

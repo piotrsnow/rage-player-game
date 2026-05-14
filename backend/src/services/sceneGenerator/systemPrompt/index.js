@@ -14,7 +14,10 @@ import {
   narrativeRulesBlock,
   dialogueFormatBlock,
   suggestedActionsBlock,
-  stateChangesRulesBlock,
+  stateChangesBaseBlock,
+  stateChangesQuestBlock,
+  stateChangesMagicBlock,
+  stateChangesLocationBlock,
   actionRulesBlock,
   playerInputPolicyBlock,
   responseFormatBlock,
@@ -71,6 +74,7 @@ export function buildLeanSystemPrompt(coreState, recentScenes, language = 'pl', 
   questGiverHint = null,
   magicExposure = null,
   playerAction = '',
+  creativityEligible = true,
 } = {}) {
   const cs = coreState;
   const intent = intentResult._intent || 'freeform';
@@ -93,8 +97,8 @@ export function buildLeanSystemPrompt(coreState, recentScenes, language = 'pl', 
   const staticSections = [
     playerInputPolicyBlock(),
     executionOrderBlock(),
-    stateChangesRulesBlock(),
-    coreRulesBlock(),
+    stateChangesBaseBlock(),
+    coreRulesBlock({ creativityEligible }),
     actionRulesBlock(),
     scenePacingBlock(),
     narrativeRulesBlock(),
@@ -124,6 +128,23 @@ export function buildLeanSystemPrompt(coreState, recentScenes, language = 'pl', 
   // ═══════════════════════════════════════════════════════════════
   const dynamicSections = [];
 
+  // ── Conditional stateChanges slices ──
+  // Quest rules: when there are active quests OR intent suggests quest interaction.
+  const QUEST_INTENTS = new Set(['talk', 'search', 'persuade', 'freeform', 'first_scene']);
+  const hasActiveQuests = (quests.active || []).length > 0;
+  if (hasActiveQuests || QUEST_INTENTS.has(intent)) {
+    dynamicSections.push(stateChangesQuestBlock());
+  }
+  // Magic rules: only when character has a mana pool.
+  const mana = character.mana || { current: 0, max: 0 };
+  if (mana.max > 0) {
+    dynamicSections.push(stateChangesMagicBlock());
+  }
+  // Location rules: when living world is on OR travel intent.
+  if (livingWorldEnabled || intent === 'travel') {
+    dynamicSections.push(stateChangesLocationBlock());
+  }
+
   const conditionalRules = buildConditionalRules({ intent, coreState: cs, scenePhase, livingWorldEnabled, magicExposure, playerAction });
   if (conditionalRules.length > 0) {
     dynamicSections.push(`Conditional rules:\n${conditionalRules.join('\n')}`);
@@ -137,14 +158,18 @@ export function buildLeanSystemPrompt(coreState, recentScenes, language = 'pl', 
   const trailBlock = buildRecentLocationTrailBlock(recentScenes, world.currentLocation);
   if (trailBlock) dynamicSections.push(trailBlock);
 
-  const keyNpcs = buildKeyNpcsBlock(world);
+  const keyNpcs = buildKeyNpcsBlock(world, { livingWorldEnabled });
   if (keyNpcs) dynamicSections.push(keyNpcs);
 
   const keyPlotFacts = buildKeyPlotFactsBlock(world);
   if (keyPlotFacts) dynamicSections.push(keyPlotFacts);
 
-  const codexSummary = buildCodexSummaryBlock(world);
-  if (codexSummary) dynamicSections.push(codexSummary);
+  // Codex summary: only for lore-relevant intents (talk/search/persuade/freeform/first_scene).
+  const LORE_INTENTS = new Set(['talk', 'search', 'persuade', 'freeform', 'first_scene']);
+  if (LORE_INTENTS.has(intent)) {
+    const codexSummary = buildCodexSummaryBlock(world);
+    if (codexSummary) dynamicSections.push(codexSummary);
+  }
 
   const needsCrisis = buildNeedsCrisisBlock({ needsSystemEnabled, characterNeeds });
   if (needsCrisis) dynamicSections.push(needsCrisis);

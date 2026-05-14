@@ -64,12 +64,23 @@ export function deriveScenePhase(sceneCount = 0, expectedScenes = 0) {
   return progress < 0.3 ? 'early' : progress < 0.7 ? 'mid' : 'late';
 }
 
-export function buildKeyNpcsBlock(world) {
+export function buildKeyNpcsBlock(world, { livingWorldEnabled = false } = {}) {
   const npcs = world.npcs || [];
   if (npcs.length === 0) return null;
 
-  const knownNpcs = npcs
-    .filter((n) => n.alive !== false)
+  const currentRef = world.currentLocationRef || null;
+  const currentLoc = world.currentLocation || '';
+
+  let knownNpcs = npcs.filter((n) => n.alive !== false);
+
+  // When Living World is active, NPCs at the current location are already
+  // fully described in the [Living World] context block with IDs, roles,
+  // hearsay, and memory. Exclude them here to avoid redundancy.
+  if (livingWorldEnabled && (currentLoc || currentRef)) {
+    knownNpcs = knownNpcs.filter((n) => !isNpcHere(n, currentRef, currentLoc));
+  }
+
+  knownNpcs = knownNpcs
     .sort((a, b) => Math.abs(b.disposition || 0) - Math.abs(a.disposition || 0))
     .slice(0, 8);
   if (knownNpcs.length === 0) return null;
