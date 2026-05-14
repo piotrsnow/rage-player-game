@@ -26,13 +26,15 @@ function resolveSprites(raw) {
 }
 
 /**
- * Fetches PixelLab combat sprites for a list of combatants.
- * Returns { sprites, regenerateSprite }.
- *   sprites        — map of combatantId -> spriteUrl (or null on failure)
+ * Fetches chargen sprite sheets (with PixelLab fallback) for combat combatants.
+ * Returns { sprites, spriteSheets, regenerateSprite }.
+ *   sprites        — map of combatantId -> spriteUrl (for backward compat)
+ *   spriteSheets   — map of combatantId -> spriteSheetUrl (832x1344 LPC sheet)
  *   regenerateSprite(combatant) — force-regenerate a single combatant's sprite
  */
 export function useCombatSprites(combatants) {
   const [sprites, setSprites] = useState({});
+  const [spriteSheets, setSpriteSheets] = useState({});
   const fetchedKeyRef = useRef('');
   const combatantsRef = useRef(combatants);
   combatantsRef.current = combatants;
@@ -53,11 +55,12 @@ export function useCombatSprites(combatants) {
         const payload = combatants.map(buildPayload);
         const data = await apiClient.post('/combat/sprites/generate', { combatants: payload });
 
-        if (!cancelled && data?.sprites) {
-          setSprites(resolveSprites(data.sprites));
+        if (!cancelled && data) {
+          if (data.sprites) setSprites(resolveSprites(data.sprites));
+          if (data.spriteSheets) setSpriteSheets(resolveSprites(data.spriteSheets));
         }
       } catch {
-        // PixelLab not configured or request failed — fall back to initials
+        // generation not configured or request failed — fall back to initials
       }
     };
 
@@ -76,10 +79,14 @@ export function useCombatSprites(combatants) {
         const resolved = resolveSprites(data.sprites);
         setSprites(prev => ({ ...prev, ...resolved }));
       }
+      if (data?.spriteSheets) {
+        const resolved = resolveSprites(data.spriteSheets);
+        setSpriteSheets(prev => ({ ...prev, ...resolved }));
+      }
     } catch {
       // silent — sprite regen is best-effort
     }
   }, []);
 
-  return { sprites, regenerateSprite };
+  return { sprites, spriteSheets, regenerateSprite };
 }

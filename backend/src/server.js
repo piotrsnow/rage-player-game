@@ -46,6 +46,7 @@ import { sceneModelConfigRoutes } from './routes/sceneModelConfig.js';
 import { fontConfigRoutes } from './routes/fontConfig.js';
 import { mapStudioRoutes } from './routes/mapStudio/index.js';
 import { combatSpritesRoutes } from './routes/combatSprites.js';
+import { chargenRoutes } from './routes/chargen.js';
 import { galleryRoutes } from './routes/gallery.js';
 import { seedWorld } from './scripts/seedWorld.js';
 import {
@@ -237,6 +238,9 @@ await fastify.register(async function livingWorldScope(app) {
   });
   app.register(livingWorldRoutes);
 }, { prefix: '/v1/livingWorld' });
+
+// Chargen — LPC animation frame data for frontend sprite rendering.
+await fastify.register(chargenRoutes, { prefix: '/v1/chargen' });
 
 // Combat sprites — PixelLab pixel-art generation for combat tokens.
 await fastify.register(async function combatSpritesScope(app) {

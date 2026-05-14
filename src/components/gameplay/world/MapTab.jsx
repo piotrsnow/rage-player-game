@@ -49,6 +49,14 @@ export default function MapTab({ campaignId, onTravel }) {
     return m;
   }, [occupants, extraOccupantSprites]);
 
+  const occupantSpriteSheetMap = useMemo(() => {
+    const m = {};
+    for (const o of occupants || []) {
+      if (o.spriteSheetUrl) m[o.id] = apiClient.resolveMediaUrl(o.spriteSheetUrl);
+    }
+    return m;
+  }, [occupants]);
+
   useEffect(() => {
     setPositionOverrides(loadGraphLayout(campaignId).overrides);
   }, [campaignId]);
@@ -160,6 +168,7 @@ export default function MapTab({ campaignId, onTravel }) {
           edges={edges}
           occupants={occupants}
           occupantSpriteMap={occupantSpriteMap}
+          occupantSpriteSheetMap={occupantSpriteSheetMap}
           selected={selected}
           onSelect={setSelected}
           positionOverrides={positionOverrides}

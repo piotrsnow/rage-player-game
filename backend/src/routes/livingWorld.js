@@ -622,7 +622,7 @@ export async function livingWorldRoutes(fastify) {
           id: true, name: true, role: true, category: true,
           lastLocationKind: true, lastLocationId: true,
           lastInteractionSceneIndex: true,
-          spriteUrl: true,
+          spriteUrl: true, spriteSheetUrl: true,
         },
       }),
       prisma.campaign.findUnique({
@@ -631,7 +631,7 @@ export async function livingWorldRoutes(fastify) {
           currentLocationKind: true,
           currentLocationId: true,
           participants: {
-            select: { character: { select: { id: true, name: true, species: true, spriteUrl: true } } },
+            select: { character: { select: { id: true, name: true, species: true, spriteUrl: true, spriteSheetUrl: true } } },
           },
         },
       }),
@@ -670,6 +670,7 @@ export async function livingWorldRoutes(fastify) {
         locationKind: locKind,
         locationId: locId,
         spriteUrl: npc.spriteUrl || null,
+        spriteSheetUrl: npc.spriteSheetUrl || null,
       });
     }
     if (campaignFull?.currentLocationKind && campaignFull?.currentLocationId) {
@@ -682,6 +683,7 @@ export async function livingWorldRoutes(fastify) {
           locationKind: campaignFull.currentLocationKind,
           locationId: campaignFull.currentLocationId,
           spriteUrl: p.character.spriteUrl || null,
+          spriteSheetUrl: p.character.spriteSheetUrl || null,
         });
       }
     }

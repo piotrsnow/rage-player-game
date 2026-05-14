@@ -1,4 +1,5 @@
 import { useMemo, useRef, useState, useCallback, useEffect, forwardRef, useImperativeHandle } from 'react';
+import LpcSprite from '../../shared/LpcSprite';
 import {
   forceDirectedLayout,
   geoProjectLayout,
@@ -34,6 +35,7 @@ export default forwardRef(function GraphCanvas({
   positionOverrides, onNodeDragEnd, snapToGrid,
   highlightedNodeId = null, highlightedAdjacentIds = null,
   occupantSpriteMap = {},
+  occupantSpriteSheetMap = {},
   /** 'auto' = geo from regionX/Y when spread exists, else force; 'geo' | 'force' = fixed basis */
   layoutBasis = 'auto',
 }, ref) {
@@ -637,11 +639,12 @@ g[data-node]:hover .npc-token,
                 const dotR = isPlayer ? 12 : 10;
                 const color = isPlayer ? '#22d3ee' : '#d4d4d8';
                 const spriteHref = occupantSpriteMap[occ.id];
+                const sheetHref = occupantSpriteSheetMap[occ.id];
                 const tokenPx = isPlayer ? 44 : 40;
                 const orbitR = imgR * 0.35 + tokenPx / 2;
                 const ox = Math.cos(angle) * orbitR;
                 const oy = Math.sin(angle) * orbitR;
-                const labelY = (spriteHref ? tokenPx / 2 : dotR) + 10;
+                const labelY = (spriteHref || sheetHref ? tokenPx / 2 : dotR) + 10;
                 const tokenDelayMs = Math.min(i * 45, 300);
                 return (
                   <g
@@ -650,7 +653,37 @@ g[data-node]:hover .npc-token,
                     className="npc-token"
                     style={{ cursor: 'pointer', '--npc-token-delay': `${tokenDelayMs}ms` }}
                   >
-                    {spriteHref ? (
+                    {sheetHref ? (
+                      <>
+                        <rect
+                          className="npc-token-border"
+                          x={-tokenPx / 2 - 2}
+                          y={-tokenPx / 2 - 2}
+                          width={tokenPx + 4}
+                          height={tokenPx + 4}
+                          rx={3}
+                          fill="none"
+                          stroke={color}
+                          strokeWidth={1.5}
+                          opacity={0}
+                          style={{ transition: 'opacity 200ms ease' }}
+                        />
+                        <foreignObject
+                          x={-tokenPx / 2}
+                          y={-tokenPx / 2}
+                          width={tokenPx}
+                          height={tokenPx}
+                        >
+                          <LpcSprite
+                            sheetUrl={sheetHref}
+                            animation="idle_down"
+                            width={tokenPx}
+                            height={tokenPx}
+                            playing
+                          />
+                        </foreignObject>
+                      </>
+                    ) : spriteHref ? (
                       <>
                         <rect
                           className="npc-token-border"

@@ -857,6 +857,7 @@ export async function adminLivingWorldRoutes(fastify) {
         currentLocationId: true,
         homeLocationId: true,
         spriteUrl: true,
+        spriteSheetUrl: true,
       },
     });
 
@@ -873,6 +874,7 @@ export async function adminLivingWorldRoutes(fastify) {
         locationKind: LOCATION_KIND_WORLD,
         locationId: locId,
         spriteUrl: npc.spriteUrl ?? null,
+        spriteSheetUrl: npc.spriteSheetUrl ?? null,
       });
     }
 

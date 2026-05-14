@@ -463,6 +463,7 @@ export default function CombatCanvas({
                 isHovered={hoveredCombatantId === c.id}
                 turnsUntil={c.isDefeated ? null : turnsUntil}
                 spriteUrl={c.spriteUrl || null}
+                spriteSheetUrl={c.spriteSheetUrl || null}
                 myCombatant={myCombatant}
                 isActing={actionAnim?.actorId === c.id}
                 actDirection={actDirection}

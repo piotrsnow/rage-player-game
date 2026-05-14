@@ -225,20 +225,22 @@ export default function CombatPanel({
     return combat.combatants.find((c) => c.type === 'player');
   }, [combat.combatants, isMultiplayer, myPlayerId]);
 
-  const { sprites: spriteMap, regenerateSprite } = useCombatSprites(combat.combatants);
+  const { sprites: spriteMap, spriteSheets: sheetMap, regenerateSprite } = useCombatSprites(combat.combatants);
 
   const enrichedCombat = useMemo(() => {
     const enrichedCombatants = combat.combatants.map((c) => {
-      if (Object.prototype.hasOwnProperty.call(spriteMap, c.id)) {
-        return { ...c, spriteUrl: spriteMap[c.id] };
-      }
+      const sheetUrl = sheetMap[c.id] || null;
+      const legacyUrl = Object.prototype.hasOwnProperty.call(spriteMap, c.id)
+        ? spriteMap[c.id]
+        : (c.spriteUrl ? apiClient.resolveMediaUrl(c.spriteUrl) : null);
       return {
         ...c,
-        spriteUrl: c.spriteUrl ? apiClient.resolveMediaUrl(c.spriteUrl) : null,
+        spriteUrl: legacyUrl,
+        spriteSheetUrl: sheetUrl || legacyUrl,
       };
     });
     return { ...combat, combatants: enrichedCombatants };
-  }, [combat, spriteMap]);
+  }, [combat, spriteMap, sheetMap]);
 
   const availableManoeuvres = useMemo(() => {
     const charForSkills = myCombatant || character;

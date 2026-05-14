@@ -169,8 +169,10 @@ model Character {
   customAttackPresets Json   @default("[]")
 
   portraitUrl   String @default("")
-  spriteUrl     String?
-  voiceId       String @default("")
+  spriteUrl         String?
+  chargenAppearance Json?
+  spriteSheetUrl    String?
+  voiceId           String @default("")
   voiceName     String @default("")
   campaignCount Int    @default(0)
 
@@ -566,8 +568,10 @@ model CampaignNPC {
   creatureKind String?
   level        Int     @default(1)
   stats        Json    @default("{}")
-  portraitUrl  String?
-  spriteUrl    String?
+  portraitUrl       String?
+  spriteUrl         String?
+  chargenAppearance Json?
+  spriteSheetUrl    String?
 
   // Stable physical description (PL, ~1 sentence) used as the canonical
   // source for portrait generation and player-facing NPC modals.
@@ -1119,8 +1123,10 @@ model WorldNPC {
   race         String?
   creatureKind String?
   level        Int     @default(1)
-  stats        Json    @default("{}")
-  spriteUrl    String?
+  stats             Json    @default("{}")
+  spriteUrl         String?
+  chargenAppearance Json?
+  spriteSheetUrl    String?
 
   // Stable physical description (PL, ~1 sentence) used as the canonical
   // source for portrait generation and player-facing NPC modals.
