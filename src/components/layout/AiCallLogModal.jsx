@@ -1,5 +1,21 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
+import JsonViewer from '../ui/JsonViewer';
+
+const STORAGE_KEY = 'aiCallLog_pos';
+const DEFAULT_POS = { x: 120, y: 60, w: 680, h: 560 };
+
+function loadPosition() {
+  try {
+    const raw = sessionStorage.getItem(STORAGE_KEY);
+    if (raw) return { ...DEFAULT_POS, ...JSON.parse(raw) };
+  } catch { /* ignore */ }
+  return DEFAULT_POS;
+}
+
+function savePosition(pos) {
+  try { sessionStorage.setItem(STORAGE_KEY, JSON.stringify(pos)); } catch { /* ignore */ }
+}
 
 function formatTime(ts) {
   if (!ts) return '—';
@@ -161,14 +177,60 @@ function extractSimpleResponse(entry) {
 export default function AiCallLogModal({ entry, onClose }) {
   const [copiedKey, setCopiedKey] = useState(null);
   const [tab, setTab] = useState('simple');
+  const [pos, setPos] = useState(loadPosition);
+  const [minimized, setMinimized] = useState(false);
+  const dragRef = useRef(null);
+  const resizeRef = useRef(null);
+
+  useEffect(() => { savePosition(pos); }, [pos]);
 
   useEffect(() => {
-    const onKey = (e) => {
-      if (e.key === 'Escape') onClose();
-    };
+    const onKey = (e) => { if (e.key === 'Escape') onClose(); };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [onClose]);
+
+  const handleDragStart = useCallback((e) => {
+    if (e.target.closest('button') || e.target.closest('input')) return;
+    e.preventDefault();
+    const startX = e.clientX - pos.x;
+    const startY = e.clientY - pos.y;
+    const onMove = (ev) => {
+      setPos((p) => ({
+        ...p,
+        x: Math.max(0, Math.min(window.innerWidth - 100, ev.clientX - startX)),
+        y: Math.max(0, Math.min(window.innerHeight - 40, ev.clientY - startY)),
+      }));
+    };
+    const onUp = () => {
+      document.removeEventListener('pointermove', onMove);
+      document.removeEventListener('pointerup', onUp);
+    };
+    document.addEventListener('pointermove', onMove);
+    document.addEventListener('pointerup', onUp);
+  }, [pos.x, pos.y]);
+
+  const handleResizeStart = useCallback((e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const startX = e.clientX;
+    const startY = e.clientY;
+    const startW = pos.w;
+    const startH = pos.h;
+    const onMove = (ev) => {
+      setPos((p) => ({
+        ...p,
+        w: Math.max(400, startW + (ev.clientX - startX)),
+        h: Math.max(250, startH + (ev.clientY - startY)),
+      }));
+    };
+    const onUp = () => {
+      document.removeEventListener('pointermove', onMove);
+      document.removeEventListener('pointerup', onUp);
+    };
+    document.addEventListener('pointermove', onMove);
+    document.addEventListener('pointerup', onUp);
+  }, [pos.w, pos.h]);
 
   if (!entry) return null;
 
@@ -177,9 +239,7 @@ export default function AiCallLogModal({ entry, onClose }) {
       await navigator.clipboard.writeText(text);
       setCopiedKey(key);
       setTimeout(() => setCopiedKey(null), 1500);
-    } catch {
-      // ignore
-    }
+    } catch { /* ignore */ }
   };
 
   const requestText = safeStringify(entry.request);
@@ -187,173 +247,233 @@ export default function AiCallLogModal({ entry, onClose }) {
   const simpleReq = extractSimpleRequest(entry);
   const simpleRes = extractSimpleResponse(entry);
 
-  const modal = (
+  const statusColor =
+    entry.status === 'error' ? 'text-error'
+    : entry.status === 'pending' ? 'text-tertiary'
+    : 'text-primary';
+
+  const panel = (
     <div
-      className="fixed inset-0 z-[60] flex items-center justify-center p-4"
-      role="dialog"
-      aria-modal="true"
+      className="fixed z-[99998] select-none"
+      style={{ left: pos.x, top: pos.y, width: pos.w, height: minimized ? 'auto' : pos.h }}
     >
-      <button
-        type="button"
-        aria-label="close"
-        className="absolute inset-0 bg-black/70 backdrop-blur-sm"
-        onClick={onClose}
-      />
-      <div
-        className="relative w-full max-w-4xl bg-surface-container-highest/85 backdrop-blur-2xl border border-outline-variant/15 rounded-sm shadow-2xl flex flex-col max-h-[85vh]"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="flex items-center justify-between px-4 py-3 border-b border-outline-variant/15">
-          <div className="flex items-center gap-2 min-w-0">
-            <span className={`material-symbols-outlined text-lg ${entry.status === 'error' ? 'text-error' : entry.status === 'pending' ? 'text-tertiary' : 'text-primary'}`}>
-              {entry.status === 'error' ? 'error' : entry.status === 'pending' ? 'hourglass_top' : 'auto_awesome'}
-            </span>
-            <div className="min-w-0">
-              <div className="text-xs uppercase tracking-widest text-on-surface-variant">
-                {entry.type}
-              </div>
-              <div className="text-sm font-bold text-on-surface truncate">
-                {entry.label}
-              </div>
-            </div>
-          </div>
+      <div className="flex flex-col h-full rounded-lg border border-outline-variant/20 shadow-2xl overflow-hidden bg-surface-container-highest/95 backdrop-blur-xl">
+        {/* Titlebar */}
+        <div
+          ref={dragRef}
+          onPointerDown={handleDragStart}
+          className="flex items-center gap-2 px-3 py-2 bg-surface-container/60 border-b border-outline-variant/15 cursor-grab active:cursor-grabbing shrink-0"
+        >
+          <span className={`material-symbols-outlined text-sm ${statusColor}`}>
+            {entry.status === 'error' ? 'error' : entry.status === 'pending' ? 'hourglass_top' : 'auto_awesome'}
+          </span>
+          <span className="text-[10px] uppercase tracking-widest text-on-surface-variant shrink-0">
+            {entry.type}
+          </span>
+          <span className="text-xs text-on-surface truncate flex-1 min-w-0 font-medium">
+            {entry.label || '—'}
+          </span>
+          <button
+            onClick={() => setMinimized(!minimized)}
+            className="material-symbols-outlined text-sm text-on-surface-variant hover:text-on-surface transition-colors"
+            title={minimized ? 'Expand' : 'Minimize'}
+          >
+            {minimized ? 'expand_content' : 'minimize'}
+          </button>
           <button
             onClick={onClose}
-            aria-label="close"
-            className="material-symbols-outlined text-lg text-outline hover:text-on-surface transition-colors"
+            className="material-symbols-outlined text-sm text-on-surface-variant hover:text-on-surface transition-colors"
+            title="Close"
           >
             close
           </button>
         </div>
 
-        <div className="px-4 py-2.5 border-b border-outline-variant/10 grid grid-cols-2 sm:grid-cols-4 gap-2 text-[11px] uppercase tracking-widest text-on-surface-variant">
-          <div>
-            <div className="opacity-60">Provider</div>
-            <div className="text-on-surface normal-case tracking-normal font-medium">{entry.provider || '—'}</div>
-          </div>
-          <div>
-            <div className="opacity-60">Model</div>
-            <div className="text-on-surface normal-case tracking-normal font-medium">{entry.model || '—'}</div>
-          </div>
-          <div>
-            <div className="opacity-60">Started</div>
-            <div className="text-on-surface normal-case tracking-normal font-medium">{formatTime(entry.startedAt)}</div>
-          </div>
-          <div>
-            <div className="opacity-60">Duration</div>
-            <div className="text-on-surface normal-case tracking-normal font-medium">
-              {entry.status === 'pending' ? 'in progress…' : formatDuration(entry.durationMs)}
+        {!minimized && (
+          <>
+            {/* Metadata row */}
+            <div className="px-3 py-2 border-b border-outline-variant/10 grid grid-cols-4 gap-2 text-[10px] uppercase tracking-widest text-on-surface-variant shrink-0">
+              <div>
+                <div className="opacity-60">Provider</div>
+                <div className="text-on-surface normal-case tracking-normal font-medium">{entry.provider || '—'}</div>
+              </div>
+              <div>
+                <div className="opacity-60">Model</div>
+                <div className="text-on-surface normal-case tracking-normal font-medium">{entry.model || '—'}</div>
+              </div>
+              <div>
+                <div className="opacity-60">Started</div>
+                <div className="text-on-surface normal-case tracking-normal font-medium">{formatTime(entry.startedAt)}</div>
+              </div>
+              <div>
+                <div className="opacity-60">Duration</div>
+                <div className="text-on-surface normal-case tracking-normal font-medium">
+                  {entry.status === 'pending' ? 'in progress…' : formatDuration(entry.durationMs)}
+                </div>
+              </div>
             </div>
-          </div>
-        </div>
 
-        <div className="px-4 pt-3 pb-2 border-b border-outline-variant/10">
-          <div className="inline-flex text-[11px] border border-outline-variant/30 rounded overflow-hidden">
-            <button
-              type="button"
-              className={`px-3 py-1 uppercase tracking-widest transition-colors ${
-                tab === 'simple' ? 'bg-tertiary/20 text-tertiary' : 'text-on-surface-variant hover:text-on-surface'
-              }`}
-              onClick={() => setTab('simple')}
-            >
-              Simple
-            </button>
-            <button
-              type="button"
-              className={`px-3 py-1 uppercase tracking-widest transition-colors ${
-                tab === 'advanced' ? 'bg-tertiary/20 text-tertiary' : 'text-on-surface-variant hover:text-on-surface'
-              }`}
-              onClick={() => setTab('advanced')}
-            >
-              Advanced
-            </button>
-          </div>
-        </div>
-
-        <div className="flex-1 overflow-y-auto custom-scrollbar p-4 space-y-4">
-          {tab === 'simple' ? (
-            <>
-              <section>
-                <div className="flex items-center justify-between mb-2">
-                  <h3 className="text-xs font-label uppercase tracking-widest text-primary font-bold">Request</h3>
+            {/* Tabs */}
+            <div className="px-3 py-2 border-b border-outline-variant/10 shrink-0">
+              <div className="inline-flex text-[11px] border border-outline-variant/30 rounded overflow-hidden">
+                {['simple', 'advanced', 'tree'].map((t) => (
                   <button
-                    onClick={() => handleCopy('req', simpleReq.text)}
-                    className="text-[11px] uppercase tracking-widest text-on-surface-variant hover:text-primary transition-colors"
+                    key={t}
+                    type="button"
+                    className={`px-3 py-1 uppercase tracking-widest transition-colors ${
+                      tab === t ? 'bg-tertiary/20 text-tertiary' : 'text-on-surface-variant hover:text-on-surface'
+                    }`}
+                    onClick={() => setTab(t)}
                   >
-                    {copiedKey === 'req' ? 'copied' : 'copy'}
+                    {t}
                   </button>
-                </div>
-                <pre className="text-sm leading-relaxed bg-surface-container-low/60 border border-outline-variant/15 rounded-sm p-4 whitespace-pre-wrap break-words text-on-surface max-h-[40vh] overflow-y-auto custom-scrollbar">
-                  <HighlightedContent text={simpleReq.text || '—'} />
-                </pre>
-              </section>
+                ))}
+              </div>
+            </div>
 
-              <section>
-                <div className="flex items-center justify-between mb-2">
-                  <h3 className={`text-xs font-label uppercase tracking-widest font-bold ${entry.error ? 'text-error' : 'text-tertiary'}`}>
-                    {entry.error ? 'Error' : 'Response'}
-                  </h3>
-                  {!entry.error && simpleRes && (
-                    <button
-                      onClick={() => handleCopy('res', simpleRes.text)}
-                      className="text-[11px] uppercase tracking-widest text-on-surface-variant hover:text-primary transition-colors"
-                    >
-                      {copiedKey === 'res' ? 'copied' : 'copy'}
-                    </button>
-                  )}
-                </div>
-                <pre className={`text-sm leading-relaxed bg-surface-container-low/60 border rounded-sm p-4 whitespace-pre-wrap break-words max-h-[50vh] overflow-y-auto custom-scrollbar ${entry.error ? 'border-error/30 text-error' : 'border-outline-variant/15 text-on-surface'}`}>
-                  {entry.status === 'pending'
-                    ? <span className="text-tertiary italic">Waiting for response…</span>
-                    : entry.error
-                      ? <span className="text-error font-medium">{entry.error}</span>
-                      : <HighlightedContent text={simpleRes?.text || '—'} />}
-                </pre>
-              </section>
-            </>
-          ) : (
-            <>
-              <section>
-                <div className="flex items-center justify-between mb-2">
-                  <h3 className="text-xs font-label uppercase tracking-widest text-primary font-bold">Request</h3>
-                  <button
-                    onClick={() => handleCopy('req', requestText)}
-                    className="text-[11px] uppercase tracking-widest text-on-surface-variant hover:text-primary transition-colors"
-                  >
-                    {copiedKey === 'req' ? 'copied' : 'copy'}
-                  </button>
-                </div>
-                <pre className="text-[13px] leading-relaxed bg-surface-container-low/60 border border-outline-variant/15 rounded-sm p-4 whitespace-pre-wrap break-words text-on-surface max-h-[40vh] overflow-y-auto custom-scrollbar">
-                  <HighlightedContent text={requestText || '—'} isJson />
-                </pre>
-              </section>
+            {/* Content */}
+            <div className="flex-1 overflow-y-auto custom-scrollbar p-3 space-y-3 min-h-0">
+              {tab === 'simple' && (
+                <>
+                  <section>
+                    <div className="flex items-center justify-between mb-1.5">
+                      <h3 className="text-xs font-label uppercase tracking-widest text-primary font-bold">Request</h3>
+                      <button
+                        onClick={() => handleCopy('req', simpleReq.text)}
+                        className="text-[10px] uppercase tracking-widest text-on-surface-variant hover:text-primary transition-colors"
+                      >
+                        {copiedKey === 'req' ? 'copied' : 'copy'}
+                      </button>
+                    </div>
+                    <pre className="text-sm leading-relaxed bg-surface-container-low/60 border border-outline-variant/15 rounded-sm p-3 whitespace-pre-wrap break-words text-on-surface max-h-[40vh] overflow-y-auto custom-scrollbar">
+                      <HighlightedContent text={simpleReq.text || '—'} />
+                    </pre>
+                  </section>
+                  <section>
+                    <div className="flex items-center justify-between mb-1.5">
+                      <h3 className={`text-xs font-label uppercase tracking-widest font-bold ${entry.error ? 'text-error' : 'text-tertiary'}`}>
+                        {entry.error ? 'Error' : 'Response'}
+                      </h3>
+                      {!entry.error && simpleRes && (
+                        <button
+                          onClick={() => handleCopy('res', simpleRes.text)}
+                          className="text-[10px] uppercase tracking-widest text-on-surface-variant hover:text-primary transition-colors"
+                        >
+                          {copiedKey === 'res' ? 'copied' : 'copy'}
+                        </button>
+                      )}
+                    </div>
+                    <pre className={`text-sm leading-relaxed bg-surface-container-low/60 border rounded-sm p-3 whitespace-pre-wrap break-words max-h-[50vh] overflow-y-auto custom-scrollbar ${entry.error ? 'border-error/30 text-error' : 'border-outline-variant/15 text-on-surface'}`}>
+                      {entry.status === 'pending'
+                        ? <span className="text-tertiary italic">Waiting for response…</span>
+                        : entry.error
+                          ? <span className="text-error font-medium">{entry.error}</span>
+                          : <HighlightedContent text={simpleRes?.text || '—'} />}
+                    </pre>
+                  </section>
+                </>
+              )}
 
-              <section>
-                <div className="flex items-center justify-between mb-2">
-                  <h3 className={`text-xs font-label uppercase tracking-widest font-bold ${entry.error ? 'text-error' : 'text-tertiary'}`}>
-                    {entry.error ? 'Error' : 'Response'}
-                  </h3>
-                  {!entry.error && (
-                    <button
-                      onClick={() => handleCopy('res', responseText)}
-                      className="text-[11px] uppercase tracking-widest text-on-surface-variant hover:text-primary transition-colors"
-                    >
-                      {copiedKey === 'res' ? 'copied' : 'copy'}
-                    </button>
-                  )}
-                </div>
-                <pre className={`text-[13px] leading-relaxed bg-surface-container-low/60 border rounded-sm p-4 whitespace-pre-wrap break-words max-h-[50vh] overflow-y-auto custom-scrollbar ${entry.error ? 'border-error/30 text-error' : 'border-outline-variant/15 text-on-surface'}`}>
-                  {entry.status === 'pending'
-                    ? <span className="text-tertiary italic">Waiting for response…</span>
-                    : <HighlightedContent text={responseText || '—'} isJson />}
-                </pre>
-              </section>
-            </>
-          )}
-        </div>
+              {tab === 'advanced' && (
+                <>
+                  <section>
+                    <div className="flex items-center justify-between mb-1.5">
+                      <h3 className="text-xs font-label uppercase tracking-widest text-primary font-bold">Request</h3>
+                      <button
+                        onClick={() => handleCopy('req', requestText)}
+                        className="text-[10px] uppercase tracking-widest text-on-surface-variant hover:text-primary transition-colors"
+                      >
+                        {copiedKey === 'req' ? 'copied' : 'copy'}
+                      </button>
+                    </div>
+                    <pre className="text-[12px] leading-relaxed bg-surface-container-low/60 border border-outline-variant/15 rounded-sm p-3 whitespace-pre-wrap break-words text-on-surface max-h-[40vh] overflow-y-auto custom-scrollbar">
+                      <HighlightedContent text={requestText || '—'} isJson />
+                    </pre>
+                  </section>
+                  <section>
+                    <div className="flex items-center justify-between mb-1.5">
+                      <h3 className={`text-xs font-label uppercase tracking-widest font-bold ${entry.error ? 'text-error' : 'text-tertiary'}`}>
+                        {entry.error ? 'Error' : 'Response'}
+                      </h3>
+                      {!entry.error && (
+                        <button
+                          onClick={() => handleCopy('res', responseText)}
+                          className="text-[10px] uppercase tracking-widest text-on-surface-variant hover:text-primary transition-colors"
+                        >
+                          {copiedKey === 'res' ? 'copied' : 'copy'}
+                        </button>
+                      )}
+                    </div>
+                    <pre className={`text-[12px] leading-relaxed bg-surface-container-low/60 border rounded-sm p-3 whitespace-pre-wrap break-words max-h-[50vh] overflow-y-auto custom-scrollbar ${entry.error ? 'border-error/30 text-error' : 'border-outline-variant/15 text-on-surface'}`}>
+                      {entry.status === 'pending'
+                        ? <span className="text-tertiary italic">Waiting for response…</span>
+                        : <HighlightedContent text={responseText || '—'} isJson />}
+                    </pre>
+                  </section>
+                </>
+              )}
+
+              {tab === 'tree' && (
+                <>
+                  <section>
+                    <div className="flex items-center justify-between mb-1.5">
+                      <h3 className="text-xs font-label uppercase tracking-widest text-primary font-bold">Request</h3>
+                      <button
+                        onClick={() => handleCopy('req', requestText)}
+                        className="text-[10px] uppercase tracking-widest text-on-surface-variant hover:text-primary transition-colors"
+                      >
+                        {copiedKey === 'req' ? 'copied' : 'copy'}
+                      </button>
+                    </div>
+                    <div className="text-[12px] font-mono leading-relaxed bg-surface-container-low/60 border border-outline-variant/15 rounded-sm p-3 max-h-[40vh] overflow-y-auto custom-scrollbar">
+                      {entry.request != null
+                        ? <JsonViewer data={entry.request} />
+                        : <span className="text-on-surface-variant/50 italic">—</span>}
+                    </div>
+                  </section>
+                  <section>
+                    <div className="flex items-center justify-between mb-1.5">
+                      <h3 className={`text-xs font-label uppercase tracking-widest font-bold ${entry.error ? 'text-error' : 'text-tertiary'}`}>
+                        {entry.error ? 'Error' : 'Response'}
+                      </h3>
+                      {!entry.error && (
+                        <button
+                          onClick={() => handleCopy('res', responseText)}
+                          className="text-[10px] uppercase tracking-widest text-on-surface-variant hover:text-primary transition-colors"
+                        >
+                          {copiedKey === 'res' ? 'copied' : 'copy'}
+                        </button>
+                      )}
+                    </div>
+                    <div className={`text-[12px] font-mono leading-relaxed bg-surface-container-low/60 border rounded-sm p-3 max-h-[50vh] overflow-y-auto custom-scrollbar ${entry.error ? 'border-error/30' : 'border-outline-variant/15'}`}>
+                      {entry.status === 'pending'
+                        ? <span className="text-tertiary italic">Waiting for response…</span>
+                        : entry.error
+                          ? <span className="text-error font-medium">{entry.error}</span>
+                          : entry.response != null
+                            ? <JsonViewer data={entry.response} />
+                            : <span className="text-on-surface-variant/50 italic">—</span>}
+                    </div>
+                  </section>
+                </>
+              )}
+            </div>
+
+            {/* Resize handle */}
+            <div
+              ref={resizeRef}
+              onPointerDown={handleResizeStart}
+              className="absolute bottom-0 right-0 w-4 h-4 cursor-nwse-resize group"
+            >
+              <svg className="w-3 h-3 absolute bottom-0.5 right-0.5 text-outline-variant/40 group-hover:text-on-surface-variant transition-colors" viewBox="0 0 12 12">
+                <path d="M11 1L1 11M11 5L5 11M11 9L9 11" stroke="currentColor" strokeWidth="1.5" fill="none" />
+              </svg>
+            </div>
+          </>
+        )}
       </div>
     </div>
   );
 
-  return createPortal(modal, document.body);
+  return createPortal(panel, document.body);
 }

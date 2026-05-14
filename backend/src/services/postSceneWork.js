@@ -3,9 +3,6 @@ import { childLogger } from '../lib/logger.js';
 import { generateSceneEmbedding, processStateChanges } from './sceneGenerator/processStateChanges.js';
 import { getCampaignCharacterIds } from './campaignSync.js';
 import { compressSceneToSummary, generateLocationSummary, appendSceneDigest } from './memoryCompressor.js';
-import { pauseNpcsAtLocation, resumeNpcsAtLocation } from './livingWorld/npcLifecycle.js';
-import { applyCompanionTravel } from './livingWorld/companionService.js';
-import { handleNpcKills } from './livingWorld/reputationHook.js';
 // `updateDmMemoryFromScene` merged into `compressSceneToSummary` — DM notes,
 // hooks + resolvedHookIds now come out of the same nano call that extracts
 // facts/journal/codex/knowledge/needs. The standalone updater is kept in
@@ -181,35 +178,6 @@ export async function handlePostSceneWork({
         })(),
       );
     }
-    // Living World: pause NPCs at previous location, resume NPCs at new location.
-    // Runs in parallel with generateLocationSummary — both observe the same transition.
-    if (campaign?.livingWorldEnabled) {
-      // Phase 2: move companions BEFORE pausing at prevLoc. Companions that
-      // travel with the party write a deferred companion_moved event and
-      // have their read-model lockedSnapshot.locationName refreshed. They
-      // are then skipped by pauseNpcsAtLocation (companionOfCampaignId filter).
-      // We chain this sequentially (small cost vs race-safety) so that the
-      // pause query sees the post-travel companion state.
-      phase1Tasks.push(
-        (async () => {
-          try {
-            await applyCompanionTravel({ campaignId, newLocationName: newLoc, userId: campaign.userId });
-          } catch (err) {
-            log.warn({ err, campaignId, newLoc }, 'applyCompanionTravel failed (non-fatal)');
-          }
-          try {
-            await pauseNpcsAtLocation(prevLoc);
-          } catch (err) {
-            log.warn({ err, prevLoc }, 'pauseNpcsAtLocation failed (non-fatal)');
-          }
-          try {
-            await resumeNpcsAtLocation(newLoc, campaign, { provider, timeoutMs: llmNanoTimeoutMs });
-          } catch (err) {
-            log.warn({ err, newLoc }, 'resumeNpcsAtLocation failed (non-fatal)');
-          }
-        })(),
-      );
-    }
   }
 
   const results = await Promise.allSettled(phase1Tasks);
@@ -305,25 +273,6 @@ export async function handlePostSceneWork({
     }
   }
 
-  // Living World Phase 3 — reputation hook. Runs after Phase 1 so CampaignNPC
-  // promotion + worldNpcId linkage is in place. Best-effort — never blocks.
-  // `judgeKill` reads scene text to decide whether the kill was justified;
-  // we hand it the full transcript (narration + dialogue) since premium no
-  // longer emits a top-level `narrative` field.
-  if (campaign?.livingWorldEnabled && stateChanges?.npcs?.some((n) => n?.alive === false)) {
-    try {
-      await handleNpcKills({
-        campaign,
-        stateChanges,
-        narrative: sceneTranscript,
-        playerAction,
-        provider,
-        timeoutMs: llmNanoTimeoutMs,
-      });
-    } catch (err) {
-      log.warn({ err, campaignId }, 'Kill reputation hook failed (non-fatal)');
-    }
-  }
 
   // Living World Phase 4 — DM agent memory + hooks are now produced inside
   // compressSceneToSummary (merged extractor). No separate nano call here.

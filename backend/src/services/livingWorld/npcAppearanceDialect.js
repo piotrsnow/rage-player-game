@@ -103,19 +103,12 @@ export async function ensureAppearanceAndDialect(npc, fieldsToFill, { campaignNp
   if (generated.dialect) persistData.dialect = generated.dialect;
   if (Object.keys(persistData).length === 0) return npc;
 
-  // Persist do obu modeli równolegle — best-effort
-  const writes = [];
+  // Persist to CampaignNPC only — WorldNPC writes gated by admin (strict world-write gate).
   if (campaignNpcId) {
-    writes.push(prisma.campaignNPC.update({ where: { id: campaignNpcId }, data: persistData }).catch((err) => {
+    await prisma.campaignNPC.update({ where: { id: campaignNpcId }, data: persistData }).catch((err) => {
       log.warn({ err: err?.message, campaignNpcId }, 'CampaignNPC backfill write failed');
-    }));
+    });
   }
-  if (worldNpcId) {
-    writes.push(prisma.worldNPC.update({ where: { id: worldNpcId }, data: persistData }).catch((err) => {
-      log.warn({ err: err?.message, worldNpcId }, 'WorldNPC backfill write failed');
-    }));
-  }
-  await Promise.all(writes);
 
   return { ...npc, ...persistData };
 }

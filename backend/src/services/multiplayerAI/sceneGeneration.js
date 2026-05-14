@@ -1,13 +1,32 @@
 import { generateStateChangeMessages } from '../stateChangeMessages.js';
-import { callAI } from './aiClient.js';
+import { callAI, callAIStreaming } from './aiClient.js';
 import { buildMultiplayerSystemPrompt } from './systemPrompt.js';
 import { buildMultiplayerScenePrompt } from './scenePrompt.js';
 import { repairDialogueSegments, ensurePlayerDialogue } from '../../../../shared/domain/dialogueRepair.js';
 import { ensureSuggestedActions } from '../../../../shared/domain/fallbackActions.js';
 import { normalizeDiceRoll, recalcDiceRoll, rollD50 } from './diceNormalization.js';
+import { buildWorldLorePreamble } from '../aiContextTools/worldLore.js';
 
-export async function generateMultiplayerScene(gameState, settings, players, actions, _encryptedApiKeys, language = 'en', dmSettings = null, characterMomentum = null) {
-  const systemPrompt = buildMultiplayerSystemPrompt(gameState, settings, players, language, dmSettings);
+function buildCampaignNpcMemoryBlock(campaignNpcs) {
+  if (!campaignNpcs?.length) return '';
+  const lines = campaignNpcs.map((cn) => {
+    const parts = [`- ${cn.name} (${cn.role || 'unknown'})`];
+    if (cn.activeGoal) parts.push(`  Goal: ${cn.activeGoal}`);
+    if (cn.experienceLog?.length > 0) {
+      const recent = cn.experienceLog.slice(-5);
+      parts.push(`  Recent memory: ${recent.map((e) => e.text || e).join('; ')}`);
+    }
+    return parts.join('\n');
+  });
+  return `\nCAMPAIGN NPC MEMORY (from Living World — deeper knowledge than the flat NPC registry):\n${lines.join('\n')}\n`;
+}
+
+export async function generateMultiplayerScene(gameState, settings, players, actions, _encryptedApiKeys, language = 'en', dmSettings = null, characterMomentum = null, { campaignNpcs = null, onChunk = null } = {}) {
+  const worldLore = await buildWorldLorePreamble({ maxChars: 4000 }).catch(() => '');
+  const npcMemoryBlock = campaignNpcs?.length > 0
+    ? buildCampaignNpcMemoryBlock(campaignNpcs)
+    : '';
+  const systemPrompt = buildMultiplayerSystemPrompt(gameState, settings, players, language, dmSettings, { worldLore, npcMemoryBlock });
   const actionByName = new Map(actions.map((action) => [action.name, action]));
   const characterByName = new Map((gameState.characters || []).map((character) => [character.name, character]));
 
@@ -40,7 +59,9 @@ export async function generateMultiplayerScene(gameState, settings, players, act
     { role: 'user', content: scenePrompt },
   ];
 
-  const result = await callAI(messages);
+  const result = onChunk
+    ? await callAIStreaming(messages, onChunk)
+    : await callAI(messages);
 
   const normalizeCtx = {
     actionByName,

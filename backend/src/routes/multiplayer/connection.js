@@ -50,6 +50,7 @@ const HANDLERS = {
   WITHDRAW_ACTION: gameplay.handleWithdrawAction,
   APPROVE_ACTIONS: gameplay.handleApproveActions,
   SOLO_ACTION: gameplay.handleSoloAction,
+  BEER_DUEL_ACTION: gameplay.handleBeerDuelAction,
 
   ACCEPT_QUEST_OFFER: quests.handleAcceptQuestOffer,
   DECLINE_QUEST_OFFER: quests.handleDeclineQuestOffer,

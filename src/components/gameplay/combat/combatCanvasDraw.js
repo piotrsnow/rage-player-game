@@ -211,35 +211,6 @@ export function drawTerrainTiles(ctx, canvasW, canvasH, terrainTiles, tileDefs, 
   }
 }
 
-export function drawBeerDuelVomitPatches(ctx, canvasW, canvasH, vomitPatches, now) {
-  if (!vomitPatches?.length) return;
-  const cell = getCellSize(canvasW, canvasH);
-  const origin = getGridOrigin(canvasW, canvasH);
-  const t = now ?? performance.now();
-
-  for (const p of vomitPatches) {
-    const cx = origin.x + p.x * cell;
-    const cy = origin.y + p.y * cell;
-    const centerX = cx + cell / 2;
-    const centerY = cy + cell / 2;
-    const pulse = 0.08 * Math.sin(t / 700 + p.x + p.y * 1.2);
-    ctx.save();
-    ctx.globalAlpha = 0.35 + pulse;
-    const grad = ctx.createRadialGradient(centerX, centerY, 0, centerX, centerY, cell * 0.55);
-    grad.addColorStop(0, 'rgba(120, 180, 80, 0.55)');
-    grad.addColorStop(0.55, 'rgba(60, 90, 40, 0.35)');
-    grad.addColorStop(1, 'rgba(40, 55, 25, 0)');
-    ctx.fillStyle = grad;
-    ctx.fillRect(cx, cy, cell, cell);
-    ctx.globalAlpha = 0.85;
-    ctx.font = `${cell * 0.42}px sans-serif`;
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillText('🤢', centerX, centerY);
-    ctx.restore();
-  }
-}
-
 function alphaHex(a) {
   return Math.round(Math.max(0, Math.min(1, a)) * 255).toString(16).padStart(2, '0');
 }

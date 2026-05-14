@@ -37,7 +37,8 @@ export async function handleConvertToMultiplayer(ctx, session, msg) {
   const settings = msg.settings;
   if (!gameState) throw new Error('Game state is required');
 
-  const result = createRoomWithGameState(ctx.uid, ctx.ws, gameState, settings);
+  const campaignId = msg.campaignId || gameState.campaign?.backendId || null;
+  const result = createRoomWithGameState(ctx.uid, ctx.ws, gameState, settings, campaignId);
   session.odId = result.odId;
   session.roomCode = result.room.roomCode;
 

@@ -28,6 +28,7 @@ export const WS_CLIENT_TYPES = Object.freeze({
   WEBRTC_ICE: 'WEBRTC_ICE',
   WEBRTC_TRACK_STATE: 'WEBRTC_TRACK_STATE',
   KICK_PLAYER: 'KICK_PLAYER',
+  BEER_DUEL_ACTION: 'BEER_DUEL_ACTION',
 });
 
 export const WS_SERVER_TYPES = Object.freeze({
@@ -47,6 +48,7 @@ export const WS_SERVER_TYPES = Object.freeze({
   ACTIONS_UPDATED: 'ACTIONS_UPDATED',
   SCENE_GENERATING: 'SCENE_GENERATING',
   SCENE_UPDATE: 'SCENE_UPDATE',
+  SCENE_CHUNK: 'SCENE_CHUNK',
   GENERATION_FAILED: 'GENERATION_FAILED',
   SCENE_IMAGE_UPDATE: 'SCENE_IMAGE_UPDATE',
   QUEST_OFFER_UPDATE: 'QUEST_OFFER_UPDATE',
@@ -64,6 +66,8 @@ export const WS_SERVER_TYPES = Object.freeze({
   WEBRTC_ICE: 'WEBRTC_ICE',
   WEBRTC_TRACK_STATE: 'WEBRTC_TRACK_STATE',
   KICKED: 'KICKED',
+  BEER_DUEL_ACTION: 'BEER_DUEL_ACTION',
+  BEER_DUEL_END: 'BEER_DUEL_END',
 });
 
 export const AI_ERROR_CODES = Object.freeze({
@@ -208,6 +212,11 @@ export const WS_PAYLOAD_SCHEMAS = Object.freeze({
   }).passthrough(),
 
   COMBAT_ENDED: z.object({}).passthrough(),
+
+  // --- beer duel ---
+  BEER_DUEL_ACTION: z.object({
+    action: z.enum(['drink', 'pee', 'vomit']),
+  }).passthrough(),
 
   // --- webrtc ---
   WEBRTC_OFFER: z.object({ targetOdId: str, offer: z.unknown() }).passthrough(),

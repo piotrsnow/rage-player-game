@@ -57,3 +57,30 @@ export function normalizeDirectionDeg(deg) {
   if (!Number.isFinite(n)) return 0;
   return ((n % 360) + 360) % 360;
 }
+
+const TYPE_SCALE_MAP = {
+  room: 1, chamber: 1, cell: 1,
+  site: 2, house: 2, building: 2, shop: 2, tavern: 2, tower: 2, chapel: 2,
+  dungeon: 3, complex: 3, castle: 3, fort: 3, monastery: 3, compound: 3, market: 3,
+  district: 4, neighborhood: 4, quarter: 4, area: 4,
+  settlement: 6, town: 6, village: 6, city: 6,
+  region: 7, country: 7,
+};
+
+/**
+ * Deterministic scale fallback from node type string.
+ * Returns a sensible scale or null if the type is unknown.
+ * @param {string} type
+ * @param {number|null} [parentScale]
+ * @returns {number|null}
+ */
+export function inferScaleFromType(type, parentScale) {
+  if (!type) return null;
+  const key = type.toLowerCase().trim();
+  const base = TYPE_SCALE_MAP[key] ?? null;
+  if (base == null) return null;
+  if (typeof parentScale === 'number' && Number.isFinite(parentScale) && base >= parentScale) {
+    return Math.max(1, parentScale - 1);
+  }
+  return base;
+}

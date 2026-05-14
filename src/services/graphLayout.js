@@ -25,8 +25,9 @@ function radiusForGraphScale(scale) {
 /**
  * Push overlapping nodes apart until no pair is closer than r_a + r_b + pad.
  * Mutates `pos` in place. Early-exits when no pair moved.
+ * @param {Set<string>} [opts.containsPairs] — stringified "a\0b" pairs (sorted) linked by `contains`; these get reduced padding.
  */
-export function resolveCollisions(pos, nodes, { iterations = 50, separationPad = 62 } = {}) {
+export function resolveCollisions(pos, nodes, { iterations = 50, separationPad = 62, containsPairs } = {}) {
   const ids = [...pos.keys()];
   if (ids.length < 2) return;
   const radii = new Map();
@@ -49,7 +50,10 @@ export function resolveCollisions(pos, nodes, { iterations = 50, separationPad =
         let d = Math.sqrt(dx * dx + dy * dy) || 1e-6;
         const rA = radii.get(a);
         const rB = radii.get(b);
-        const scaledPad = separationPad * (rA + rB) / 20;
+        const pairKey = a < b ? `${a}\0${b}` : `${b}\0${a}`;
+        const isContained = containsPairs?.has(pairKey);
+        const effectivePad = isContained ? separationPad * 0.15 : separationPad;
+        const scaledPad = effectivePad * (rA + rB) / 20;
         const minSep = rA + rB + scaledPad;
         if (d >= minSep) continue;
         moved = true;
@@ -203,9 +207,33 @@ export function directedGraphLayout(nodes, edges, {
   /** @type {Map<string, { x: number, y: number }>} */
   const pos = new Map();
 
+  const CONTAINMENT_EDGE_TYPES = new Set(['contains', 'above', 'below']);
+
+  /** Build a set of "a\0b" (sorted) pairs for contains-linked nodes. */
+  const containsPairs = new Set();
+  for (const e of edgeList) {
+    if (CONTAINMENT_EDGE_TYPES.has(e.edgeType)) {
+      const key = e.fromId < e.toId ? `${e.fromId}\0${e.toId}` : `${e.toId}\0${e.fromId}`;
+      containsPairs.add(key);
+    }
+  }
+
   function getStep(u, v, forward, edge) {
     const su = nodeById.get(u)?.scale;
     const sv = nodeById.get(v)?.scale;
+
+    const isContainment = edge && CONTAINMENT_EDGE_TYPES.has(edge.edgeType);
+    if (isContainment) {
+      const parentScale = forward ? su : sv;
+      const lenPx = radiusForGraphScale(parentScale ?? 5) * 2.5;
+      let deg = typeof edge.metadata?.directionDeg === 'number' && Number.isFinite(edge.metadata.directionDeg)
+        ? normalizeDirectionDeg(edge.metadata.directionDeg)
+        : directionDegForChildIndex(stableEdgeFallbackIndex(u, v));
+      if (!forward) deg = normalizeDirectionDeg(deg + 180);
+      const rad = (deg * Math.PI) / 180;
+      return { dx: Math.cos(rad) * lenPx, dy: Math.sin(rad) * lenPx };
+    }
+
     const md = edge?.metadata && typeof edge.metadata === 'object' ? edge.metadata : {};
     const lenKm = typeof md.lengthKm === 'number' && Number.isFinite(md.lengthKm) && md.lengthKm >= 0
       ? md.lengthKm
@@ -276,7 +304,7 @@ export function directedGraphLayout(nodes, edges, {
     }
   }
 
-  resolveCollisions(pos, nodes, { iterations: collisionIters, separationPad });
+  resolveCollisions(pos, nodes, { iterations: collisionIters, separationPad, containsPairs });
 
   let minX = Infinity;
   let minY = Infinity;

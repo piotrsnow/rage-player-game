@@ -185,6 +185,22 @@ const CHARACTER_BODY_SCHEMA = {
   },
 };
 
+/** Rejects legacy Mongo ObjectIds (24 hex) before Prisma touches `@db.Uuid`. */
+const CHARACTER_ID_PARAMS = {
+  type: 'object',
+  required: ['id'],
+  properties: { id: { type: 'string', format: 'uuid' } },
+};
+
+const CHARACTER_FAVORITE_DELETE_PARAMS = {
+  type: 'object',
+  required: ['id', 'sceneId'],
+  properties: {
+    id: { type: 'string', format: 'uuid' },
+    sceneId: { type: 'string', format: 'uuid' },
+  },
+};
+
 const STATE_CHANGES_SCHEMA = {
   type: 'object',
   additionalProperties: false,
@@ -296,7 +312,7 @@ export async function characterRoutes(fastify) {
     }));
   });
 
-  fastify.get('/:id', async (request, reply) => {
+  fastify.get('/:id', { schema: { params: CHARACTER_ID_PARAMS } }, async (request, reply) => {
     const snapshot = await loadCharacterSnapshot({ id: request.params.id, userId: request.user.id });
     if (!snapshot) return reply.code(404).send({ error: 'Character not found' });
     await scrubOrphanedLocks(request.user.id, [snapshot]);
@@ -307,7 +323,7 @@ export async function characterRoutes(fastify) {
     return createCharacterWithRelations(request.user.id, snapshotFromBody(request.body || {}));
   });
 
-  fastify.put('/:id', { schema: { body: CHARACTER_BODY_SCHEMA } }, async (request, reply) => {
+  fastify.put('/:id', { schema: { params: CHARACTER_ID_PARAMS, body: CHARACTER_BODY_SCHEMA } }, async (request, reply) => {
     const existing = await loadCharacterSnapshot({ id: request.params.id, userId: request.user.id });
     if (!existing) return reply.code(404).send({ error: 'Character not found' });
     const merged = mergeUpdateBody(existing, request.body || {});
@@ -318,7 +334,7 @@ export async function characterRoutes(fastify) {
    * PATCH /:id/state-changes — apply an AI/manual state-change delta atomically.
    * Returns the updated character snapshot.
    */
-  fastify.patch('/:id/state-changes', { schema: { body: STATE_CHANGES_SCHEMA } }, async (request, reply) => {
+  fastify.patch('/:id/state-changes', { schema: { params: CHARACTER_ID_PARAMS, body: STATE_CHANGES_SCHEMA } }, async (request, reply) => {
     const existing = await loadCharacterSnapshot({ id: request.params.id, userId: request.user.id });
     if (!existing) return reply.code(404).send({ error: 'Character not found' });
 
@@ -326,7 +342,7 @@ export async function characterRoutes(fastify) {
     return persistCharacterSnapshot(request.params.id, mutated);
   });
 
-  fastify.delete('/:id', async (request, reply) => {
+  fastify.delete('/:id', { schema: { params: CHARACTER_ID_PARAMS } }, async (request, reply) => {
     const existing = await prisma.character.findFirst({
       where: { id: request.params.id, userId: request.user.id },
       select: { id: true },
@@ -339,6 +355,7 @@ export async function characterRoutes(fastify) {
 
   fastify.get('/:id/skill-gains', {
     schema: {
+      params: CHARACTER_ID_PARAMS,
       querystring: {
         type: 'object',
         properties: {
@@ -390,6 +407,7 @@ export async function characterRoutes(fastify) {
 
   fastify.get('/:id/favorite-scenes', {
     schema: {
+      params: CHARACTER_ID_PARAMS,
       querystring: {
         type: 'object',
         properties: {
@@ -451,6 +469,7 @@ export async function characterRoutes(fastify) {
 
   fastify.post('/:id/favorite-scenes', {
     schema: {
+      params: CHARACTER_ID_PARAMS,
       body: {
         type: 'object',
         required: ['sceneId', 'campaignId'],
@@ -484,7 +503,7 @@ export async function characterRoutes(fastify) {
     return reply.code(201).send(favorite);
   });
 
-  fastify.delete('/:id/favorite-scenes/:sceneId', async (request, reply) => {
+  fastify.delete('/:id/favorite-scenes/:sceneId', { schema: { params: CHARACTER_FAVORITE_DELETE_PARAMS } }, async (request, reply) => {
     const character = await prisma.character.findFirst({
       where: { id: request.params.id, userId: request.user.id },
       select: { id: true },
@@ -498,7 +517,7 @@ export async function characterRoutes(fastify) {
     return reply.code(204).send();
   });
 
-  fastify.post('/:id/badge', async (request, reply) => {
+  fastify.post('/:id/badge', { schema: { params: CHARACTER_ID_PARAMS } }, async (request, reply) => {
     const force = request.body?.force === true;
     const char = await prisma.character.findFirst({
       where: { id: request.params.id, userId: request.user.id },

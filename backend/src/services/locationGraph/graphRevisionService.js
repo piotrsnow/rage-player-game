@@ -15,7 +15,14 @@ const SYSTEM_PROMPT = `You are a world-building auditor for a Polish-language da
 
 ### Nodes
 - **scale** (1-7): Must match the location hierarchy. Higher number = larger location. Guidelines:
-  7 = country/region, 6 = city/town, 5 = district/quarter, 4 = neighborhood/area, 3 = building complex/large building, 2 = house/single building, 1 = room/chamber.
+  1 = room/chamber (pokój, komnata, jaskinia, cela, piwnica)
+  2 = single building/house (dom, karczma, kuźnia, wieża, kaplica, sklep)
+  3 = building complex/compound (zamek, klasztor, kompleks, targ, fort)
+  4 = neighborhood/named area (dzielnica, port, nabrzeże) — RARE
+  5 = district/quarter of a city — ONLY for large cities with distinct quarters
+  6 = city/town (miasto, miasteczko, wioska)
+  7 = country/region (królestwo, kraina)
+  MOST locations should be 1-3. Scale 4+ is rare — do NOT default to 4 or 5.
   A child node must have a LOWER scale number than its parent (e.g. a room inside a house: parent scale 2, child scale 1).
 - **tags**: Should have 2-5 descriptive tags. Fill empty arrays. Remove generic/meaningless tags. Tags should be lowercase Polish or English keywords describing the location's character (e.g. "handlowy", "mroczny", "kopalnia", "portowy").
 - **description**: If empty or placeholder, write a 1-2 sentence atmospheric description in Polish. If adequate, leave unchanged.

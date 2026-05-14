@@ -1,11 +1,8 @@
 import { prisma } from '../../../lib/prisma.js';
 import { childLogger } from '../../../lib/logger.js';
-import { appendEvent } from '../../livingWorld/worldEventLog.js';
 import { resolveLocationByName } from '../../livingWorld/worldStateService.js';
 import { markLocationHeardAbout } from '../../livingWorld/userDiscoveryService.js';
 import { LOCATION_KIND_WORLD, LOCATION_KIND_CAMPAIGN } from '../../locationRefs.js';
-import { applyFameFromEvent } from '../../livingWorld/fameService.js';
-import { runPostCampaignWorldWriteback } from '../../livingWorld/postCampaignWriteback.js';
 import {
   parseLocationMentions,
   parseCampaignComplete,
@@ -299,83 +296,26 @@ export async function processLocationMentions(campaignId, mentions) {
 }
 
 /**
- * Write a GLOBAL WorldEvent when the current scene clears the gate.
- * Caller resolves `mainQuestCompleted` (requires a Prisma query against
- * completedQuests). Payload is meta-only.
+ * Strict World Write Gate — world-impact events no longer write to
+ * canonical WorldEvent / fame during active play. The gate logic is
+ * preserved for post-campaign admin writeback. Mid-play this is a no-op.
  */
-export async function processWorldImpactEvent({
-  campaignId,
-  stateChanges,
-  ownerUserId,
-  sceneGameTime,
-  mainQuestCompleted,
-  characterIds = [],
-}) {
-  const { promote, gate } = shouldPromoteToGlobal(stateChanges, { mainQuestCompleted });
-  if (!promote) return;
-
-  const currentLocationName = stateChanges.currentLocation || null;
-  let worldLocationId = null;
-  if (currentLocationName) {
-    try {
-      // F5b — WorldEvent.worldLocationId is canonical-only (FK to WorldLocation).
-      // If the player is at a CampaignLocation we leave the column null and the
-      // event still attaches via campaignId.
-      const resolved = await resolveLocationByName(currentLocationName, { campaignId });
-      worldLocationId = resolved?.kind === LOCATION_KIND_WORLD ? resolved.row.id : null;
-    } catch {
-      // Non-fatal — event still attaches via campaignId
-    }
-  }
-
-  const eventType = gate === 'dungeon' ? 'dungeon_cleared'
-    : gate === 'deadly' ? 'deadly_victory'
-    : 'major_deed';
-
-  // worldImpactReason is caller-provided raw LLM text. Cap at 300 chars
-  // defensively — the FE Zod schema enforces this too, but BE shouldn't
-  // trust the caller.
-  const reasonRaw = typeof stateChanges.worldImpactReason === 'string'
-    ? stateChanges.worldImpactReason.trim().slice(0, 300)
-    : null;
-
-  await appendEvent({
-    worldLocationId,
-    campaignId,
-    userId: ownerUserId,
-    eventType,
-    payload: {
-      gate,
-      reason: reasonRaw || null,
-      locationName: currentLocationName,
-      dungeonName: stateChanges.dungeonComplete?.name || null,
-      dungeonSummary: stateChanges.dungeonComplete?.summary || null,
-    },
-    visibility: 'global',
-    gameTime: sceneGameTime,
-  });
-  log.info({ campaignId, gate, eventType, locationName: currentLocationName }, 'worldImpact event promoted to global');
-
-  await applyFameFromEvent(characterIds, {
-    eventType,
-    visibility: 'global',
-    payload: { gate },
-  });
+export async function processWorldImpactEvent() {
+  // Intentionally empty — canonical world writes are admin-only.
 }
 
 /**
- * Write a GLOBAL WorldEvent when the player resolves a campaign's main
- * conflict. Visible cross-campaign via `forLocation` (worldEventLog reads
- * `visibility='global'` without campaignId filter). Payload is meta-only
- * — title, summary, achievements, locationName — so no character-private
- * data leaks into other players' contexts.
+ * Strict World Write Gate — campaign completion no longer writes a global
+ * WorldEvent or auto-triggers the post-campaign writeback pipeline during
+ * active play. The admin triggers writeback manually via
+ * POST /v1/admin/livingWorld/campaigns/:id/run-writeback.
+ *
+ * Schema validation is still performed so callers get a log warning on
+ * malformed data.
  */
 export async function processCampaignComplete({
   campaignId,
   data,
-  ownerUserId,
-  sceneGameTime,
-  currentLocationName,
 }) {
   const parsed = parseCampaignComplete(data);
   if (!parsed.ok) {
@@ -385,39 +325,5 @@ export async function processCampaignComplete({
     );
     return;
   }
-  const safe = parsed.data;
-
-  let worldLocationId = null;
-  if (currentLocationName) {
-    try {
-      const resolved = await resolveLocationByName(currentLocationName, { campaignId });
-      worldLocationId = resolved?.kind === LOCATION_KIND_WORLD ? resolved.row.id : null;
-    } catch {
-      // Non-fatal — event can still attach via campaignId
-    }
-  }
-  await appendEvent({
-    worldLocationId,
-    campaignId,
-    userId: ownerUserId,
-    eventType: 'campaign_complete',
-    payload: {
-      title: safe.title,
-      summary: safe.summary,
-      majorAchievements: safe.majorAchievements,
-      locationName: currentLocationName || null,
-    },
-    visibility: 'global',
-    gameTime: sceneGameTime,
-  });
-  log.info({ campaignId, locationName: currentLocationName, title: safe.title }, 'campaign_complete global event written');
-
-  // Auto-trigger post-campaign writeback — surfaces NPC/location promotion
-  // candidates + extracts world facts for admin review. Fire-and-forget: the
-  // pipeline runs LLM-heavy extraction (~30s+) and must not block post-scene
-  // processing. Idempotent — safe to re-run manually from the admin panel if
-  // this one fails.
-  runPostCampaignWorldWriteback(campaignId).catch((err) => {
-    log.warn({ err: err?.message, campaignId }, 'auto-triggered post-campaign writeback failed (non-fatal)');
-  });
+  log.info({ campaignId, title: parsed.data.title }, 'campaignComplete recorded (world writeback deferred to admin)');
 }

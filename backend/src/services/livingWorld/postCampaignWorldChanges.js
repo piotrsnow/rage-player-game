@@ -177,7 +177,7 @@ export function computeIdempotencyKey({ kind, targetHint, newValue }) {
  * `reviewNotes` — admin decisions survive re-runs. Returns the written (or
  * would-write) record shape, or null on DB failure.
  */
-async function upsertPendingChange({ change, resolved, reason, campaignId, dryRun }) {
+export async function upsertPendingChange({ change, resolved, reason, campaignId, dryRun }) {
   const idempotencyKey = computeIdempotencyKey({
     kind: change.kind,
     targetHint: change.targetHint,
@@ -277,38 +277,13 @@ export async function applyWorldStateChanges({ classifications, campaignId, dryR
       if (persisted) pending.push(persisted);
       continue;
     }
-    if (change.kind !== 'npcDeath' && change.kind !== 'npcRelocation' && change.kind !== 'newRumor') {
+    // Strict World Write Gate — ALL HIGH NPC changes go to pending review.
+    // No auto-apply to WorldNpcKnowledge during writeback.
+    {
       const persisted = await upsertPendingChange({
-        change, resolved, reason: 'high_but_unsupported_kind', campaignId, dryRun,
+        change, resolved, reason: 'high_npc_pending_review', campaignId, dryRun,
       });
       if (persisted) pending.push(persisted);
-      continue;
-    }
-
-    const entry = buildKnowledgeEntry({ change, resolved, campaignId });
-
-    if (dryRun) {
-      appliedKnowledge.push({ worldNpcId: resolved.entityId, entry, dryRun: true });
-      continue;
-    }
-
-    try {
-      const row = await prisma.worldNPC.findUnique({
-        where: { id: resolved.entityId },
-        select: { id: true },
-      });
-      if (!row) {
-        skipped.push({ change, reason: 'world_npc_not_found' });
-        continue;
-      }
-      await prisma.worldNpcKnowledge.create({
-        data: knowledgeEntryToInsertData(entry, row.id, 'npc'),
-      });
-      appliedKnowledge.push({ worldNpcId: resolved.entityId, entry });
-    } catch (err) {
-      log.warn({ err: err?.message, worldNpcId: resolved.entityId, kind: change.kind },
-        'applyWorldStateChanges: write failed');
-      skipped.push({ change, reason: 'write_failed', error: err?.message });
     }
   }
 

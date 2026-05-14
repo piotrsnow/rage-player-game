@@ -28,8 +28,16 @@ const SYSTEM_PROMPT = `You are a Location Graph Analyst for an RPG world. Analyz
 - Vague references without spatial significance
 - NEVER use NPC or character names as location names. Locations must be geographic sites (buildings, rooms, areas, paths). If an NPC is mentioned, they belong in npcMoves, not newNodes
 
-## SCALE (1-7, higher = larger)
-7 = country/region, 6 = city/town, 5 = district/quarter, 4 = neighborhood/area, 3 = building complex/large building, 2 = house/single building, 1 = room/chamber.
+## SCALE (1-7, integer — CRITICAL, get this right)
+1 = room/chamber (pokój, komnata, jaskinia, cela, piwnica)
+2 = single building/house (dom, karczma, kuźnia, wieża, kaplica, sklep)
+3 = building complex/compound (zamek, klasztor, kompleks, targ, fort)
+4 = neighborhood/named area (dzielnica, port, nabrzeże) — RARE
+5 = district/quarter of a city — ONLY for large cities with distinct quarters
+6 = city/town (miasto, miasteczko, wioska)
+7 = country/region (królestwo, kraina)
+MOST new locations should be scale 1-3. Scale 4+ is rare — do NOT default to 4 or 5.
+If the node has a parentName, its scale MUST be strictly lower than the parent's scale.
 
 ## OUTPUT (JSON)
 {

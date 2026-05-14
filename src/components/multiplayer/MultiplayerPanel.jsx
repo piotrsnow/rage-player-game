@@ -91,7 +91,7 @@ export default function MultiplayerPanel({ onClose }) {
       storyPrompt: '',
     };
 
-    mp.convertToMultiplayer(mpGameState, settings);
+    mp.convertToMultiplayer(mpGameState, settings, gameState.campaign?.backendId);
   };
 
   return (

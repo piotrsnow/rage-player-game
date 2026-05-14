@@ -148,13 +148,7 @@
     "belchtajTooFar": "Too far (max 2 tiles).",
     "vomitPatch": "Vomit slick",
     "vomitPatchDesc": "Crossing: cheaper move + slide in march direction (max 2×/round per fighter).",
-    "beerCollectedLog": "collected a beer ({{score}} total, {{remaining}} left)",
     "beerDuelMode": "Beer Duel",
-    "beersRemaining": "Beers left: {{count}}",
-    "beerDuelWinner": "Winner: {{name}}",
-    "beerDuelTie": "Tie: {{names}}",
-    "beerToken": "Beer",
-    "beerTokenDesc": "Collect to score a point",
     "outOfRange": "Target too far for melee. Move closer or use Charge.",
     "outOfRangeShort": "Out of range",
     "chargeBlocked": "Charge blocked",
@@ -511,6 +505,20 @@
       "deadly": "Deadly"
     }
   },
+  "beerDuel": {
+    "beers": "beers",
+    "pee": "Pee",
+    "vomit": "Vomit",
+    "drink": "BEER",
+    "toilet": "TOILET",
+    "throwUp": "THROW UP",
+    "draw": "Draw!",
+    "youWin": "You win!",
+    "youLose": "You lose!",
+    "bothEliminated": "Both couldn't hold it!",
+    "playerEliminated": "You couldn't hold it...",
+    "opponentEliminated": "{{name}} couldn't hold it!"
+  },
   "gameplay": {
     "loadingCampaign": "Loading campaign...",
     "pettyMagic": "Petty Magic",
@@ -691,7 +699,7 @@
     "skipSegment": "Skip to next segment",
     "initiateCombat": "Initiate Combat",
     "initiateBeerDuel": "Start Beer Duel",
-    "initiateBeerDuelDescription": "Solo skirmish: gather beers faster than opponents",
+    "initiateBeerDuelDescription": "Who can drink more in 90 seconds without losing it?",
     "attackNpc": "Attack",
     "generalCombat": "General combat — AI decides enemies",
     "selectTarget": "Select attack target",

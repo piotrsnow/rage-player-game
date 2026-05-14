@@ -18,6 +18,7 @@ import {
   LOCATION_KIND_CAMPAIGN,
   slugifyLocationName,
 } from '../locationRefs.js';
+import { inferScaleFromType, clampLocationScale } from '../../../../shared/domain/locationGraphLayout.js';
 import { createEdge } from './graphService.js';
 import { childLogger } from '../../lib/logger.js';
 
@@ -158,6 +159,22 @@ export async function createNodeFromAIProposal(entry, campaignId) {
     parentRef = await resolveLocationRef(entry.parentLocationName, campaignId);
   }
 
+  let parentScale = null;
+  if (parentRef) {
+    const model = parentRef.kind === LOCATION_KIND_WORLD ? 'worldLocation' : 'campaignLocation';
+    const pRow = await prisma[model].findUnique({ where: { id: parentRef.id }, select: { scale: true } });
+    parentScale = pRow?.scale ?? null;
+  }
+
+  let resolvedScale = typeof entry.scale === 'number' ? entry.scale : null;
+  if (resolvedScale == null) {
+    resolvedScale = inferScaleFromType(entry.locationType, parentScale) ?? 2;
+  }
+  resolvedScale = clampLocationScale(resolvedScale);
+  if (typeof parentScale === 'number' && Number.isFinite(parentScale) && resolvedScale >= parentScale) {
+    resolvedScale = Math.max(1, parentScale - 1);
+  }
+
   let row;
   try {
     row = await prisma.campaignLocation.create({
@@ -169,11 +186,10 @@ export async function createNodeFromAIProposal(entry, campaignId) {
         locationType: entry.locationType || 'generic',
         slotType: entry.slotType || null,
         tags: Array.isArray(entry.tags) ? entry.tags : [],
-        scale: typeof entry.scale === 'number' ? entry.scale : 5,
+        scale: resolvedScale,
         dangerLevel: entry.difficulty || 'safe',
         parentLocationKind: parentRef?.kind || null,
         parentLocationId: parentRef?.id || null,
-        // Faza 0 — opcjonalne metadane.
         biome: entry.biome || null,
         anchorType: entry.anchorType || null,
       },

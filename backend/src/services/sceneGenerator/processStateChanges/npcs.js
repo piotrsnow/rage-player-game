@@ -2,9 +2,8 @@ import { prisma } from '../../../lib/prisma.js';
 import { childLogger } from '../../../lib/logger.js';
 import { buildNPCEmbeddingText, embedText } from '../../embeddingService.js';
 import { writeEmbedding } from '../../embeddingWrite.js';
-import { updateLoyalty } from '../../livingWorld/companionService.js';
-import { appendEvent } from '../../livingWorld/worldEventLog.js';
-import { resolveLocationByName, findCanonicalWorldNpcByName, killWorldNpc, findOrCreateWorldNPC, buildNpcCanonicalId } from '../../livingWorld/worldStateService.js';
+import { resolveLocationByName, findCanonicalWorldNpcByName } from '../../livingWorld/worldStateService.js';
+import { upsertPendingChange } from '../../livingWorld/postCampaignWorldChanges.js';
 import { getOrCloneCampaignNpc } from '../../livingWorld/campaignSandbox.js';
 import { propagateRelationshipRipple } from '../../livingWorld/relationshipRippleService.js';
 import { coerceGender, normalizeGender } from '../../../../../shared/domain/npcGender.js';
@@ -232,14 +231,24 @@ export async function processNpcChanges(campaignId, npcs, { livingWorldEnabled =
           if (merged.creatureKind && merged.creatureKind !== existing.creatureKind) contentUpdate.creatureKind = merged.creatureKind;
         }
 
-        // Synchronous WorldNPC kill — close the timing gap where another
-        // campaign could clone a dead NPC between scene-commit and async
-        // post-scene work. `killWorldNpc` is idempotent; `reputationHook`
-        // still runs the judge + attribution + event as a safety net.
-        if (npcChange.alive === false) {
+        if (npcChange.alive === false && livingWorldEnabled) {
           const effectiveWorldNpcId = contentUpdate.worldNpcId || existing.worldNpcId;
           if (effectiveWorldNpcId) {
-            await killWorldNpc(effectiveWorldNpcId);
+            try {
+              await upsertPendingChange({
+                change: {
+                  kind: 'npcDeath',
+                  targetHint: npcChange.name,
+                  newValue: 'dead',
+                  confidence: 1.0,
+                },
+                resolved: { entityId: effectiveWorldNpcId, entityType: 'npc', similarity: 1.0 },
+                reason: 'scene_npc_killed',
+                campaignId,
+              });
+            } catch (err) {
+              log.warn({ err: err?.message, campaignId, npcName: npcChange.name }, 'NPC death pending queue failed (non-fatal)');
+            }
           }
         }
 
@@ -386,28 +395,6 @@ export async function processNpcChanges(campaignId, npcs, { livingWorldEnabled =
           if (emb) writeEmbedding('CampaignNPC', created.id, emb, embText);
           affectedNpcIds.push(created.id);
 
-          // Entity registry — register ephemeral NPCs as inactive WorldNPC
-          // so the admin registry knows about them from the moment of creation.
-          if (livingWorldEnabled && !created.worldNpcId) {
-            try {
-              const registryNpc = await findOrCreateWorldNPC({
-                name: created.name,
-                role: created.role,
-                personality: created.personality,
-                alignment: 'neutral',
-                alive: created.alive,
-                _registryDefaults: { globallyActive: false, originCampaignId: campaignId },
-              });
-              if (registryNpc) {
-                await prisma.campaignNPC.update({
-                  where: { id: created.id },
-                  data: { worldNpcId: registryNpc.id },
-                });
-              }
-            } catch (regErr) {
-              log.debug({ err: regErr?.message, npcName: created.name }, 'entity registry WorldNPC upsert failed (non-fatal)');
-            }
-          }
         } catch (createErr) {
           // P2002 = unique constraint (campaignId+npcId) — retry created it already, safe to skip
           if (createErr.code !== 'P2002') throw createErr;
@@ -416,36 +403,6 @@ export async function processNpcChanges(campaignId, npcs, { livingWorldEnabled =
     } catch (err) {
       log.error({ err, campaignId, npcName: npcChange.name }, 'Failed to process NPC change');
     }
-  }
-
-  // Living World: propagate companion loyalty drift from dispositionChange
-  // for NPCs already linked to a canonical WorldNPC (seeded or admin-promoted).
-  // Ephemeral CampaignNPCs (`worldNpcId=null`) skip this path — canonical
-  // promotion happens post-campaign via the admin-review pipeline (Phase 12b),
-  // no longer inline. Best-effort, never blocks scene commit.
-  if (livingWorldEnabled && affectedNpcIds.length > 0) {
-    const loyaltyTasks = npcs
-      .filter((n) => n.name && typeof n.dispositionChange === 'number' && n.dispositionChange !== 0)
-      .map(async (change) => {
-        try {
-          const npcId = change.name.toLowerCase().replace(/\s+/g, '_');
-          const cn = await prisma.campaignNPC.findUnique({
-            where: { campaignId_npcId: { campaignId, npcId } },
-            select: { worldNpcId: true, isAgent: true },
-          });
-          if (!cn?.worldNpcId || !cn.isAgent) return;
-          const delta = Math.max(-10, Math.min(10, change.dispositionChange));
-          await updateLoyalty({
-            worldNpcId: cn.worldNpcId,
-            campaignId,
-            delta,
-            reason: `scene disposition ${delta >= 0 ? '+' : ''}${delta}`,
-          });
-        } catch (err) {
-          log.warn({ err, npcName: change.name, campaignId }, 'Loyalty drift propagation failed');
-        }
-      });
-    await Promise.allSettled(loyaltyTasks);
   }
 
   // ── Oś 2 — relationship ripple ─────────────────────────────────────
@@ -481,50 +438,3 @@ export async function processNpcChanges(campaignId, npcs, { livingWorldEnabled =
   await Promise.allSettled(rippleTasks);
 }
 
-/**
- * Phase 4 — observe item-attribution hints. When a living-world campaign
- * emits newItems with `fromNpcId`, we write a WorldEvent `item_given`
- * attributing the transfer to the canonical WorldNPC. No validation /
- * rejection — that belongs to full orchestration (see
- * knowledge/ideas/living-world-scene-orchestration.md).
- */
-export async function processItemAttributions(campaignId, newItems, userId, sceneGameTime) {
-  if (!Array.isArray(newItems) || newItems.length === 0) return;
-  for (const item of newItems) {
-    const fromNpcId = item?.fromNpcId;
-    if (!fromNpcId || typeof fromNpcId !== 'string') continue;
-    try {
-      const slug = fromNpcId.toLowerCase().replace(/\s+/g, '_');
-      const campaignNpc = await prisma.campaignNPC.findUnique({
-        where: { campaignId_npcId: { campaignId, npcId: slug } },
-        select: { worldNpcId: true, name: true },
-      });
-      let worldLocationId = null;
-      if (campaignNpc?.worldNpcId) {
-        const worldNpc = await prisma.worldNPC.findUnique({
-          where: { id: campaignNpc.worldNpcId },
-          select: { currentLocationId: true },
-        });
-        worldLocationId = worldNpc?.currentLocationId || null;
-      }
-      await appendEvent({
-        worldNpcId: campaignNpc?.worldNpcId || null,
-        worldLocationId,
-        campaignId,
-        userId: userId || null,
-        eventType: 'item_given',
-        payload: {
-          itemName: item.name || item.itemName || 'unknown',
-          itemId: item.id || null,
-          rarity: item.rarity || 'common',
-          fromNpcName: campaignNpc?.name || fromNpcId,
-          fromNpcId,
-        },
-        visibility: 'campaign',
-        gameTime: sceneGameTime,
-      });
-    } catch (err) {
-      log.warn({ err, campaignId, fromNpcId }, 'item attribution event write failed');
-    }
-  }
-}

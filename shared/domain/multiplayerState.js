@@ -116,26 +116,9 @@ export function applyMultiplayerSceneStateChanges(gameState, sceneResult, option
     }
   }
   if (stateChanges.currentLocation) {
-    const prevLoc = updatedWorld.currentLocation;
-    const newLoc = stateChanges.currentLocation;
-    let mapConns = [...(updatedWorld.mapConnections || [])];
-    let mapSt = [...(updatedWorld.mapState || [])];
-    if (prevLoc && newLoc && prevLoc.toLowerCase() !== newLoc.toLowerCase()) {
-      const already = mapConns.some(
-        (c) =>
-          (c.from.toLowerCase() === prevLoc.toLowerCase() && c.to.toLowerCase() === newLoc.toLowerCase())
-          || (c.from.toLowerCase() === newLoc.toLowerCase() && c.to.toLowerCase() === prevLoc.toLowerCase())
-      );
-      if (!already) mapConns.push({ from: prevLoc, to: newLoc });
-      for (const locName of [prevLoc, newLoc]) {
-        if (!mapSt.some((m) => m.name?.toLowerCase() === locName.toLowerCase())) {
-          mapSt.push({ id: createId('loc'), name: locName, description: '', modifications: [] });
-        }
-      }
-    }
     updatedWorld.currentLocation = stateChanges.currentLocation;
-    updatedWorld.mapConnections = mapConns;
-    updatedWorld.mapState = mapSt;
+    // DEPRECATED: mapConnections writes removed — LocationEdge graph is the
+    // source of truth for connectivity (parity with SP applyCurrentLocation).
     const explored = new Set(updatedWorld.exploredLocations || []);
     explored.add(stateChanges.currentLocation);
     updatedWorld.exploredLocations = [...explored];
@@ -392,22 +375,60 @@ export function applyMultiplayerSceneStateChanges(gameState, sceneResult, option
     });
   }
 
-  if (stateChanges.mapMode && updatedWorld.fieldMap) {
-    const fm = updatedWorld.fieldMap;
-    const newMode = stateChanges.mapMode;
-    const newVariant = newMode === 'trakt' ? (stateChanges.roadVariant || null) : null;
-    if (fm.mapMode !== newMode || fm.roadVariant !== newVariant) {
-      updatedWorld.fieldMap = {
-        ...fm,
-        mapMode: newMode,
-        roadVariant: newVariant,
-        chunks: {},
-        stepCounter: 0,
-        stepBuffer: [],
-        discoveredPoi: [],
+  // fieldMap / mapMode — no-op (fieldMap removed in Faza 5)
+
+  // --- Narrative threading (parity with SP applyNarrativeState) ---
+  if (Array.isArray(stateChanges.narrativeSeeds) && stateChanges.narrativeSeeds.length > 0) {
+    if (!updatedWorld.narrativeSeeds) updatedWorld.narrativeSeeds = [];
+    const existingIds = new Set(updatedWorld.narrativeSeeds.map((e) => e.id));
+    for (const seed of stateChanges.narrativeSeeds) {
+      if (existingIds.has(seed.id)) continue;
+      updatedWorld.narrativeSeeds.push({ ...seed, planted: seed.planted ?? sceneIndex });
+    }
+    if (updatedWorld.narrativeSeeds.length > 30) {
+      updatedWorld.narrativeSeeds = updatedWorld.narrativeSeeds.slice(-30);
+    }
+  }
+
+  if (Array.isArray(stateChanges.resolvedSeeds) && stateChanges.resolvedSeeds.length > 0 && updatedWorld.narrativeSeeds) {
+    updatedWorld.narrativeSeeds = updatedWorld.narrativeSeeds.map((seed) =>
+      stateChanges.resolvedSeeds.includes(seed.id) ? { ...seed, resolved: true } : seed
+    );
+  }
+
+  if (Array.isArray(stateChanges.npcAgendas) && stateChanges.npcAgendas.length > 0) {
+    const agendas = [...(updatedWorld.npcAgendas || [])];
+    for (const agenda of stateChanges.npcAgendas) {
+      const idx = agendas.findIndex((a) => a.npcName?.toLowerCase() === agenda.npcName?.toLowerCase());
+      if (idx >= 0) {
+        agendas[idx] = { ...agendas[idx], ...agenda };
+      } else {
+        agendas.push({ ...agenda, plantedScene: agenda.plantedScene ?? sceneIndex });
+      }
+    }
+    updatedWorld.npcAgendas = agendas.length > 20 ? agendas.slice(-20) : agendas;
+  }
+
+  if (Array.isArray(stateChanges.pendingCallbacks) && stateChanges.pendingCallbacks.length > 0) {
+    const decisions = updatedWorld.knowledgeBase?.decisions;
+    if (decisions?.length > 0) {
+      const lastDecision = { ...decisions[decisions.length - 1] };
+      lastDecision.pendingCallbacks = [...(lastDecision.pendingCallbacks || []), ...stateChanges.pendingCallbacks];
+      updatedWorld.knowledgeBase = {
+        ...updatedWorld.knowledgeBase,
+        decisions: [...decisions.slice(0, -1), lastDecision],
       };
     }
   }
+
+  // --- Rest-crisis penalty (parity with SP applyRestCrisisPenalty) ---
+  updatedCharacters = updatedCharacters.map((c) => {
+    if (!c.needs) return c;
+    const hasRestCrisis = (c.needs.rest ?? 100) === 0;
+    if (hasRestCrisis && !c.needsPenalty) return { ...c, needsPenalty: -10 };
+    if (!hasRestCrisis && c.needsPenalty) return { ...c, needsPenalty: 0 };
+    return c;
+  });
 
   return {
     characters: updatedCharacters,

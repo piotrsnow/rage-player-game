@@ -14,6 +14,11 @@ import {
 import { generateMultiplayerCampaign } from '../../../services/multiplayerAI.js';
 import { runMultiplayerSceneFlow } from '../../../services/multiplayerSceneFlow.js';
 import { toClientAiError } from '../../../services/aiErrors.js';
+import { prisma } from '../../../lib/prisma.js';
+import { seedInitialWorld } from '../../../services/livingWorld/worldSeeder.js';
+import { childLogger } from '../../../lib/logger.js';
+
+const log = childLogger({ module: 'mp-gameplay' });
 
 export async function handleStartGame(ctx, session, msg) {
   if (!session.roomCode || !session.odId) throw new Error('Not in a room');
@@ -38,6 +43,40 @@ export async function handleStartGame(ctx, session, msg) {
 
     setPhase(session.roomCode, 'playing');
     setGameState(session.roomCode, campaignResult);
+
+    const hostPlayer = currentRoom.players.get(session.odId);
+    const livingWorldEnabled = currentRoom.settings?.livingWorldEnabled === true;
+    try {
+      const campaign = await prisma.campaign.create({
+        data: {
+          userId: hostPlayer?.userId || ctx.uid,
+          name: currentRoom.settings?.name || campaignResult.campaign?.name || 'Multiplayer Campaign',
+          genre: currentRoom.settings?.genre || 'Fantasy',
+          tone: currentRoom.settings?.tone || 'Epic',
+          livingWorldEnabled,
+          coreState: {},
+        },
+      });
+      const room = getRoom(session.roomCode);
+      if (room) room.campaignId = campaign.id;
+
+      if (livingWorldEnabled) {
+        const campaignLength = currentRoom.settings?.length || 'Medium';
+        seedInitialWorld(campaign.id, { length: campaignLength })
+          .then((seedResult) => {
+            if (seedResult?.startingLocationName) {
+              const r = getRoom(session.roomCode);
+              if (r?.gameState?.world) {
+                r.gameState.world.currentLocation = seedResult.startingLocationName;
+                setGameState(session.roomCode, r.gameState);
+              }
+            }
+          })
+          .catch((err) => log.warn({ err: err?.message }, 'Living World seed for MP failed (non-fatal)'));
+      }
+    } catch (err) {
+      ctx.fastify.log.warn(err, 'Failed to create Campaign row for MP — post-scene work will be skipped');
+    }
 
     const updatedRoom = getRoom(session.roomCode);
     broadcast(updatedRoom, {
@@ -138,4 +177,16 @@ export async function handleSoloAction(ctx, session, msg) {
       room: sanitizeRoom(room),
     });
   }
+}
+
+export async function handleBeerDuelAction(ctx, session, msg) {
+  if (!session.roomCode || !session.odId) throw new Error('Not in a room');
+  const room = getRoom(session.roomCode);
+  if (!room) throw new Error('Room not found');
+
+  broadcast(room, {
+    type: 'BEER_DUEL_ACTION',
+    senderOdId: session.odId,
+    action: msg.action,
+  }, session.odId);
 }

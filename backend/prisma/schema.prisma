@@ -362,6 +362,7 @@ model Campaign {
   quickBeats                  CampaignQuickBeat[]
   incidents                   CampaignIncident[]
   snapshots                   CampaignSnapshot[]
+  multiplayerSessions         MultiplayerSession[]
 
   @@index([userId])
   @@index([isPublic])
@@ -1496,17 +1497,21 @@ model LocationPromotionCandidate {
 // ═══════════════════════════════════════════════════════════════════════
 
 model MultiplayerSession {
-  id        String   @id @default(uuid(7)) @db.Uuid
-  roomCode  String   @unique
-  hostId    String   @db.Uuid
-  phase     String
-  gameState Json
-  settings  Json
-  updatedAt DateTime @updatedAt @db.Timestamptz
-  createdAt DateTime @default(now()) @db.Timestamptz
+  id         String   @id @default(uuid(7)) @db.Uuid
+  roomCode   String   @unique
+  hostId     String   @db.Uuid
+  campaignId String?  @db.Uuid
+  phase      String
+  gameState  Json
+  settings   Json
+  updatedAt  DateTime @updatedAt @db.Timestamptz
+  createdAt  DateTime @default(now()) @db.Timestamptz
 
-  host    User                       @relation(fields: [hostId], references: [id])
-  players MultiplayerSessionPlayer[]
+  host     User                       @relation(fields: [hostId], references: [id])
+  campaign Campaign?                  @relation(fields: [campaignId], references: [id], onDelete: SetNull)
+  players  MultiplayerSessionPlayer[]
+
+  @@index([campaignId])
 }
 
 // F1 — replaces MultiplayerSession.players (JSON) + characterIds[] (ObjectId array)

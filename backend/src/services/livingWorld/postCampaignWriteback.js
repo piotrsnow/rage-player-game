@@ -201,20 +201,20 @@ export async function collectCampaignShadowDiff(campaignId) {
 }
 
 /**
- * Apply the narrow subset of the diff to canonical WorldNPC rows.
- * Idempotent — re-running on the same campaign after an apply will find
- * zero diffs left for those fields and become a no-op.
- *
- * `dryRun=true` collects the applied/skipped lists without issuing writes.
+ * Strict World Write Gate — shadow diff changes are NO LONGER auto-applied
+ * to canonical WorldNPC. Instead they are routed to PendingWorldStateChange
+ * for admin review. Returns the same shape for backward compat of the
+ * orchestrator summary.
  */
 export async function applyShadowDiffToCanonical({
   diff,
   autoApplyFields = DEFAULT_AUTO_APPLY_FIELDS,
   dryRun = false,
+  campaignId = null,
 }) {
-  if (!diff?.npcDiffs) return { applied: [], skipped: [], dryRun };
+  if (!diff?.npcDiffs) return { applied: [], skipped: [], pending: [], dryRun };
 
-  const applied = [];
+  const pending = [];
   const skipped = [];
 
   for (const npcDiff of diff.npcDiffs) {
@@ -232,40 +232,48 @@ export async function applyShadowDiffToCanonical({
 
     if (authorized.length === 0) continue;
 
-    const updateData = {};
     for (const change of authorized) {
-      if (change.field === 'alive') updateData.alive = change.newValue;
-      else if (change.field === 'location') updateData.currentLocationId = change.newValue;
-    }
-
-    if (!dryRun) {
-      try {
-        await prisma.worldNPC.update({
-          where: { id: npcDiff.worldNpcId },
-          data: updateData,
-        });
-      } catch (err) {
-        log.warn({ err: err?.message, worldNpcId: npcDiff.worldNpcId },
-          'applyShadowDiffToCanonical write failed');
-        skipped.push({
-          worldNpcId: npcDiff.worldNpcId,
-          name: npcDiff.name,
-          reason: 'write_failed',
-          error: err?.message,
-          changes: authorized,
-        });
-        continue;
+      const kind = change.field === 'alive' ? 'npcDeath' : 'npcRelocation';
+      if (!dryRun) {
+        try {
+          const { upsertPendingChange } = await import('./postCampaignWorldChanges.js');
+          await upsertPendingChange({
+            change: {
+              kind,
+              targetHint: npcDiff.name,
+              newValue: String(change.newValue),
+              confidence: 1.0,
+              reason: 'shadow_diff',
+            },
+            resolved: {
+              entityId: npcDiff.worldNpcId,
+              entityType: 'npc',
+              similarity: 1.0,
+            },
+            campaignId: campaignId || diff.campaignId,
+          });
+        } catch (err) {
+          log.warn({ err: err?.message, worldNpcId: npcDiff.worldNpcId },
+            'applyShadowDiffToCanonical pending upsert failed');
+          skipped.push({
+            worldNpcId: npcDiff.worldNpcId,
+            name: npcDiff.name,
+            reason: 'pending_write_failed',
+            error: err?.message,
+            changes: [change],
+          });
+          continue;
+        }
       }
+      pending.push({
+        worldNpcId: npcDiff.worldNpcId,
+        name: npcDiff.name,
+        changes: [change],
+      });
     }
-
-    applied.push({
-      worldNpcId: npcDiff.worldNpcId,
-      name: npcDiff.name,
-      changes: authorized,
-    });
   }
 
-  return { applied, skipped, dryRun };
+  return { applied: [], pending, skipped, dryRun };
 }
 
 /**
@@ -320,7 +328,7 @@ export async function runPostCampaignWorldWriteback(campaignId, {
   extractionProvider = 'openai',
   extractionModelTier = 'nanoReasoning',
   extractionUserApiKeys = null,
-  skipMemoryPromotion = false,
+  skipMemoryPromotion = true,
   memoryImportanceFilter = ['major'],
   skipLocationPromotion = false,
   locationPromotionTopN = 5,
@@ -366,7 +374,7 @@ export async function runPostCampaignWorldWriteback(campaignId, {
     });
   }
 
-  const result = await applyShadowDiffToCanonical({ diff, autoApplyFields, dryRun });
+  const result = await applyShadowDiffToCanonical({ diff, autoApplyFields, dryRun, campaignId });
 
   let promotion = { collected: [], persisted: [], skipped: [] };
   if (!skipPromotion) {
@@ -381,11 +389,9 @@ export async function runPostCampaignWorldWriteback(campaignId, {
     });
   }
 
-  // Stage 2b — runs AFTER Phase 12b admin candidate persistence so any NPC
-  // the admin has already linked (worldNpcId set) will carry its lived
-  // memory forward. NPCs still awaiting admin approval (worldNpcId=null)
-  // are skipped here; promoting them on admin-approve is a future admin-UI
-  // wire-up (approve flow can call this narrowly for the single NPC).
+  // Stage 2b — strict world-write gate: memory promotion to canonical
+  // WorldNpcKnowledge is now skipped by default. Admin can opt-in by
+  // passing skipMemoryPromotion=false after reviewing candidates.
   let memoryPromotion = { promoted: [], skipped: [] };
   if (!skipMemoryPromotion) {
     memoryPromotion = await promoteExperienceLogsToCanonical(campaignId, {

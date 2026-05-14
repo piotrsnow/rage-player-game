@@ -47,9 +47,9 @@ export function useMpActions({ dispatch, pendingQuestVerifyRef }) {
     });
   }, [ensureConnected]);
 
-  const convertToMultiplayer = useCallback(async (gameState, settings) => {
+  const convertToMultiplayer = useCallback(async (gameState, settings, campaignId = null) => {
     await ensureConnected();
-    wsService.send(WS_CLIENT_TYPES.CONVERT_TO_MULTIPLAYER, { gameState, settings });
+    wsService.send(WS_CLIENT_TYPES.CONVERT_TO_MULTIPLAYER, { gameState, settings, campaignId });
   }, [ensureConnected]);
 
   const leaveRoom = useCallback(() => {
@@ -136,6 +136,10 @@ export function useMpActions({ dispatch, pendingQuestVerifyRef }) {
     dispatch({ type: 'COMBAT_MANOEUVRE', payload: null });
   }, [dispatch]);
 
+  const sendBeerDuelAction = useCallback((action) => {
+    wsService.send(WS_CLIENT_TYPES.BEER_DUEL_ACTION, { action });
+  }, []);
+
   const sendTyping = useCallback((isTyping, draft = '') => {
     wsService.send(WS_CLIENT_TYPES.TYPING, {
       isTyping,
@@ -198,6 +202,7 @@ export function useMpActions({ dispatch, pendingQuestVerifyRef }) {
     sendCombatManoeuvre,
     endMultiplayerCombat,
     clearPendingCombatManoeuvre,
+    sendBeerDuelAction,
     sendTyping,
     verifyQuestObjective,
   };

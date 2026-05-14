@@ -96,23 +96,11 @@ export async function resolveWorldLocation(rawName, { region = null } = {}) {
     if (aliases.some((a) => normalizeLocationName(a) === norm)) {
       return rec;
     }
-    // Substring containment — bounded so short tokens or NPC-like names
-    // don't false-positive against long canonical names.
     if (recNorm && norm && recNorm.length >= 5 && norm.length >= 5) {
       const shorter = Math.min(recNorm.length, norm.length);
       const longer = Math.max(recNorm.length, norm.length);
       if (shorter / longer < 0.6) continue;
       if (!(recNorm.includes(norm) || norm.includes(recNorm))) continue;
-      if (!aliases.includes(name)) {
-        try {
-          await prisma.worldLocation.update({
-            where: { id: rec.id },
-            data: { aliases: [...aliases, name] },
-          });
-        } catch (err) {
-          log.warn({ err, locationId: rec.id }, 'Failed to merge location alias');
-        }
-      }
       return rec;
     }
   }
@@ -263,22 +251,10 @@ export async function findOrCreateCampaignLocation(rawName, {
 
   try {
     const created = await prisma.campaignLocation.create({ data });
-    // Separate RAG entityType keeps campaign rows from polluting world-scope
-    // semantic queries; promotion (Phase 12c) reindexes as 'location' on flip.
     ragService.index('campaign_location', created.id, embText).catch(() => {});
-
-    // Entity registry — register as inactive WorldLocation so the admin
-    // registry tracks campaign-born locations from the moment of creation.
-    // Uses a namespaced canonicalName to avoid collisions with canonical
-    // hand-authored locations; promotion pipeline renames on activation.
-    registerCampaignLocationInWorldRegistry(created, campaignId).catch((err) => {
-      log.debug({ err: err?.message, locName: name }, 'entity registry WorldLocation upsert failed (non-fatal)');
-    });
-
     return created;
   } catch (err) {
     if (err?.code === 'P2002') {
-      // Race on (campaignId, slug) — re-lookup
       return prisma.campaignLocation.findUnique({
         where: { campaignId_canonicalSlug: { campaignId, canonicalSlug: slug } },
       });

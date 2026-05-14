@@ -22,7 +22,6 @@
 
 import { prisma } from '../../lib/prisma.js';
 import { childLogger } from '../../lib/logger.js';
-import { appendEvent } from './worldEventLog.js';
 import { checkFailsOn } from './questDynamicsRules.js';
 
 const log = childLogger({ module: 'questDynamics' });
@@ -75,18 +74,8 @@ export async function mutateQuest({ campaignId, questRow, mutation, reason, scen
         ...(mutation === 'fail' ? { completedAt: new Date() } : {}),
       },
     });
-    await appendEvent({
-      campaignId,
-      eventType: 'quest_mutated',
-      payload: {
-        questId: questRow.questId,
-        questName: questRow.name,
-        mutation,
-        reason,
-        source,
-      },
-      visibility: 'campaign',
-    });
+    // Strict world-write gate: quest mutation events no longer written to
+    // WorldEvent during active campaign play.
     log.info({ campaignId, questId: questRow.questId, mutation, reason, source }, 'Quest mutation applied');
     return true;
   } catch (err) {

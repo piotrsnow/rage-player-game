@@ -163,6 +163,7 @@ export default function GameplayPage({ readOnly = false, shareToken = null, onRe
     hasMagic, attrPoints, allCharacters, scenes, isGeneratingScene,
     isGeneratingImage, combat, error, mpErrorCode, reconnectState,
     isMpReconnecting, showMpConnectionBanner, aiCosts, currentScene, tensionScore,
+    mpStreamingText,
   } = derived;
 
   const favoriteScenesHook = useFavoriteScenes(readOnly ? null : character?.backendId);
@@ -813,7 +814,7 @@ export default function GameplayPage({ readOnly = false, shareToken = null, onRe
             combat={combat}
             isGeneratingImage={!isReviewingPastScene && isGeneratingImage}
             highlightInfo={narrator.highlightInfo}
-            currentChunk={narrator.currentChunk}
+            currentChunk={isMultiplayer ? mpStreamingText : narrator.currentChunk}
             diceRoll={viewedScene?.diceRoll && !isGeneratingScene ? viewedScene.diceRoll : null}
             diceRolls={viewedScene?.diceRolls?.length && !isGeneratingScene ? viewedScene.diceRolls : null}
             world={isMultiplayer ? mpGameState?.world : sWorld}

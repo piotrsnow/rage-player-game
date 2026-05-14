@@ -9,11 +9,12 @@ import JournalTab from './world/JournalTab';
 import FactionsTab from './world/FactionsTab';
 import MapTab from './world/MapTab';
 
-const TABS = ['map', 'npcs', 'quests', 'factions', 'time', 'effects', 'journal'];
+const ALL_TABS = ['map', 'npcs', 'quests', 'factions', 'time', 'effects', 'journal'];
 const TAB_ICONS = { map: 'map', npcs: 'group', quests: 'assignment', factions: 'groups', time: 'schedule', effects: 'auto_fix_high', journal: 'menu_book' };
 
 export default function WorldStateModal({ world, quests, characterVoiceMap, maleVoices, femaleVoices, ttsProvider, dispatch, autoSave, campaignId, currentSceneId, initialTab = 'npcs', onTravel, onEnterSub, onClose }) {
   const { t } = useTranslation();
+  const TABS = campaignId ? ALL_TABS : ALL_TABS.filter((tab) => tab !== 'map');
   const [activeTab, setActiveTab] = useState(initialTab);
   const [highlightId, setHighlightId] = useState(null);
   const contentRef = useRef(null);

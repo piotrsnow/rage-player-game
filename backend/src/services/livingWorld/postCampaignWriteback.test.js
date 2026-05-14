@@ -131,6 +131,7 @@ describe('filterAutoApplyChanges', () => {
 describe('applyShadowDiffToCanonical (dryRun semantics)', () => {
   it('classifies unauthorized changes as skipped with reason=needs_review', async () => {
     const diff = {
+      campaignId: 'c1',
       npcDiffs: [
         {
           worldNpcId: 'w1',
@@ -143,13 +144,9 @@ describe('applyShadowDiffToCanonical (dryRun semantics)', () => {
       ],
     };
     const result = await applyShadowDiffToCanonical({ diff, dryRun: true });
-    expect(result.applied).toEqual([
-      {
-        worldNpcId: 'w1',
-        name: 'Bjorn',
-        changes: [{ field: 'alive', oldValue: true, newValue: false }],
-      },
-    ]);
+    expect(result.applied).toEqual([]);
+    expect(result.pending).toHaveLength(1);
+    expect(result.pending[0]).toMatchObject({ worldNpcId: 'w1', name: 'Bjorn' });
     expect(result.skipped).toEqual([
       {
         worldNpcId: 'w1',
@@ -165,7 +162,7 @@ describe('applyShadowDiffToCanonical (dryRun semantics)', () => {
       diff: { npcDiffs: [] },
       dryRun: true,
     });
-    expect(result).toEqual({ applied: [], skipped: [], dryRun: true });
+    expect(result).toEqual({ applied: [], pending: [], skipped: [], dryRun: true });
   });
 });
 

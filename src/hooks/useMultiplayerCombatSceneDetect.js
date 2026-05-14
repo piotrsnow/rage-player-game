@@ -2,13 +2,12 @@ import { useEffect, useRef } from 'react';
 import { createMultiplayerCombatState } from '../services/combatEngine';
 
 const FALLBACK_ENEMY = {
-  name: 'Hostile Foe',
-  characteristics: { ws: 35, bs: 25, s: 30, t: 30, i: 30, ag: 30, dex: 25, int: 20, wp: 25, fel: 15 },
+  name: 'Wrogi wojownik',
+  attributes: { sila: 5, inteligencja: 2, charyzma: 1, zrecznosc: 4, wytrzymalosc: 5, szczescie: 0 },
   wounds: 10,
   maxWounds: 10,
-  skills: { 'Melee (Basic)': 5 },
+  skills: { 'Walka wrecz': 5 },
   traits: [],
-  armour: { body: 0 },
   weapons: ['Hand Weapon'],
 };
 

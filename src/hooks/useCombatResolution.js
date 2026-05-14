@@ -62,11 +62,13 @@ export function buildCombatResolutionHandlers({
   const handleEndCombat = (summary) => {
     dispatch({ type: 'END_COMBAT' });
     const isBeerDuel = summary.mode === 'beer_duel';
-    const duelWinners = summary.skirmishSummary?.winnerIds || [];
-    const duelWinnerLabel = duelWinners.length > 0 ? duelWinners.join(', ') : 'nobody';
+    const duelWinnerLabel = summary.skirmishSummary?.winnerName
+      || (summary.skirmishSummary?.isTie ? 'draw' : 'nobody');
+    const playerBeers = summary.skirmishSummary?.beersCollectedByPlayer || 0;
+    const opponentBeers = summary.skirmishSummary?.opponentBeers || 0;
 
     const combatJournal = isBeerDuel
-      ? `Beer duel: finished after ${summary.rounds} rounds. Collected ${summary.skirmishSummary?.beersCollectedByPlayer || 0} beers. Winner: ${duelWinnerLabel}.`
+      ? `Beer duel: player drank ${playerBeers} beers, opponent drank ${opponentBeers}. Winner: ${duelWinnerLabel}.`
       : summary.playerSurvived
         ? `Combat: Victory — ${summary.enemiesDefeated}/${summary.totalEnemies} enemies defeated in ${summary.rounds} rounds.${formatWoundsText(summary.woundsChange)}`
         : `Combat: Defeat — fell after ${summary.rounds} rounds against ${summary.totalEnemies} enemies.`;
@@ -101,7 +103,7 @@ export function buildCombatResolutionHandlers({
 
     const combatResult = buildCombatResult(summary);
     const combatActionText = isBeerDuel
-      ? `[BEER_DUEL_RESOLVED: winner=${duelWinnerLabel}; playerBeers=${summary.skirmishSummary?.beersCollectedByPlayer || 0}; rounds=${summary.rounds}]`
+      ? `[BEER_DUEL_RESOLVED: winner=${duelWinnerLabel}; playerBeers=${playerBeers}; opponentBeers=${opponentBeers}]`
       : `[Combat resolved: defeated ${summary.enemiesDefeated}/${summary.totalEnemies} enemies in ${summary.rounds} rounds.${formatWoundsText(summary.woundsChange) || ' Unscathed.'}]`;
 
     generateScene(combatActionText, false, false, false, { combatResult }).catch(() => {});

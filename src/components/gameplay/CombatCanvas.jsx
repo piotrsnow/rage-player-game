@@ -10,7 +10,6 @@ import {
   drawBackground,
   drawBattlefield,
   drawTerrainTiles,
-  drawBeerDuelVomitPatches,
   drawMovementZone,
   drawMeleeEngagements,
   drawRangeIndicator,
@@ -26,7 +25,6 @@ import ActionModal from './combat/ActionModal';
 import ActiveEffectsRow from '../ui/ActiveEffectsRow';
 
 const FLOAT_TEXT_DURATION = 1200;
-const SKIRMISH_MODE_BEER_DUEL = 'beer_duel';
 
 export default function CombatCanvas({
   combat,
@@ -36,7 +34,6 @@ export default function CombatCanvas({
   onSelectTarget,
   onHoverCombatant,
   onMoveToPosition,
-  onPlaceBeerDuelVomit,
   combatOver,
   isMyTurn = false,
   myCombatantId,
@@ -76,9 +73,7 @@ export default function CombatCanvas({
   const floatIdRef = useRef(0);
   const [tileTooltip, setTileTooltip] = useState(null);
   const [hoveredCombatantId, setHoveredCombatantId] = useState(null);
-  const [shakingBeerId, setShakingBeerId] = useState(null);
   const combatRef = useRef(combat);
-  const beerShakeEndRef = useRef(null);
   combatRef.current = combat;
 
   const friendlies = useMemo(
@@ -160,46 +155,6 @@ export default function CombatCanvas({
 
   const cellSize = useMemo(() => getCellSize(containerSize.w, containerSize.h), [containerSize.w, containerSize.h]);
   const tokenRadius = useMemo(() => getTokenRadius(containerSize.w, containerSize.h), [containerSize.w, containerSize.h]);
-  const beerMugFontPx = useMemo(
-    () => Math.round(Math.max(30, Math.min(78, cellSize * 1.12))),
-    [cellSize],
-  );
-
-  useEffect(() => {
-    if (combat.mode !== SKIRMISH_MODE_BEER_DUEL) {
-      if (beerShakeEndRef.current) {
-        clearTimeout(beerShakeEndRef.current);
-        beerShakeEndRef.current = null;
-      }
-      setShakingBeerId(null);
-      return undefined;
-    }
-    const intervalMs = 520;
-    const tick = () => {
-      const c = combatRef.current;
-      if (c.mode !== SKIRMISH_MODE_BEER_DUEL) return;
-      const tokens = (c.skirmish?.beerTokens || []).filter((t) => !t.collectedBy);
-      if (!tokens.length) return;
-      if (Math.random() < 0.26) {
-        const pick = tokens[Math.floor(Math.random() * tokens.length)];
-        setShakingBeerId(pick.id);
-        if (beerShakeEndRef.current) clearTimeout(beerShakeEndRef.current);
-        beerShakeEndRef.current = window.setTimeout(() => {
-          beerShakeEndRef.current = null;
-          setShakingBeerId((cur) => (cur === pick.id ? null : cur));
-        }, 520);
-      }
-    };
-    const id = setInterval(tick, intervalMs);
-    return () => {
-      clearInterval(id);
-      if (beerShakeEndRef.current) {
-        clearTimeout(beerShakeEndRef.current);
-        beerShakeEndRef.current = null;
-      }
-      setShakingBeerId(null);
-    };
-  }, [combat.mode]);
 
   const draw = useCallback(() => {
     const canvas = canvasRef.current;
@@ -219,9 +174,6 @@ export default function CombatCanvas({
     drawBackground(ctx, w, h, now, animRef.current);
     drawBattlefield(ctx, w, h, now);
     drawTerrainTiles(ctx, w, h, combat.terrainTiles, gameData.terrainTiles, now);
-    if (combat.mode === SKIRMISH_MODE_BEER_DUEL && combat.skirmish?.vomitPatches?.length) {
-      drawBeerDuelVomitPatches(ctx, w, h, combat.skirmish.vomitPatches, now);
-    }
 
     if (isMyTurn && myCombatant && !combatOver) {
       drawMovementZone(ctx, w, h, myCombatant, hoverCellRef.current, now);
@@ -277,29 +229,7 @@ export default function CombatCanvas({
     const cell = pixelToCell(x, y, containerSize.w, containerSize.h);
     hoverCellRef.current = cell;
 
-    if (cell && combat.mode === SKIRMISH_MODE_BEER_DUEL) {
-      const beerToken = combat.skirmish?.beerTokens?.find((token) => !token.collectedBy && token.x === cell.x && token.y === cell.y);
-      const vomitHere = combat.skirmish?.vomitPatches?.some((p) => p.x === cell.x && p.y === cell.y);
-      if (beerToken) {
-        const px = cellToPixel(cell.x, cell.y, containerSize.w, containerSize.h);
-        setTileTooltip({
-          name: t('combat.beerToken', 'Beer'),
-          desc: t('combat.beerTokenDesc', 'Collect to score a point'),
-          x: px.x,
-          y: px.y,
-        });
-      } else if (vomitHere) {
-        const px = cellToPixel(cell.x, cell.y, containerSize.w, containerSize.h);
-        setTileTooltip({
-          name: t('combat.vomitPatch', 'Wymiociny'),
-          desc: t('combat.vomitPatchDesc', 'Wejdź: tańszy ruch + poślizg w kierunku marszu (max 2×/runda).'),
-          x: px.x,
-          y: px.y,
-        });
-      } else {
-        setTileTooltip(null);
-      }
-    } else if (cell && combat.terrainTiles?.length) {
+    if (cell && combat.terrainTiles?.length) {
       const tile = combat.terrainTiles.find(tt => tt.x === cell.x && tt.y === cell.y && !tt.consumed);
       if (tile) {
         const def = gameData.terrainTiles[tile.type];
@@ -327,7 +257,7 @@ export default function CombatCanvas({
     const hovId = hasCombatant?.id || null;
     setHoveredCombatantId(hovId);
     onHoverCombatant?.(hovId);
-  }, [containerSize.w, containerSize.h, isMyTurn, myCombatant, combatOver, combat.mode, combat.skirmish, combat.terrainTiles, t, combatantAtCell, onHoverCombatant]);
+  }, [containerSize.w, containerSize.h, isMyTurn, myCombatant, combatOver, combat.terrainTiles, t, combatantAtCell, onHoverCombatant]);
 
   const handleCanvasClick = useCallback((e) => {
     if (!isMyTurn || combatOver) return;
@@ -385,11 +315,6 @@ export default function CombatCanvas({
     onMoveToPosition?.(targetCell);
     setActionModal(null);
   }, [onMoveToPosition]);
-
-  const handlePlaceVomitFromModal = useCallback((targetCell) => {
-    onPlaceBeerDuelVomit?.(targetCell);
-    setActionModal(null);
-  }, [onPlaceBeerDuelVomit]);
 
   return (
     <div className={fillHeight ? 'h-full flex flex-col gap-1' : 'space-y-1'}>
@@ -548,27 +473,6 @@ export default function CombatCanvas({
             );
           })}
 
-          {combat.mode === SKIRMISH_MODE_BEER_DUEL && (combat.skirmish?.beerTokens || []).filter((token) => !token.collectedBy).map((token) => {
-            const px = cellToPixel(token.x, token.y, containerSize.w, containerSize.h);
-            const isShaking = shakingBeerId === token.id;
-            return (
-              <div
-                key={token.id}
-                className="absolute pointer-events-none select-none z-[5]"
-                style={{ left: px.x, top: px.y, transform: 'translate(-50%, -50%)' }}
-              >
-                <span
-                  className={`inline-block leading-none drop-shadow-[0_3px_8px_rgba(0,0,0,0.88)] ${isShaking ? 'animate-beer-mug-shake' : ''}`}
-                  style={{ fontSize: beerMugFontPx }}
-                  role="img"
-                  aria-label={t('combat.beerToken', 'Beer')}
-                >
-                  🍺
-                </span>
-              </div>
-            );
-          })}
-
           {floatingTexts.map((ft) => {
             const pos = tokenPositions.find(p => p.combatant.id === ft.combatantId);
             if (!pos) return null;
@@ -616,7 +520,6 @@ export default function CombatCanvas({
           savedCustomAttacks={savedCustomAttacks || []}
           onExecute={handleExecuteFromModal}
           onMoveToPosition={handleMoveFromModal}
-          onPlaceBeerDuelVomit={combat.mode === SKIRMISH_MODE_BEER_DUEL ? handlePlaceVomitFromModal : undefined}
           onClose={() => setActionModal(null)}
           onPersistCustomAttack={onPersistCustomAttack}
           onRemoveCustomAttack={onRemoveCustomAttack}

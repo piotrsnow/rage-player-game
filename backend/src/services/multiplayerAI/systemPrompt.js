@@ -30,7 +30,7 @@ export function buildMultiplayerUnmetNeedsBlock(characters) {
   return `UNMET CHARACTER NEEDS (factor these into the scene — affect narration, NPC reactions, and outcomes):\n${charLines.join('\n')}\n\n`;
 }
 
-export function buildMultiplayerSystemPrompt(gameState, settings, players, language = 'en', dmSettings = null) {
+export function buildMultiplayerSystemPrompt(gameState, settings, players, language = 'en', dmSettings = null, { worldLore = '', npcMemoryBlock = '' } = {}) {
   const needsEnabled = settings.needsSystemEnabled === true;
   const playerList = players
     .map((p) => `- ${p.name} (${p.gender}, ${p.isHost ? 'host' : 'player'})`)
@@ -71,7 +71,15 @@ export function buildMultiplayerSystemPrompt(gameState, settings, players, langu
 
   const npcs = world.npcs || [];
   const npcSection = npcs.length > 0
-    ? npcs.map((n) => `- ${n.name} (${n.role || 'unknown'}, ${n.gender || '?'}): ${n.personality || '?'}, attitude=${n.attitude || 'neutral'}, disposition=${n.disposition || 0}`).join('\n')
+    ? npcs.map((n) => {
+        let line = `- ${n.name} (${n.role || 'unknown'}, ${n.gender || '?'}): ${n.personality || '?'}, attitude=${n.attitude || 'neutral'}, disposition=${n.disposition || 0}`;
+        if (n.alive === false) line += ' [DEAD]';
+        if (n.notes) line += `\n  Notes: ${n.notes}`;
+        if (n.relationships?.length > 0) {
+          line += `\n  Relationships: ${n.relationships.map((r) => `${r.npcName} (${r.type || 'acquaintance'})`).join(', ')}`;
+        }
+        return line;
+      }).join('\n')
     : 'No NPCs encountered yet.';
 
   const currentLoc = world.currentLocation || 'Unknown';
@@ -140,7 +148,7 @@ ${playerList}
 
 WORLD DESCRIPTION:
 ${campaign.worldDescription || 'A mysterious world awaits discovery.'}
-
+${worldLore ? `\nWORLD LORE (canonical facts about the setting — reference naturally, never dump):\n${worldLore}\n` : ''}
 STORY HOOK:
 ${campaign.hook || 'An adventure begins...'}
 
@@ -149,7 +157,7 @@ ${charLines}
 
 NPC REGISTRY:
 ${npcSection}
-
+${npcMemoryBlock}
 NPCs PRESENT AT CURRENT LOCATION (only these NPCs can be directly interacted with unless summoned or newly arriving):
 ${npcsHereSection}
 
@@ -176,6 +184,16 @@ ${(gameState.quests?.active || []).map((q) => {
 
 WORLD KNOWLEDGE:
 ${worldFacts}
+${(() => {
+  const seeds = (world.narrativeSeeds || []).filter((s) => !s.resolved);
+  if (seeds.length === 0) return '';
+  return `\nNARRATIVE SEEDS (foreshadowed threads — weave or resolve naturally):\n${seeds.map((s) => `- ${s.id}: ${s.description || s.hint || s.id} (planted scene ${s.planted ?? '?'})`).join('\n')}\n`;
+})()}
+${(() => {
+  const agendas = world.npcAgendas || [];
+  if (agendas.length === 0) return '';
+  return `NPC AGENDAS (off-screen NPC plans — manifest when relevant):\n${agendas.map((a) => `- ${a.npcName}: ${a.goal || a.agenda || '?'} (since scene ${a.plantedScene ?? '?'})`).join('\n')}\n`;
+})()}
 ${(() => {
   const codex = world.codex;
   if (!codex || Object.keys(codex).length === 0) return '';
@@ -240,5 +258,10 @@ Weapons: dagger 1 SK, hand weapon 1 ZK, crossbow 2 ZK 5 SK
 Armor: leather jerkin 1 ZK 2 SK, mail shirt 6 ZK
 Gear: rope 4 MK, torch 1 MK, lantern 5 SK, healing draught 3 SK, lockpicks 5 SK
 Services: healer 5 SK, blacksmith repair 3 SK, ferry 2 MK
-Animals: riding horse 50 ZK, mule 15 ZK`;
+Animals: riding horse 50 ZK, mule 15 ZK
+
+NARRATIVE THREADING (optional stateChanges fields — emit when narratively appropriate):
+- narrativeSeeds: [{ id: "seed_slug", description: "foreshadow hint" }] — plant subtle hints for future payoff
+- resolvedSeeds: ["seed_slug"] — mark a previously planted seed as resolved
+- npcAgendas: [{ npcName: "Name", goal: "what they're planning" }] — track off-screen NPC plans`;
 }

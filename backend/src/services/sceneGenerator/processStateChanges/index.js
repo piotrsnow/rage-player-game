@@ -1,21 +1,14 @@
 import { prisma } from '../../../lib/prisma.js';
 import { childLogger } from '../../../lib/logger.js';
-import { getCampaignCharacterIds } from '../../campaignSync.js';
-import { applyDungeonRoomState } from '../../livingWorld/dungeonEntry.js';
-import { auditQuestWorldImpact } from '../../livingWorld/questAudit.js';
-import { applyFameFromEvent } from '../../livingWorld/fameService.js';
-import { appendEvent } from '../../livingWorld/worldEventLog.js';
 import {
-  resolveWorldLocation,
   walkUpAncestors,
   resolveLocationByName,
   findOrCreateCampaignLocation,
 } from '../../livingWorld/worldStateService.js';
 import { LOCATION_KIND_WORLD, LOCATION_KIND_CAMPAIGN, lookupLocationByKindId } from '../../locationRefs.js';
-import { slugifyItemName } from '../../../../../shared/domain/itemKeys.js';
 
 import { generateSceneEmbedding } from './sceneEmbedding.js';
-import { processNpcChanges, processItemAttributions } from './npcs.js';
+import { processNpcChanges } from './npcs.js';
 import { processNpcMemoryUpdates } from './npcMemoryUpdates.js';
 import { evaluateQuestGraphForCampaign } from '../../livingWorld/questDynamicsService.js';
 import {
@@ -39,7 +32,6 @@ import { processLocationChanges } from './locations.js';
 import {
   shouldPromoteToGlobal,
   processLocationMentions,
-  processWorldImpactEvent,
   processCampaignComplete,
 } from './livingWorld.js';
 import { createEdge } from '../../locationGraph/graphService.js';
@@ -131,32 +123,6 @@ const GENERIC_TERRAIN_TOKENS = new Set([
   'pustkowie', 'pustkowia',
 ]);
 
-async function registerNewItemDefinitions(campaignId, newItems) {
-  if (!Array.isArray(newItems) || newItems.length === 0) return;
-  for (const item of newItems) {
-    const name = item?.name || item?.itemName;
-    if (!name || typeof name !== 'string') continue;
-    const itemKey = slugifyItemName(name);
-    if (!itemKey || itemKey === 'unnamed') continue;
-    try {
-      await prisma.worldItemDefinition.upsert({
-        where: { itemKey },
-        create: {
-          itemKey,
-          displayName: name.trim(),
-          baseType: item.baseType || item.type || null,
-          description: item.description || '',
-          props: item.props || {},
-          globallyActive: false,
-          originCampaignId: campaignId,
-        },
-        update: {},
-      });
-    } catch (err) {
-      log.debug({ err: err?.message, itemKey, campaignId }, 'WorldItemDefinition registry upsert failed (non-fatal)');
-    }
-  }
-}
 
 function isGenericTerrainName(name) {
   const lower = String(name || '').toLowerCase().trim();
@@ -175,18 +141,13 @@ export async function processStateChanges(campaignId, stateChanges, { prevLoc = 
   // postSceneWork for the same campaignId).
   let livingWorldEnabled = false;
   let ownerUserId = null;
-  let campaignCharacterIds = [];
   try {
-    const [campaign, charIds] = await Promise.all([
-      prisma.campaign.findUnique({
-        where: { id: campaignId },
-        select: { livingWorldEnabled: true, userId: true },
-      }),
-      getCampaignCharacterIds(campaignId),
-    ]);
+    const campaign = await prisma.campaign.findUnique({
+      where: { id: campaignId },
+      select: { livingWorldEnabled: true, userId: true },
+    });
     livingWorldEnabled = campaign?.livingWorldEnabled === true;
     ownerUserId = campaign?.userId || null;
-    campaignCharacterIds = charIds;
   } catch {
     // non-fatal — fall back to legacy behaviour
   }
@@ -241,27 +202,13 @@ export async function processStateChanges(campaignId, stateChanges, { prevLoc = 
     }
   }
 
-  // Campaign completion → global WorldEvent (user's explicit requirement:
-  // "zakończenie kampanii musi być zapisane globalnie").
   if (livingWorldEnabled && stateChanges.campaignComplete) {
     await processCampaignComplete({
       campaignId,
       data: stateChanges.campaignComplete,
-      ownerUserId,
-      sceneGameTime,
-      currentLocationName: currentRef?.name || null,
-    });
-    await applyFameFromEvent(campaignCharacterIds, {
-      eventType: 'campaign_complete',
-      visibility: 'global',
-      payload: {},
     });
   }
 
-  if (livingWorldEnabled && stateChanges.newItems?.length) {
-    await processItemAttributions(campaignId, stateChanges.newItems, ownerUserId, sceneGameTime);
-    await registerNewItemDefinitions(campaignId, stateChanges.newItems);
-  }
 
   // AI emits `stateChanges.currentLocation` (string) and/or `currentX/currentY`
   // (numbers) after a travel montage, sublocation walk-in, or free-vector
@@ -562,16 +509,9 @@ export async function processStateChanges(campaignId, stateChanges, { prevLoc = 
   }
 
 
-  // Phase 7 — dungeon room state flags. `prevLoc` is the room the player
-  // was IN when premium wrote the flags; currentLocation may already point
-  // to the next room (movement). Flags apply to prevLoc.
-  if (livingWorldEnabled && stateChanges.dungeonRoom && prevLoc) {
-    await applyDungeonRoomState({
-      campaignId,
-      prevLoc,
-      flags: stateChanges.dungeonRoom,
-    });
-  }
+  // Strict world-write gate: dungeon room state flags (WorldLocation.roomMetadata)
+  // are no longer written during active campaign play. Dungeon state will be
+  // tracked per-campaign in the future.
 
   if (stateChanges.knowledgeUpdates) {
     await processKnowledgeUpdates(campaignId, stateChanges.knowledgeUpdates);
@@ -690,104 +630,6 @@ export async function processStateChanges(campaignId, stateChanges, { prevLoc = 
     } else {
       log.warn({ campaignId, issues: parsed.error?.issues?.slice(0, 5) }, 'stateChanges.questMutations failed schema validation — skipped');
     }
-  }
-
-  // Major-event gate (Zakres C). Two paths fire a global WorldEvent:
-  //   1) AI flagged worldImpact='major' / deadly / dungeon AND the gate
-  //      (named kill / main quest / liberation) confirms with evidence.
-  //   2) Side quest auto-completed without any worldImpact flag — nano
-  //      audit asks "is this a tavern rumour?" as a cheap backup.
-  if (livingWorldEnabled && stateChanges.completedQuests?.length) {
-    // Resolve main vs side for completed quests in this scene (one query).
-    let completedMeta = [];
-    try {
-      completedMeta = await prisma.campaignQuest.findMany({
-        where: { campaignId, questId: { in: stateChanges.completedQuests } },
-        select: { questId: true, name: true, description: true, type: true },
-      });
-    } catch (err) {
-      log.warn({ err, campaignId }, 'completedQuests metadata fetch failed');
-    }
-    const mainQuestCompleted = completedMeta.some((q) => q.type === 'main');
-
-    const hasExplicitImpact = stateChanges.worldImpact === 'major'
-      || stateChanges.defeatedDeadlyEncounter === true
-      || !!stateChanges.dungeonComplete
-      || stateChanges.locationLiberated === true;
-
-    if (hasExplicitImpact || mainQuestCompleted) {
-      await processWorldImpactEvent({
-        campaignId,
-        stateChanges,
-        ownerUserId,
-        sceneGameTime,
-        mainQuestCompleted,
-        characterIds: campaignCharacterIds,
-      });
-    }
-
-    // Backup audit for side quests when nothing else promoted the scene.
-    // Skip main quests (they promote via gate) and skip when an explicit
-    // impact already wrote a global event — no duplication.
-    if (!hasExplicitImpact) {
-      const sideQuests = completedMeta.filter((q) => q.type !== 'main');
-      const auditLocationName = currentRef?.name || null;
-      for (const quest of sideQuests) {
-        const verdict = await auditQuestWorldImpact(quest, {
-          locationName: auditLocationName,
-          sceneSummary: stateChanges.campaignComplete?.summary || null,
-        });
-        if (verdict?.isMajor) {
-          let worldLocationId = null;
-          if (auditLocationName && currentRef?.kind === 'world') {
-            // Skip the resolveWorldLocation hop when we already know the
-            // canonical id from currentRef. Wilderness/campaign rows leave
-            // `worldLocationId=null` (event still records via campaignId).
-            worldLocationId = currentRef.id;
-          } else if (auditLocationName) {
-            try {
-              const loc = await resolveWorldLocation(auditLocationName);
-              worldLocationId = loc?.id || null;
-            } catch { /* non-fatal */ }
-          }
-          await appendEvent({
-            worldLocationId,
-            campaignId,
-            userId: ownerUserId,
-            eventType: 'major_deed',
-            payload: {
-              gate: 'nano_audit',
-              reason: verdict.reason,
-              questName: quest.name,
-              locationName: auditLocationName,
-            },
-            visibility: 'global',
-            gameTime: sceneGameTime,
-          });
-          log.info({ campaignId, questId: quest.questId, reason: verdict.reason }, 'nano audit promoted side quest to global');
-          await applyFameFromEvent(campaignCharacterIds, {
-            eventType: 'major_deed',
-            visibility: 'global',
-            payload: { gate: 'nano_audit' },
-          });
-        }
-      }
-    }
-  } else if (livingWorldEnabled && (
-    stateChanges.worldImpact === 'major'
-    || stateChanges.defeatedDeadlyEncounter === true
-    || stateChanges.dungeonComplete
-    || stateChanges.locationLiberated === true
-  )) {
-    // No completed quests this scene — still honour explicit impact flags.
-    await processWorldImpactEvent({
-      campaignId,
-      stateChanges,
-      ownerUserId,
-      sceneGameTime,
-      mainQuestCompleted: false,
-      characterIds: campaignCharacterIds,
-    });
   }
 
   // ── Oś 4 — reactive quest dynamics evaluation ──────────────────────

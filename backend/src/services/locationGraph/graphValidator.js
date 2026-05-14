@@ -5,6 +5,7 @@ import {
   isValidDiscoveryPromotion,
   safeValidateTacticalGrid,
 } from '../../../../shared/domain/locationGraph.js';
+import { inferScaleFromType, clampLocationScale } from '../../../../shared/domain/locationGraphLayout.js';
 import { LOCATION_KIND_WORLD, LOCATION_KIND_CAMPAIGN } from '../locationRefs.js';
 import { createEdge, updateEdge } from './graphService.js';
 import { findSimilarNodeImage } from './imageMatcher.js';
@@ -82,8 +83,10 @@ export async function applyGraphUpdate(update, { campaignId }) {
     try {
       const parentRef = node.parentName ? nameIndex.get(normalize(node.parentName)) : null;
       const slug = normalize(node.name);
-      // Faza 0 — propagujemy nowe metadane (biome, anchorType, tacticalGrid)
-      // gdy AI je podpowiedziało.
+
+      const parentScale = parentRef ? await resolveNodeScale(parentRef) : null;
+      const resolvedScale = resolveChildScale(node.scale, node.type, parentScale);
+
       const data = {
         campaignId,
         name: node.name,
@@ -91,7 +94,7 @@ export async function applyGraphUpdate(update, { campaignId }) {
         description: node.description || '',
         locationType: mapNodeType(node.type),
         tags: node.tags || [],
-        scale: node.scale ?? 5,
+        scale: resolvedScale,
         parentLocationKind: parentRef?.kind || null,
         parentLocationId: parentRef?.id || null,
       };
@@ -233,6 +236,25 @@ function mapNodeType(type) {
   if (lower === 'district') return 'generic';
   if (lower === 'area' || lower === 'region') return 'wilderness';
   return 'generic';
+}
+
+async function resolveNodeScale(ref) {
+  if (!ref?.kind || !ref?.id) return null;
+  const model = ref.kind === LOCATION_KIND_WORLD ? 'worldLocation' : 'campaignLocation';
+  const row = await prisma[model].findUnique({ where: { id: ref.id }, select: { scale: true } });
+  return row?.scale ?? null;
+}
+
+function resolveChildScale(aiScale, nodeType, parentScale) {
+  let s = typeof aiScale === 'number' && Number.isFinite(aiScale) ? aiScale : null;
+  if (s == null) {
+    s = inferScaleFromType(nodeType, parentScale) ?? 2;
+  }
+  s = clampLocationScale(s);
+  if (typeof parentScale === 'number' && Number.isFinite(parentScale) && s >= parentScale) {
+    s = Math.max(1, parentScale - 1);
+  }
+  return s;
 }
 
 // ── Campaign graph consistency report ────────────────────────────────

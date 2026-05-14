@@ -21,7 +21,6 @@ import {
   forceTruceMultiplayerCombat,
   moveCombatant,
   getRemainingMovementPoints,
-  placeBeerDuelVomitPatch,
   isInMeleeRange,
   getDistance,
   computeAttackPreview,
@@ -49,6 +48,7 @@ import { useCombatKeyboard } from '../../hooks/useCombatKeyboard';
 import { useCombatSprites } from '../../hooks/useCombatSprites';
 import { apiClient } from '../../services/apiClient';
 import { addEffect, migrateStatusStrings } from '../../../shared/domain/statusEffects.js';
+import BeerDuelPanel from './combat/BeerDuelPanel';
 
 const SKIRMISH_MODE_BEER_DUEL = 'beer_duel';
 
@@ -147,6 +147,19 @@ export default function CombatPanel({
   expandedLayout = false,
   onLayoutChange,
 }) {
+  if (combat.mode === SKIRMISH_MODE_BEER_DUEL) {
+    return (
+      <BeerDuelPanel
+        combat={combat}
+        character={character}
+        dispatch={dispatch}
+        onEndCombat={onEndCombat}
+        isMultiplayer={isMultiplayer}
+        mpCharacters={mpCharacters}
+      />
+    );
+  }
+
   const { t } = useTranslation();
   const { settings } = useSettings();
   const { generateCombatCommentary } = useAI();
@@ -192,7 +205,6 @@ export default function CombatPanel({
     : currentTurn?.type === 'player';
   const combatOver = isCombatOver(combat);
   const canControl = isMultiplayer ? isHost : true;
-  const isBeerDuel = combat.mode === SKIRMISH_MODE_BEER_DUEL;
   const playerWinning = isPlayerWinning(combat);
   const combatCommentaryFrequency = settings.dmSettings?.combatCommentaryFrequency ?? 3;
   const combatInstanceKey = `${combat.reason || ''}::${combat.combatants.map((combatant) => combatant.id).join('|')}`;
@@ -229,13 +241,12 @@ export default function CombatPanel({
   }, [combat, spriteMap]);
 
   const availableManoeuvres = useMemo(() => {
-    if (isBeerDuel) return [];
     const charForSkills = myCombatant || character;
     return Object.entries(gameData.manoeuvres).filter(([key]) => {
       if (key === 'castSpell' && !charForSkills?.spells?.known?.length) return false;
       return true;
     });
-  }, [isBeerDuel, myCombatant, character]);
+  }, [myCombatant, character]);
 
   const savedCustomAttacks = useMemo(
     () => (Array.isArray(character?.customAttackPresets) ? character.customAttackPresets : []),
@@ -444,7 +455,6 @@ export default function CombatPanel({
   });
 
   const handleExecuteManoeuvre = useCallback((manoeuvreKey, targetId, customDesc, extraOpts = {}) => {
-    if (isBeerDuel) return;
     const actorId = isMultiplayer ? myPlayerId : 'player';
     const preview = computeAttackPreview(combat, actorId, manoeuvreKey, targetId, {
       customDescription: customDesc, ...extraOpts,
@@ -454,7 +464,7 @@ export default function CombatPanel({
       return;
     }
     return rawExecuteManoeuvre(manoeuvreKey, targetId, customDesc, extraOpts);
-  }, [isBeerDuel, combat, isMultiplayer, myPlayerId, rawExecuteManoeuvre]);
+  }, [combat, isMultiplayer, myPlayerId, rawExecuteManoeuvre]);
 
   const confirmManoeuvre = useCallback(async () => {
     if (!pendingManoeuvre) return;
@@ -534,30 +544,6 @@ export default function CombatPanel({
     }
   }, [combat, isMyTurn, combatOver, isMultiplayer, myPlayerId, dispatch, onHostResolve, t, addLogEntry, scheduleTokenAnim, flushRoundEffectEvents]);
 
-  const handlePlaceBeerDuelVomit = useCallback((targetCell) => {
-    if (!isMyTurn || combatOver || !isBeerDuel) return;
-    const actorId = isMultiplayer ? myPlayerId : 'player';
-    const { combat: updated, placed } = placeBeerDuelVomitPatch(combat, actorId, targetCell);
-    if (!placed) return;
-
-    const actor = updated.combatants.find((c) => c.id === actorId);
-    const uid = shortId(4);
-    addLogEntry({
-      type: 'info',
-      actor: actor?.name || '?',
-      action: t('combat.belchtajPlacedLog', 'spluł wymiociny na pole ({{x}},{{y}})', { x: targetCell.x, y: targetCell.y }),
-      target: '',
-      actorColor: '#84cc16',
-      id: `vomit_${uid}`,
-    });
-
-    if (isMultiplayer) {
-      onHostResolve?.(updated);
-    } else {
-      dispatch({ type: 'UPDATE_COMBAT', payload: updated });
-    }
-  }, [combat, isMyTurn, combatOver, isBeerDuel, isMultiplayer, myPlayerId, dispatch, onHostResolve, t, addLogEntry]);
-
   const handleSkipTurn = useCallback(() => {
     if (!isMyTurn || combatOver) return;
     const actorId = isMultiplayer ? myPlayerId : 'player';
@@ -588,7 +574,7 @@ export default function CombatPanel({
     myCombatantId: myCombatant?.id,
     onExecuteManoeuvre: handleExecuteManoeuvre,
     onSkipTurn: handleSkipTurn,
-    enabled: !isBeerDuel,
+    enabled: true,
   });
 
   const handleAiAction = useCallback(async (actionText) => {
@@ -824,25 +810,6 @@ export default function CombatPanel({
     remaining: myCombatant.movementAllowance - (myCombatant.movementUsed || 0),
     total: myCombatant.movementAllowance,
   } : null;
-  const beerScoreRows = useMemo(() => {
-    if (!isBeerDuel) return [];
-    const scoreById = combat.skirmish?.scoreByCombatantId || {};
-    return combat.combatants.map((c) => ({
-      id: c.id,
-      name: c.name,
-      type: c.type,
-      score: Number(scoreById[c.id]) || 0,
-    })).sort((a, b) => b.score - a.score);
-  }, [isBeerDuel, combat.combatants, combat.skirmish]);
-  const beerWinnerNames = useMemo(() => {
-    if (!isBeerDuel) return [];
-    const winnerIds = combat.skirmish?.winnerIds || [];
-    if (!winnerIds.length) return [];
-    const names = winnerIds
-      .map((id) => combat.combatants.find((c) => c.id === id)?.name)
-      .filter(Boolean);
-    return names;
-  }, [isBeerDuel, combat.skirmish, combat.combatants]);
 
   return (
     <div className="space-y-2" data-testid="combat-panel">
@@ -867,33 +834,8 @@ export default function CombatPanel({
         expandedLayout={expandedLayout}
         onToggleLayout={() => onLayoutChange?.(!expandedLayout)}
         movementInfo={collapsedMovementInfo}
-        allowNegotiationControls={!isBeerDuel}
+        allowNegotiationControls
       />
-
-      {isBeerDuel && (
-        <div className="flex flex-wrap items-center gap-2 px-2 py-1 rounded-sm border border-yellow-500/25 bg-yellow-500/5 text-[11px]">
-          <span className="font-semibold text-yellow-300">
-            {t('combat.beerDuelMode', 'Beer Duel')}
-          </span>
-          <span className="text-on-surface-variant">
-            {t('combat.beersRemaining', 'Beers left: {{count}}', {
-              count: Number(combat.skirmish?.beersRemaining) || 0,
-            })}
-          </span>
-          {beerScoreRows.map((row) => (
-            <span key={row.id} className={`px-1.5 py-0.5 rounded-sm border ${row.type === 'enemy' ? 'border-error/30 text-error' : 'border-primary/30 text-primary'}`}>
-              {row.name}: {row.score}
-            </span>
-          ))}
-          {combatOver && beerWinnerNames.length > 0 && (
-            <span className="text-yellow-200 font-semibold">
-              {beerWinnerNames.length > 1
-                ? t('combat.beerDuelTie', 'Tie: {{names}}', { names: beerWinnerNames.join(', ') })
-                : t('combat.beerDuelWinner', 'Winner: {{name}}', { name: beerWinnerNames[0] })}
-            </span>
-          )}
-        </div>
-      )}
 
       <CombatTelegraph
         combat={combat}
@@ -901,16 +843,14 @@ export default function CombatPanel({
         isMyTurn={isMyTurn}
       />
 
-      {!isBeerDuel && (
-        <QuickActionBar
-          combat={combat}
-          myCombatantId={myCombatant?.id}
-          isMyTurn={isMyTurn}
-          combatOver={combatOver}
-          onExecuteManoeuvre={handleExecuteManoeuvre}
-          disabled={!!actionAnim || !!projectileAnim || !!pendingManoeuvre}
-        />
-      )}
+      <QuickActionBar
+        combat={combat}
+        myCombatantId={myCombatant?.id}
+        isMyTurn={isMyTurn}
+        combatOver={combatOver}
+        onExecuteManoeuvre={handleExecuteManoeuvre}
+        disabled={!!actionAnim || !!projectileAnim || !!pendingManoeuvre}
+      />
 
       {pendingManoeuvre && (
         <PreRollPreview
@@ -955,7 +895,6 @@ export default function CombatPanel({
           onSelectTarget={setSelectedTarget}
           onHoverCombatant={() => {}}
           onMoveToPosition={handleMoveToPosition}
-          onPlaceBeerDuelVomit={handlePlaceBeerDuelVomit}
           combatOver={combatOver}
           isMyTurn={isMyTurn && !actionAnim && !projectileAnim}
           myCombatantId={myCombatant?.id}
@@ -968,7 +907,7 @@ export default function CombatPanel({
           onRemoveCustomAttack={removeCustomAttack}
           onRegenerateSprite={regenerateSprite}
           character={character}
-          onAiAction={isBeerDuel ? undefined : handleAiAction}
+          onAiAction={handleAiAction}
           expanded={expandedLayout}
           hideInitiativeBar={expandedLayout}
           tokenAnimations={tokenAnimations}
@@ -1019,7 +958,6 @@ export default function CombatPanel({
               onSelectTarget={setSelectedTarget}
               onHoverCombatant={() => {}}
               onMoveToPosition={handleMoveToPosition}
-              onPlaceBeerDuelVomit={handlePlaceBeerDuelVomit}
               combatOver={combatOver}
               isMyTurn={isMyTurn && !actionAnim && !projectileAnim}
               myCombatantId={myCombatant?.id}
@@ -1032,7 +970,7 @@ export default function CombatPanel({
               onRemoveCustomAttack={removeCustomAttack}
               onRegenerateSprite={regenerateSprite}
               character={character}
-              onAiAction={isBeerDuel ? undefined : handleAiAction}
+              onAiAction={handleAiAction}
               expanded={false}
               fillHeight
               hideMovementHint

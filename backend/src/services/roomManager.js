@@ -90,6 +90,7 @@ export function createRoom(hostUserId, ws) {
     },
     players: new Map([[odId, player]]),
     gameState: null,
+    campaignId: null,
     lastActivity: Date.now(),
   };
 
@@ -97,7 +98,7 @@ export function createRoom(hostUserId, ws) {
   return { room, odId };
 }
 
-export function createRoomWithGameState(hostUserId, ws, gameState, settings) {
+export function createRoomWithGameState(hostUserId, ws, gameState, settings, campaignId = null) {
   const roomCode = generateRoomCode();
   const odId = generateOdId();
 
@@ -141,6 +142,7 @@ export function createRoomWithGameState(hostUserId, ws, gameState, settings) {
     },
     players: new Map([[odId, player]]),
     gameState,
+    campaignId: campaignId || null,
     lastActivity: Date.now(),
   };
 
@@ -523,12 +525,14 @@ export async function saveRoomToDB(roomCode) {
       create: {
         roomCode,
         hostId: hostPlayer.userId,
+        campaignId: room.campaignId || null,
         phase: room.phase,
         gameState: slimGameState,
         settings: room.settings,
       },
       update: {
         hostId: hostPlayer.userId,
+        campaignId: room.campaignId || null,
         phase: room.phase,
         gameState: slimGameState,
         settings: room.settings,
@@ -649,6 +653,7 @@ export async function findSessionInDB(roomCode) {
       gameState: session.gameState || null,
       settings: session.settings || {},
       hostUserId: session.hostId,
+      campaignId: session.campaignId || null,
     };
   } catch {
     return null;

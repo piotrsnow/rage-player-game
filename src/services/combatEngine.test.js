@@ -50,10 +50,10 @@ import {
   advanceRound,
   getCurrentTurnCombatant,
   moveCombatant,
+  resolveEnemyTurns,
   isCellOccupied,
   computeAttackPreview,
   getRemainingMovementPoints,
-  placeBeerDuelVomitPatch,
 } from './combatEngine.js';
 
 function makeCombatState({ actor = {}, target = {} } = {}) {
@@ -324,42 +324,6 @@ describe('beer duel vomit', () => {
     expect(p.beerDuelVomitSlipUses).toBe(1);
   });
 
-  it('placeBeerDuelVomitPatch adds a patch within range', () => {
-    const combat = {
-      mode: 'beer_duel',
-      active: true,
-      round: 1,
-      turnIndex: 0,
-      log: [],
-      terrainTiles: [],
-      combatants: [
-        {
-          id: 'player',
-          name: 'Hero',
-          type: 'player',
-          position: { x: 5, y: 4 },
-          movementUsed: 0,
-          movementAllowance: 10,
-          beerDuelVomitSlipUses: 0,
-          beerDuelVomitPlaceUses: 0,
-          isDefeated: false,
-          activeEffects: [],
-        },
-      ],
-      skirmish: {
-        beerTokens: [],
-        beersRemaining: 0,
-        scoreByCombatantId: {},
-        winnerIds: [],
-        winnerScore: 0,
-        isComplete: false,
-        vomitPatches: [],
-      },
-    };
-    const { combat: after, placed } = placeBeerDuelVomitPatch(combat, 'player', { x: 6, y: 4 });
-    expect(placed).toBe(true);
-    expect(after.skirmish.vomitPatches).toHaveLength(1);
-    expect(after.combatants[0].beerDuelVomitPlaceUses).toBe(1);
   });
 });
 
@@ -383,26 +347,6 @@ describe('isCombatOver', () => {
     expect(isCombatOver(combat)).toBe(true);
   });
 
-  it('returns true in beer duel when all beers are collected', () => {
-    const combat = makeCombatState();
-    combat.mode = 'beer_duel';
-    combat.skirmish = {
-      beerTokens: [{ id: 'beer_1', x: 4, y: 3, collectedBy: null }],
-      beersRemaining: 1,
-      scoreByCombatantId: {},
-      winnerIds: [],
-      winnerScore: 0,
-      isComplete: false,
-      vomitPatches: [],
-    };
-    combat.combatants[0].position = { x: 3, y: 3 };
-    combat.combatants[1].position = { x: 10, y: 3 };
-
-    const { combat: afterMove } = moveCombatant(combat, 'player', { x: 4, y: 3 });
-    expect(afterMove.skirmish.beersRemaining).toBe(0);
-    expect(afterMove.skirmish.winnerIds).toContain('player');
-    expect(isCombatOver(afterMove)).toBe(true);
-  });
 });
 
 describe('endCombat', () => {

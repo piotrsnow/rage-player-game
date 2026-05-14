@@ -155,7 +155,7 @@ export const DungeonStateSchema = z.object({
 export const NewNodeEntrySchema = z.object({
   name: z.string().min(1).max(120),
   type: z.string().min(1).max(40),
-  scale: z.number().int().min(1).max(7).optional().default(5),
+  scale: z.number().int().min(1).max(7).optional(),
   parentName: z.string().max(120).nullable().optional(),
   description: z.string().max(500).optional().default(''),
   tags: z.array(z.string().max(40)).max(10).optional().default([]),

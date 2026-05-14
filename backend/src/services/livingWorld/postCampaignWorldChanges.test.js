@@ -274,15 +274,16 @@ describe('applyWorldStateChanges', () => {
     expect(result.pending[0].idempotencyKey).toMatch(/^[a-f0-9]{16}$/);
   });
 
-  it('dryRun HIGH appends to appliedKnowledge without DB writes', async () => {
+  it('dryRun HIGH routes to pending (strict world-write gate)', async () => {
     const resolved = { entityId: 'w1', entityType: 'npc', similarity: 0.9 };
     const result = await applyWorldStateChanges({
       classifications: [basePipeline(npcDeathChange, resolved, 'high')],
       campaignId: 'c1',
       dryRun: true,
     });
-    expect(result.appliedKnowledge).toHaveLength(1);
-    expect(result.appliedKnowledge[0]).toMatchObject({ worldNpcId: 'w1', dryRun: true });
+    expect(result.pending).toHaveLength(1);
+    expect(result.pending[0]).toMatchObject({ campaignId: 'c1', kind: 'npcDeath', dryRun: true });
+    expect(result.appliedKnowledge).toHaveLength(0);
     expect(prisma.worldNPC.findUnique).not.toHaveBeenCalled();
   });
 
@@ -330,45 +331,36 @@ describe('applyWorldStateChanges', () => {
     expect(result.pending).toHaveLength(0);
   });
 
-  it('HIGH tier inserts into WorldNpcKnowledge when not dryRun', async () => {
-    prisma.worldNPC.findUnique.mockResolvedValue({ id: 'w1' });
+  it('HIGH NPC tier routes to pending via upsert (strict world-write gate)', async () => {
     const resolved = { entityId: 'w1', entityType: 'npc', similarity: 0.9 };
     const result = await applyWorldStateChanges({
       classifications: [basePipeline(npcDeathChange, resolved, 'high')],
       campaignId: 'c1',
     });
-    expect(prisma.worldNpcKnowledge.create).toHaveBeenCalledTimes(1);
-    expect(result.appliedKnowledge).toHaveLength(1);
-    const writtenData = prisma.worldNpcKnowledge.create.mock.calls[0][0].data;
-    expect(writtenData).toMatchObject({
-      npcId: 'w1',
-      source: 'llm_extraction:c1',
-      kind: 'npcDeath',
-    });
-    expect(writtenData.content).toContain('zginął pod bramą');
+    expect(prisma.worldNpcKnowledge.create).not.toHaveBeenCalled();
+    expect(prisma.pendingWorldStateChange.upsert).toHaveBeenCalledTimes(1);
+    expect(result.pending).toHaveLength(1);
+    expect(result.pending[0]).toMatchObject({ campaignId: 'c1', kind: 'npcDeath', reason: 'high_npc_pending_review' });
   });
 
-  it('skips HIGH write when WorldNPC row no longer exists', async () => {
-    prisma.worldNPC.findUnique.mockResolvedValue(null);
+  it('HIGH NPC still routes to pending even when WorldNPC row might not exist', async () => {
     const resolved = { entityId: 'wGhost', entityType: 'npc', similarity: 0.9 };
     const result = await applyWorldStateChanges({
       classifications: [basePipeline(npcDeathChange, resolved, 'high')],
       campaignId: 'c1',
     });
-    expect(result.skipped).toHaveLength(1);
-    expect(result.skipped[0].reason).toBe('world_npc_not_found');
+    expect(result.pending).toHaveLength(1);
+    expect(result.pending[0]).toMatchObject({ kind: 'npcDeath', reason: 'high_npc_pending_review' });
   });
 
-  it('write failure lands in skipped with write_failed reason', async () => {
-    prisma.worldNPC.findUnique.mockResolvedValue({ id: 'w1' });
-    prisma.worldNpcKnowledge.create.mockRejectedValue(new Error('db down'));
+  it('HIGH NPC pending upsert failure drops item gracefully', async () => {
+    prisma.pendingWorldStateChange.upsert.mockRejectedValueOnce(new Error('db down'));
     const resolved = { entityId: 'w1', entityType: 'npc', similarity: 0.9 };
     const result = await applyWorldStateChanges({
       classifications: [basePipeline(npcDeathChange, resolved, 'high')],
       campaignId: 'c1',
     });
-    expect(result.skipped).toHaveLength(1);
-    expect(result.skipped[0].reason).toBe('write_failed');
+    expect(result.pending).toHaveLength(0);
   });
 });
 
@@ -390,7 +382,7 @@ describe('runWorldStateChangePipeline', () => {
       ragQuery,
     });
     expect(result.classifications[0].tier).toBe('high');
-    expect(result.appliedKnowledge).toHaveLength(1);
+    expect(result.pending).toHaveLength(1);
   });
 
   it('assigns medium when LLM change lacks shadow corroboration', async () => {

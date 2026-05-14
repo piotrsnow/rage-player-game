@@ -19,6 +19,7 @@ export const initialState = {
   pendingCombatManoeuvre: null,
   isDead: false,
   typingPlayers: {},
+  streamingText: '',
   reconnectState: { status: 'disconnected', attempt: 0, delayMs: 0, maxAttempts: 10 },
 };
 
@@ -151,7 +152,10 @@ export function mpReducer(state, action) {
       };
 
     case 'SCENE_GENERATING':
-      return { ...state, isGenerating: true };
+      return { ...state, isGenerating: true, streamingText: '' };
+
+    case 'SCENE_CHUNK':
+      return { ...state, streamingText: (state.streamingText || '') + (action.payload.text || '') };
 
     case 'GENERATION_FAILED':
       return {
@@ -245,37 +249,11 @@ export function mpReducer(state, action) {
 
         if (stateChanges.currentLocation) {
           const world = { ...(newGameState.world || {}) };
-          const prevLoc = world.currentLocation;
-          const newLoc = stateChanges.currentLocation;
-          let mapConns = [...(world.mapConnections || [])];
-          let mapSt = [...(world.mapState || [])];
-
-          if (prevLoc && newLoc && prevLoc.toLowerCase() !== newLoc.toLowerCase()) {
-            const already = mapConns.some(
-              (c) =>
-                (c.from.toLowerCase() === prevLoc.toLowerCase() && c.to.toLowerCase() === newLoc.toLowerCase()) ||
-                (c.from.toLowerCase() === newLoc.toLowerCase() && c.to.toLowerCase() === prevLoc.toLowerCase())
-            );
-            if (!already) {
-              mapConns.push({ from: prevLoc, to: newLoc });
-            }
-            for (const locName of [prevLoc, newLoc]) {
-              if (!mapSt.some((m) => m.name?.toLowerCase() === locName.toLowerCase())) {
-                mapSt.push({
-                  id: `loc_${Date.now()}_${shortId(5)}`,
-                  name: locName,
-                  description: '',
-                  modifications: [],
-                });
-              }
-            }
-          }
-
-          world.currentLocation = newLoc;
-          world.mapConnections = mapConns;
-          world.mapState = mapSt;
+          world.currentLocation = stateChanges.currentLocation;
+          // DEPRECATED: mapConnections writes removed — LocationEdge graph is
+          // the source of truth for connectivity.
           const explored = new Set(world.exploredLocations || []);
-          explored.add(newLoc);
+          explored.add(stateChanges.currentLocation);
           world.exploredLocations = [...explored];
           newGameState = { ...newGameState, world };
         }
@@ -328,6 +306,7 @@ export function mpReducer(state, action) {
       return {
         ...state,
         isGenerating: false,
+        streamingText: '',
         gameState: newGameState,
         players: action.payload.room?.players || state.players,
       };

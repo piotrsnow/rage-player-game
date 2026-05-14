@@ -1,5 +1,5 @@
-import { useEffect } from 'react';
-import { getCurrentTurnCombatant, resolveEnemyTurns, getEnemyAction } from '../services/combatEngine';
+import { useEffect, useRef } from 'react';
+import { getCurrentTurnCombatant, resolveEnemyTurns, getEnemyAction, isCombatOver } from '../services/combatEngine';
 import { getCombatMoveDurationMs } from '../services/combatAnimationTiming';
 import { useEvent } from './useEvent';
 

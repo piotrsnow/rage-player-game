@@ -56,8 +56,8 @@ export function useGameplayDerivedState({
   const isGeneratingImage = sIsGeneratingImage;
   const combat = isMultiplayer ? mpGameState?.combat : sCombat;
 
-  const error = isMultiplayer ? mp.sError : sError;
-  const mpErrorCode = isMultiplayer ? mp.sErrorCode : null;
+  const error = isMultiplayer ? mp.state.error : sError;
+  const mpErrorCode = isMultiplayer ? mp.state.errorCode : null;
   const reconnectState = mp.state.reconnectState || { status: 'disconnected', attempt: 0, maxAttempts: 10 };
   const isMpReconnecting = isMultiplayer && reconnectState.status === 'reconnecting';
   const showMpConnectionBanner = isMultiplayer && (!mp.state.connected || isMpReconnecting);
@@ -65,6 +65,7 @@ export function useGameplayDerivedState({
   const aiCosts = sAiCosts;
   const currentScene = scenes[scenes.length - 1] || null;
   const tensionScore = scenes.length > 0 ? calculateTensionScore(scenes, sCombat) : 0;
+  const mpStreamingText = isMultiplayer ? (mp.state.streamingText || '') : '';
 
   return {
     isMultiplayer,
@@ -93,5 +94,6 @@ export function useGameplayDerivedState({
     aiCosts,
     currentScene,
     tensionScore,
+    mpStreamingText,
   };
 }

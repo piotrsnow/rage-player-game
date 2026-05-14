@@ -93,30 +93,6 @@ export function getRemainingMovementPoints(actor) {
 
 export const SKIRMISH_MODE_COMBAT = 'combat';
 export const SKIRMISH_MODE_BEER_DUEL = 'beer_duel';
-const DEFAULT_BEER_COUNT_MIN = 20;
-const DEFAULT_BEER_COUNT_MAX = 30;
-const BEER_DUEL_VOMIT_MAX_SLIPS_PER_ROUND = 2;
-const BEER_DUEL_VOMIT_MAX_PLACES_PER_ROUND = 2;
-const BEER_DUEL_VOMIT_PLACE_RANGE = 2;
-
-function cloneSkirmishForMutate(sk) {
-  if (!sk) return null;
-  return {
-    ...sk,
-    beerTokens: (sk.beerTokens || []).map((token) => ({ ...token })),
-    vomitPatches: (sk.vomitPatches || []).map((p) => ({ ...p })),
-    scoreByCombatantId: { ...(sk.scoreByCombatantId || {}) },
-    winnerIds: [...(sk.winnerIds || [])],
-  };
-}
-
-function vomitPatchAt(skirmish, x, y) {
-  return (skirmish?.vomitPatches || []).some((p) => p.x === x && p.y === y);
-}
-
-function beerTokenBlocksCell(skirmish, x, y) {
-  return (skirmish?.beerTokens || []).some((t) => t.x === x && t.y === y && !t.collectedBy);
-}
 
 function spawnTerrainTiles(W, H, combatants) {
   const cfg = gameData.terrainSpawnConfig;
@@ -161,34 +137,6 @@ function spawnTerrainTiles(W, H, combatants) {
 
 function normalizeSkirmishMode(mode) {
   return mode === SKIRMISH_MODE_BEER_DUEL ? SKIRMISH_MODE_BEER_DUEL : SKIRMISH_MODE_COMBAT;
-}
-
-function getBeerSpawnRange(modeConfig = null) {
-  const minRaw = Number(modeConfig?.beerCountMin);
-  const maxRaw = Number(modeConfig?.beerCountMax);
-  const min = Number.isFinite(minRaw) ? Math.max(1, Math.floor(minRaw)) : DEFAULT_BEER_COUNT_MIN;
-  const max = Number.isFinite(maxRaw) ? Math.max(min, Math.floor(maxRaw)) : DEFAULT_BEER_COUNT_MAX;
-  return { min, max };
-}
-
-function spawnBeerTokens(W, H, combatants, modeConfig = null) {
-  const { min, max } = getBeerSpawnRange(modeConfig);
-  const count = min + Math.floor(Math.random() * (max - min + 1));
-  const occupied = getOccupiedCells(combatants);
-  const cells = [];
-  for (let x = 0; x < W; x++) {
-    for (let y = 0; y < H; y++) {
-      if (!occupied.has(`${x}:${y}`)) cells.push({ x, y });
-    }
-  }
-  const tokens = [];
-  for (let i = 0; i < count && cells.length > 0; i++) {
-    const idx = Math.floor(Math.random() * cells.length);
-    const cell = cells[idx];
-    tokens.push({ id: `beer_${shortId(4)}_${i}`, x: cell.x, y: cell.y, collectedBy: null });
-    cells.splice(idx, 1);
-  }
-  return tokens;
 }
 
 export function getTileAt(terrainTiles, x, y) {
@@ -736,8 +684,6 @@ function createCombatantFromCharacter(character, id, type) {
     position: { x: 0, y: 0 },
     movementUsed: 0,
     movementAllowance: getMovementAllowance(character),
-    beerDuelVomitSlipUses: 0,
-    beerDuelVomitPlaceUses: 0,
   };
 }
 
@@ -761,43 +707,22 @@ export function createCombatState(playerCharacter, enemies, allies = [], options
 
   const W = gameData.BATTLEFIELD_WIDTH;
   const H = gameData.BATTLEFIELD_HEIGHT;
-  const terrainTiles = spawnTerrainTiles(W, H, combatants);
-  const beerTokens = mode === SKIRMISH_MODE_BEER_DUEL
-    ? spawnBeerTokens(W, H, combatants, options?.modeConfig)
-    : [];
+  const terrainTiles = mode === SKIRMISH_MODE_BEER_DUEL ? [] : spawnTerrainTiles(W, H, combatants);
 
   for (const c of combatants) {
     c.initiative = rollInitiative(c);
   }
   combatants.sort((a, b) => b.initiative - a.initiative);
 
-  if (mode === SKIRMISH_MODE_BEER_DUEL) {
-    const playerCombatant = combatants.find((c) => c.type === 'player');
-    if (playerCombatant) {
-      const base = Number(playerCombatant.movementAllowance);
-      const allowance = Number.isFinite(base) && base > 0 ? base : gameData.DEFAULT_MOVEMENT;
-      playerCombatant.movementAllowance = Math.max(1, Math.floor(allowance * 2));
-    }
-  }
-
   const combatState = {
     active: true,
     round: 1,
     turnIndex: 0,
     mode,
+    modeConfig: options?.modeConfig || null,
     combatants,
     terrainTiles,
-    skirmish: mode === SKIRMISH_MODE_BEER_DUEL
-      ? {
-        beerTokens,
-        beersRemaining: beerTokens.length,
-        scoreByCombatantId: {},
-        winnerIds: [],
-        winnerScore: 0,
-        isComplete: false,
-        vomitPatches: [],
-      }
-      : null,
+    skirmish: null,
     log: ['Combat begins! Round 1.'],
     resolved: false,
     playerStats: {
@@ -815,124 +740,11 @@ export function createCombatState(playerCharacter, enemies, allies = [], options
   return combatState;
 }
 
-function finalizeBeerDuelIfComplete(state) {
-  if (state.mode !== SKIRMISH_MODE_BEER_DUEL || !state.skirmish) return;
-  const remaining = state.skirmish.beerTokens.filter((token) => !token.collectedBy).length;
-  state.skirmish.beersRemaining = remaining;
-  if (remaining > 0 || state.skirmish.isComplete) return;
-
-  const entries = Object.entries(state.skirmish.scoreByCombatantId || {});
-  const maxScore = entries.reduce((max, [, score]) => Math.max(max, Number(score) || 0), 0);
-  const winnerIds = entries
-    .filter(([, score]) => (Number(score) || 0) === maxScore)
-    .map(([id]) => id);
-
-  state.skirmish.winnerIds = winnerIds;
-  state.skirmish.winnerScore = maxScore;
-  state.skirmish.isComplete = true;
-}
-
-function collectBeerForActor(state, actor, result) {
-  if (state.mode !== SKIRMISH_MODE_BEER_DUEL || !state.skirmish || !actor) return;
-  const pos = normalizePos(actor.position);
-  const token = state.skirmish.beerTokens.find((item) => !item.collectedBy && item.x === pos.x && item.y === pos.y);
-  if (!token) return;
-
-  token.collectedBy = actor.id;
-  const prevScore = Number(state.skirmish.scoreByCombatantId[actor.id]) || 0;
-  const nextScore = prevScore + 1;
-  state.skirmish.scoreByCombatantId[actor.id] = nextScore;
-  state.skirmish.beersRemaining = Math.max(0, state.skirmish.beersRemaining - 1);
-  result.collectedBeer = true;
-  result.collectedBy = actor.name;
-  result.collectedTotal = nextScore;
-  result.beersRemaining = state.skirmish.beersRemaining;
-
-  finalizeBeerDuelIfComplete(state);
-}
-
-function tryBeerDuelMove(state, actor, actorId, target, cur, W, H) {
-  const moveMods = computeEffectiveMods(actor.activeEffects);
-  const effectiveAllowance = Math.max(0, actor.movementAllowance + moveMods.movementMod);
-  const remainingStart = effectiveAllowance - (actor.movementUsed || 0);
-
-  let pos = { ...cur };
-  let totalCost = 0;
-  let slipUses = actor.beerDuelVomitSlipUses || 0;
-
-  const inBounds = (x, y) => x >= 0 && x < W && y >= 0 && y < H;
-  const tryStep = (nx, ny) => inBounds(nx, ny) && !isCellOccupied(state.combatants, nx, ny, actorId);
-
-  while (pos.x !== target.x || pos.y !== target.y) {
-    const dx = target.x - pos.x;
-    const dy = target.y - pos.y;
-    const sx = dx === 0 ? 0 : (dx > 0 ? 1 : -1);
-    const sy = dy === 0 ? 0 : (dy > 0 ? 1 : -1);
-    const nx = pos.x + sx;
-    const ny = pos.y + sy;
-    if (!tryStep(nx, ny)) return null;
-
-    if (vomitPatchAt(state.skirmish, nx, ny) && slipUses < BEER_DUEL_VOMIT_MAX_SLIPS_PER_ROUND) {
-      slipUses += 1;
-      pos = { x: nx, y: ny };
-      const sx2 = nx + sx;
-      const sy2 = ny + sy;
-      if ((sx !== 0 || sy !== 0) && tryStep(sx2, sy2)) {
-        pos = { x: sx2, y: sy2 };
-      }
-      continue;
-    }
-
-    const tile = getTileAt(state.terrainTiles, nx, ny);
-    const freezeMult = tile?.type === 'freeze' ? 2 : 1;
-    const stepCost = 1 * freezeMult;
-    if (totalCost + stepCost > remainingStart) return null;
-    totalCost += stepCost;
-    pos = { x: nx, y: ny };
-  }
-
-  return { pos, totalCost, slipUses };
-}
-
-export function placeBeerDuelVomitPatch(combat, actorId, cell) {
-  const state = {
-    ...combat,
-    combatants: combat.combatants.map((c) => ({ ...c })),
-    terrainTiles: (combat.terrainTiles || []).map((t) => ({ ...t })),
-    skirmish: cloneSkirmishForMutate(combat.skirmish),
-  };
-  if (state.mode !== SKIRMISH_MODE_BEER_DUEL || !state.skirmish) return { combat: state, placed: false };
-  const actor = state.combatants.find((c) => c.id === actorId);
-  if (!actor || actor.isDefeated) return { combat: state, placed: false };
-
-  const placesUsed = actor.beerDuelVomitPlaceUses || 0;
-  if (placesUsed >= BEER_DUEL_VOMIT_MAX_PLACES_PER_ROUND) return { combat: state, placed: false };
-
-  const W = gameData.BATTLEFIELD_WIDTH;
-  const H = gameData.BATTLEFIELD_HEIGHT;
-  const x = Math.max(0, Math.min(W - 1, Math.round(cell.x)));
-  const y = Math.max(0, Math.min(H - 1, Math.round(cell.y)));
-
-  if (isCellOccupied(state.combatants, x, y, actorId)) return { combat: state, placed: false };
-  if (beerTokenBlocksCell(state.skirmish, x, y)) return { combat: state, placed: false };
-  if (vomitPatchAt(state.skirmish, x, y)) return { combat: state, placed: false };
-
-  const ap = normalizePos(actor.position);
-  const dist = Math.max(Math.abs(x - ap.x), Math.abs(y - ap.y));
-  if (dist > BEER_DUEL_VOMIT_PLACE_RANGE) return { combat: state, placed: false };
-
-  if (!state.skirmish.vomitPatches) state.skirmish.vomitPatches = [];
-  state.skirmish.vomitPatches.push({ id: `vomit_${shortId(4)}`, x, y });
-  actor.beerDuelVomitPlaceUses = placesUsed + 1;
-  return { combat: state, placed: true };
-}
-
 export function moveCombatant(combat, actorId, targetPosition) {
   const state = {
     ...combat,
     combatants: combat.combatants.map((c) => ({ ...c })),
     terrainTiles: (combat.terrainTiles || []).map(t => ({ ...t })),
-    skirmish: cloneSkirmishForMutate(combat.skirmish),
   };
   const actor = state.combatants.find((c) => c.id === actorId);
   if (!actor || actor.isDefeated) return { combat: state, moved: false };
@@ -949,42 +761,7 @@ export function moveCombatant(combat, actorId, targetPosition) {
     return { combat: state, moved: false };
   }
 
-  if (state.mode === SKIRMISH_MODE_BEER_DUEL && state.skirmish) {
-    const sim = tryBeerDuelMove(state, actor, actorId, target, cur, W, H);
-    if (!sim) return { combat: state, moved: false };
-    actor.movementUsed = (actor.movementUsed || 0) + sim.totalCost;
-    actor.position = sim.pos;
-    actor.beerDuelVomitSlipUses = sim.slipUses;
-    const dist = Math.max(Math.abs(sim.pos.x - cur.x), Math.abs(sim.pos.y - cur.y));
-    const destTile = getTileAt(state.terrainTiles, actor.position.x, actor.position.y);
-    const result = { combat: state, moved: true, distance: dist };
-    collectBeerForActor(state, actor, result);
-    if (destTile?.type === 'extraTurn') {
-      actor.bonusTurn = true;
-      const tile = state.terrainTiles.find(t => t.x === actor.position.x && t.y === actor.position.y);
-      if (tile) tile.consumed = true;
-      result.extraTurn = true;
-    }
-    if (destTile?.type === 'teleport') {
-      const occupiedCells = getOccupiedCells(state.combatants, actorId);
-      const tileCells = new Set(state.terrainTiles.filter(t => !t.consumed).map(t => `${t.x}:${t.y}`));
-      const emptyCells = [];
-      for (let x = 0; x < W; x++) {
-        for (let y = 0; y < H; y++) {
-          const key = `${x}:${y}`;
-          if (!occupiedCells.has(key) && !tileCells.has(key)) emptyCells.push({ x, y });
-        }
-      }
-      if (emptyCells.length > 0) {
-        actor.position = emptyCells[Math.floor(Math.random() * emptyCells.length)];
-        result.teleported = true;
-        collectBeerForActor(state, actor, result);
-      }
-    }
-    return result;
-  }
-
-  // Standard (non–beer-duel) movement: pay full Chebyshev distance in one jump
+  // Standard movement: pay full Chebyshev distance in one jump
   const destTile = getTileAt(state.terrainTiles, target.x, target.y);
   const freezeMultiplier = destTile?.type === 'freeze' ? 2 : 1;
 
@@ -999,7 +776,6 @@ export function moveCombatant(combat, actorId, targetPosition) {
   actor.position = target;
 
   const result = { combat: state, moved: true, distance: dist };
-  collectBeerForActor(state, actor, result);
 
   if (destTile?.type === 'extraTurn') {
     actor.bonusTurn = true;
@@ -1021,7 +797,6 @@ export function moveCombatant(combat, actorId, targetPosition) {
     if (emptyCells.length > 0) {
       actor.position = emptyCells[Math.floor(Math.random() * emptyCells.length)];
       result.teleported = true;
-      collectBeerForActor(state, actor, result);
     }
   }
 
@@ -1531,8 +1306,6 @@ export function advanceRound(combat) {
   for (const c of state.combatants) {
     c.conditions = c.conditions.filter((cond) => cond !== 'defending' && cond !== 'dodging');
     c.movementUsed = 0;
-    c.beerDuelVomitSlipUses = 0;
-    c.beerDuelVomitPlaceUses = 0;
 
     if (c.isDefeated) continue;
 
@@ -1627,9 +1400,7 @@ export function getCurrentTurnCombatant(combat) {
 
 export function isCombatOver(combat) {
   if (!combat?.combatants) return true;
-  if (combat.mode === SKIRMISH_MODE_BEER_DUEL) {
-    return Boolean(combat.skirmish?.isComplete) || (combat.skirmish?.beersRemaining ?? 0) <= 0;
-  }
+  if (combat.mode === SKIRMISH_MODE_BEER_DUEL) return false;
   const activeEnemies = combat.combatants.filter((c) => c.type === 'enemy' && !c.isDefeated);
   const activeFriendly = combat.combatants.filter((c) => (c.type === 'player' || c.type === 'ally') && !c.isDefeated);
   return activeEnemies.length === 0 || activeFriendly.length === 0;
@@ -1637,15 +1408,7 @@ export function isCombatOver(combat) {
 
 export function isPlayerWinning(combat) {
   if (!combat?.combatants) return false;
-  if (combat.mode === SKIRMISH_MODE_BEER_DUEL) {
-    const player = combat.combatants.find((c) => c.type === 'player');
-    if (!player || !combat.skirmish) return false;
-    const playerScore = Number(combat.skirmish.scoreByCombatantId?.[player.id]) || 0;
-    const enemyBest = combat.combatants
-      .filter((c) => c.type === 'enemy')
-      .reduce((max, enemy) => Math.max(max, Number(combat.skirmish.scoreByCombatantId?.[enemy.id]) || 0), 0);
-    return playerScore >= enemyBest;
-  }
+  if (combat.mode === SKIRMISH_MODE_BEER_DUEL) return false;
   const activeFriendly = combat.combatants.filter((c) => (c.type === 'player' || c.type === 'ally') && !c.isDefeated);
   if (activeFriendly.length === 0) return false;
   const enemies = combat.combatants.filter((c) => c.type === 'enemy');
@@ -1662,10 +1425,6 @@ export function isPlayerWinning(combat) {
 export function getEnemyAction(combat, enemyId) {
   const enemy = combat.combatants.find((c) => c.id === enemyId);
   if (!enemy || enemy.isDefeated) return null;
-
-  if (combat.mode === SKIRMISH_MODE_BEER_DUEL) {
-    return { manoeuvre: 'beer_duel_move', targetId: null };
-  }
 
   if (isRestricted(enemy.activeEffects, 'skip_turn')) {
     return { skipped: true, reason: 'skip_turn', enemyName: enemy.name };
@@ -1712,71 +1471,7 @@ function scoreTileAt(terrainTiles, x, y) {
   return TILE_SCORE[tile.type] || 0;
 }
 
-function findClosestBeerToken(state, actor) {
-  const available = state.skirmish?.beerTokens?.filter((token) => !token.collectedBy) || [];
-  if (available.length === 0) return null;
-  const pos = normalizePos(actor.position);
-  return available.reduce((best, token) => {
-    const dist = Math.max(Math.abs(token.x - pos.x), Math.abs(token.y - pos.y));
-    if (!best || dist < best.dist) return { token, dist };
-    return best;
-  }, null)?.token || null;
-}
-
-function resolveBeerDuelEnemyTurns(initialCombat) {
-  let state = {
-    ...initialCombat,
-    combatants: initialCombat.combatants.map((c) => ({ ...c })),
-    terrainTiles: (initialCombat.terrainTiles || []).map((t) => ({ ...t })),
-    skirmish: cloneSkirmishForMutate(initialCombat.skirmish),
-  };
-  const results = [];
-
-  while (state.turnIndex < state.combatants.length) {
-    const current = state.combatants[state.turnIndex];
-    if (!current || current.isDefeated) {
-      state = advanceTurn(state);
-      continue;
-    }
-    if (current.type === 'player') break;
-
-    const token = findClosestBeerToken(state, current);
-    if (!token) {
-      finalizeBeerDuelIfComplete(state);
-      break;
-    }
-
-    const from = normalizePos(current.position);
-    const step = {
-      x: from.x + Math.sign(token.x - from.x),
-      y: from.y + Math.sign(token.y - from.y),
-    };
-    const { combat: movedState, moved, collectedBeer, collectedTotal, beersRemaining } = moveCombatant(state, current.id, step);
-    state = movedState;
-    if (moved && collectedBeer) {
-      results.push({
-        actor: current.name,
-        actorId: current.id,
-        actorType: current.type,
-        outcome: 'beer_collected',
-        collectedTotal,
-        beersRemaining,
-      });
-    }
-
-    if (isCombatOver(state)) break;
-    state = advanceTurn(state);
-    if (isCombatOver(state)) break;
-  }
-
-  return { combat: state, results };
-}
-
 export function resolveEnemyTurns(combat) {
-  if (combat.mode === SKIRMISH_MODE_BEER_DUEL) {
-    return resolveBeerDuelEnemyTurns(combat);
-  }
-
   let state = {
     ...combat,
     combatants: combat.combatants.map((c) => ({ ...c })),
@@ -1895,14 +1590,7 @@ export function endCombat(combat, playerCharacter) {
     : null;
 
   const playerSurvived = playerCombatant ? !playerCombatant.isDefeated : false;
-  const playerBeerScore = Number(combat.skirmish?.scoreByCombatantId?.[playerCombatant?.id]) || 0;
-  const winnerIds = combat.skirmish?.winnerIds || [];
-  const playerWonBeerDuel = combat.mode === SKIRMISH_MODE_BEER_DUEL && playerCombatant
-    ? winnerIds.includes(playerCombatant.id)
-    : false;
-  const isVictory = combat.mode === SKIRMISH_MODE_BEER_DUEL
-    ? playerWonBeerDuel
-    : playerSurvived && enemiesDefeated === totalEnemies && totalEnemies > 0;
+  const isVictory = playerSurvived && enemiesDefeated === totalEnemies && totalEnemies > 0;
   const combatStats = buildCombatStats(combat);
 
   const combatResult = {
@@ -1918,17 +1606,7 @@ export function endCombat(combat, playerCharacter) {
     playerSurvived,
     flawless: isVictory && combatStats.damageTaken === 0,
     survivingEffects: playerCombatant?.activeEffects || [],
-    skirmishSummary: combat.mode === SKIRMISH_MODE_BEER_DUEL
-      ? {
-        type: SKIRMISH_MODE_BEER_DUEL,
-        beersCollectedByCombatantId: { ...(combat.skirmish?.scoreByCombatantId || {}) },
-        beersCollectedByPlayer: playerBeerScore,
-        beersRemaining: Number(combat.skirmish?.beersRemaining) || 0,
-        winnerIds: [...winnerIds],
-        winnerScore: Number(combat.skirmish?.winnerScore) || 0,
-        isTie: winnerIds.length > 1,
-      }
-      : null,
+    skirmishSummary: null,
   };
   devLog.emit({ category: 'combat', type: 'combat_end', label: `Combat ended: ${combatResult.outcome} (${combatResult.rounds} rounds)`, data: { outcome: combatResult.outcome, rounds: combatResult.rounds, enemiesDefeated, totalEnemies, woundsChange: woundsDelta, flawless: combatResult.flawless, stats: combatStats } });
   return combatResult;

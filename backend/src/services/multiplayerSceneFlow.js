@@ -20,6 +20,7 @@ import {
   persistCharacterSnapshot,
 } from './characterRelations.js';
 import { normalizeMultiplayerStateChanges } from '../../../shared/contracts/multiplayer.js';
+import { generateSceneEmbedding } from './sceneGenerator/processStateChanges.js';
 
 const log = childLogger({ module: 'multiplayer' });
 
@@ -97,6 +98,54 @@ export async function fetchOwnedCharacter(characterId, userId) {
   return loadCharacterSnapshot({ id: characterId, userId });
 }
 
+async function syncNpcStateToCampaign(campaignId, stateChanges) {
+  const npcChanges = stateChanges?.npcs;
+  if (!Array.isArray(npcChanges) || npcChanges.length === 0) return;
+
+  for (const npc of npcChanges) {
+    if (!npc.name) continue;
+    try {
+      const existing = await prisma.campaignNPC.findFirst({
+        where: { campaignId, name: { equals: npc.name, mode: 'insensitive' } },
+      });
+      if (!existing) continue;
+      const data = {};
+      if (npc.alive !== undefined) data.alive = npc.alive;
+      if (npc.role) data.role = npc.role;
+      if (npc.location) data.lastLocation = npc.location;
+      if (Object.keys(data).length > 0) {
+        await prisma.campaignNPC.update({ where: { id: existing.id }, data });
+      }
+    } catch (err) {
+      log.warn({ err: err?.message, npcName: npc.name }, 'NPC sync to CampaignNPC failed');
+    }
+  }
+}
+
+async function persistSceneToDb(campaignId, sceneResult, actions, gameState) {
+  const sceneIndex = (gameState.scenes || []).length - 1;
+  const playerAction = actions.map((a) => `${a.name}: ${a.action}`).join('\n');
+  const scene = sceneResult.scene || {};
+  const savedScene = await prisma.campaignScene.create({
+    data: {
+      campaignId,
+      sceneIndex,
+      narrative: scene.narrative || '',
+      chosenAction: playerAction,
+      suggestedActions: scene.suggestedActions || [],
+      dialogueSegments: scene.dialogueSegments || [],
+      imagePrompt: scene.imagePrompt || null,
+      soundEffect: scene.soundEffect || null,
+      diceRoll: scene.diceRolls ?? scene.diceRoll ?? null,
+      stateChanges: sceneResult.stateChanges ?? null,
+      scenePacing: scene.scenePacing || 'exploration',
+    },
+  });
+  generateSceneEmbedding(savedScene).catch((err) =>
+    log.warn({ err: err?.message }, 'MP scene embedding failed (non-fatal)'),
+  );
+}
+
 export function buildArrivalNarrative(playerName, language = 'en') {
   if (typeof language === 'string' && language.toLowerCase().startsWith('pl')) {
     return `${playerName} dołącza do drużyny i zajmuje miejsce przy ognisku, gotów ruszyć dalej.`;
@@ -128,6 +177,39 @@ export async function runMultiplayerSceneFlow({
 
   const prevMomentum = room.gameState.characterMomentum || {};
 
+  let campaignNpcs = null;
+  if (room.campaignId) {
+    try {
+      const rawNpcs = await prisma.campaignNPC.findMany({
+        where: { campaignId: room.campaignId, alive: true },
+        select: {
+          name: true, role: true, activeGoal: true,
+          experiences: { orderBy: { addedAt: 'desc' }, take: 5, select: { content: true } },
+        },
+        take: 30,
+      });
+      campaignNpcs = rawNpcs.map((n) => ({
+        ...n,
+        experienceLog: n.experiences?.map((e) => ({ text: e.content })) || [],
+      }));
+    } catch (err) {
+      log.warn({ err: err?.message }, 'Failed to load CampaignNPCs for MP (non-fatal)');
+    }
+  }
+
+  let chunkAccumulated = '';
+  let lastBroadcastLen = 0;
+  const CHUNK_MIN_CHARS = 60;
+
+  const onChunk = (text) => {
+    chunkAccumulated += text;
+    if (chunkAccumulated.length - lastBroadcastLen >= CHUNK_MIN_CHARS) {
+      const delta = chunkAccumulated.slice(lastBroadcastLen);
+      lastBroadcastLen = chunkAccumulated.length;
+      broadcast(room, { type: 'SCENE_CHUNK', text: delta });
+    }
+  };
+
   const sceneResult = await generateMultiplayerScene(
     room.gameState,
     room.settings,
@@ -137,6 +219,7 @@ export async function runMultiplayerSceneFlow({
     msg.language || 'en',
     msg.dmSettings || null,
     prevMomentum,
+    { campaignNpcs, onChunk },
   );
 
   const { validated } = validateMultiplayerStateChanges(
@@ -172,6 +255,13 @@ export async function runMultiplayerSceneFlow({
   });
 
   saveRoomToDB(roomCode).catch((err) => fastify.log.warn(err, 'MP room save failed'));
+
+  if (room.campaignId) {
+    persistSceneToDb(room.campaignId, sceneResult, actions, updatedGameState)
+      .catch((err) => fastify.log.warn(err, 'MP CampaignScene persist failed'));
+    syncNpcStateToCampaign(room.campaignId, sceneResult.stateChanges)
+      .catch((err) => fastify.log.warn(err, 'MP NPC sync failed'));
+  }
 
   if (needsCompression(updatedGameState)) {
     compressOldScenes(updatedGameState, null, msg.language || 'en')

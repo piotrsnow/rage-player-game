@@ -11,8 +11,8 @@
 import { prisma } from '../../lib/prisma.js';
 import { childLogger } from '../../lib/logger.js';
 import { callAIJson, parseJsonOrNull } from '../aiJsonCall.js';
-import { forNpc, parseEventPayload, appendEvent } from './worldEventLog.js';
-import { listDeferred, appendDeferred } from './deferredOutbox.js';
+import { forNpc, parseEventPayload } from './worldEventLog.js';
+import { listDeferred } from './deferredOutbox.js';
 import { ensureAppearanceAndDialect } from './npcAppearanceDialect.js';
 
 const log = childLogger({ module: 'npcDialog' });
@@ -127,30 +127,8 @@ export async function generate({
   });
 
   // Audit event — deferred for companion, campaign-scoped otherwise
-  const eventPayload = {
-    excerpt: reply.dialog.slice(0, 200),
-    emote: reply.emote,
-  };
-  try {
-    if (isCompanion) {
-      await appendDeferred({
-        campaignId,
-        worldNpcId,
-        eventType: 'spoke',
-        payload: eventPayload,
-      });
-    } else {
-      await appendEvent({
-        worldNpcId,
-        campaignId,
-        eventType: 'spoke',
-        payload: eventPayload,
-        visibility: 'campaign',
-      });
-    }
-  } catch {
-    // non-fatal — dialog was returned to caller, log persist is best-effort
-  }
+  // Strict world-write gate: dialog events no longer written to WorldEvent
+  // during active campaign play. Dialog content persists in WorldNpcDialogTurn.
 
   return reply;
 }

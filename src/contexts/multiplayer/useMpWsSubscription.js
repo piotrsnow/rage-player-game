@@ -42,6 +42,7 @@ export function useMpWsSubscription({ dispatch, sceneCallbackRef, pendingQuestVe
       wsService.on(WS_SERVER_TYPES.GAME_STARTED, (msg) => dispatch({ type: 'GAME_STARTED', payload: msg })),
       wsService.on(WS_SERVER_TYPES.ACTIONS_UPDATED, (msg) => dispatch({ type: 'ACTIONS_UPDATED', payload: msg })),
       wsService.on(WS_SERVER_TYPES.SCENE_GENERATING, () => dispatch({ type: 'SCENE_GENERATING' })),
+      wsService.on(WS_SERVER_TYPES.SCENE_CHUNK, (msg) => dispatch({ type: 'SCENE_CHUNK', payload: msg })),
       wsService.on(WS_SERVER_TYPES.GENERATION_FAILED, (msg) => dispatch({ type: 'GENERATION_FAILED', payload: msg })),
       wsService.on(WS_SERVER_TYPES.TYPING, (msg) => {
         dispatch({ type: 'TYPING_UPDATE', payload: msg });
@@ -81,6 +82,12 @@ export function useMpWsSubscription({ dispatch, sceneCallbackRef, pendingQuestVe
       }),
       wsService.on(WS_SERVER_TYPES.COMBAT_ENDED, (msg) => {
         dispatch({ type: 'COMBAT_ENDED', payload: msg });
+      }),
+      wsService.on(WS_SERVER_TYPES.BEER_DUEL_ACTION, (msg) => {
+        dispatch({ type: 'BEER_DUEL_ACTION', payload: msg });
+      }),
+      wsService.on(WS_SERVER_TYPES.BEER_DUEL_END, (msg) => {
+        dispatch({ type: 'BEER_DUEL_END', payload: msg });
       }),
       wsService.on(WS_SERVER_TYPES.PLAYER_DIED, (msg) => {
         dispatch({ type: 'PLAYER_DIED', payload: msg });
