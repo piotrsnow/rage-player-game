@@ -6,6 +6,7 @@ import { logLlmCallStart, logLlmCallFinish, logLlmCallFail } from './llmCallLogg
 import { pickStartSpawn, loadRoadNeighborsForSettlement } from './livingWorld/startSpawnPicker.js';
 import { rememberStartSpawn, attachInitialLocations } from './livingWorld/startSpawnCache.js';
 import { rollObjectiveTypes } from '../../../shared/domain/questObjectiveTypes.js';
+import { applyOpenAiTemperature } from './openaiModelParams.js';
 
 export async function generateCampaignStream(settings, { provider = 'openai', model = null, language = 'en', userApiKeys = null, userId = null } = {}, onEvent) {
   const resolvedProvider = provider === 'anthropic' ? 'anthropic' : 'openai';
@@ -109,23 +110,24 @@ function parseResponse(text) {
 }
 
 async function callOpenAIStreaming(systemPrompt, userPrompt, { model, maxTokens = 8000, apiKey } = {}, onChunk) {
+  const body = {
+    model,
+    messages: [
+      { role: 'system', content: systemPrompt },
+      { role: 'user', content: userPrompt },
+    ],
+    max_completion_tokens: maxTokens,
+    response_format: { type: 'json_object' },
+    stream: true,
+  };
+  applyOpenAiTemperature(body, model, 0.8);
   const response = await fetch('https://api.openai.com/v1/chat/completions', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
       Authorization: `Bearer ${apiKey}`,
     },
-    body: JSON.stringify({
-      model,
-      messages: [
-        { role: 'system', content: systemPrompt },
-        { role: 'user', content: userPrompt },
-      ],
-      temperature: 0.8,
-      max_completion_tokens: maxTokens,
-      response_format: { type: 'json_object' },
-      stream: true,
-    }),
+    body: JSON.stringify(body),
   });
 
   if (!response.ok) await parseProviderError(response, 'openai');

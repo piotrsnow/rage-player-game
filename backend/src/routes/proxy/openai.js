@@ -7,6 +7,7 @@ import { downscaleGeneratedImage, GENERATED_IMAGE_SCALE } from '../../services/i
 import { createMediaStore } from '../../services/mediaStore.js';
 import { config } from '../../config.js';
 import { AIServiceError, parseProviderError, toClientAiError } from '../../services/aiErrors.js';
+import { applyOpenAiTemperature } from '../../services/openaiModelParams.js';
 
 const store = createMediaStore(config);
 
@@ -97,6 +98,14 @@ export async function openaiProxyRoutes(fastify) {
     }
 
     const { messages, model, temperature, response_format, max_completion_tokens } = request.body;
+    const usedModel = model || config.aiModels.premium.openai;
+    const body = {
+      model: usedModel,
+      messages,
+      ...(response_format ? { response_format } : {}),
+      max_completion_tokens: Math.min(max_completion_tokens || 4096, 4096),
+    };
+    applyOpenAiTemperature(body, usedModel, temperature ?? 0.8);
 
     const response = await fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
@@ -104,13 +113,7 @@ export async function openaiProxyRoutes(fastify) {
         'Content-Type': 'application/json',
         Authorization: `Bearer ${apiKey}`,
       },
-      body: JSON.stringify({
-        model: model || config.aiModels.premium.openai,
-        messages,
-        temperature: temperature ?? 0.8,
-        ...(response_format ? { response_format } : {}),
-        max_completion_tokens: Math.min(max_completion_tokens || 4096, 4096),
-      }),
+      body: JSON.stringify(body),
     });
 
     if (!response.ok) {

@@ -13,6 +13,7 @@ import { childLogger } from '../lib/logger.js';
 import { resolveModelForTask } from './serverConfig.js';
 import { logLlmCallStart, logLlmCallFinish, logLlmCallFail, getLlmCallUserId } from './llmCallLogger.js';
 import { wrapPlayerInput } from '../../../shared/domain/playerInputSanitizer.js';
+import { applyOpenAiTemperature } from './openaiModelParams.js';
 
 const log = childLogger({ module: 'memoryCompressor' });
 
@@ -106,10 +107,6 @@ export async function callNano(systemPrompt, userPrompt, provider, { timeoutMs, 
 }
 
 async function callNanoOpenAI(systemPrompt, userPrompt, signal, maxTokens, model, reasoning = false) {
-  // Reasoning-family models (gpt-5.x, o-series) reject temperature!=1 and
-  // require max_completion_tokens. Non-reasoning chat models accept both
-  // field names, so we standardize on max_completion_tokens and skip
-  // temperature only for reasoning tier.
   const body = {
     model,
     messages: [
@@ -119,7 +116,7 @@ async function callNanoOpenAI(systemPrompt, userPrompt, signal, maxTokens, model
     max_completion_tokens: maxTokens,
     response_format: { type: 'json_object' },
   };
-  if (!reasoning) body.temperature = 0;
+  if (!reasoning) applyOpenAiTemperature(body, model, 0);
 
   const response = await fetch('https://api.openai.com/v1/chat/completions', {
     method: 'POST',

@@ -1,5 +1,6 @@
 import { config } from '../config.js';
 import { handlePostSceneWork } from '../services/postSceneWork.js';
+import { runLocationBoardVisuals } from '../services/fieldMapVisual/index.js';
 import { verifyOidcToken } from '../services/oidcVerify.js';
 import { releaseStaleCampaignLocks } from '../services/livingWorld/staleLockCleaner.js';
 import { logger } from '../lib/logger.js';
@@ -42,6 +43,39 @@ export async function internalRoutes(fastify) {
       log.error({ err, payload: request.body }, 'Post-scene work handler failed');
       // 500 triggers Cloud Tasks retry (exponential backoff, up to max-attempts)
       return reply.code(500).send({ error: 'Post-scene work failed' });
+    }
+  });
+
+  // Field-map visual generation — invoked after locationBoard route enqueues
+  // a task. Runs the LLM-supplied asset manifest through SD/Stability, builds
+  // an atlas, imports it into Map Studio under the campaign owner's userId.
+  fastify.post('/post-location-board-visuals', async (request, reply) => {
+    if (!config.cloudTasksEnabled) {
+      return reply.code(403).send({ error: 'Cloud Tasks not enabled' });
+    }
+
+    const authHeader = request.headers.authorization || '';
+    const token = authHeader.replace(/^Bearer\s+/i, '');
+    if (!token) {
+      return reply.code(401).send({ error: 'Missing OIDC token' });
+    }
+
+    try {
+      await verifyOidcToken(token, {
+        audience: config.selfUrl,
+        expectedServiceAccount: config.runtimeServiceAccount,
+      });
+    } catch (err) {
+      log.warn({ err }, 'OIDC verification failed');
+      return reply.code(401).send({ error: 'Invalid OIDC token' });
+    }
+
+    try {
+      const result = await runLocationBoardVisuals(request.body);
+      return reply.code(200).send({ ok: true, ...result });
+    } catch (err) {
+      log.error({ err, payload: request.body }, 'Location-board-visuals handler failed');
+      return reply.code(500).send({ error: 'Location-board-visuals failed' });
     }
   });
 

@@ -378,7 +378,8 @@ export async function runQuickBeat(campaignId, playerAction, options = {}, onEve
       try {
         const tblName = currentRef.kind === 'world' ? 'worldLocation' : 'campaignLocation';
         const locRow = await prisma[tblName].findUnique({ where: { id: currentRef.id }, select: { tacticalGrid: true } });
-        if (locRow?.tacticalGrid?.version === 1) {
+        const v = locRow?.tacticalGrid?.version;
+        if (v === 1 || v === 2) {
           const { applyBoardMutations } = await import('../../../../shared/domain/explorationBoard.js');
           const updated = applyBoardMutations({ ...locRow.tacticalGrid }, boardMutations);
           await prisma[tblName].update({ where: { id: currentRef.id }, data: { tacticalGrid: updated } });

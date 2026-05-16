@@ -6,6 +6,14 @@ export default defineConfig({
   plugins: [react()],
   server: {
     host: true,
+    allowedHosts: [
+      '.ngrok.dev',
+      '.ngrok-free.dev',
+      '.ngrok.io',
+      ...(process.env.VITE_ALLOWED_HOSTS
+        ? process.env.VITE_ALLOWED_HOSTS.split(',').map((h) => h.trim()).filter(Boolean)
+        : []),
+    ],
   },
   test: {
     // Vitest replaces default `exclude` when this key is set — keep

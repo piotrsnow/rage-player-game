@@ -67,6 +67,24 @@ export const config = {
     sceneHeight: parseInt(process.env.SD_WEBUI_SCENE_HEIGHT || '512', 10),
     hiresFix: process.env.SD_WEBUI_HIRES_FIX === '1',
     ipaModel: process.env.SD_WEBUI_IPA_MODEL || '',
+    // Tile preset — used by services/fieldMapVisual/imageGen.js for small
+    // pixel-art assets. Defaults trade quality for throughput: low step count
+    // (Turbo/LCM friendly), low CFG, nearest-neighbor scaling. Tune per
+    // checkpoint via the SD_WEBUI_TILE_* env vars listed below.
+    tileSteps: parseInt(process.env.SD_WEBUI_TILE_STEPS || '8', 10),
+    tileCfg: parseFloat(process.env.SD_WEBUI_TILE_CFG || '2.5'),
+    tileSampler: process.env.SD_WEBUI_TILE_SAMPLER || '',
+  },
+
+  // Field-map visual pipeline defaults. Per-campaign overrides live on
+  // CampaignCoreState.dmSettings (fieldMapVisualProvider /
+  // fieldMapBaseTilePx / fieldMapProjectTilesize / fieldMapStyleSuffix).
+  fieldMapVisuals: {
+    provider: process.env.FIELD_MAP_VISUAL_PROVIDER || 'sd-webui',
+    baseTilePx: parseInt(process.env.FIELD_MAP_BASE_TILE_PX || '64', 10),
+    projectTilesize: parseInt(process.env.FIELD_MAP_PROJECT_TILESIZE || '24', 10),
+    styleSuffix: process.env.FIELD_MAP_STYLE_SUFFIX
+      || 'top-down view, pixel art, seamless, no text, no letters, no watermark',
   },
 
   xttsUrl: process.env.XTTS_URL || '',

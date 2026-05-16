@@ -476,18 +476,53 @@ export async function crudCampaignRoutes(app) {
     if (npcs.length > 0) { if (!fullState.world) fullState.world = {}; fullState.world.npcs = npcs; }
     if (quests.active?.length || quests.completed?.length) fullState.quests = quests;
 
-    // F5 — re-inject currentLocation (input or seeded/startSpawn override) so
-    // the response carries the FE-shape `world.currentLocation`.
-    const responseCurrentLoc = (slim.world && slim.world.currentLocation)
-      || currentLocationName
-      || null;
-    if (responseCurrentLoc) {
-      if (!fullState.world) fullState.world = {};
-      fullState.world.currentLocation = responseCurrentLoc;
+    // Authoritative location trio after seed + startSpawn overrides (initial
+    // `campaign` row is stale — updates happened via prisma.campaign.update).
+    const freshLocation = await prisma.campaign.findUnique({
+      where: { id: campaign.id },
+      select: {
+        currentLocationName: true,
+        currentLocationKind: true,
+        currentLocationId: true,
+      },
+    }).catch(() => null);
+
+    // NPCs at the start sublocation often only have a string lastLocation from
+    // campaign-gen; backfill kind/id so the field map can match by ref.
+    if (
+      freshLocation?.currentLocationKind
+      && freshLocation?.currentLocationId
+      && freshLocation?.currentLocationName
+    ) {
+      await prisma.campaignNPC.updateMany({
+        where: {
+          campaignId: campaign.id,
+          lastLocation: { equals: freshLocation.currentLocationName, mode: 'insensitive' },
+        },
+        data: {
+          lastLocationKind: freshLocation.currentLocationKind,
+          lastLocationId: freshLocation.currentLocationId,
+        },
+      }).catch((err) => log.warn({ err: err?.message, campaignId: campaign.id }, 'start NPC location ref backfill failed'));
     }
 
+    await reconstructFromNormalized(campaign.id, fullState, {
+      currentLocationName: freshLocation?.currentLocationName ?? null,
+      currentLocationKind: freshLocation?.currentLocationKind ?? null,
+      currentLocationId: freshLocation?.currentLocationId ?? null,
+    });
+
     const characters = await fetchCampaignCharacters(characterIds);
-    return { ...campaign, coreState: fullState, characterIds, scenes: [], characters };
+    return {
+      ...campaign,
+      currentLocationName: freshLocation?.currentLocationName ?? campaign.currentLocationName,
+      currentLocationKind: freshLocation?.currentLocationKind ?? campaign.currentLocationKind,
+      currentLocationId: freshLocation?.currentLocationId ?? campaign.currentLocationId,
+      coreState: fullState,
+      characterIds,
+      scenes: [],
+      characters,
+    };
   });
 
   app.put('/:id', { schema: { body: CAMPAIGN_WRITE_SCHEMA } }, async (request, reply) => {

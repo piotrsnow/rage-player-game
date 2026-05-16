@@ -851,9 +851,8 @@ export async function livingWorldRoutes(fastify) {
     const campaign = await assertCampaignOwnership(request, reply, campaignId);
     if (!campaign) return;
 
-    if (!config.pixellabApiKey) {
-      return reply.code(503).send({ error: 'PIXELLAB_API_KEY not configured' });
-    }
+    // No pixellab gate — service prefers chargen compositor (filesystem assets,
+    // no external API) and only falls back to PixelLab if chargen fails.
 
     const { items, force } = request.body;
     const userId = request.user.id;

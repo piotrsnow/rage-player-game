@@ -11,11 +11,20 @@ import {
   gridSizeForLocationType,
   OBJECT_TYPES,
   ExplorationBoardSchema,
+  ASSET_LAYERS,
 } from '../../../../shared/domain/explorationBoard.js';
 import { lookupLocationByKindId } from '../../services/locationRefs.js';
+import { enqueuePostLocationBoardVisuals } from '../../services/cloudTasks.js';
+import { config } from '../../config.js';
+import { childLogger } from '../../lib/logger.js';
+
+const log = childLogger({ module: 'locationBoardRoute' });
 
 const TILE_ID_SET = new Set(ALL_TILE_IDS);
 const MOVEMENT_CATEGORIES = new Set(['movement', 'access', 'structural']);
+
+const DEFAULT_BASE_TILE_PX = 64;
+const MAX_ASSETS_PER_BOARD = 40;
 
 async function loadLocationRow(ref) {
   if (!ref?.kind || !ref?.id) return null;
@@ -148,31 +157,41 @@ function buildLocationPrompt(loc, neighbors, npcsHere, gridW, gridH) {
     ``,
     `Grid: ${gridW} columns × ${gridH} rows (col-major: tiles[col][row])`,
     ``,
-    `Tile palette (use ONLY these IDs):`,
+    `Tile palette (use ONLY these IDs in tiles[][] for gameplay logic):`,
     TILE_PALETTE_TEXT,
     ``,
     `Interactive object types you may place: ${OBJECT_TYPES.join(', ')}`,
     ``,
-    `Instructions:`,
-    `- Design the tile grid to match the location type and atmosphere`,
-    `- Place 2-6 interactive objects that make sense for this location (chests, altars, signs, etc.)`,
-    `- Place exits on the grid edges leading to connected locations`,
-    `- Choose a spawn point on a passable tile near the center or entrance`,
-    `- Place entity positions for NPCs present`,
+    `VISUAL MANIFEST (NEW — required):`,
+    `- Pick a short EN \`styleAnchor\` describing the art direction (e.g. "warm cozy pixel art, top-down RPG, soft palette, 16-bit JRPG feel, NO TEXT"). Apply it implicitly to every asset prompt.`,
+    `- List up to ${MAX_ASSETS_PER_BOARD} unique visual \`assets\`. Deduplicate aggressively — every patch of the same ground uses ONE assetId with many \`visualPlacements\`. A house roof / large rock / wagon is a \`stamp\` with footprint > 1.`,
+    `- Each asset prompt is ENGLISH, top-down view, pixel-art, NO LETTERS/SIGNS visible in the image. Concrete: "weathered wooden plank floor, top-down, pixel art, warm wood tones, seamless tileable".`,
+    `- Stamps (footprint w>1 OR h>1) describe a single coherent object (e.g. 2×2 cottage = "stone cottage with thatched roof, top-down chimney view, pixel art, dark wood door").`,
+    `- \`visualPlacements\` maps assets onto the grid by anchor (top-left cell for stamps). Layers: ground (under everything), overlay (e.g. grass tufts), object (chests, furniture).`,
+    `- \`objects[].visualAssetId\` may reference a stamp/tile assetId so the renderer draws a sprite instead of an emoji (optional).`,
     ``,
     `Return JSON:`,
     `{`,
-    `  "tiles": string[][] (${gridW} cols, each ${gridH} rows),`,
-    `  "objects": [{ "x": int, "y": int, "type": string, "name": string, "description": string, "interactable": bool, "passable": bool, "state": string|null }],`,
+    `  "tiles": string[][] (${gridW} cols, each ${gridH} rows, logical tile IDs only),`,
+    `  "objects": [{ "x": int, "y": int, "type": string, "name": string, "description": string, "interactable": bool, "passable": bool, "state": string|null, "visualAssetId": string|null }],`,
     `  "exits": [{ "x": int, "y": int, "targetLocationName": string, "direction": "N"|"S"|"E"|"W"|"up"|"down", "label": string }],`,
     `  "entities": [{ "id": string, "x": int, "y": int }],`,
-    `  "spawnPoint": { "x": int, "y": int }`,
+    `  "spawnPoint": { "x": int, "y": int },`,
+    `  "styleAnchor": string,`,
+    `  "assets": [{ "id": string, "kind": "tile"|"stamp", "footprint": { "w": int, "h": int }, "prompt": string, "layer": "ground"|"overlay"|"object", "passable": bool|null }],`,
+    `  "visualPlacements": [{ "assetId": string, "anchor": { "x": int, "y": int }, "layer": "ground"|"overlay"|"object" }]`,
     `}`,
   ].join('\n');
 }
 
 function buildSystemPromptForLocation(gridW, gridH) {
-  return `You are a top-down RPG map designer. Given a location description, produce a ${gridW}×${gridH} tile grid with interactive objects, exits, entity positions, and a spawn point. Use ONLY tile IDs from the provided palette. Make the layout match the location — walls for interiors, trees/rocks for outdoors, furniture for buildings. Place exits on grid edges matching connected locations. Respond with ONLY valid JSON.`;
+  return [
+    `You are a top-down RPG map + art director. For a given location you produce TWO layers in a single JSON response:`,
+    `1) LOGIC layer (tiles, objects, exits, entities, spawn) — game-mechanical, uses canonical tile IDs.`,
+    `2) VISUAL layer (styleAnchor + deduplicated assets + visualPlacements) — describes how the location should LOOK as pixel-art sprites, with concrete EN prompts a text-to-image model can render.`,
+    ``,
+    `Grid is ${gridW}×${gridH}. Place exits on grid edges matching connected locations. Cover the entire grid with ground asset placements (1×1) and add overlays/stamps where appropriate. NEVER request text/letters in any asset prompt. Respond with ONLY valid JSON.`,
+  ].join('\n');
 }
 
 function validateEntities(entities, tiles, gridW, gridH) {
@@ -229,20 +248,26 @@ function validateSpawnPoint(sp, tiles, gridW, gridH) {
   return { x, y };
 }
 
-function validateObjects(objects, gridW, gridH) {
+function validateObjects(objects, gridW, gridH, assetIdSet) {
   if (!Array.isArray(objects)) return [];
   return objects
     .filter((o) => o && typeof o.x === 'number' && typeof o.y === 'number' && o.type && o.name)
-    .map((o) => ({
-      x: Math.max(0, Math.min(gridW - 1, Math.round(o.x))),
-      y: Math.max(0, Math.min(gridH - 1, Math.round(o.y))),
-      type: String(o.type).slice(0, 40),
-      name: String(o.name).slice(0, 120),
-      description: o.description ? String(o.description).slice(0, 300) : undefined,
-      interactable: o.interactable !== false,
-      passable: o.passable !== false,
-      state: o.state ? String(o.state).slice(0, 20) : undefined,
-    }))
+    .map((o) => {
+      const out = {
+        x: Math.max(0, Math.min(gridW - 1, Math.round(o.x))),
+        y: Math.max(0, Math.min(gridH - 1, Math.round(o.y))),
+        type: String(o.type).slice(0, 40),
+        name: String(o.name).slice(0, 120),
+        description: o.description ? String(o.description).slice(0, 300) : undefined,
+        interactable: o.interactable !== false,
+        passable: o.passable !== false,
+        state: o.state ? String(o.state).slice(0, 20) : undefined,
+      };
+      if (o.visualAssetId && assetIdSet.has(String(o.visualAssetId))) {
+        out.visualAssetId = String(o.visualAssetId).slice(0, 64);
+      }
+      return out;
+    })
     .slice(0, 20);
 }
 
@@ -264,6 +289,50 @@ function validateExits(exits, neighbors, gridW, gridH) {
       };
     })
     .slice(0, 8);
+}
+
+/**
+ * Sanitize the visual manifest: dedupe asset IDs, clamp footprints, drop
+ * placements with unknown assetIds / out-of-grid anchors. Returns
+ * { assets, visualPlacements }.
+ */
+function validateVisualManifest(raw, gridW, gridH) {
+  const assetsIn = Array.isArray(raw?.assets) ? raw.assets : [];
+  const seen = new Map();
+  for (const a of assetsIn.slice(0, MAX_ASSETS_PER_BOARD * 2)) {
+    if (!a || typeof a !== 'object') continue;
+    const id = String(a.id || '').trim().toLowerCase().replace(/[^a-z0-9_]/g, '_').slice(0, 64);
+    if (!id || seen.has(id)) continue;
+    const kind = a.kind === 'stamp' ? 'stamp' : 'tile';
+    const fw = Math.max(1, Math.min(8, Math.round(a.footprint?.w ?? 1)));
+    const fh = Math.max(1, Math.min(8, Math.round(a.footprint?.h ?? 1)));
+    const layer = ASSET_LAYERS.includes(a.layer) ? a.layer : (kind === 'stamp' ? 'object' : 'ground');
+    const prompt = typeof a.prompt === 'string' ? a.prompt.trim().slice(0, 800) : '';
+    if (prompt.length < 4) continue;
+    seen.set(id, {
+      id, kind, footprint: { w: fw, h: fh }, prompt, layer,
+      ...(typeof a.passable === 'boolean' ? { passable: a.passable } : {}),
+    });
+  }
+  const assets = Array.from(seen.values()).slice(0, MAX_ASSETS_PER_BOARD);
+  const assetMap = new Map(assets.map((a) => [a.id, a]));
+
+  const placementsIn = Array.isArray(raw?.visualPlacements) ? raw.visualPlacements : [];
+  const placements = [];
+  for (const p of placementsIn.slice(0, gridW * gridH * 4)) {
+    if (!p || typeof p !== 'object') continue;
+    const assetId = String(p.assetId || '').trim().toLowerCase().slice(0, 64);
+    const a = assetMap.get(assetId);
+    if (!a) continue;
+    const ax = Math.round(p.anchor?.x ?? -1);
+    const ay = Math.round(p.anchor?.y ?? -1);
+    if (ax < 0 || ay < 0) continue;
+    if (ax + a.footprint.w > gridW) continue;
+    if (ay + a.footprint.h > gridH) continue;
+    const layer = ASSET_LAYERS.includes(p.layer) ? p.layer : a.layer;
+    placements.push({ assetId, anchor: { x: ax, y: ay }, layer });
+  }
+  return { assets, visualPlacements: placements };
 }
 
 function buildProceduralBoard(loc, neighbors, npcsHere, gridW, gridH) {
@@ -318,6 +387,15 @@ const LOCATION_BOARD_PARAM_SCHEMA = {
   required: ['campaignId'],
 };
 
+function readDmSettings(coreState) {
+  const dm = coreState?.dmSettings || {};
+  const cfg = config.fieldMapVisuals || {};
+  return {
+    baseTilePx: Math.max(16, Math.min(256, Math.round(dm.fieldMapBaseTilePx ?? cfg.baseTilePx ?? DEFAULT_BASE_TILE_PX))),
+    provider: (dm.fieldMapVisualProvider || cfg.provider) === 'stability' ? 'stability' : 'sd-webui',
+  };
+}
+
 export async function locationBoardRoutes(fastify) {
   fastify.post(
     '/campaigns/:campaignId/location-board',
@@ -354,8 +432,22 @@ export async function locationBoardRoutes(fastify) {
         return reply.code(404).send({ error: 'Location not found' });
       }
 
-      if (loc.tacticalGrid?.version === 1) {
-        return loc.tacticalGrid;
+      // Cached board — return immediately. If it's v2 and still pending, also
+      // re-enqueue the worker (idempotent if visualStatus === ready already).
+      const existing = loc.tacticalGrid;
+      if (existing?.version === 1) {
+        return existing;
+      }
+      if (existing?.version === 2) {
+        if (existing.visualStatus === 'pending' && Array.isArray(existing.assets) && existing.assets.length > 0) {
+          enqueuePostLocationBoardVisuals({
+            campaignId,
+            userId: campaign.userId,
+            locationKind: ref.kind,
+            locationId: ref.id,
+          }).catch((err) => log.warn({ err }, 'Re-enqueue location board visuals failed'));
+        }
+        return existing;
       }
 
       const [neighbors, npcsHere] = await Promise.all([
@@ -365,17 +457,20 @@ export async function locationBoardRoutes(fastify) {
 
       const locType = loc.locationType || '';
       const { w: gridW, h: gridH } = gridSizeForLocationType(locType);
+      const { baseTilePx } = readDmSettings(campaign.coreState);
 
       let board;
       try {
         const userApiKeys = await loadUserApiKeys(prisma, userId);
+        // Standard tier — more JSON real estate than nano. Visual manifest
+        // pushes the response past what nano reliably renders intact.
         const { text } = await callAIJson({
-          modelTier: 'nano',
+          modelTier: 'standard',
           taskType: 'location-board-gen',
           taskLabel: 'Location board generation',
           systemPrompt: buildSystemPromptForLocation(gridW, gridH),
           userPrompt: buildLocationPrompt(loc, neighbors, npcsHere, gridW, gridH),
-          maxTokens: 6000,
+          maxTokens: 12000,
           temperature: 0.4,
           userApiKeys,
           userId,
@@ -390,7 +485,10 @@ export async function locationBoardRoutes(fastify) {
             while (col.length < gridH) col.push('grass');
           }
 
-          const objects = validateObjects(parsed.objects, gridW, gridH);
+          const { assets, visualPlacements } = validateVisualManifest(parsed, gridW, gridH);
+          const assetIdSet = new Set(assets.map((a) => a.id));
+
+          const objects = validateObjects(parsed.objects, gridW, gridH, assetIdSet);
           const exits = validateExits(parsed.exits || [], neighbors, gridW, gridH);
           const entities = validateEntities(parsed.entities, sanitized, gridW, gridH);
           const spawnPoint = validateSpawnPoint(parsed.spawnPoint, sanitized, gridW, gridH);
@@ -401,18 +499,44 @@ export async function locationBoardRoutes(fastify) {
             '',
           );
 
-          board = {
-            version: 1,
-            width: gridW,
-            height: gridH,
-            tiles: sanitized,
-            objects,
-            exits,
-            entities,
-            spawnPoint,
-            theme: biome,
-            generatedAt: new Date().toISOString(),
-          };
+          const styleAnchor = typeof parsed.styleAnchor === 'string'
+            ? parsed.styleAnchor.trim().slice(0, 400)
+            : '';
+
+          if (assets.length > 0) {
+            board = {
+              version: 2,
+              width: gridW,
+              height: gridH,
+              tiles: sanitized,
+              objects,
+              exits,
+              entities,
+              spawnPoint,
+              theme: biome,
+              generatedAt: new Date().toISOString(),
+              baseTilePx,
+              styleAnchor: styleAnchor || undefined,
+              assets,
+              visualPlacements,
+              visualPack: null,
+              visualStatus: 'pending',
+            };
+          } else {
+            // LLM returned logic but no visual manifest — keep as v1.
+            board = {
+              version: 1,
+              width: gridW,
+              height: gridH,
+              tiles: sanitized,
+              objects,
+              exits,
+              entities,
+              spawnPoint,
+              theme: biome,
+              generatedAt: new Date().toISOString(),
+            };
+          }
         } else {
           throw new Error('Invalid AI board response shape');
         }
@@ -426,6 +550,16 @@ export async function locationBoardRoutes(fastify) {
         where: { id: ref.id },
         data: { tacticalGrid: board },
       });
+
+      // Fire the async visual worker only when the board carries a manifest.
+      if (board.version === 2 && Array.isArray(board.assets) && board.assets.length > 0) {
+        enqueuePostLocationBoardVisuals({
+          campaignId,
+          userId: campaign.userId,
+          locationKind: ref.kind,
+          locationId: ref.id,
+        }).catch((err) => log.warn({ err }, 'Enqueue location board visuals failed'));
+      }
 
       return board;
     },

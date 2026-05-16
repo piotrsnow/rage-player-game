@@ -6,6 +6,7 @@ import Toggle from '../ui/Toggle';
 import LanguageSection from './sections/LanguageSection';
 import NarrativeAnchorsSection from './sections/NarrativeAnchorsSection';
 import NarratorStyleSection from './sections/NarratorStyleSection';
+import FieldMapVisualsSection from './sections/FieldMapVisualsSection';
 
 export default function DMSettingsPage({ onClose }) {
   const { t } = useTranslation();
@@ -68,6 +69,11 @@ export default function DMSettingsPage({ onClose }) {
 
               <section className="space-y-6 animate-fade-in">
                 <NarratorStyleSection
+                  dmSettings={settings.dmSettings}
+                  updateDMSettings={updateDMSettings}
+                />
+
+                <FieldMapVisualsSection
                   dmSettings={settings.dmSettings}
                   updateDMSettings={updateDMSettings}
                 />
