@@ -5,7 +5,8 @@
 //   'reasoner' — reasoning-family; use when you want extra planning at cost + latency
 // Untagged models don't appear in the scene picker.
 export const AI_MODELS = [
-  // OpenAI — 6 scene picker entries (flagship small + large)
+  // OpenAI — 7 scene picker entries (flagship small + large)
+  { id: 'gpt-5.5',                    provider: 'openai',    label: 'GPT-5.5',              cost: '~$5.00 / $30 per 1M tokens',   tier: 'premium',  sceneBadge: 'reasoner' },
   { id: 'gpt-5.4',                    provider: 'openai',    label: 'GPT-5.4',              cost: '~$1.25 / $10 per 1M tokens',   tier: 'premium',  sceneBadge: 'premium' },
   { id: 'gpt-5.4-mini',               provider: 'openai',    label: 'GPT-5.4 Mini',         cost: '~$0.25 / $2.00 per 1M tokens', tier: 'standard', sceneBadge: 'balanced' },
   { id: 'gpt-4.1',                    provider: 'openai',    label: 'GPT-4.1',              cost: '~$2.00 / $8.00 per 1M tokens', tier: 'premium',  sceneBadge: 'balanced' },
