@@ -41,7 +41,8 @@ export function buildAvailableSummary(coreState, { dbNpcs = [], dbQuests = [], d
         .slice(0, 12)
         .map((n) => {
           const role = n.role ? `, ${n.role}` : '';
-          return `${n.name} (${n.attitude}${role})`;
+          const idTag = n.id ? ` [id: ${n.id}]` : '';
+          return `${n.name}${idTag} (${n.attitude}${role})`;
         })
         .join('; ');
       parts.push(`NPCs here: ${npcList}`);
@@ -205,7 +206,17 @@ function normalizeSelection(raw) {
     log.debug({ reasoning: raw._reasoning }, 'nano reasoning');
   }
   const result = {
-    expand_npcs: Array.isArray(raw.expand_npcs) ? raw.expand_npcs.filter((n) => typeof n === 'string') : [],
+    expand_npcs: Array.isArray(raw.expand_npcs)
+      ? raw.expand_npcs
+          .map((n) => {
+            if (typeof n === 'string') return { name: n, id: null };
+            if (n && typeof n === 'object' && typeof n.name === 'string') {
+              return { name: n.name, id: typeof n.id === 'string' ? n.id : null };
+            }
+            return null;
+          })
+          .filter(Boolean)
+      : [],
     expand_quests: Array.isArray(raw.expand_quests) ? raw.expand_quests.filter((n) => typeof n === 'string') : [],
     expand_location: raw.expand_location === true,
     expand_codex: Array.isArray(raw.expand_codex) ? raw.expand_codex.filter((n) => typeof n === 'string') : [],

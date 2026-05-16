@@ -1,7 +1,8 @@
-import { loadSubgraph, getNpcsAtLocation } from './graphService.js';
+import { loadSubgraph } from './graphService.js';
 import { EDGE_TYPES, EDGE_TYPE_NAMES, EDGE_CATEGORY_NAMES } from '../../../../shared/domain/locationGraph.js';
 import { prisma } from '../../lib/prisma.js';
 import { LOCATION_KIND_WORLD } from '../locationRefs.js';
+import { listNpcsAtLocation } from '../livingWorld/campaignSandbox.js';
 import { childLogger } from '../../lib/logger.js';
 
 const log = childLogger({ module: 'graphContextBuilder' });
@@ -200,8 +201,8 @@ export async function buildNarrativeContext(locationId, locationKind, campaignId
       }
     }
 
-    // NPCs at current location
-    const npcs = await getNpcsAtLocation(locationKind, locationId, campaignId);
+    // NPCs at current location (campaign-aware — includes auto-cloned canonical NPCs)
+    const npcs = await listNpcsAtLocation(locationId, { campaignId, locationKind, aliveOnly: true });
     if (npcs.length > 0) {
       const npcList = npcs.slice(0, 6).map((n) => n.name).join(', ');
       lines.push(`NPCs here: ${npcList}`);

@@ -321,6 +321,10 @@ export const apiClient = {
     return this.post(`/ai/campaigns/${campaignId}/field-map/${sceneIndex}`);
   },
 
+  generateLocationBoard(campaignId) {
+    return this.post(`/ai/campaigns/${campaignId}/location-board`);
+  },
+
   async login(email, password) {
     const res = await fetch(`${_baseUrl}${AUTH_LOGIN}`, {
       method: 'POST',

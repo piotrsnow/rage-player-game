@@ -182,6 +182,7 @@ export default function ItemDetailBox({
   onUseItem,
   onRegenerateImage,
   isRegenerating = false,
+  largeImage = false,
 }) {
   const { t } = useTranslation();
   const [promptExpanded, setPromptExpanded] = useState(false);
@@ -225,7 +226,7 @@ export default function ItemDetailBox({
           <InventoryImage
             imageUrl={resolvedImageUrl}
             alt={item.name}
-            sizeClass="w-full aspect-square"
+            sizeClass={largeImage ? 'w-full aspect-[3/4]' : 'w-full aspect-square'}
             fallbackIcon={icon}
             wrapperClassName="border border-outline-variant/20 flex items-center justify-center overflow-hidden"
           />

@@ -155,7 +155,7 @@ export async function processNpcChanges(campaignId, npcs, { livingWorldEnabled =
             const resolved = await resolveLocationCached(npcChange.lastLocation);
             if (resolved) resolvedLocRef = { kind: resolved.kind, id: resolved.row.id };
           }
-          if (!resolvedLocRef) {
+          if (!resolvedLocRef && !existing.lastLocationKind) {
             const campRef = await getCampaignLocationRef();
             if (campRef) resolvedLocRef = campRef;
           }

@@ -69,11 +69,14 @@ export async function assembleContext(
     );
   }
 
-  // Expand selected NPCs
-  for (const name of selectionResult.expand_npcs || []) {
+  // Expand selected NPCs (entries may be strings (heuristics) or {name, id} objects (nano))
+  for (const entry of selectionResult.expand_npcs || []) {
+    const name = typeof entry === 'string' ? entry : entry?.name;
+    const campaignNpcId = typeof entry === 'string' ? null : (entry?.id || null);
+    if (!name) continue;
     if (skipNpcs.has(name.toLowerCase())) continue;
     fetches.push(
-      handleGetNPC(campaignId, name, { currentRef }).then((r) => ({ type: 'npc', key: name, data: r })),
+      handleGetNPC(campaignId, name, { currentRef, campaignNpcId }).then((r) => ({ type: 'npc', key: name, data: r })),
     );
   }
 

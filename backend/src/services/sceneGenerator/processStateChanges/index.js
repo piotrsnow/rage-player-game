@@ -34,6 +34,7 @@ import {
   processLocationMentions,
   processCampaignComplete,
 } from './livingWorld.js';
+import { processBoardUpdates, parseBoardUpdates } from './boardUpdates.js';
 import { createEdge } from '../../locationGraph/graphService.js';
 import { findSimilarNodeImage } from '../../locationGraph/imageMatcher.js';
 import { markLocationEdgeTraversed, markLocationDiscovered } from '../../livingWorld/userDiscoveryService.js';
@@ -646,6 +647,16 @@ export async function processStateChanges(campaignId, stateChanges, { prevLoc = 
       });
     } catch (err) {
       log.warn({ err: err?.message, campaignId }, 'evaluateQuestGraphForCampaign failed (non-fatal)');
+    }
+  }
+
+  // Board mutations from narrative events (Phase 3 exploration board).
+  if (Array.isArray(stateChanges.boardUpdates) && stateChanges.boardUpdates.length > 0) {
+    const parsed = parseBoardUpdates(stateChanges.boardUpdates);
+    if (parsed.success) {
+      await processBoardUpdates(campaignId, parsed.data, { currentRef });
+    } else {
+      log.warn({ campaignId, issues: parsed.error?.issues?.slice(0, 5) }, 'stateChanges.boardUpdates failed schema validation — skipped');
     }
   }
 }

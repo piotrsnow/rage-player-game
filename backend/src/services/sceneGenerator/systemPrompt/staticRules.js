@@ -139,7 +139,8 @@ Quests in the Active Quests block may carry [STALLED] or [FAILED] tags. These ar
 HARD RULES for both [STALLED] and [FAILED]:
 - suggestedActions MUST NOT include steps toward completing a [STALLED] or [FAILED] quest objective. Suggest alternatives, new hooks, or unrelated actions instead.
 - When a quest's status changes to [STALLED] or [FAILED] IN THIS SCENE (via your questMutations or via the Mutation: line in Active Quests), you MUST emit npcMemoryUpdates for the quest-giver (importance: "major") so the NPC remembers the failure in future scenes.
-- dialogueIfQuestTargetCompleted is ONLY for successful resolution — never emit it for stalled/failed quests.`;
+- dialogueIfQuestTargetCompleted is ONLY for successful resolution — never emit it for stalled/failed quests.
+- boardUpdates: [{x, y, action:"set_state"|"remove"|"add_object"|"set_tile", state?, objectType?, objectName?, tileId?}] — when narrative events change the exploration board (door broken open, chest looted, explosion creates rubble). Emit only when something physically changes at a specific tile.`;
 }
 
 export function actionRulesBlock() {
@@ -212,7 +213,7 @@ export function responseFormatBlock(language, { provider } = {}) {
   "questOffers": [], "cutscene": null, "dilemma": null,
   "stateChanges": {
     "timeAdvance":{"hoursElapsed":0.5}, "questUpdates":[], "completedQuests":[],
-    "npcs":[], "npcMemoryUpdates":[], "locationMentioned":[],
+    "npcs":[], "npcMemoryUpdates":[], "locationMentioned":[], "boardUpdates":[],
     "currentLocation":null, "currentLocationRef":null, "currentX":null, "currentY":null,
     "newItems":[], "removeItems":[], "removeItemsByName":[], "rewards":[],
     "moneyChange":null, "woundsChange":null, "manaChange":null, "spellUsage":null,

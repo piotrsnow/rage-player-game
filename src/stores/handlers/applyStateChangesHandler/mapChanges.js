@@ -72,4 +72,11 @@ export function applyCurrentLocation(draft, changes) {
   // the post-scene graph extractor (postSceneWork → extractGraphUpdate).
 
   draft.world.currentLocation = changes.currentLocation;
+
+  // Clear exploration board state on location change so the next board is
+  // fetched/generated for the new location. Board position and fog are
+  // per-location, so they reset too.
+  draft.world.locationBoard = null;
+  draft.world.boardPosition = null;
+  draft.world.boardVisited = {};
 }

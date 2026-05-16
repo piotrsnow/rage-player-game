@@ -19,6 +19,7 @@ import { storage } from '../../services/storage';
 import AdvancementPanel from './AdvancementPanel';
 import CharacterPanel from './CharacterPanel';
 import CharacterLibrary from './CharacterLibrary';
+import EquipmentTab from './EquipmentTab';
 import { getActiveTitle, getTopTitles } from '../../data/achievements';
 import { getGenderLabel } from '../../utils/characterUtils';
 import { filterNpcsHere } from '../../utils/npcLocation';
@@ -58,6 +59,7 @@ export default function CharacterSheet({ onClose }) {
     void ensureMissingSpellImages(myCharacter?.spells?.known || [], { emitWarning: false });
   }, [isMultiplayer, myCharacter?.spells?.known, ensureMissingSpellImages]);
   const [showAdvancement, setShowAdvancement] = useState(false);
+  const [activeTab, setActiveTab] = useState('character');
   const [saveStatus, setSaveStatus] = useState(null);
   const [libraryChars, setLibraryChars] = useState([]);
   const [libraryLoaded, setLibraryLoaded] = useState(false);
@@ -197,6 +199,37 @@ export default function CharacterSheet({ onClose }) {
           </div>
         </div>
 
+        {displayCharacter && campaign && (
+          <div className="flex gap-1 px-6 pt-3 pb-0 border-b border-outline-variant/15 shrink-0">
+            <button
+              onClick={() => setActiveTab('character')}
+              className={`px-4 py-2 text-xs font-label uppercase tracking-widest transition-all border-b-2 ${
+                activeTab === 'character'
+                  ? 'border-primary text-primary'
+                  : 'border-transparent text-on-surface-variant hover:text-tertiary hover:border-outline-variant/30'
+              }`}
+            >
+              <span className="flex items-center gap-1.5">
+                <span className="material-symbols-outlined text-sm">person</span>
+                {t('nav.characterSheet', { defaultValue: 'Postać' })}
+              </span>
+            </button>
+            <button
+              onClick={() => setActiveTab('equipment')}
+              className={`px-4 py-2 text-xs font-label uppercase tracking-widest transition-all border-b-2 ${
+                activeTab === 'equipment'
+                  ? 'border-primary text-primary'
+                  : 'border-transparent text-on-surface-variant hover:text-tertiary hover:border-outline-variant/30'
+              }`}
+            >
+              <span className="flex items-center gap-1.5">
+                <span className="material-symbols-outlined text-sm">shield</span>
+                {t('inventory.equipmentTab', { defaultValue: 'Ekwipunek' })}
+              </span>
+            </button>
+          </div>
+        )}
+
         <div className="overflow-y-auto custom-scrollbar flex-1">
           {!displayCharacter || !campaign ? (
             <CharacterLibrary
@@ -213,6 +246,18 @@ export default function CharacterSheet({ onClose }) {
               onLeaveToLobby={handleLeaveToLobby}
               onCharacterImported={handleCharacterImported}
             />
+          ) : activeTab === 'equipment' ? (
+            <div className="px-4 md:px-10 py-8">
+              <EquipmentTab
+                character={displayCharacter}
+                dispatch={dispatch}
+                autoSave={autoSave}
+                isMultiplayer={isMultiplayer}
+                settings={settings}
+                onItemAction={onItemAction}
+                npcsInScene={npcsInScene}
+              />
+            </div>
           ) : (
             <div className="px-4 md:px-10 py-8">
               {isMultiplayer && allCharacters.length > 1 && (

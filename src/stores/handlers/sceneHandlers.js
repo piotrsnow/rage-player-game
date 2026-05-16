@@ -1,5 +1,6 @@
 import { applyTimeAndNeeds } from './applyStateChangesHandler/timeAndNeeds';
 import { applyCharacterMutations } from './applyStateChangesHandler/character';
+import { applyBoardMutations } from '../../../shared/domain/explorationBoard.js';
 
 export const sceneHandlers = {
   ADD_SCENE: (draft, action) => {
@@ -42,6 +43,7 @@ export const sceneHandlers = {
       npcReply,
       timeAdvance,
       newItems,
+      boardMutations,
       timestamp,
       consecutiveCount,
     } = action.payload;
@@ -90,6 +92,10 @@ export const sceneHandlers = {
 
     if (typeof timeAdvance === 'number' && timeAdvance > 0) {
       applyTimeAndNeeds(draft, { timeAdvance: { hoursElapsed: timeAdvance } });
+    }
+
+    if (Array.isArray(boardMutations) && boardMutations.length > 0 && draft.world?.locationBoard) {
+      applyBoardMutations(draft.world.locationBoard, boardMutations);
     }
 
     draft.quickBeatStreak = typeof consecutiveCount === 'number'

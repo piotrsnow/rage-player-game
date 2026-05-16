@@ -12,6 +12,7 @@ import {
   applyActProgression,
   applyNarrativeState,
 } from './sceneFlow.js';
+import { applyBoardMutations } from '../../../../shared/domain/explorationBoard.js';
 import { devLog } from '../../devEventLogStore';
 
 /**
@@ -52,4 +53,8 @@ export function applyStateChangesHandler(draft, action) {
   applyActProgression(draft);
   applyCurrentLocation(draft, changes);
   applyNarrativeState(draft, changes);
+
+  if (Array.isArray(changes.boardUpdates) && changes.boardUpdates.length > 0 && draft.world?.locationBoard) {
+    applyBoardMutations(draft.world.locationBoard, changes.boardUpdates);
+  }
 }

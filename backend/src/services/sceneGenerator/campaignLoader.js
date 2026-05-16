@@ -117,6 +117,7 @@ export async function loadCampaignState(campaignId) {
   if (dbNpcs.length > 0) {
     if (!coreState.world) coreState.world = {};
     coreState.world.npcs = dbNpcs.map((n) => ({
+      id: n.id,
       name: n.name, gender: n.gender, role: n.role,
       personality: n.personality, attitude: n.attitude, disposition: n.disposition,
       alive: n.alive, lastLocation: n.lastLocation,

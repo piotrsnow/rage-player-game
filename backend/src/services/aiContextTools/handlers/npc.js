@@ -7,21 +7,33 @@ import { childLogger } from '../../../lib/logger.js';
 
 const log = childLogger({ module: 'aiContextTools' });
 
-export async function handleGetNPC(campaignId, npcName, { currentRef } = {}) {
-  // Try exact match first
-  const npc = await prisma.campaignNPC.findFirst({
-    where: {
-      campaignId,
-      name: { contains: npcName, mode: 'insensitive' },
-    },
-    include: { relationships: true },
-  });
-
-  if (npc) {
-    return formatNPC(npc, { currentRef });
+export async function handleGetNPC(campaignId, npcName, { currentRef, campaignNpcId } = {}) {
+  // 1. ID-based lookup (instant, exact — preferred when nano/heuristics supply UUID)
+  if (campaignNpcId) {
+    const byId = await prisma.campaignNPC.findUnique({
+      where: { id: campaignNpcId },
+      include: { relationships: true },
+    });
+    if (byId && byId.campaignId === campaignId) {
+      return formatNPC(byId, { currentRef });
+    }
   }
 
-  // Fallback to vector search (graceful — skip if embedding API unavailable/quota exceeded)
+  // 2. Exact name match (case-insensitive)
+  const exact = await prisma.campaignNPC.findFirst({
+    where: { campaignId, name: { equals: npcName, mode: 'insensitive' } },
+    include: { relationships: true },
+  });
+  if (exact) return formatNPC(exact, { currentRef });
+
+  // 3. Substring fallback (legacy compat — catches partial matches)
+  const fuzzy = await prisma.campaignNPC.findFirst({
+    where: { campaignId, name: { contains: npcName, mode: 'insensitive' } },
+    include: { relationships: true },
+  });
+  if (fuzzy) return formatNPC(fuzzy, { currentRef });
+
+  // 4. Vector search (graceful — skip if embedding API unavailable/quota exceeded)
   if (config.apiKeys.openai) {
     try {
       const queryEmbedding = await embedText(npcName);

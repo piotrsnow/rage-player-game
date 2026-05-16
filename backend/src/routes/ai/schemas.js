@@ -314,6 +314,19 @@ export const QUICK_BEAT_SCHEMA = {
         },
       },
     },
+    boardContext: {
+      type: ['object', 'null'],
+      additionalProperties: false,
+      properties: {
+        objectType: { type: 'string', maxLength: 40 },
+        objectName: { type: 'string', maxLength: 120 },
+        objectState: { type: ['string', 'null'], maxLength: 20 },
+        playerX: { type: 'integer' },
+        playerY: { type: 'integer' },
+        objectX: { type: 'integer' },
+        objectY: { type: 'integer' },
+      },
+    },
     dmSettings: {
       type: 'object',
       additionalProperties: true,

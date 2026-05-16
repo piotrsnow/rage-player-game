@@ -47,7 +47,10 @@ export function buildWorldStateBlock(world, { sceneCount = 0, expectedScenes = 0
   const npcsHere = npcs.filter((n) => isNpcHere(n, currentRef, currentLoc));
   if (npcsHere.length > 0) {
     lines.push(
-      `NPCs here: ${npcsHere.map((n) => `${n.name} (${n.role || '?'}, ${n.attitude || 'neutral'}, dsp:${n.disposition || 0})`).join(', ')}`,
+      `NPCs here: ${npcsHere.map((n) => {
+        const idTag = n.id ? ` [id: ${n.id}]` : '';
+        return `${n.name}${idTag} (${n.role || '?'}, ${n.attitude || 'neutral'}, dsp:${n.disposition || 0})`;
+      }).join(', ')}`,
     );
   }
   return lines.length > 0 ? lines.join('\n') : null;
@@ -83,8 +86,9 @@ export function buildKeyNpcsBlock(world) {
     const here = isNpcHere(n, currentRef, currentLoc);
     const awayTag = here ? '' : ` [AWAY${n.lastLocation ? ` — at ${n.lastLocation}` : ''}]`;
     if (!here) hasAway = true;
+    const idTag = n.id ? ` [id: ${n.id}]` : '';
     lines.push(
-      `- ${n.name}${awayTag} (${n.attitude || 'neutral'}, dsp:${n.disposition || 0}) — ${n.role || '?'}`,
+      `- ${n.name}${idTag}${awayTag} (${n.attitude || 'neutral'}, dsp:${n.disposition || 0}) — ${n.role || '?'}`,
     );
   }
   if (hasAway) {

@@ -9,6 +9,7 @@ import { generateFieldTiles } from './combat/generateFieldTiles';
 import {
   getFieldCellSize,
   fieldCellToPixel,
+  fieldPixelToCell,
   initFieldParticles,
   drawFieldBackground,
   drawFieldGrid,
@@ -18,8 +19,14 @@ import {
 import { useFieldMapKeyboard } from '../../hooks/useFieldMapKeyboard';
 import { useFieldMapInteraction } from '../../hooks/useFieldMapInteraction';
 import { gridDimensionsForScale } from '../../../shared/domain/fieldMapScale';
+import { isTilePassable, isPortalTile } from '../../../shared/domain/battlefieldTiles.js';
 
 const WALK_ANIM_MS = 400;
+const BFS_MOVE_DELAY = 120;
+const VIEWPORT_THRESHOLD_W = 18;
+const VIEWPORT_THRESHOLD_H = 16;
+const MINIMAP_SIZE = 100;
+const FOG_ALPHA = 0.7;
 
 function getInitials(name) {
   if (!name) return '??';
@@ -27,6 +34,65 @@ function getInitials(name) {
   if (parts.length >= 2) return (parts[0][0] + parts[1][0]).toUpperCase();
   return name.slice(0, 2).toUpperCase();
 }
+
+// ── BFS pathfinding ──
+
+function bfsPath(tiles, gridW, gridH, start, goal, entities, playerEntityId) {
+  if (start.x === goal.x && start.y === goal.y) return [];
+  const occupied = new Set();
+  for (const e of entities) {
+    if (e.id !== playerEntityId) occupied.add(`${e.x}:${e.y}`);
+  }
+  const visited = new Set();
+  const queue = [{ x: start.x, y: start.y, path: [] }];
+  visited.add(`${start.x}:${start.y}`);
+
+  while (queue.length > 0) {
+    const { x, y, path } = queue.shift();
+    for (const [dx, dy] of [[0, -1], [1, 0], [0, 1], [-1, 0]]) {
+      const nx = x + dx, ny = y + dy;
+      if (nx < 0 || nx >= gridW || ny < 0 || ny >= gridH) continue;
+      const key = `${nx}:${ny}`;
+      if (visited.has(key)) continue;
+      const tileId = tiles?.[nx]?.[ny];
+      if (tileId && !isTilePassable(tileId)) continue;
+      if (occupied.has(key) && !(nx === goal.x && ny === goal.y)) continue;
+      visited.add(key);
+      const newPath = [...path, { x: nx, y: ny }];
+      if (nx === goal.x && ny === goal.y) return newPath;
+      if (newPath.length < 30) queue.push({ x: nx, y: ny, path: newPath });
+    }
+  }
+  return null;
+}
+
+// ── FOG helpers ──
+
+function computeVisibleCells(px, py, radius) {
+  const cells = new Set();
+  for (let dx = -radius; dx <= radius; dx++) {
+    for (let dy = -radius; dy <= radius; dy++) {
+      if (dx * dx + dy * dy <= radius * radius) {
+        cells.add(`${px + dx}:${py + dy}`);
+      }
+    }
+  }
+  return cells;
+}
+
+// ── Object / exit icon lookup ──
+
+const OBJECT_ICONS = {
+  chest: '📦', altar: '⛩️', lever: '🔧', sign: '📜', bed: '🛏️',
+  table: '🪑', door: '🚪', barrel: '🪣', crate: '📦', bookshelf: '📚',
+  well: '🪣', campfire: '🔥', forge: '⚒️', cauldron: '🫕', throne: '👑',
+  statue: '🗿', fountain: '⛲', shrine: '🕯️', workbench: '🔨',
+  stash: '💰', trap: '⚠️', cage: '🔒', grave: '⚰️', ladder: '🪜', crystal: '💎',
+};
+
+const EXIT_ARROWS = {
+  N: '↑', S: '↓', E: '→', W: '←', up: '⬆', down: '⬇',
+};
 
 function buildEntities(characterName, playerSpriteSheet, npcsHere, multiplayerPlayers, gridW, gridH, aiEntities) {
   const entities = [];
@@ -40,10 +106,7 @@ function buildEntities(characterName, playerSpriteSheet, npcsHere, multiplayerPl
           const nx = x + dx, ny = y + dy;
           if (nx >= 1 && nx < gridW - 1 && ny >= 1 && ny < gridH - 1) {
             const nk = `${nx}:${ny}`;
-            if (!occupied.has(nk)) {
-              occupied.add(nk);
-              return { x: nx, y: ny };
-            }
+            if (!occupied.has(nk)) { occupied.add(nk); return { x: nx, y: ny }; }
           }
         }
       }
@@ -86,23 +149,19 @@ function buildEntities(characterName, playerSpriteSheet, npcsHere, multiplayerPl
     const npcId = `npc_${npc.name || i}`;
     const npcAi = aiMap.get(npcId);
     let nx, ny;
-    if (npcAi) {
-      nx = npcAi.x;
-      ny = npcAi.y;
-    } else {
+    if (npcAi) { nx = npcAi.x; ny = npcAi.y; }
+    else {
       const angle = (i / Math.max(1, npcsHere.length)) * Math.PI * 2;
       const dist = 3 + Math.floor(i / 4);
       nx = Math.max(1, Math.min(gridW - 2, pc + Math.round(Math.cos(angle) * dist)));
       ny = Math.max(1, Math.min(gridH - 2, pr + Math.round(Math.sin(angle) * dist)));
     }
     const pos = placeAt(nx, ny);
-
     let type = 'neutral';
     if (npc.disposition != null) {
       if (npc.disposition >= 10) type = 'ally';
       else if (npc.disposition <= -10) type = 'enemy';
     }
-
     entities.push({
       id: npcId,
       name: npc.name || `NPC ${i + 1}`,
@@ -128,13 +187,7 @@ function TokenOverlay({ entity, x, y, cellSize, isPlayer, animation }) {
     return (
       <div
         className={`field-map-token field-map-token--sprite${isPlayer ? ' field-map-token--player' : ''}`}
-        style={{
-          left: x,
-          top: y,
-          width: spriteSize,
-          height: spriteSize,
-          transform: 'translate(-50%, -60%)',
-        }}
+        style={{ left: x, top: y, width: spriteSize, height: spriteSize, transform: 'translate(-50%, -60%)' }}
       >
         <div className="field-map-token__sprite-wrap" style={{ width: spriteSize, height: spriteSize }}>
           <LpcSprite
@@ -143,9 +196,7 @@ function TokenOverlay({ entity, x, y, cellSize, isPlayer, animation }) {
             width={spriteSize}
             height={spriteSize}
             playing={true}
-            fallback={
-              <span className="field-map-token__initials">{getInitials(entity.name)}</span>
-            }
+            fallback={<span className="field-map-token__initials">{getInitials(entity.name)}</span>}
           />
         </div>
         <span className="field-map-token__name">{entity.name}</span>
@@ -155,24 +206,10 @@ function TokenOverlay({ entity, x, y, cellSize, isPlayer, animation }) {
 
   const tokenSize = Math.round(cellSize * 1.2);
   return (
-    <div
-      className="field-map-token"
-      style={{
-        left: x,
-        top: y,
-        width: tokenSize,
-        height: tokenSize,
-        transform: 'translate(-50%, -50%)',
-      }}
-    >
+    <div className="field-map-token" style={{ left: x, top: y, width: tokenSize, height: tokenSize, transform: 'translate(-50%, -50%)' }}>
       <div
         className="field-map-token__ring"
-        style={{
-          width: tokenSize,
-          height: tokenSize,
-          borderColor: ringColor,
-          boxShadow: isPlayer ? `0 0 8px ${ringColor}40` : 'none',
-        }}
+        style={{ width: tokenSize, height: tokenSize, borderColor: ringColor, boxShadow: isPlayer ? `0 0 8px ${ringColor}40` : 'none' }}
       >
         <span className="field-map-token__initials">{getInitials(entity.name)}</span>
       </div>
@@ -189,6 +226,7 @@ export default function FieldMapCanvas({
   multiplayerPlayers = [],
   onNpcInteract,
   onPortalEnter,
+  onObjectInteract,
   locationScale,
 }) {
   const { t } = useTranslation();
@@ -199,19 +237,25 @@ export default function FieldMapCanvas({
   const animRef = useRef({ particles: [] });
   const rafRef = useRef(0);
   const fetchedRef = useRef(null);
+  const bfsQueueRef = useRef(null);
 
   const campaign = useGameCampaign();
   const dispatch = useGameDispatch();
   const playerSpriteSheet = useGameSlice((s) => s.character?.spriteSheetUrl);
+  const boardPosition = useGameSlice((s) => s.world?.boardPosition);
+  const locationBoard = useGameSlice((s) => s.world?.locationBoard);
+  const boardVisited = useGameSlice((s) => s.world?.boardVisited || {});
 
-  const persisted = scene?.fieldMapTiles;
+  // Determine data source: location board (new) or scene field map (legacy)
+  const persisted = locationBoard || scene?.fieldMapTiles;
+  const isExplorationBoard = locationBoard?.version === 1;
 
   const scaledGrid = useMemo(() => gridDimensionsForScale(locationScale), [locationScale]);
   const gridW = persisted?.width || scaledGrid.w;
   const gridH = persisted?.height || scaledGrid.h;
   const ASPECT_RATIO = gridW / gridH;
+  const needsViewport = gridW > VIEWPORT_THRESHOLD_W || gridH > VIEWPORT_THRESHOLD_H;
 
-  // Resolve biome from scene context
   const biomeKey = useMemo(() => {
     const locationName = world?.currentLocation || '';
     const narrative = scene?.narrative || '';
@@ -219,39 +263,90 @@ export default function FieldMapCanvas({
     return resolveBiome(locationName, narrative, imagePrompt);
   }, [world?.currentLocation, scene?.narrative, scene?.imagePrompt]);
 
-  const { tiles, portals } = useMemo(() => {
+  const { tiles, portals: legacyPortals } = useMemo(() => {
     if (persisted?.tiles) return { tiles: persisted.tiles, portals: persisted.portals || [] };
     return generateFieldTiles(biomeKey, gridW, gridH, scene?.id || 'default');
   }, [persisted, biomeKey, gridW, gridH, scene?.id]);
 
-  // NPCs at current location
+  const boardObjects = useMemo(() => (isExplorationBoard ? locationBoard.objects || [] : []), [isExplorationBoard, locationBoard]);
+  const boardExits = useMemo(() => (isExplorationBoard ? locationBoard.exits || [] : []), [isExplorationBoard, locationBoard]);
+  const portals = useMemo(() => {
+    if (isExplorationBoard) {
+      return boardExits.map((e) => ({
+        x: e.x, y: e.y,
+        destinationName: e.label || e.targetLocationName,
+        destinationRef: e.targetLocationRef || null,
+      }));
+    }
+    return legacyPortals;
+  }, [isExplorationBoard, boardExits, legacyPortals]);
+
   const npcsHere = useMemo(
     () => filterNpcsHere(world?.npcs, world?.currentLocationRef, world?.currentLocation),
     [world?.npcs, world?.currentLocationRef, world?.currentLocation],
   );
 
-  // Entity list — mutable local state for movement
-  const [entities, setEntities] = useState(() =>
-    buildEntities(characterName, playerSpriteSheet, npcsHere, multiplayerPlayers, gridW, gridH, persisted?.entities),
-  );
+  const [entities, setEntities] = useState(() => {
+    const aiEntities = persisted?.entities;
+    const ents = buildEntities(characterName, playerSpriteSheet, npcsHere, multiplayerPlayers, gridW, gridH, aiEntities);
+    if (isExplorationBoard && boardPosition) {
+      const player = ents.find((e) => e.id === '__player__');
+      if (player) { player.x = boardPosition.x; player.y = boardPosition.y; }
+    } else if (isExplorationBoard && locationBoard?.spawnPoint) {
+      const player = ents.find((e) => e.id === '__player__');
+      if (player) { player.x = locationBoard.spawnPoint.x; player.y = locationBoard.spawnPoint.y; }
+    }
+    return ents;
+  });
 
-  // Per-entity animation state
   const [entityAnims, setEntityAnims] = useState({});
   const animTimersRef = useRef({});
 
-  // Rebuild entities when scene/NPCs change
-  useEffect(() => {
-    setEntities(buildEntities(characterName, playerSpriteSheet, npcsHere, multiplayerPlayers, gridW, gridH, persisted?.entities));
-  }, [characterName, playerSpriteSheet, npcsHere, multiplayerPlayers, gridW, gridH, persisted]);
+  // Camera offset for viewport scrolling
+  const [cameraOffset, setCameraOffset] = useState({ x: 0, y: 0 });
 
-  // Lazy-fetch field map from backend when not persisted
   useEffect(() => {
-    if (persisted || !scene?.id || !campaign?.id) return;
+    const aiEntities = persisted?.entities;
+    const ents = buildEntities(characterName, playerSpriteSheet, npcsHere, multiplayerPlayers, gridW, gridH, aiEntities);
+    if (isExplorationBoard && boardPosition) {
+      const player = ents.find((e) => e.id === '__player__');
+      if (player) { player.x = boardPosition.x; player.y = boardPosition.y; }
+    } else if (isExplorationBoard && locationBoard?.spawnPoint) {
+      const player = ents.find((e) => e.id === '__player__');
+      if (player) { player.x = locationBoard.spawnPoint.x; player.y = locationBoard.spawnPoint.y; }
+    }
+    setEntities(ents);
+  }, [characterName, playerSpriteSheet, npcsHere, multiplayerPlayers, gridW, gridH, persisted, isExplorationBoard, boardPosition, locationBoard]);
+
+  // Fetch location board from backend when not present
+  useEffect(() => {
+    if (locationBoard || !campaign?.id) return;
+    if (!world?.currentLocationRef?.kind || !world?.currentLocationRef?.id) return;
+    const refKey = `${world.currentLocationRef.kind}:${world.currentLocationRef.id}`;
+    if (fetchedRef.current === refKey) return;
+    fetchedRef.current = refKey;
+
+    apiClient.generateLocationBoard(campaign.id)
+      .then((data) => {
+        if (data?.tiles) {
+          dispatch({ type: 'SET_LOCATION_BOARD', payload: data });
+          if (data.spawnPoint) {
+            dispatch({ type: 'SET_BOARD_POSITION', payload: data.spawnPoint });
+          }
+        }
+      })
+      .catch(() => {});
+  }, [locationBoard, campaign?.id, world?.currentLocationRef, dispatch]);
+
+  // Legacy fallback: fetch per-scene field map
+  useEffect(() => {
+    if (locationBoard || persisted || !scene?.id || !campaign?.id) return;
     if (scene.subtype === 'quick_beat') return;
     const sceneIndex = scene.sceneIndex;
     if (sceneIndex == null) return;
-    if (fetchedRef.current === scene.id) return;
-    fetchedRef.current = scene.id;
+    const legacyKey = `legacy:${scene.id}`;
+    if (fetchedRef.current === legacyKey) return;
+    fetchedRef.current = legacyKey;
 
     apiClient.generateFieldMap(campaign.id, sceneIndex)
       .then((data) => {
@@ -260,27 +355,105 @@ export default function FieldMapCanvas({
         }
       })
       .catch(() => {});
-  }, [scene?.id, scene?.sceneIndex, scene?.subtype, persisted, campaign?.id, dispatch]);
+  }, [locationBoard, scene?.id, scene?.sceneIndex, scene?.subtype, persisted, campaign?.id, dispatch]);
+
+  // Track visited cells for fog-of-war
+  const visitedCellsRef = useRef(new Set(Object.keys(boardVisited)));
+  useEffect(() => {
+    visitedCellsRef.current = new Set(Object.keys(boardVisited));
+  }, [boardVisited]);
+
+  const revealFog = useCallback((px, py) => {
+    const visible = computeVisibleCells(px, py, 4);
+    const newCells = [];
+    for (const key of visible) {
+      if (!visitedCellsRef.current.has(key)) {
+        visitedCellsRef.current.add(key);
+        newCells.push(key);
+      }
+    }
+    if (newCells.length > 0) {
+      dispatch({ type: 'CLEAR_BOARD_FOG', payload: { cells: newCells } });
+    }
+  }, [dispatch]);
 
   // Movement handler with walk animation
   const handleMove = useCallback((entityId, nx, ny) => {
     setEntities((prev) => {
-      const ent = prev.find(e => e.id === entityId);
+      const ent = prev.find((e) => e.id === entityId);
       if (!ent) return prev;
       const dx = nx - ent.x;
       const dy = ny - ent.y;
       const dir = getAnimDirection(dx, dy);
 
       setEntityAnims((a) => ({ ...a, [entityId]: `walk_${dir}` }));
-
       if (animTimersRef.current[entityId]) clearTimeout(animTimersRef.current[entityId]);
       animTimersRef.current[entityId] = setTimeout(() => {
         setEntityAnims((a) => ({ ...a, [entityId]: `idle_${dir}` }));
       }, WALK_ANIM_MS);
 
+      if (entityId === '__player__') {
+        dispatch({ type: 'SET_BOARD_POSITION', payload: { x: nx, y: ny } });
+        revealFog(nx, ny);
+      }
+
       return prev.map((e) => (e.id === entityId ? { ...e, x: nx, y: ny } : e));
     });
-  }, []);
+  }, [dispatch, revealFog]);
+
+  // Click-to-move via BFS
+  const handleCanvasClick = useCallback((e) => {
+    if (!interactive) return;
+    const container = containerRef.current;
+    if (!container) return;
+    const rect = container.getBoundingClientRect();
+    const px = e.clientX - rect.left + (needsViewport ? cameraOffset.x : 0);
+    const py = e.clientY - rect.top + (needsViewport ? cameraOffset.y : 0);
+    const cell = fieldPixelToCell(
+      px, py,
+      needsViewport ? gridW * getFieldCellSize(containerSize.w, containerSize.h, gridW, gridH) + 20 : containerSize.w,
+      needsViewport ? gridH * getFieldCellSize(containerSize.w, containerSize.h, gridW, gridH) + 20 : containerSize.h,
+      gridW, gridH,
+    );
+    if (!cell) return;
+
+    // Check if clicking on an adjacent interactable object
+    const player = entities.find((ent) => ent.id === '__player__');
+    if (player && onObjectInteract) {
+      const clickedObj = boardObjects.find((o) => o.x === cell.x && o.y === cell.y && o.interactable);
+      if (clickedObj) {
+        const dx = Math.abs(cell.x - player.x);
+        const dy = Math.abs(cell.y - player.y);
+        if (dx <= 1 && dy <= 1) {
+          onObjectInteract(clickedObj);
+          return;
+        }
+      }
+    }
+
+    if (!player) return;
+    if (bfsQueueRef.current) {
+      bfsQueueRef.current = null;
+    }
+
+    const path = bfsPath(tiles, gridW, gridH, player, cell, entities, '__player__');
+    if (!path || path.length === 0) return;
+
+    bfsQueueRef.current = { steps: path, idx: 0 };
+    const walkStep = () => {
+      const q = bfsQueueRef.current;
+      if (!q || q.idx >= q.steps.length) { bfsQueueRef.current = null; return; }
+      const step = q.steps[q.idx];
+      q.idx++;
+      handleMove('__player__', step.x, step.y);
+      if (q.idx < q.steps.length) {
+        setTimeout(walkStep, BFS_MOVE_DELAY);
+      } else {
+        bfsQueueRef.current = null;
+      }
+    };
+    walkStep();
+  }, [interactive, entities, tiles, gridW, gridH, containerSize, handleMove, needsViewport, cameraOffset, boardObjects, onObjectInteract]);
 
   useFieldMapKeyboard({
     entities,
@@ -301,6 +474,77 @@ export default function FieldMapCanvas({
     enabled: interactive,
   });
 
+  // Adjacent interactable object detection
+  const adjacentObject = useMemo(() => {
+    if (!interactive || !isExplorationBoard) return null;
+    const player = entities.find((e) => e.id === '__player__');
+    if (!player) return null;
+    for (const obj of boardObjects) {
+      if (!obj.interactable) continue;
+      const dx = Math.abs(obj.x - player.x);
+      const dy = Math.abs(obj.y - player.y);
+      if (dx <= 1 && dy <= 1 && (dx + dy) > 0) return obj;
+    }
+    return null;
+  }, [interactive, isExplorationBoard, entities, boardObjects]);
+
+  // Standing on exit detection
+  const standingOnExit = useMemo(() => {
+    if (!interactive || !isExplorationBoard) return null;
+    const player = entities.find((e) => e.id === '__player__');
+    if (!player) return null;
+    return boardExits.find((ex) => ex.x === player.x && ex.y === player.y) || null;
+  }, [interactive, isExplorationBoard, entities, boardExits]);
+
+  // Exit tile interaction via E/Enter
+  useEffect(() => {
+    if (!interactive || !standingOnExit || !onPortalEnter) return;
+    const handleKey = (ev) => {
+      if (ev.target.tagName === 'INPUT' || ev.target.tagName === 'TEXTAREA') return;
+      if (ev.key !== 'Enter' && ev.key !== 'e' && ev.key !== 'E') return;
+      ev.preventDefault();
+      onPortalEnter({
+        destinationName: standingOnExit.targetLocationName,
+        destinationRef: standingOnExit.targetLocationRef || null,
+        direction: standingOnExit.direction,
+      });
+    };
+    window.addEventListener('keydown', handleKey);
+    return () => window.removeEventListener('keydown', handleKey);
+  }, [interactive, standingOnExit, onPortalEnter]);
+
+  // Object interaction via F key
+  useEffect(() => {
+    if (!interactive || !adjacentObject || !onObjectInteract) return;
+    const handleKey = (ev) => {
+      if (ev.target.tagName === 'INPUT' || ev.target.tagName === 'TEXTAREA') return;
+      if (ev.key !== 'f' && ev.key !== 'F') return;
+      ev.preventDefault();
+      onObjectInteract(adjacentObject);
+    };
+    window.addEventListener('keydown', handleKey);
+    return () => window.removeEventListener('keydown', handleKey);
+  }, [interactive, adjacentObject, onObjectInteract]);
+
+  // Camera follow player
+  useEffect(() => {
+    if (!needsViewport) return;
+    const player = entities.find((e) => e.id === '__player__');
+    if (!player) return;
+    const cellSize = getFieldCellSize(containerSize.w, containerSize.h, gridW, gridH);
+    const totalW = gridW * cellSize + 20;
+    const totalH = gridH * cellSize + 20;
+    const targetX = Math.max(0, Math.min(totalW - containerSize.w, player.x * cellSize - containerSize.w / 2 + cellSize / 2));
+    const targetY = Math.max(0, Math.min(totalH - containerSize.h, player.y * cellSize - containerSize.h / 2 + cellSize / 2));
+    setCameraOffset({ x: targetX, y: targetY });
+  }, [entities, needsViewport, containerSize, gridW, gridH]);
+
+  // Reveal initial fog around spawn
+  useEffect(() => {
+    const player = entities.find((e) => e.id === '__player__');
+    if (player) revealFog(player.x, player.y);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
   // Responsive sizing
   useEffect(() => {
     const el = sizerRef.current;
@@ -310,7 +554,10 @@ export default function FieldMapCanvas({
       const { width: pw, height: ph } = entry.contentRect;
       if (pw <= 0 || ph <= 0) return;
       let w, h;
-      if (pw / ph > ar) {
+      if (needsViewport) {
+        w = Math.floor(pw);
+        h = Math.floor(ph);
+      } else if (pw / ph > ar) {
         h = Math.floor(ph);
         w = Math.floor(h * ar);
       } else {
@@ -324,20 +571,29 @@ export default function FieldMapCanvas({
     ro.observe(el);
     handleResize([{ contentRect: el.getBoundingClientRect() }]);
     return () => ro.disconnect();
-  }, [ASPECT_RATIO]);
+  }, [ASPECT_RATIO, needsViewport]);
 
-  // Token positions
-  const tokenPositions = useMemo(
-    () => computeFieldTokenPositions(entities, containerSize.w, containerSize.h, gridW, gridH),
-    [entities, containerSize.w, containerSize.h, gridW, gridH],
-  );
-
+  // Effective render dimensions for viewport
+  const renderW = needsViewport ? containerSize.w : containerSize.w;
+  const renderH = needsViewport ? containerSize.h : containerSize.h;
   const cellSize = useMemo(
     () => getFieldCellSize(containerSize.w, containerSize.h, gridW, gridH),
     [containerSize.w, containerSize.h, gridW, gridH],
   );
 
-  // Canvas draw loop
+  const tokenPositions = useMemo(() => {
+    const positions = computeFieldTokenPositions(entities, containerSize.w, containerSize.h, gridW, gridH);
+    if (needsViewport) {
+      return positions.map((p) => ({
+        ...p,
+        x: p.x - cameraOffset.x,
+        y: p.y - cameraOffset.y,
+      }));
+    }
+    return positions;
+  }, [entities, containerSize.w, containerSize.h, gridW, gridH, needsViewport, cameraOffset]);
+
+  // Canvas draw loop — tiles + fog
   const draw = useCallback(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -353,8 +609,34 @@ export default function FieldMapCanvas({
 
     const now = performance.now();
     drawFieldBackground(ctx, w, h, now, animRef.current.particles);
+
+    if (needsViewport) {
+      ctx.save();
+      ctx.translate(-cameraOffset.x, -cameraOffset.y);
+    }
+
     drawFieldGrid(ctx, w, h, gridW, gridH, tiles);
-  }, [containerSize, tiles, gridW, gridH]);
+
+    // Draw fog-of-war overlay
+    if (isExplorationBoard) {
+      const cell = getFieldCellSize(w, h, gridW, gridH);
+      const origin = {
+        x: (w - gridW * cell) / 2,
+        y: (h - gridH * cell) / 2,
+      };
+      for (let col = 0; col < gridW; col++) {
+        for (let row = 0; row < gridH; row++) {
+          const key = `${col}:${row}`;
+          if (!visitedCellsRef.current.has(key)) {
+            ctx.fillStyle = `rgba(5, 5, 8, ${FOG_ALPHA})`;
+            ctx.fillRect(origin.x + col * cell, origin.y + row * cell, cell, cell);
+          }
+        }
+      }
+    }
+
+    if (needsViewport) ctx.restore();
+  }, [containerSize, tiles, gridW, gridH, needsViewport, cameraOffset, isExplorationBoard]);
 
   useEffect(() => {
     let running = true;
@@ -364,27 +646,112 @@ export default function FieldMapCanvas({
       rafRef.current = requestAnimationFrame(loop);
     };
     rafRef.current = requestAnimationFrame(loop);
-    return () => {
-      running = false;
-      cancelAnimationFrame(rafRef.current);
-    };
+    return () => { running = false; cancelAnimationFrame(rafRef.current); };
   }, [draw]);
 
+  // Compute object/exit pixel positions adjusted for viewport
+  const objectPositions = useMemo(() => {
+    return boardObjects.map((obj) => {
+      const px = fieldCellToPixel(obj.x, obj.y, containerSize.w, containerSize.h, gridW, gridH);
+      return {
+        obj,
+        x: needsViewport ? px.x - cameraOffset.x : px.x,
+        y: needsViewport ? px.y - cameraOffset.y : px.y,
+      };
+    });
+  }, [boardObjects, containerSize.w, containerSize.h, gridW, gridH, needsViewport, cameraOffset]);
+
+  const exitPositions = useMemo(() => {
+    return boardExits.map((ex) => {
+      const px = fieldCellToPixel(ex.x, ex.y, containerSize.w, containerSize.h, gridW, gridH);
+      return {
+        exit: ex,
+        x: needsViewport ? px.x - cameraOffset.x : px.x,
+        y: needsViewport ? px.y - cameraOffset.y : px.y,
+      };
+    });
+  }, [boardExits, containerSize.w, containerSize.h, gridW, gridH, needsViewport, cameraOffset]);
+
+  const portalPositions = useMemo(() => {
+    return portals.map((p) => {
+      const px = fieldCellToPixel(p.x, p.y, containerSize.w, containerSize.h, gridW, gridH);
+      return {
+        portal: p,
+        x: needsViewport ? px.x - cameraOffset.x : px.x,
+        y: needsViewport ? px.y - cameraOffset.y : px.y,
+      };
+    });
+  }, [portals, containerSize.w, containerSize.h, gridW, gridH, needsViewport, cameraOffset]);
+
+  // Minimap for large boards
+  const minimapCanvas = useRef(null);
+  useEffect(() => {
+    if (!needsViewport || !minimapCanvas.current || !tiles) return;
+    const canvas = minimapCanvas.current;
+    const ctx = canvas.getContext('2d');
+    const dpr = window.devicePixelRatio || 1;
+    canvas.width = MINIMAP_SIZE * dpr;
+    canvas.height = MINIMAP_SIZE * dpr;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+    const cw = MINIMAP_SIZE / gridW;
+    const ch = MINIMAP_SIZE / gridH;
+
+    ctx.fillStyle = '#0a0a0c';
+    ctx.fillRect(0, 0, MINIMAP_SIZE, MINIMAP_SIZE);
+
+    for (let col = 0; col < gridW; col++) {
+      for (let row = 0; row < gridH; row++) {
+        const tileId = tiles[col]?.[row];
+        if (!tileId) continue;
+        const passable = isTilePassable(tileId);
+        ctx.fillStyle = passable ? '#2a3a28' : '#3a3a40';
+        if (isPortalTile(tileId)) ctx.fillStyle = '#3a8a9a';
+        ctx.fillRect(col * cw, row * ch, cw, ch);
+      }
+    }
+
+    // Draw player dot
+    const player = entities.find((e) => e.id === '__player__');
+    if (player) {
+      ctx.fillStyle = COLORS.playerRing;
+      ctx.beginPath();
+      ctx.arc((player.x + 0.5) * cw, (player.y + 0.5) * ch, Math.max(2, cw), 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    // NPC dots
+    for (const e of entities) {
+      if (e.id === '__player__') continue;
+      const c = e.type === 'enemy' ? COLORS.enemyRing : e.type === 'ally' ? COLORS.allyRing : COLORS.neutralRing;
+      ctx.fillStyle = c;
+      ctx.beginPath();
+      ctx.arc((e.x + 0.5) * cw, (e.y + 0.5) * ch, Math.max(1.5, cw * 0.7), 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    // Viewport rect
+    const fullCell = getFieldCellSize(containerSize.w, containerSize.h, gridW, gridH);
+    const totalPxW = gridW * fullCell + 20;
+    const totalPxH = gridH * fullCell + 20;
+    const vx = (cameraOffset.x / totalPxW) * MINIMAP_SIZE;
+    const vy = (cameraOffset.y / totalPxH) * MINIMAP_SIZE;
+    const vw = (containerSize.w / totalPxW) * MINIMAP_SIZE;
+    const vh = (containerSize.h / totalPxH) * MINIMAP_SIZE;
+    ctx.strokeStyle = 'rgba(255,255,255,0.5)';
+    ctx.lineWidth = 1;
+    ctx.strokeRect(vx, vy, vw, vh);
+  }, [needsViewport, tiles, gridW, gridH, entities, containerSize, cameraOffset, isExplorationBoard]);
+
   return (
-    <div
-      ref={sizerRef}
-      className="w-full h-full flex items-center justify-center"
-    >
+    <div ref={sizerRef} className="w-full h-full flex items-center justify-center">
       <div
         ref={containerRef}
         className="relative rounded-md overflow-hidden border border-outline-variant/20"
-        style={{ width: containerSize.w, height: containerSize.h }}
+        style={{ width: containerSize.w, height: containerSize.h, cursor: interactive ? 'pointer' : 'default' }}
+        onClick={handleCanvasClick}
       >
-        <canvas
-          ref={canvasRef}
-          className="w-full h-full absolute inset-0"
-          style={{ display: 'block' }}
-        />
+        <canvas ref={canvasRef} className="w-full h-full absolute inset-0" style={{ display: 'block' }} />
 
         {/* Token overlay */}
         <div className="absolute inset-0 pointer-events-none">
@@ -401,23 +768,68 @@ export default function FieldMapCanvas({
           ))}
         </div>
 
-        {/* Portal destination labels */}
-        <div className="absolute inset-0 pointer-events-none">
-          {portals.map((p) => {
-            const px = fieldCellToPixel(p.x, p.y, containerSize.w, containerSize.h, gridW, gridH);
-            return (
+        {/* Objects overlay */}
+        {isExplorationBoard && (
+          <div className="absolute inset-0 pointer-events-none">
+            {objectPositions.map((op) => {
+              const key = `${op.obj.x}:${op.obj.y}`;
+              if (isExplorationBoard && !visitedCellsRef.current.has(key)) return null;
+              const icon = OBJECT_ICONS[op.obj.type] || '❓';
+              return (
+                <div
+                  key={`obj-${key}`}
+                  className="absolute flex flex-col items-center"
+                  style={{ left: op.x, top: op.y, transform: 'translate(-50%, -50%)' }}
+                >
+                  <span
+                    className="text-base drop-shadow-md"
+                    style={{ fontSize: Math.max(12, cellSize * 0.5) }}
+                    title={`${op.obj.name}${op.obj.state ? ` (${op.obj.state})` : ''}`}
+                  >
+                    {icon}
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        {/* Exit markers overlay */}
+        {isExplorationBoard && (
+          <div className="absolute inset-0 pointer-events-none">
+            {exitPositions.map((ep) => {
+              const arrow = EXIT_ARROWS[ep.exit.direction] || '◈';
+              return (
+                <div
+                  key={`exit-${ep.exit.x}:${ep.exit.y}`}
+                  className="absolute flex flex-col items-center"
+                  style={{ left: ep.x, top: ep.y, transform: 'translate(-50%, -120%)' }}
+                >
+                  <span className="text-[10px] font-label text-emerald-300 bg-surface-container/70 px-1.5 py-0.5 rounded-sm border border-emerald-400/30 backdrop-blur-sm whitespace-nowrap">
+                    {arrow} {ep.exit.label || ep.exit.targetLocationName}
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        {/* Legacy portal labels (non-exploration-board) */}
+        {!isExplorationBoard && (
+          <div className="absolute inset-0 pointer-events-none">
+            {portalPositions.map((pp) => (
               <div
-                key={`portal-${p.x}:${p.y}`}
+                key={`portal-${pp.portal.x}:${pp.portal.y}`}
                 className="absolute flex flex-col items-center"
-                style={{ left: px.x, top: px.y, transform: 'translate(-50%, -120%)' }}
+                style={{ left: pp.x, top: pp.y, transform: 'translate(-50%, -120%)' }}
               >
                 <span className="text-[9px] font-label text-cyan-300 bg-surface-container/70 px-1.5 py-0.5 rounded-sm border border-cyan-400/30 backdrop-blur-sm whitespace-nowrap">
-                  {p.destinationName}
+                  {pp.portal.destinationName}
                 </span>
               </div>
-            );
-          })}
-        </div>
+            ))}
+          </div>
+        )}
 
         {/* Location label */}
         {world?.currentLocation && (
@@ -429,14 +841,25 @@ export default function FieldMapCanvas({
           </div>
         )}
 
-        {/* Interaction prompts */}
-        {interactive && adjacentNpc && (
+        {/* Object interaction prompt */}
+        {interactive && adjacentObject && (
+          <div className="absolute top-2 right-2 z-20 animate-pulse">
+            <span className="text-[10px] font-bold text-amber-200 bg-surface-container/80 px-2 py-0.5 rounded-sm border border-amber-400/40 backdrop-blur-sm whitespace-nowrap">
+              [F] {adjacentObject.name}{adjacentObject.state ? ` (${adjacentObject.state})` : ''}
+            </span>
+          </div>
+        )}
+
+        {/* NPC interaction prompt */}
+        {interactive && adjacentNpc && !adjacentObject && (
           (() => {
             const npcPx = fieldCellToPixel(adjacentNpc.x, adjacentNpc.y, containerSize.w, containerSize.h, gridW, gridH);
+            const npcX = needsViewport ? npcPx.x - cameraOffset.x : npcPx.x;
+            const npcY = needsViewport ? npcPx.y - cameraOffset.y : npcPx.y;
             return (
               <div
                 className="absolute z-20 pointer-events-none animate-pulse"
-                style={{ left: npcPx.x, top: npcPx.y, transform: 'translate(-50%, -180%)' }}
+                style={{ left: npcX, top: npcY, transform: 'translate(-50%, -180%)' }}
               >
                 <span className="text-[10px] font-bold text-amber-300 bg-surface-container/80 px-2 py-0.5 rounded-sm border border-amber-400/40 backdrop-blur-sm whitespace-nowrap">
                   [E] {t('gameplay.fieldMapInteractNpc', 'Rozmawiaj')}
@@ -445,7 +868,18 @@ export default function FieldMapCanvas({
             );
           })()
         )}
-        {interactive && standingOnPortal && (
+
+        {/* Exit prompt (exploration board exits) */}
+        {interactive && standingOnExit && (
+          <div className="absolute bottom-2 left-1/2 -translate-x-1/2 z-20 pointer-events-none animate-pulse">
+            <span className="text-[10px] font-bold text-emerald-300 bg-surface-container/80 px-2 py-0.5 rounded-sm border border-emerald-400/40 backdrop-blur-sm whitespace-nowrap">
+              [E] {t('gameplay.fieldMapEnterPortal', 'Podróżuj do')} {standingOnExit.label || standingOnExit.targetLocationName}
+            </span>
+          </div>
+        )}
+
+        {/* Legacy portal prompt */}
+        {interactive && standingOnPortal && !standingOnExit && (
           <div className="absolute bottom-2 left-1/2 -translate-x-1/2 z-20 pointer-events-none animate-pulse">
             <span className="text-[10px] font-bold text-cyan-300 bg-surface-container/80 px-2 py-0.5 rounded-sm border border-cyan-400/40 backdrop-blur-sm whitespace-nowrap">
               [E] {t('gameplay.fieldMapEnterPortal', 'Podróżuj do')} {standingOnPortal.destinationName}
@@ -458,8 +892,18 @@ export default function FieldMapCanvas({
           <div className="absolute bottom-2 right-2 z-10 flex items-center gap-1 px-2 py-0.5 rounded-sm bg-surface-container/60 border border-outline-variant/10 backdrop-blur-sm">
             <span className="material-symbols-outlined text-xs text-outline-variant">keyboard</span>
             <span className="text-[9px] text-outline-variant">
-              {t('gameplay.fieldMapMoveHint', 'WASD / Arrows to move')}
+              {t('gameplay.fieldMapMoveHint', 'WASD / Arrows / Click to move')}
             </span>
+          </div>
+        )}
+
+        {/* Minimap for large boards */}
+        {needsViewport && (
+          <div
+            className="absolute bottom-2 right-2 z-10 rounded-sm border border-outline-variant/30 bg-surface-container/70 backdrop-blur-sm overflow-hidden"
+            style={{ width: MINIMAP_SIZE, height: MINIMAP_SIZE }}
+          >
+            <canvas ref={minimapCanvas} style={{ width: MINIMAP_SIZE, height: MINIMAP_SIZE }} />
           </div>
         )}
       </div>

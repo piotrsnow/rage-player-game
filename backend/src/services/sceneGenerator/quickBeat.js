@@ -107,6 +107,7 @@ function buildQuickBeatPrompt({
   characterName,
   playerAction,
   language,
+  boardContext,
 }) {
   const lang = language === 'pl' ? 'po polsku' : 'in English';
   const npcList = presentNpcs.length > 0
@@ -115,6 +116,17 @@ function buildQuickBeatPrompt({
   const beatsList = recentBeats.length > 0
     ? recentBeats.map((b) => `- gracz: "${b.playerAction}" → "${b.narrationText}"${b.npcReply ? ` (${b.npcSpeaker}: "${b.npcReply}")` : ''}`).join('\n')
     : '(żadnych)';
+
+  const hasBoardContext = boardContext && boardContext.objectType;
+  const boardContextBlock = hasBoardContext
+    ? `\n\nKONTEKST PLANSZY: Gracz stoi obok obiektu "${boardContext.objectName}" (typ: ${boardContext.objectType}${boardContext.objectState ? `, stan: ${boardContext.objectState}` : ''}). Pozycja gracza: (${boardContext.playerX},${boardContext.playerY}), obiekt: (${boardContext.objectX},${boardContext.objectY}).`
+    : '';
+  const boardMutationSchema = hasBoardContext
+    ? `,\n  "boardMutations": [{"x": int, "y": int, "action": "set_state"|"remove"|"add_object", "state": "string|null", "objectType": "string|null", "objectName": "string|null"}] | null`
+    : '';
+  const boardMutationRule = hasBoardContext
+    ? `\n8. boardMutations: jeśli akcja zmienia stan obiektu na planszy (np. otworzenie skrzyni, pociągnięcie dźwigni), dodaj wpis do boardMutations z action "set_state" i nowym stanem. Null jeśli nic się na planszy nie zmienia.`
+    : '';
 
   const system = `Jesteś AI Game Masterem prowadzącym RPG. Twoja rola TERAZ: napisać krótki RP-beat reagujący na drobną akcję gracza (tzw. "mała akcja").
 
@@ -127,7 +139,7 @@ function buildQuickBeatPrompt({
 6. newItems: jeśli gracz przeszukuje ciała, otwiera skrzynię, podnosi przedmiot, lootuje, bierze coś, lub w narracji zyskuje nazwany przedmiot — MUSISZ dodać 1-3 drobne przedmioty do newItems. Nie dawaj potężnych ani magicznych przedmiotów. Null TYLKO jeśli gracz nie zyskuje żadnego przedmiotu.
    ZASADA SPÓJNOŚCI: jeśli narracja opisuje że postać bierze/podnosi/otrzymuje coś — newItems MUSI to zawierać. Żaden opis zdobycia przedmiotu nie może istnieć bez wpisu w newItems.
    Przykład: akcja "podnoszę kartkę ze stołu" → newItems: [{"name":"Pożółkła kartka","type":"misc","quantity":1,"description":"Zapisana drżącą ręką notatka znaleziona na stole"}]
-7. Output: TYLKO valid JSON o schemacie poniżej. Bez prefiksów, bez markdown.
+7. Output: TYLKO valid JSON o schemacie poniżej. Bez prefiksów, bez markdown.${boardMutationRule}${boardContextBlock}
 
 SCHEMA:
 {
@@ -135,7 +147,7 @@ SCHEMA:
   "npcSpeaker": "string|null (imię z listy poniżej lub null jeśli żaden NPC nie reaguje)",
   "npcReply": "string|null (jedno zdanie jeśli npcSpeaker jest podany, inaczej null)",
   "timeAdvance": 0 | 0.05 | 0.1 | 0.15 | 0.2 | 0.25,
-  "newItems": [{"name": "string", "type": "weapon|armor|shield|accessory|consumable|material|misc", "quantity": 1, "description": "string (krótki opis fabularny, 5-15 słów)"}] | null
+  "newItems": [{"name": "string", "type": "weapon|armor|shield|accessory|consumable|material|misc", "quantity": 1, "description": "string (krótki opis fabularny, 5-15 słów)"}] | null${boardMutationSchema}
 }`;
 
   const user = `Obecna lokacja: ${currentLocation || '(nieznana)'}
@@ -248,6 +260,7 @@ export async function runQuickBeat(campaignId, playerAction, options = {}, onEve
       characterName,
       playerAction,
       language,
+      boardContext: options.boardContext || null,
     });
 
     // callAIJson doesn't accept an AbortSignal; race against a timeout so
@@ -342,6 +355,39 @@ export async function runQuickBeat(campaignId, playerAction, options = {}, onEve
       if (newItems.length === 0) newItems = null;
     }
 
+    // Sanitize boardMutations
+    let boardMutations = null;
+    if (Array.isArray(parsed.boardMutations) && parsed.boardMutations.length > 0) {
+      const VALID_ACTIONS = new Set(['set_state', 'remove', 'add_object', 'set_tile']);
+      boardMutations = parsed.boardMutations
+        .filter((m) => m && typeof m.x === 'number' && typeof m.y === 'number' && VALID_ACTIONS.has(m.action))
+        .slice(0, 5)
+        .map((m) => ({
+          x: m.x,
+          y: m.y,
+          action: m.action,
+          ...(m.state ? { state: String(m.state).slice(0, 20) } : {}),
+          ...(m.objectType ? { objectType: String(m.objectType).slice(0, 40) } : {}),
+          ...(m.objectName ? { objectName: String(m.objectName).slice(0, 120) } : {}),
+        }));
+      if (boardMutations.length === 0) boardMutations = null;
+    }
+
+    // Persist board mutations to location tacticalGrid
+    if (boardMutations && currentRef?.kind && currentRef?.id) {
+      try {
+        const tblName = currentRef.kind === 'world' ? 'worldLocation' : 'campaignLocation';
+        const locRow = await prisma[tblName].findUnique({ where: { id: currentRef.id }, select: { tacticalGrid: true } });
+        if (locRow?.tacticalGrid?.version === 1) {
+          const { applyBoardMutations } = await import('../../../../shared/domain/explorationBoard.js');
+          const updated = applyBoardMutations({ ...locRow.tacticalGrid }, boardMutations);
+          await prisma[tblName].update({ where: { id: currentRef.id }, data: { tacticalGrid: updated } });
+        }
+      } catch (err) {
+        log.warn({ err: err?.message, campaignId }, 'Failed to persist board mutations from quick-beat (non-fatal)');
+      }
+    }
+
     const effectiveCharacterId = characterId || activeCharacterId || null;
 
     const saved = await prisma.campaignQuickBeat.create({
@@ -381,6 +427,7 @@ export async function runQuickBeat(campaignId, playerAction, options = {}, onEve
         npcReply,
         timeAdvance,
         newItems,
+        boardMutations,
         parentSceneIndex,
         createdAt: saved.createdAt,
         characterId: saved.characterId,

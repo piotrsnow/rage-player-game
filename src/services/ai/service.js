@@ -340,6 +340,7 @@ export const aiService = {
     language = 'pl',
     characterId = null,
     entityTags = null,
+    boardContext = null,
     dmSettings = {},
   } = {}) {
     const baseUrl = apiClient.getBaseUrl();
@@ -350,6 +351,7 @@ export const aiService = {
       language,
       characterId,
       entityTags,
+      ...(boardContext ? { boardContext } : {}),
       dmSettings,
     };
 

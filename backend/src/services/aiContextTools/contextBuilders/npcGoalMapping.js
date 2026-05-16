@@ -18,7 +18,8 @@ export function mapAmbientNpcs(ambientNpcs) {
     // Scene-gen surfaces it in the NPC brief; we clear it post-assembly so
     // the hint fires exactly once.
     pendingIntroHint: n.pendingIntroHint || null,
-    campaignNpcId: n.campaignNpcId || null,
+    id: n.campaignNpcId || n.id || null,
+    campaignNpcId: n.campaignNpcId || n.id || null,
   }));
 }
 

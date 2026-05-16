@@ -888,6 +888,11 @@ export default function GameplayPage({ readOnly = false, shareToken = null, onRe
                 handleAction(`Podróżuję do ${portal.destinationName}.`, true);
               }
             }}
+            onObjectInteract={(obj) => {
+              if (obj?.name) {
+                handleAction(`Badam ${obj.name}${obj.state ? ` (${obj.state})` : ''}.`, true);
+              }
+            }}
             momentumDice={!readOnly && (momentum.active || momentum.result) ? {
               visible: momentum.diceVisible,
               position: momentum.position,

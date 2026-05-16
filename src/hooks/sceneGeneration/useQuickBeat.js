@@ -90,6 +90,7 @@ export function useQuickBeat({ generateScene, onEscalate, onError } = {}) {
         npcReply: data.npcReply || null,
         timeAdvance: data.timeAdvance || 0,
         newItems: data.newItems || null,
+        boardMutations: data.boardMutations || null,
         consecutiveCount: data.consecutiveCount || quickBeatStreak + 1,
         timestamp: Date.now(),
       },

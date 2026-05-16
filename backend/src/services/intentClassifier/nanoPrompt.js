@@ -19,7 +19,7 @@ Only select items that are RELEVANT to the player's action. Do not select everyt
 Return ONLY valid JSON matching this schema:
 {
   "_reasoning": "1-2 sentences: what the player wants and which data will help",
-  "expand_npcs": ["NPC names from the list"],
+  "expand_npcs": [{"name": "NPC name", "id": "NPC id from the list"}],
   "expand_quests": ["quest names from the list"],
   "expand_location": true/false,
   "expand_codex": ["codex topics from the list"],

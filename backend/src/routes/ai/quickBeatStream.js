@@ -30,6 +30,7 @@ export async function quickBeatStreamRoutes(fastify) {
         language = 'pl',
         characterId = null,
         entityTags = null,
+        boardContext = null,
         dmSettings = {},
       } = request.body;
 
@@ -63,6 +64,7 @@ export async function quickBeatStreamRoutes(fastify) {
           llmNanoTimeoutMs,
           entityTags,
           characterId,
+          boardContext,
         },
         writeEvent,
       );
