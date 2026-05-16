@@ -129,4 +129,73 @@ describe('detectSuspiciousLocationChange', () => {
     });
     expect(v.suspect).toEqual({ from: 'Las', to: 'Karczma' });
   });
+
+  // ── Signal C: exit_reanchor ──
+
+  it('detects exit_reanchor when exit vocabulary + model re-emits same location', () => {
+    const v = detectSuspiciousLocationChange({
+      playerAction: 'idę pogłaskać psa wychodząc z piwnicy',
+      sceneResult: baseSceneResult('Piwnica'),
+      prevLocName: 'Piwnica',
+      recentTrail: [],
+    });
+    expect(v.score).toBeGreaterThanOrEqual(3);
+    expect(v.signals).toContain('exit_reanchor');
+  });
+
+  it('detects exit_reanchor with "opuszczam"', () => {
+    const v = detectSuspiciousLocationChange({
+      playerAction: 'opuszczam piwnicę i idę na górę',
+      sceneResult: baseSceneResult('Piwnica'),
+      prevLocName: 'Piwnica',
+      recentTrail: [],
+    });
+    expect(v.score).toBeGreaterThanOrEqual(3);
+    expect(v.signals).toContain('exit_reanchor');
+  });
+
+  it('does NOT fire exit_reanchor for same-loc emit without exit vocabulary', () => {
+    const v = detectSuspiciousLocationChange({
+      playerAction: 'rozglądam się po piwnicy',
+      sceneResult: baseSceneResult('Piwnica'),
+      prevLocName: 'Piwnica',
+      recentTrail: [],
+    });
+    expect(v.score).toBe(0);
+  });
+
+  // ── Signal D: exit_as_destination ──
+
+  it('detects exit_as_destination when exit vocabulary + "z <emitted name>" in player text', () => {
+    const v = detectSuspiciousLocationChange({
+      playerAction: 'wychodząc z piwnicy idę pogłaskać psa',
+      sceneResult: baseSceneResult('Piwnica'),
+      prevLocName: 'Karczma',
+      recentTrail: [],
+    });
+    expect(v.score).toBeGreaterThanOrEqual(3);
+    expect(v.signals).toContain('exit_as_destination');
+  });
+
+  it('detects exit_as_destination with multi-word location name', () => {
+    const v = detectSuspiciousLocationChange({
+      playerAction: 'uciekam z mrocznej piwnicy tak szybko jak mogę',
+      sceneResult: baseSceneResult('Mroczna Piwnica'),
+      prevLocName: 'Karczma',
+      recentTrail: [],
+    });
+    expect(v.score).toBeGreaterThanOrEqual(3);
+    expect(v.signals).toContain('exit_as_destination');
+  });
+
+  it('does NOT fire exit_as_destination without exit vocabulary', () => {
+    const v = detectSuspiciousLocationChange({
+      playerAction: 'idę do piwnicy',
+      sceneResult: baseSceneResult('Piwnica'),
+      prevLocName: 'Karczma',
+      recentTrail: [],
+    });
+    expect(v.score).toBe(0);
+    expect(v.signals).not.toContain('exit_as_destination');
+  });
 });

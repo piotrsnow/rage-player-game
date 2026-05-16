@@ -8,10 +8,10 @@
  * Output: a "selection result" telling `assembleContext()` which data to expand.
  */
 
-import { classifyIntentHeuristic } from './heuristics.js';
+import { classifyIntentHeuristic, detectExitIntent } from './heuristics.js';
 import { buildAvailableSummary, selectContextWithNano } from './nanoSelector.js';
 
-export { classifyIntentHeuristic, detectTravelIntent, detectDungeonNavigateIntent } from './heuristics.js';
+export { classifyIntentHeuristic, detectTravelIntent, detectDungeonNavigateIntent, detectExitIntent } from './heuristics.js';
 export { buildAvailableSummary, selectContextWithNano } from './nanoSelector.js';
 
 function formatEntityTagsForNano(entityTags) {
@@ -32,6 +32,7 @@ function formatEntityTagsForNano(entityTags) {
 export async function classifyIntent(playerAction, coreState, availableData, options = {}) {
   const heuristicResult = classifyIntentHeuristic(playerAction, options);
   if (heuristicResult !== null) {
+    enrichWithExitIntent(heuristicResult, playerAction);
     return heuristicResult;
   }
 
@@ -48,5 +49,12 @@ export async function classifyIntent(playerAction, coreState, availableData, opt
   if (Array.isArray(options.entityTags) && options.entityTags.length > 0) {
     result._entityTags = options.entityTags;
   }
+  enrichWithExitIntent(result, playerAction);
   return result;
+}
+
+function enrichWithExitIntent(result, playerAction) {
+  if (result._intent === 'travel' || result._travelTarget) return;
+  const exit = detectExitIntent(playerAction);
+  if (exit) result._exitingFrom = exit.exitingFrom;
 }

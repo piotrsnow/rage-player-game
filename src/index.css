@@ -2335,6 +2335,18 @@
   user-select: none;
 }
 
+.field-map-token--sprite .field-map-token__sprite-wrap {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  image-rendering: pixelated;
+  filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.6));
+}
+
+.field-map-token--player {
+  z-index: 20;
+}
+
 .field-map-token__name {
   margin-top: 1px;
   font-size: 8px;

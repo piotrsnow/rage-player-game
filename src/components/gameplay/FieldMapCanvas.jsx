@@ -116,7 +116,6 @@ function buildEntities(characterName, playerSpriteSheet, npcsHere, multiplayerPl
 }
 
 function TokenOverlay({ entity, x, y, cellSize, isPlayer, animation }) {
-  const tokenSize = Math.round(cellSize * 1.2);
   const ringColor = entity.type === 'player' ? COLORS.playerRing
     : entity.type === 'ally' ? COLORS.allyRing
     : entity.type === 'enemy' ? COLORS.enemyRing
@@ -124,6 +123,37 @@ function TokenOverlay({ entity, x, y, cellSize, isPlayer, animation }) {
 
   const hasSheet = Boolean(entity.spriteSheetUrl);
 
+  if (hasSheet) {
+    const spriteSize = Math.round(cellSize * 1.4);
+    return (
+      <div
+        className={`field-map-token field-map-token--sprite${isPlayer ? ' field-map-token--player' : ''}`}
+        style={{
+          left: x,
+          top: y,
+          width: spriteSize,
+          height: spriteSize,
+          transform: 'translate(-50%, -60%)',
+        }}
+      >
+        <div className="field-map-token__sprite-wrap" style={{ width: spriteSize, height: spriteSize }}>
+          <LpcSprite
+            sheetUrl={apiClient.resolveMediaUrl(entity.spriteSheetUrl)}
+            animation={animation}
+            width={spriteSize}
+            height={spriteSize}
+            playing={true}
+            fallback={
+              <span className="field-map-token__initials">{getInitials(entity.name)}</span>
+            }
+          />
+        </div>
+        <span className="field-map-token__name">{entity.name}</span>
+      </div>
+    );
+  }
+
+  const tokenSize = Math.round(cellSize * 1.2);
   return (
     <div
       className="field-map-token"
@@ -144,20 +174,7 @@ function TokenOverlay({ entity, x, y, cellSize, isPlayer, animation }) {
           boxShadow: isPlayer ? `0 0 8px ${ringColor}40` : 'none',
         }}
       >
-        {hasSheet ? (
-          <LpcSprite
-            sheetUrl={apiClient.resolveMediaUrl(entity.spriteSheetUrl)}
-            animation={animation}
-            width={tokenSize}
-            height={tokenSize}
-            playing={true}
-            fallback={
-              <span className="field-map-token__initials">{getInitials(entity.name)}</span>
-            }
-          />
-        ) : (
-          <span className="field-map-token__initials">{getInitials(entity.name)}</span>
-        )}
+        <span className="field-map-token__initials">{getInitials(entity.name)}</span>
       </div>
       <span className="field-map-token__name">{entity.name}</span>
     </div>

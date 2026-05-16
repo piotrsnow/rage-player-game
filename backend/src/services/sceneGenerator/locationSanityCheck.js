@@ -8,6 +8,8 @@
  * Scoring:
  *   - +2 location changed but no movement vocabulary in player action
  *   - +3 A → B → A flip (current emit equals scene N-2 and scene N-1 differs)
+ *   - +3 exit vocabulary + model re-emitted the current location (exit_reanchor)
+ *   - +3 exit vocabulary + emitted loc name follows "z " in player text (exit_as_destination)
  *   - bypass to 0 if intentResult signals an explicit travel intent
  *
  * Caller convention: score >= 3 → retry; score == 2 → log only; < 2 → pass.
@@ -15,10 +17,16 @@
 
 const PL_MOVE = /\b(id[ęeę]|idziemy|wracam|wracamy|wychodz|wchodz|biegn|jad[eęą]|teleport|przenosz|udaj.*si[ęe]|ruszam|wyrusz|opuszcz|p[óo]jd[ęe]|p[óo]jdziemy|chodzimy|kieruj.*si[ęe])/i;
 const EN_MOVE = /\b(go|going|walk|walking|return|returning|leave|leaving|enter|entering|run|running|travel|traveling|teleport|move|moving|head\s+to|head\s+toward|set\s+out|depart|departing)\b/i;
+const PL_EXIT = /(?:wychodz|opuszcz|uciekam\s+z|wracam\s+z|wydostaj)/i;
 
 function hasMovementCue(playerAction) {
   if (!playerAction || typeof playerAction !== 'string') return false;
   return PL_MOVE.test(playerAction) || EN_MOVE.test(playerAction);
+}
+
+export function hasExitCue(playerAction) {
+  if (!playerAction || typeof playerAction !== 'string') return false;
+  return PL_EXIT.test(playerAction);
 }
 
 function normalizeLocName(name) {
@@ -40,11 +48,46 @@ export function detectSuspiciousLocationChange({ playerAction, sceneResult, prev
   const verdict = { score: 0, signals: [], suspect: { from: prevLocName ?? null, to: aiLoc } };
 
   if (!aiLoc) return verdict; // No change emitted — nothing to validate.
-  if (normalizeLocName(aiLoc) === normalizeLocName(prevLocName)) return verdict; // No-op emit.
+
+  const sameAsPrev = normalizeLocName(aiLoc) === normalizeLocName(prevLocName);
+
+  // Signal C: exit vocabulary present + model re-emitted the SAME location
+  // the player is trying to leave. This is not a harmless no-op — the player
+  // wanted to depart and the model anchored them back.
+  if (sameAsPrev && hasExitCue(playerAction)) {
+    verdict.score += 3;
+    verdict.signals.push('exit_reanchor');
+    return verdict;
+  }
+
+  if (sameAsPrev) return verdict; // Genuine no-op emit.
 
   // Bypass — player explicitly travels. Trust intent classifier.
   if (intentResult?._intent === 'travel' || intentResult?._travelTarget) {
     return verdict;
+  }
+
+  // Signal D: exit vocabulary + emitted location name appears after "z " in
+  // the player action. Model confused source for destination — e.g. player
+  // says "wychodząc z piwnicy", model emits currentLocation: "Piwnica".
+  // Polish declension changes word endings (Piwnica→piwnicy, Karczma→karczmy)
+  // so we prefix-match: drop last 2 chars of the first word of the location
+  // name and check if any word following "z " starts with that stem.
+  if (hasExitCue(playerAction)) {
+    const exitedName = normalizeLocName(aiLoc);
+    if (exitedName && exitedName.length >= 4) {
+      const actionLower = playerAction.toLowerCase();
+      const zWords = [...actionLower.matchAll(/\bz\s+(\S+)/g)].map((m) => m[1]);
+      if (zWords.length) {
+        const firstWord = exitedName.split(/\s+/)[0];
+        const prefixLen = Math.max(3, firstWord.length - 2);
+        const stem = firstWord.slice(0, prefixLen);
+        if (zWords.some((w) => w.startsWith(stem))) {
+          verdict.score += 3;
+          verdict.signals.push('exit_as_destination');
+        }
+      }
+    }
   }
 
   // Signal A: change without movement vocabulary in player action.

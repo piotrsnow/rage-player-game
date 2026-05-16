@@ -48,6 +48,30 @@ export function detectTravelIntent(action) {
   return { target };
 }
 
+// ── EXIT INTENT REGEX ──
+// Match "wychodząc z piwnicy", "opuszczam piwnicę", "uciekam z lasu",
+// "wydostaję się z jaskini". Extracts the location name the player is
+// LEAVING so downstream can inject a negative [MOVEMENT] hint.
+const EXIT_PATTERNS = [
+  /(?:wychodz\S*)\s+z\s+(\S+(?:\s+\S+){0,2})/iu,
+  /(?:opuszcz\S*)\s+(\S+(?:\s+\S+){0,2})/iu,
+  /(?:uciekam)\s+z\s+(\S+(?:\s+\S+){0,2})/iu,
+  /(?:wracam)\s+z\s+(\S+(?:\s+\S+){0,2})/iu,
+  /(?:wydostaj\S*)\s+(?:si[eę]\s+)?z\s+(\S+(?:\s+\S+){0,2})/iu,
+];
+
+export function detectExitIntent(action) {
+  if (!action || typeof action !== 'string') return null;
+  for (const re of EXIT_PATTERNS) {
+    const m = action.match(re);
+    if (m) {
+      const raw = m[1].trim().replace(/[.,;:!?]+$/, '').trim();
+      if (raw) return { exitingFrom: raw };
+    }
+  }
+  return null;
+}
+
 // ── DUNGEON NAVIGATION REGEX ──
 // Match "idę na północ", "otwieram drzwi na wschód", "schodzę w dół", etc.
 // Returns a canonical direction matching WorldLocationEdge.direction values:

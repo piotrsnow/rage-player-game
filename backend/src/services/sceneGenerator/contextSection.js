@@ -394,6 +394,13 @@ export function buildContextSection(contextBlocks) {
         }
       }
       parts.push({ text: tLines.join('\n'), priority: P1, label: 'movement' });
+    } else if (contextBlocks.exitingFrom && !lw.dungeon) {
+      const exitName = sanitizeForPrompt(contextBlocks.exitingFrom);
+      parts.push({
+        text: `## [MOVEMENT]\nGracz opuszcza lokację „${exitName}". NIE emituj currentLocation: „${exitName}". Jeśli lokacja ma rodzica (np. sublokacja budynku), emituj currentLocation = nazwa rodzica. Jeśli nie wiesz dokąd gracz zmierza — pomiń currentLocation.`,
+        priority: P1,
+        label: 'movement',
+      });
     }
 
     // P1 — DUNGEON ROOM

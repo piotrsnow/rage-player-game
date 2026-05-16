@@ -306,6 +306,9 @@ export async function generateSceneStream(campaignId, playerAction, options = {}
     if (deathReveals.length > 0) {
       contextBlocks.deathReveals = deathReveals;
     }
+    if (intentResult._exitingFrom) {
+      contextBlocks.exitingFrom = intentResult._exitingFrom;
+    }
     onEvent({ type: 'context_ready' });
 
     // 3b. Phase D — if nano flagged a quest offer AND the world is getting
