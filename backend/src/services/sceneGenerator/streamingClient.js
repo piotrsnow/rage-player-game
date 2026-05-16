@@ -5,6 +5,7 @@ import { buildContextSection } from './contextSection.js';
 import { buildAnthropicSystemBlocks } from './systemPrompt.js';
 import { parseAIResponseLean as parseAIResponse } from '../../../../shared/domain/aiResponseParser.js';
 import { logLlmCallStart, logLlmCallFinish, logLlmCallFail } from '../llmCallLogger.js';
+import { buildResponseFormat } from './responseSchema.js';
 
 const log = childLogger({ module: 'sceneGenerator' });
 
@@ -13,6 +14,7 @@ const log = childLogger({ module: 'sceneGenerator' });
  * Returns the full accumulated text.
  */
 async function callOpenAIStreaming(messages, { model, temperature = 0.8, maxTokens = 4096, apiKey, signal } = {}, onChunk) {
+  const usedModel = model || config.aiModels.premium.openai;
   const response = await fetch('https://api.openai.com/v1/chat/completions', {
     method: 'POST',
     headers: {
@@ -20,11 +22,11 @@ async function callOpenAIStreaming(messages, { model, temperature = 0.8, maxToke
       Authorization: `Bearer ${apiKey}`,
     },
     body: JSON.stringify({
-      model: model || config.aiModels.premium.openai,
+      model: usedModel,
       messages,
       temperature,
       max_completion_tokens: maxTokens,
-      response_format: { type: 'json_object' },
+      response_format: buildResponseFormat(usedModel),
       stream: true,
       stream_options: { include_usage: true },
     }),

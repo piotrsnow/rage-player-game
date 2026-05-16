@@ -77,6 +77,35 @@ export async function mutateQuest({ campaignId, questRow, mutation, reason, scen
     // Strict world-write gate: quest mutation events no longer written to
     // WorldEvent during active campaign play.
     log.info({ campaignId, questId: questRow.questId, mutation, reason, source }, 'Quest mutation applied');
+
+    // Auto-memory: quest-giver NPC should remember the failure/stall so
+    // their dialog in future scenes reflects the changed quest state.
+    if ((mutation === 'stall' || mutation === 'fail') && questRow.questGiverId && campaignId) {
+      try {
+        const giverNpc = await prisma.campaignNPC.findFirst({
+          where: { campaignId, name: questRow.questGiverId },
+          select: { id: true },
+        });
+        if (giverNpc) {
+          const verb = mutation === 'fail'
+            ? 'nie powiodło się — jest zamknięte'
+            : 'utknęło w martwym punkcie';
+          await prisma.campaignNpcExperience.create({
+            data: {
+              campaignNpcId: giverNpc.id,
+              content: `Zadanie "${questRow.name}" ${verb}. Powód: ${reason || 'nieznany'}.`,
+              importance: 'major',
+              sceneIndex: sceneIndex ?? undefined,
+            },
+          });
+          log.debug({ campaignId, npcName: questRow.questGiverId, mutation }, 'Quest mutation auto-memory written');
+        }
+      } catch (memErr) {
+        log.warn({ err: memErr?.message, campaignId, questGiverId: questRow.questGiverId },
+          'Quest mutation auto-memory failed (non-fatal)');
+      }
+    }
+
     return true;
   } catch (err) {
     log.warn({ err: err?.message, campaignId, questId: questRow.questId, mutation }, 'mutateQuest failed (non-fatal)');

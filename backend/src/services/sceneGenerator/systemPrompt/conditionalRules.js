@@ -7,7 +7,13 @@
  */
 
 import { BESTIARY_RACES } from '../../../data/equipment/index.js';
-import { itemCombinationBlock } from './staticRules.js';
+import {
+  itemCombinationBlock,
+  questGraphExtendedRules,
+  questMutationsExtendedRules,
+  dungeonExtendedRules,
+  characterEffectsExtendedRules,
+} from './staticRules.js';
 
 const BESTIARY_RACES_STR = BESTIARY_RACES.join(', ');
 const COMBAT_INTENTS = new Set(['combat', 'stealth', 'freeform', 'idle', 'first_scene']);
@@ -25,7 +31,7 @@ const SUBLOCATION_HOST_TYPES = new Set([
 
 const ITEM_COMBINATION_RE = /\[ŁĄCZENIE PRZEDMIOTÓW|łącz[ęe]|kombinuj|owijam.{1,20}wokół|wsadzam.{1,20}w\s|składam.{1,20}połów|wbijam.{1,20}w\s/i;
 
-export function buildConditionalRules({ intent, coreState, scenePhase = null, livingWorldEnabled = false, magicExposure = null, playerAction = '' }) {
+export function buildConditionalRules({ intent, coreState, scenePhase = null, livingWorldEnabled = false, questGraphEnabled = false, magicExposure = null, playerAction = '' }) {
   const rules = [];
   const cs = coreState;
   const campaign = cs.campaign || {};
@@ -226,6 +232,31 @@ export function buildConditionalRules({ intent, coreState, scenePhase = null, li
 
   if (playerAction && ITEM_COMBINATION_RE.test(playerAction)) {
     rules.push(itemCombinationBlock());
+  }
+
+  // ── Extended stateChanges rules (moved from static prefix) ──
+  // Quest graph fields — only when quest graph is active
+  if (questGraphEnabled) {
+    rules.push(questGraphExtendedRules());
+  }
+
+  // Quest mutations / questOffers full schema — only for living world campaigns
+  if (livingWorldEnabled) {
+    rules.push(questMutationsExtendedRules());
+  }
+
+  // Dungeon fields — only when player is in a dungeon
+  if (cs.dungeonRoom || (world.currentLocationType || '') === 'dungeon_room') {
+    rules.push(dungeonExtendedRules());
+  }
+
+  // Character effects full schema — only when character has mana, active effects, or combat intent
+  const charMana = character.mana || { current: 0, max: 0 };
+  const hasEffectRelevance = charMana.max > 0
+    || (Array.isArray(character.activeEffects) && character.activeEffects.length > 0)
+    || COMBAT_INTENTS.has(intent);
+  if (hasEffectRelevance) {
+    rules.push(characterEffectsExtendedRules());
   }
 
   return rules;

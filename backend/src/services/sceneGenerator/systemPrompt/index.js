@@ -15,10 +15,12 @@ import {
   dialogueFormatBlock,
   suggestedActionsBlock,
   stateChangesRulesBlock,
+  questFailureAwarenessBlock,
   actionRulesBlock,
   playerInputPolicyBlock,
   responseFormatBlock,
   worldSettingBlock,
+  buildSkillTableBlock,
 } from './staticRules.js';
 import { buildConditionalRules } from './conditionalRules.js';
 import { buildDmSettingsBlock } from './dmSettingsBlock.js';
@@ -68,6 +70,7 @@ export function buildLeanSystemPrompt(coreState, recentScenes, language = 'pl', 
   questGiverHint = null,
   magicExposure = null,
   playerAction = '',
+  provider = 'openai',
 } = {}) {
   const cs = coreState;
   const intent = intentResult._intent || 'freeform';
@@ -91,6 +94,7 @@ export function buildLeanSystemPrompt(coreState, recentScenes, language = 'pl', 
     playerInputPolicyBlock(),
     executionOrderBlock(),
     stateChangesRulesBlock(),
+    questFailureAwarenessBlock(),
     coreRulesBlock(),
     actionRulesBlock(),
     scenePacingBlock(),
@@ -98,7 +102,7 @@ export function buildLeanSystemPrompt(coreState, recentScenes, language = 'pl', 
     dialogueFormatBlock(),
     suggestedActionsBlock(language),
     worldSettingBlock(campaign),
-    responseFormatBlock(language),
+    responseFormatBlock(language, { provider }),
   ];
 
   // Living World static-content blocks. Item attribution + dungeon-flow hints
@@ -121,10 +125,12 @@ export function buildLeanSystemPrompt(coreState, recentScenes, language = 'pl', 
   // ═══════════════════════════════════════════════════════════════
   const dynamicSections = [];
 
-  const conditionalRules = buildConditionalRules({ intent, coreState: cs, scenePhase, livingWorldEnabled, magicExposure, playerAction });
+  const conditionalRules = buildConditionalRules({ intent, coreState: cs, scenePhase, livingWorldEnabled, questGraphEnabled, magicExposure, playerAction });
   if (conditionalRules.length > 0) {
     dynamicSections.push(`Conditional rules:\n${conditionalRules.join('\n')}`);
   }
+
+  dynamicSections.push(buildSkillTableBlock(character, sceneCount));
 
   dynamicSections.push(buildCharacterBlock(character));
 
@@ -181,6 +187,14 @@ export function buildLeanSystemPrompt(coreState, recentScenes, language = 'pl', 
     const questGiver = buildQuestGiverHintBlock(questGiverHint);
     if (questGiver) dynamicSections.push(questGiver);
   }
+
+  dynamicSections.push(
+    `PRIORITY (when context is long): 1. Narrative coherence with Last Scene + Quick Beats\n` +
+    `2. stateChanges completeness (every narrated gain/loss/move reflected)\n` +
+    `3. Dialogue quality + NPC voice consistency\n` +
+    `4. suggestedActions grounding\n` +
+    `If forced to compress output, shorten atmosphere/imagePrompt/musicPrompt first.`,
+  );
 
   const staticPrefix = staticSections.join('\n\n');
   const dynamicSuffix = dynamicSections.join('\n\n');

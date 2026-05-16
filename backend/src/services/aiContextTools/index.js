@@ -23,7 +23,7 @@ export async function assembleContext(
   selectionResult,
   currentLocation,
   skipKeys = {},
-  { provider = 'openai', timeoutMs = 5000, playerAction = null, userId = null } = {},
+  { provider = 'openai', timeoutMs = 5000, playerAction = null, userId = null, currentRef = null } = {},
 ) {
   // Pre-fetch quests once so individual handleGetQuest calls skip re-querying.
   const needsQuests = (selectionResult.expand_quests || []).length > 0;
@@ -73,7 +73,7 @@ export async function assembleContext(
   for (const name of selectionResult.expand_npcs || []) {
     if (skipNpcs.has(name.toLowerCase())) continue;
     fetches.push(
-      handleGetNPC(campaignId, name).then((r) => ({ type: 'npc', key: name, data: r })),
+      handleGetNPC(campaignId, name, { currentRef }).then((r) => ({ type: 'npc', key: name, data: r })),
     );
   }
 

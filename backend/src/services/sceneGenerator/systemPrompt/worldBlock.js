@@ -68,23 +68,27 @@ export function buildKeyNpcsBlock(world) {
   const npcs = world.npcs || [];
   if (npcs.length === 0) return null;
 
+  const currentRef = world.currentLocationRef || null;
+  const currentLoc = world.currentLocation || '';
+
   const knownNpcs = npcs
     .filter((n) => n.alive !== false)
     .sort((a, b) => Math.abs(b.disposition || 0) - Math.abs(a.disposition || 0))
     .slice(0, 8);
   if (knownNpcs.length === 0) return null;
 
+  let hasAway = false;
   const lines = ['Key NPCs (disposition):'];
   for (const n of knownNpcs) {
-    let locSuffix = '';
-    if (n.lastLocation) {
-      const nLocRef = n.locationRef?.kind && n.locationRef?.id
-        ? ` [ref: ${n.locationRef.kind}:${n.locationRef.id}]` : '';
-      locSuffix = `, ${n.lastLocation}${nLocRef}`;
-    }
+    const here = isNpcHere(n, currentRef, currentLoc);
+    const awayTag = here ? '' : ` [AWAY${n.lastLocation ? ` — at ${n.lastLocation}` : ''}]`;
+    if (!here) hasAway = true;
     lines.push(
-      `- ${n.name} (${n.attitude || 'neutral'}, dsp:${n.disposition || 0}) — ${n.role || '?'}${locSuffix}`,
+      `- ${n.name}${awayTag} (${n.attitude || 'neutral'}, dsp:${n.disposition || 0}) — ${n.role || '?'}`,
     );
+  }
+  if (hasAway) {
+    lines.push('NPCs marked [AWAY] are NOT physically present. DO NOT write dialogue for them — reference only via hearsay, memory, or letters.');
   }
   return lines.join('\n');
 }

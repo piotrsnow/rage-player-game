@@ -298,7 +298,7 @@ export async function generateSceneStream(campaignId, playerAction, options = {}
     const inlineKeys = getInlineEntityKeys(coreState);
     const contextBlocks = await assembleContext(
       campaignId, intentResult, currentLocation, inlineKeys,
-      { provider, timeoutMs: llmNanoTimeoutMs, playerAction, userId },
+      { provider, timeoutMs: llmNanoTimeoutMs, playerAction, userId, currentRef: activeCurrentRef },
     );
     if (travelFailureReason) {
       contextBlocks.travelFailure = { reason: travelFailureReason };
@@ -372,6 +372,7 @@ export async function generateSceneStream(campaignId, playerAction, options = {}
       questGiverHint,
       magicExposure,
       playerAction,
+      provider,
     });
 
     const userPrompt = buildUserPrompt(playerAction, {

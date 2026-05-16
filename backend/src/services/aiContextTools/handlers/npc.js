@@ -7,7 +7,7 @@ import { childLogger } from '../../../lib/logger.js';
 
 const log = childLogger({ module: 'aiContextTools' });
 
-export async function handleGetNPC(campaignId, npcName) {
+export async function handleGetNPC(campaignId, npcName, { currentRef } = {}) {
   // Try exact match first
   const npc = await prisma.campaignNPC.findFirst({
     where: {
@@ -18,7 +18,7 @@ export async function handleGetNPC(campaignId, npcName) {
   });
 
   if (npc) {
-    return formatNPC(npc);
+    return formatNPC(npc, { currentRef });
   }
 
   // Fallback to vector search (graceful — skip if embedding API unavailable/quota exceeded)
@@ -28,7 +28,7 @@ export async function handleGetNPC(campaignId, npcName) {
       if (queryEmbedding) {
         const results = await searchNPCs(campaignId, queryEmbedding, { limit: 1, minScore: 0.6 });
         if (results.length > 0) {
-          return formatNPC(results[0]);
+          return formatNPC(results[0], { currentRef });
         }
       }
     } catch (err) {
@@ -39,11 +39,19 @@ export async function handleGetNPC(campaignId, npcName) {
   return `No NPC found matching "${npcName}".`;
 }
 
-export function formatNPC(npc) {
-  // Accept either F4 relation rows ({relation, targetRef}) or the
-  // FE-shape ({type, npcName}) when this function is called against
-  // already-reconstructed snapshots.
+export function formatNPC(npc, { currentRef } = {}) {
   const relationships = Array.isArray(npc.relationships) ? npc.relationships : [];
+
+  // Location check — is this NPC at the player's current location?
+  let awayWarning = null;
+  if (currentRef && npc.lastLocationKind && npc.lastLocationId) {
+    const sameLocation =
+      npc.lastLocationKind === currentRef.kind && npc.lastLocationId === currentRef.id;
+    if (!sameLocation) {
+      const loc = npc.lastLocation || `${npc.lastLocationKind}:${npc.lastLocationId}`;
+      awayWarning = `[AWAY — this NPC is NOT at the player's current location (last seen: ${loc}). They cannot speak in this scene unless contacted via letter/messenger/magic.]`;
+    }
+  }
 
   const lines = [
     `Name: ${npc.name}`,
@@ -70,5 +78,6 @@ export function formatNPC(npc) {
     lines.push('\nNo bestiary match — if combat starts, improvise a stat block from the enemy template rules.');
   }
 
-  return lines.filter(Boolean).join('\n');
+  const formatted = lines.filter(Boolean).join('\n');
+  return awayWarning ? `${awayWarning}\n${formatted}` : formatted;
 }
