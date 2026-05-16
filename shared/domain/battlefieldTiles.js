@@ -62,6 +62,8 @@ export const TILE_TYPES = {
   portal:    { id: 'portal',    name: 'Przejście', passable: true, blocksSight: false, destructible: false, directionalCover: null, color: '#3a8a9a', pattern: 'waves', biomes: ['dungeon', 'forest', 'village', 'cave', 'field', 'ruins', 'swamp', 'castle'], portal: true },
 };
 
+export const ALL_TILE_IDS = Object.keys(TILE_TYPES);
+
 export const BIOME_LIST = ['dungeon', 'forest', 'village', 'cave', 'field', 'ruins', 'swamp', 'castle'];
 
 export const RUBBLE_TILE = 'gravel';
