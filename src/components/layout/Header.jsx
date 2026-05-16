@@ -320,7 +320,7 @@ export default function Header() {
   const aiLogs = useAiCallLogStore((s) => s.logs);
   const aiBackendLogs = useAiCallLogStore((s) => s.backendLogs);
   const toggleAiSidebar = useAiCallLogStore((s) => s.toggleSidebarVisible);
-  const openAiFullLog = useAiCallLogStore((s) => s.openFullLog);
+  const toggleAiFullLog = useAiCallLogStore((s) => s.toggleFullLog);
   const closeAiFullLog = useAiCallLogStore((s) => s.closeFullLog);
   const mp = useMultiplayer();
   const hasActiveGame = !!campaign || (mp.state.isMultiplayer && mp.state.phase === 'playing');
@@ -729,9 +729,9 @@ export default function Header() {
                 <GroupItem
                   icon="terminal"
                   label="LLM Calls"
-                  onClick={openAiFullLog}
+                  onClick={toggleAiFullLog}
                   onContextMenu={(e) => { e.preventDefault(); toggleAiSidebar(); }}
-                  active={aiLogSidebarVisible}
+                  active={aiFullLogOpen || aiLogSidebarVisible}
                   badge={aiPendingCount > 0 ? (
                     <span className="w-2 h-2 rounded-full bg-tertiary animate-pulse" />
                   ) : null}

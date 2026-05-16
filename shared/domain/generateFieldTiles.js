@@ -140,6 +140,35 @@ export function resolveBiomeFromText(locationName, narrative, imagePrompt) {
   return 'field';
 }
 
+// ── Portal placement ──
+
+const EDGE_SLOTS = [
+  { side: 'north', getPos: (w, h, i, count) => ({ x: Math.floor(w * (i + 1) / (count + 1)), y: 0 }) },
+  { side: 'south', getPos: (w, h, i, count) => ({ x: Math.floor(w * (i + 1) / (count + 1)), y: h - 1 }) },
+  { side: 'west',  getPos: (w, h, i, count) => ({ x: 0, y: Math.floor(h * (i + 1) / (count + 1)) }) },
+  { side: 'east',  getPos: (w, h, i, count) => ({ x: w - 1, y: Math.floor(h * (i + 1) / (count + 1)) }) },
+];
+
+function placePortals(tiles, width, height, rng, neighbors, isInterior) {
+  if (!neighbors || neighbors.length === 0) return [];
+
+  const portals = [];
+  const capped = neighbors.slice(0, EDGE_SLOTS.length);
+
+  for (let i = 0; i < capped.length; i++) {
+    const slot = EDGE_SLOTS[i];
+    const { x, y } = slot.getPos(width, height, 0, 1);
+    tiles[x][y] = 'portal';
+    portals.push({
+      x, y,
+      destinationName: capped[i].name,
+      destinationRef: capped[i].ref || null,
+    });
+  }
+
+  return portals;
+}
+
 // ── Generator ──
 
 function pickRandom(arr, rng) {
@@ -152,9 +181,10 @@ function pickRandom(arr, rng) {
  * @param {number} width - grid columns
  * @param {number} height - grid rows
  * @param {string|number} seed - seed for deterministic output
- * @returns {Array<Array<string>>} tiles[col][row] of tile IDs
+ * @param {{ neighbors?: Array<{ name: string, ref?: { kind: string, id: string } }> }} [opts]
+ * @returns {{ tiles: Array<Array<string>>, portals: Array<{ x: number, y: number, destinationName: string, destinationRef?: { kind: string, id: string } }> }}
  */
-export function generateFieldTiles(biome, width, height, seed) {
+export function generateFieldTiles(biome, width, height, seed, opts) {
   const numericSeed = typeof seed === 'string' ? hashString(seed) : (seed || 0);
   const rng = mulberry32(numericSeed);
 
@@ -233,7 +263,9 @@ export function generateFieldTiles(biome, width, height, seed) {
     tiles[cx][cy] = 'campfire';
   }
 
-  return tiles;
+  const portals = placePortals(tiles, width, height, rng, opts?.neighbors, isInterior);
+
+  return { tiles, portals };
 }
 
 /** All known tile IDs — useful for AI response validation. */

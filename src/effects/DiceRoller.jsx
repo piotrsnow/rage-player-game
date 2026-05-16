@@ -16,6 +16,39 @@ const OVERLAY_THEME = {
   disableSpotLight: false,
 };
 
+const POOL_MAX = 2;
+const _diceBoxPool = [];
+
+function acquireBox(DICE, container, options) {
+  for (let i = 0; i < _diceBoxPool.length; i++) {
+    const entry = _diceBoxPool[i];
+    if (!entry.inUse) {
+      entry.inUse = true;
+      container.appendChild(entry.box.renderer.domElement);
+      entry.box.container = container;
+      entry.box.reinit(container);
+      return entry.box;
+    }
+  }
+  const box = new DICE.dice_box(container, options);
+  if (_diceBoxPool.length < POOL_MAX) {
+    _diceBoxPool.push({ box, inUse: true });
+  }
+  return box;
+}
+
+function releaseBox(box) {
+  if (!box) return;
+  box.running = false;
+  box.rolling = false;
+  try { box.clear?.(); } catch { /* already torn down */ }
+  const canvas = box.renderer?.domElement;
+  if (canvas?.parentNode) canvas.parentNode.removeChild(canvas);
+  for (const entry of _diceBoxPool) {
+    if (entry.box === box) { entry.inUse = false; return; }
+  }
+}
+
 function clampNumber(value, min, max, fallback) {
   const numeric = Number(value);
   if (!Number.isFinite(numeric)) return fallback;
@@ -120,7 +153,7 @@ export default function DiceRoller({
             : undefined;
 
         containerRef.current.innerHTML = '';
-        const box = new DICE.dice_box(containerRef.current, boxOptions);
+        const box = acquireBox(DICE, containerRef.current, boxOptions);
         box.setDice(diceModeConfig.notation);
         boxRef.current = box;
         setReady(true);
@@ -132,12 +165,10 @@ export default function DiceRoller({
     return () => {
       cancelled = true;
       clearTimers();
-      stopDiceBox();
+      const box = boxRef.current;
       boxRef.current = null;
+      releaseBox(box);
       setReady(false);
-      if (containerRef.current) {
-        containerRef.current.innerHTML = '';
-      }
     };
   }, [variant, sizeMultiplier, durationMultiplier, overlayTheme, maxPixelRatio, antialias, physicsSolverIterations, diceModeConfig.notation]);
 
@@ -162,7 +193,7 @@ export default function DiceRoller({
     setShowDice(true);
     rollTimeoutRef.current = window.setTimeout(() => {
       box.setDice(diceModeConfig.notation);
-      box.start_throw(
+      box.start_throw_fast(
         () => requestedResults,
         () => {
           if (rolledOnceRef.current) return;

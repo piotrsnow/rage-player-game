@@ -7,6 +7,7 @@ import ListDetailLayout from '../shared/ListDetailLayout';
 import { worldLocationFields, campaignLocationFields } from '../entityConfigs';
 import { adminApi } from '../shared/adminApi';
 import { useAdminPanelStore } from '../../../../stores/adminPanelStore';
+import LocationDetailModal from '../../adminLivingWorld/shared/LocationDetailModal';
 
 export default function LocationsTab({ campaign }) {
   const [mode, setMode] = useState('campaign'); // 'campaign' | 'world'
@@ -129,6 +130,7 @@ function WorldLocationsPane() {
   const [detail, setDetail] = useState(null);
   const [busy, setBusy] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [inspectId, setInspectId] = useState(null);
 
   async function loadList() {
     setLoading(true);
@@ -187,7 +189,16 @@ function WorldLocationsPane() {
         >
           {detail && (
             <div className="space-y-4">
-              <h2 className="text-lg font-semibold text-slate-100">{detail.displayName || detail.canonicalName}</h2>
+              <div className="flex items-center justify-between">
+                <h2 className="text-lg font-semibold text-slate-100">{detail.displayName || detail.canonicalName}</h2>
+                <button
+                  type="button"
+                  onClick={() => setInspectId(selectedId)}
+                  className="rounded border border-slate-600 bg-slate-800 px-3 py-1 text-xs text-slate-200 hover:bg-slate-700"
+                >
+                  Szczegoly
+                </button>
+              </div>
               <EntityForm
                 fields={worldLocationFields}
                 value={detail}
@@ -198,6 +209,7 @@ function WorldLocationsPane() {
           )}
         </ListDetailLayout>
       </div>
+      {inspectId && <LocationDetailModal id={inspectId} onClose={() => setInspectId(null)} />}
     </div>
   );
 }

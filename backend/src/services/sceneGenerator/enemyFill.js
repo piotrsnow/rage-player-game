@@ -2,6 +2,7 @@ import {
   findClosestBestiaryEntry,
   selectBestiaryEncounter,
   applyAttributeVariance,
+  applyTierScale,
   DIFFICULTY_VARIANCE,
   rollEnemyRarity,
 } from '../../data/equipment/index.js';
@@ -12,7 +13,7 @@ import {
  *   - enemyHints → engine selects a balanced encounter from the bestiary pool
  *   - enemies[] with names → name matching + stat fill per entry
  */
-export function fillEnemiesFromBestiary(stateChanges, { campaignDifficultyTier = null } = {}) {
+export function fillEnemiesFromBestiary(stateChanges, { campaignDifficultyTier = null, tierScale = null } = {}) {
   if (!stateChanges) return;
   const cu = stateChanges.combatUpdate;
   if (!cu) return;
@@ -21,6 +22,7 @@ export function fillEnemiesFromBestiary(stateChanges, { campaignDifficultyTier =
     cu.enemies = selectBestiaryEncounter({
       ...cu.enemyHints,
       campaignDifficultyTier,
+      tierScale,
     });
   }
 
@@ -31,7 +33,7 @@ export function fillEnemiesFromBestiary(stateChanges, { campaignDifficultyTier =
       if (!match) return enemy;
       const variance = match.variance ?? DIFFICULTY_VARIANCE[match.difficulty] ?? 1;
       const attrs = applyAttributeVariance(match.attributes, variance);
-      return {
+      const filled = {
         name: enemy.name,
         attributes: attrs,
         wounds: match.maxWounds,
@@ -43,6 +45,7 @@ export function fillEnemiesFromBestiary(stateChanges, { campaignDifficultyTier =
         weaponRarity: rollEnemyRarity(match.difficulty),
         armourRarity: rollEnemyRarity(match.difficulty),
       };
+      return tierScale ? applyTierScale(filled, tierScale) : filled;
     });
   }
 }

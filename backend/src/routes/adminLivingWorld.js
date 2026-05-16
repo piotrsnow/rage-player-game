@@ -163,9 +163,15 @@ export async function adminLivingWorldRoutes(fastify) {
 
   fastify.get('/npcs/:id', guard(), async (request, reply) => {
     const { id } = request.params;
-    const npc = await prisma.worldNPC.findUnique({ where: { id } });
+    const npc = await prisma.worldNPC.findUnique({
+      where: { id },
+      include: {
+        currentLocation: { select: { id: true, canonicalName: true } },
+        homeLocation: { select: { id: true, canonicalName: true } },
+      },
+    });
     if (!npc) return reply.code(404).send({ error: 'Not found' });
-    const [events, attributions, knowledgeBase, dialogHistory] = await Promise.all([
+    const [events, attributions, knowledgeBase, dialogHistory, knownLocations, campaignShadows] = await Promise.all([
       prisma.worldEvent.findMany({
         where: { worldNpcId: id },
         orderBy: { createdAt: 'desc' },
@@ -186,7 +192,41 @@ export async function adminLivingWorldRoutes(fastify) {
         orderBy: { createdAt: 'desc' },
         take: 50,
       }),
+      prisma.worldNpcKnownLocation.findMany({
+        where: { npcId: id },
+        include: { location: { select: { id: true, canonicalName: true } } },
+      }),
+      prisma.campaignNPC.findMany({
+        where: { worldNpcId: id },
+        select: {
+          id: true, npcId: true, name: true, alive: true, disposition: true,
+          activeGoal: true, lastLocationKind: true, lastLocationId: true,
+          campaignId: true, interactionCount: true,
+          campaign: { select: { id: true, name: true } },
+        },
+        orderBy: { updatedAt: 'desc' },
+        take: 50,
+      }),
     ]);
+
+    // Fetch quests where this NPC's campaign shadows are giver or turn-in.
+    let relatedQuests = [];
+    if (campaignShadows.length > 0) {
+      const orClauses = campaignShadows.map((s) => ({
+        campaignId: s.campaignId,
+        OR: [{ questGiverId: s.npcId }, { turnInNpcId: s.npcId }],
+      }));
+      relatedQuests = await prisma.campaignQuest.findMany({
+        where: { OR: orClauses },
+        include: {
+          objectives: { orderBy: { displayOrder: 'asc' } },
+          campaign: { select: { id: true, name: true } },
+        },
+        orderBy: { updatedAt: 'desc' },
+        take: 50,
+      });
+    }
+
     return {
       npc,
       events,
@@ -194,6 +234,9 @@ export async function adminLivingWorldRoutes(fastify) {
       goalProgress: npc.goalProgress ? safeJson(npc.goalProgress) : null,
       dialogHistory,
       knowledgeBase,
+      knownLocations,
+      campaignShadows,
+      relatedQuests,
       pauseSnapshot: npc.pauseSnapshot ? safeJson(npc.pauseSnapshot) : null,
       lockedSnapshot: npc.lockedSnapshot ? safeJson(npc.lockedSnapshot) : null,
     };
@@ -242,20 +285,78 @@ export async function adminLivingWorldRoutes(fastify) {
 
   fastify.get('/locations/:id', guard(), async (request, reply) => {
     const { id } = request.params;
-    const location = await prisma.worldLocation.findUnique({ where: { id } });
+    const location = await prisma.worldLocation.findUnique({
+      where: { id },
+      include: {
+        parent: { select: { id: true, canonicalName: true } },
+      },
+    });
     if (!location) return reply.code(404).send({ error: 'Not found' });
-    const [npcs, events] = await Promise.all([
+    const [npcs, homeNpcs, events, knowledge, sublocations, roads, discoveryCount, relatedQuests, locationSummaries] = await Promise.all([
       prisma.worldNPC.findMany({
         where: { currentLocationId: id, alive: true },
-        select: { id: true, name: true, role: true, companionOfCampaignId: true, pausedAt: true },
+        select: { id: true, name: true, role: true, category: true, companionOfCampaignId: true, pausedAt: true },
+      }),
+      prisma.worldNPC.findMany({
+        where: { homeLocationId: id },
+        select: { id: true, name: true, role: true, alive: true, category: true },
       }),
       prisma.worldEvent.findMany({
         where: { worldLocationId: id },
         orderBy: { createdAt: 'desc' },
         take: 50,
       }),
+      prisma.worldLocationKnowledge.findMany({
+        where: { locationId: id },
+        orderBy: { addedAt: 'desc' },
+        take: 50,
+      }),
+      prisma.worldLocation.findMany({
+        where: { parentLocationId: id },
+        select: { id: true, canonicalName: true, locationType: true, dangerLevel: true },
+        orderBy: { canonicalName: 'asc' },
+      }),
+      prisma.road.findMany({
+        where: { OR: [{ fromLocationId: id }, { toLocationId: id }] },
+        include: {
+          from: { select: { id: true, canonicalName: true } },
+          to: { select: { id: true, canonicalName: true } },
+        },
+        take: 50,
+      }),
+      prisma.campaignDiscoveredLocation.count({
+        where: { locationKind: 'world', locationId: id },
+      }),
+      prisma.campaignQuest.findMany({
+        where: { locationKind: 'world', locationId: id },
+        include: {
+          objectives: { orderBy: { displayOrder: 'asc' } },
+          campaign: { select: { id: true, name: true } },
+        },
+        orderBy: { updatedAt: 'desc' },
+        take: 50,
+      }),
+      prisma.campaignLocationSummary.findMany({
+        where: { locationName: location.canonicalName },
+        include: { campaign: { select: { id: true, name: true } } },
+        orderBy: { updatedAt: 'desc' },
+        take: 20,
+      }),
     ]);
-    return { location, npcs, events, aliases: safeJson(location.aliases) };
+    return {
+      location,
+      npcs,
+      homeNpcs,
+      events,
+      aliases: safeJson(location.aliases),
+      knowledge,
+      sublocations,
+      roads,
+      discoveryCount,
+      relatedQuests,
+      locationSummaries,
+      parentLocation: location.parent || null,
+    };
   });
 
   // ── Events timeline ────────────────────────────────────────────────
@@ -2342,6 +2443,77 @@ export async function adminLivingWorldRoutes(fastify) {
       if (files.length > 0) results.push({ name: entry, files });
     }
     return results;
+  });
+
+  // ── Difficulty Scaling config ──
+
+  const DIFFICULTY_SCALE_DEFAULTS = {
+    low:    { attrMul: 1.0, woundsMul: 1.0, skillBonus: 0, armourBonus: 0 },
+    medium: { attrMul: 1.2, woundsMul: 1.25, skillBonus: 1, armourBonus: 1 },
+    high:   { attrMul: 1.4, woundsMul: 1.5, skillBonus: 2, armourBonus: 1 },
+    deadly: { attrMul: 1.7, woundsMul: 1.8, skillBonus: 4, armourBonus: 2 },
+  };
+
+  const TIER_SCHEMA = {
+    type: 'object',
+    properties: {
+      attrMul:     { type: 'number', minimum: 0.5, maximum: 3.0 },
+      woundsMul:   { type: 'number', minimum: 0.5, maximum: 3.0 },
+      skillBonus:  { type: 'integer', minimum: 0, maximum: 10 },
+      armourBonus: { type: 'integer', minimum: 0, maximum: 5 },
+    },
+    additionalProperties: false,
+  };
+
+  fastify.get('/difficulty-scaling', guard(), async () => {
+    const row = await prisma.serverSettings.findUnique({ where: { id: 'singleton' } });
+    const raw = (row?.difficultyScaling && typeof row.difficultyScaling === 'object') ? row.difficultyScaling : {};
+    const merged = {};
+    for (const tier of Object.keys(DIFFICULTY_SCALE_DEFAULTS)) {
+      merged[tier] = { ...DIFFICULTY_SCALE_DEFAULTS[tier], ...(raw[tier] || {}) };
+    }
+    return merged;
+  });
+
+  fastify.put('/difficulty-scaling', guard({
+    schema: {
+      body: {
+        type: 'object',
+        properties: {
+          low: TIER_SCHEMA,
+          medium: TIER_SCHEMA,
+          high: TIER_SCHEMA,
+          deadly: TIER_SCHEMA,
+        },
+        additionalProperties: false,
+      },
+    },
+  }), async (request) => {
+    const row = await prisma.serverSettings.findUnique({ where: { id: 'singleton' } });
+    const current = (row?.difficultyScaling && typeof row.difficultyScaling === 'object') ? row.difficultyScaling : {};
+
+    const updated = { ...current };
+    for (const tier of Object.keys(DIFFICULTY_SCALE_DEFAULTS)) {
+      if (request.body[tier]) {
+        updated[tier] = { ...(current[tier] || {}), ...request.body[tier] };
+      }
+    }
+
+    await prisma.serverSettings.upsert({
+      where: { id: 'singleton' },
+      create: { id: 'singleton', difficultyScaling: updated },
+      update: { difficultyScaling: updated },
+    });
+
+    // Invalidate in-memory cache
+    const { invalidateDifficultyScalingCache } = await import('../services/difficultyScalingConfig.js');
+    invalidateDifficultyScalingCache();
+
+    const merged = {};
+    for (const tier of Object.keys(DIFFICULTY_SCALE_DEFAULTS)) {
+      merged[tier] = { ...DIFFICULTY_SCALE_DEFAULTS[tier], ...(updated[tier] || {}) };
+    }
+    return merged;
   });
 }
 

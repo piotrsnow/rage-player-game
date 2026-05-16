@@ -238,10 +238,17 @@ export function NarratorHeaderButtons({ message, narrator, activeAccentClass, id
 
   useEffect(() => {
     if (!isNarratorReady || !speakSingle) return;
-    if (getPendingAutoPlayId() === message.id) {
+    const tryAutoPlay = () => {
+      if (getPendingAutoPlayId() !== message.id) return false;
       clearPendingAutoPlayId(message.id);
       speakSingle(message, message.id);
-    }
+      return true;
+    };
+    if (tryAutoPlay()) return;
+    // Parent effects (useChatAutoNarration) run after child effects in the
+    // same render cycle. One rAF lets the pending ID settle before we recheck.
+    const raf = requestAnimationFrame(() => tryAutoPlay());
+    return () => cancelAnimationFrame(raf);
   }, [isNarratorReady, message, speakSingle]);
 
   if (!isNarratorReady) return null;

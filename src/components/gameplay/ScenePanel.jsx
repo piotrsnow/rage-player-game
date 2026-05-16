@@ -97,6 +97,9 @@ export default function ScenePanel({
   onDismissGameError = null,
   mpErrorCode = null,
   interactiveMap = false,
+  onNpcInteract,
+  onPortalEnter,
+  locationScale,
   isMultiplayer = false,
   onOpenSettings = null,
   momentumDice = null,
@@ -399,6 +402,9 @@ export default function ScenePanel({
           interactive={interactiveMap}
           character={characterSpriteSheet ? { spriteSheetUrl: characterSpriteSheet } : null}
           multiplayerPlayers={multiplayerPlayers}
+          onNpcInteract={onNpcInteract}
+          onPortalEnter={onPortalEnter}
+          locationScale={locationScale}
         />
       ) : (settings.sceneVisualization || 'image') === 'image' && (displayedSrc || previousSrc) ? (
         <>

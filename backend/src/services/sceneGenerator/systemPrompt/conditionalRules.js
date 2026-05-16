@@ -55,7 +55,11 @@ export function buildConditionalRules({ intent, coreState, scenePhase = null, li
       `budget: 1-2 trivial, 3-7 medium, 8-12 hard, 13-20 deadly. race: optional (${BESTIARY_RACES_STR}). ` +
       `Fallback: {active:true, enemies:[{name}], reason}.\n` +
       `- pendingThreat: {race,budget,maxDifficulty,count,description} for tension without combat.\n` +
-      `- woundsChange: delta (negative=damage, positive=healing).`,
+      `- woundsChange: delta (negative=damage, positive=healing).\n` +
+      `DAMAGE TYPES: fizyczne, ogień, lód, błyskawica, magiczne, trucizna, psychiczne. ` +
+      `Narrate damage matching its type: fire spells → burning/charring, ice → frost/freezing, lightning → crackling/shocking. ` +
+      `Enemies may be resistant (reduced dmg) or vulnerable (extra dmg) to specific types — mention in narration when relevant. ` +
+      `Undead are immune to poison/psychic, vulnerable to fire. Demons resist fire, vulnerable to ice/lightning. Trolls vulnerable to fire.`,
     );
   }
 

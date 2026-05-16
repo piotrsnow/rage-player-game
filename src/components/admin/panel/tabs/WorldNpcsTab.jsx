@@ -6,6 +6,7 @@ import EntityForm from '../shared/EntityForm';
 import ListDetailLayout from '../shared/ListDetailLayout';
 import { worldNpcFields } from '../entityConfigs';
 import { adminApi } from '../shared/adminApi';
+import NpcDetailModal from '../../adminLivingWorld/shared/NpcDetailModal';
 
 export default function WorldNpcsTab() {
   const [list, setList] = useState([]);
@@ -14,6 +15,7 @@ export default function WorldNpcsTab() {
   const [detail, setDetail] = useState(null);
   const [busy, setBusy] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [inspectId, setInspectId] = useState(null);
 
   async function loadList() {
     setLoading(true);
@@ -72,7 +74,16 @@ export default function WorldNpcsTab() {
         >
           {detail && (
             <div className="space-y-4">
-              <h2 className="text-lg font-semibold text-slate-100">{detail.name}</h2>
+              <div className="flex items-center justify-between">
+                <h2 className="text-lg font-semibold text-slate-100">{detail.name}</h2>
+                <button
+                  type="button"
+                  onClick={() => setInspectId(selectedId)}
+                  className="rounded border border-slate-600 bg-slate-800 px-3 py-1 text-xs text-slate-200 hover:bg-slate-700"
+                >
+                  Szczegoly
+                </button>
+              </div>
               <EntityForm
                 fields={worldNpcFields}
                 value={detail}
@@ -83,6 +94,7 @@ export default function WorldNpcsTab() {
           )}
         </ListDetailLayout>
       </div>
+      {inspectId && <NpcDetailModal id={inspectId} onClose={() => setInspectId(null)} />}
     </div>
   );
 }

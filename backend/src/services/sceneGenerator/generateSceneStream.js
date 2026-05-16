@@ -29,6 +29,7 @@ import {
   calculateFreeformSkillXP,
 } from './diceResolution.js';
 import { fillEnemiesFromBestiary } from './enemyFill.js';
+import { getScaleForTier } from '../difficultyScalingConfig.js';
 import { handleDungeonEntry } from '../livingWorld/dungeonEntry.js';
 import { reconcileCloneBatch } from '../livingWorld/cloneReconciliation.js';
 import { pickQuestGiver } from '../livingWorld/questGoalAssigner.js';
@@ -176,6 +177,9 @@ export async function generateSceneStream(campaignId, playerAction, options = {}
       return;
     }
 
+    // 1c. Load difficulty tier scaling config (cached, 60s TTL)
+    const tierScale = await getScaleForTier(coreState.campaign?.difficultyTier || 'low');
+
     // 2. Intent classification. Fetch the most recent scene (narrative +
     // chosenAction + index) so the classifier sees continuity. Fast query —
     // same row will be reused by buildLeanSystemPrompt below, but we keep
@@ -211,6 +215,7 @@ export async function generateSceneStream(campaignId, playerAction, options = {}
     // 2a2. Combat fast-path
     const combat = await tryCombatFastPath(intentResult, playerAction, dbNpcs, provider, {
       campaignDifficultyTier: coreState.campaign?.difficultyTier || null,
+      tierScale,
     });
     if (combat.handled) {
       if (combat.intent) onEvent({ type: 'intent', data: { intent: combat.intent } });
@@ -522,9 +527,10 @@ export async function generateSceneStream(campaignId, playerAction, options = {}
     const hasAnyDiceRoll = !!resolvedMechanics?.diceRoll || (sceneResult.diceRolls?.length > 0);
     calculateFreeformSkillXP(sceneResult.stateChanges, hasAnyDiceRoll, sceneResult.diceRolls);
 
-    // 6. Fill enemy stats from bestiary (with G1 difficulty-tier cap)
+    // 6. Fill enemy stats from bestiary (with G1 difficulty-tier cap + scaling)
     fillEnemiesFromBestiary(sceneResult.stateChanges, {
       campaignDifficultyTier: coreState.campaign?.difficultyTier || null,
+      tierScale,
     });
 
     // 7. Save scene

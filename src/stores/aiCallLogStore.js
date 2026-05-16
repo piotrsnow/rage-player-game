@@ -112,6 +112,7 @@ export const useAiCallLogStore = create((set, get) => ({
   toggleSidebarVisible: () => set((s) => ({ sidebarVisible: !s.sidebarVisible })),
   openFullLog: () => set({ fullLogOpen: true }),
   closeFullLog: () => set({ fullLogOpen: false }),
+  toggleFullLog: () => set((s) => ({ fullLogOpen: !s.fullLogOpen })),
 }));
 
 export const aiCallLog = {

@@ -1,10 +1,8 @@
 import { useCallback, useEffect, useState } from 'react';
 import { apiClient } from '../../../../services/apiClient';
 import FilterSelect from '../shared/FilterSelect';
-import ModalShell from '../shared/ModalShell';
 import ActionBtn from '../shared/ActionBtn';
-import { KV, Section, Empty } from '../shared/primitives';
-import { summarizePayload } from '../shared/summarizePayload';
+import NpcDetailModal from '../shared/NpcDetailModal';
 import { NPC_CATEGORY_COLORS } from './mapHelpers';
 
 export default function NpcListTab({ campaignId = null }) {
@@ -121,115 +119,3 @@ export default function NpcListTab({ campaignId = null }) {
   );
 }
 
-function NpcDetailModal({ id, onClose, onMutated }) {
-  const [data, setData] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [actionBusy, setActionBusy] = useState(false);
-  const [lastResult, setLastResult] = useState(null);
-
-  const load = useCallback(() => {
-    setLoading(true);
-    apiClient.get(`/v1/admin/livingWorld/npcs/${id}`).then(setData).finally(() => setLoading(false));
-  }, [id]);
-
-  useEffect(() => { load(); }, [load]);
-
-  const runAction = useCallback(async (path, body) => {
-    setActionBusy(true);
-    setLastResult({ path, status: 'running' });
-    try {
-      const res = await apiClient.post(`/v1/admin/livingWorld/npcs/${id}/${path}`, body);
-      setLastResult({ path, status: 'ok', data: res });
-      load();
-      onMutated?.();
-    } catch (err) {
-      setLastResult({ path, status: 'error', error: err?.message || String(err) });
-    } finally {
-      setActionBusy(false);
-    }
-  }, [id, load, onMutated]);
-
-  if (loading) return <ModalShell onClose={onClose}><div>Loading…</div></ModalShell>;
-  if (!data) return <ModalShell onClose={onClose}><div>Not found</div></ModalShell>;
-  const { npc, events = [], attributions = [], goalProgress } = data;
-
-  return (
-    <ModalShell onClose={onClose} title={`${npc.name}  (${npc.role || 'no role'})`}>
-      <div className="text-[11px] text-on-surface">
-        <div className="grid grid-cols-2 gap-3 mb-3">
-          <KV k="canonicalId" v={npc.canonicalId} />
-          <KV k="alignment" v={npc.alignment} />
-          <KV k="alive" v={npc.alive ? '✓' : '✗'} />
-          <KV k="currentLocationId" v={npc.currentLocationId || '—'} />
-          <KV k="pausedAt" v={npc.pausedAt ? new Date(npc.pausedAt).toISOString().slice(0, 16) : '—'} />
-          <KV k="companionOfCampaignId" v={npc.companionOfCampaignId || '—'} />
-          <KV k="lockedByCampaignId" v={npc.lockedByCampaignId || '—'} />
-          <KV k="companionLoyalty" v={npc.companionLoyalty} />
-          <KV k="lastTickAt" v={npc.lastTickAt ? new Date(npc.lastTickAt).toISOString().slice(0, 16) : '—'} />
-        </div>
-
-        {npc.activeGoal && (
-          <div className="mb-3 p-2 rounded-sm bg-surface-container/40 border border-outline-variant/10">
-            <div className="text-[9px] uppercase tracking-widest text-tertiary mb-1">Active goal</div>
-            <div>{npc.activeGoal}</div>
-            {goalProgress && (
-              <pre className="mt-2 text-[10px] text-on-surface-variant whitespace-pre-wrap">{JSON.stringify(goalProgress, null, 2)}</pre>
-            )}
-          </div>
-        )}
-
-        <div className="flex gap-2 mb-3">
-          <ActionBtn disabled={actionBusy} onClick={() => runAction('tick')}>Manual tick</ActionBtn>
-          <ActionBtn disabled={actionBusy || !npc.pausedAt} onClick={() => runAction('force-unpause')}>Force unpause</ActionBtn>
-          <ActionBtn danger disabled={actionBusy || !npc.lockedByCampaignId} onClick={() => runAction('release-lock')}>Release lock</ActionBtn>
-          {actionBusy && <span className="text-[10px] text-on-surface-variant self-center">running…</span>}
-        </div>
-
-        {lastResult && (
-          <div className={`mb-3 p-2 rounded-sm border text-[10px] ${
-            lastResult.status === 'error' ? 'border-error/40 bg-error/10 text-error' :
-            lastResult.status === 'ok' ? 'border-tertiary/30 bg-tertiary/10 text-tertiary' :
-            'border-outline-variant/30 bg-surface-container/40 text-on-surface-variant'
-          }`}>
-            <div className="font-bold uppercase tracking-widest text-[9px] mb-1">
-              {lastResult.path} → {lastResult.status}
-            </div>
-            {lastResult.error && <div>{lastResult.error}</div>}
-            {lastResult.data && (
-              <pre className="whitespace-pre-wrap break-words">{JSON.stringify(lastResult.data, null, 2)}</pre>
-            )}
-          </div>
-        )}
-
-        <Section title={`Recent events (${events.length})`}>
-          {events.length === 0 ? <Empty /> : (
-            <ul className="max-h-48 overflow-y-auto space-y-1">
-              {events.map((e) => (
-                <li key={e.id} className="text-[10px]">
-                  <span className="text-tertiary">[{e.eventType}]</span>{' '}
-                  <span className="text-on-surface-variant">{new Date(e.createdAt).toISOString().slice(0, 16)}</span>{' '}
-                  <span>{summarizePayload(e.payload)}</span>
-                </li>
-              ))}
-            </ul>
-          )}
-        </Section>
-
-        <Section title={`Attributions (${attributions.length})`}>
-          {attributions.length === 0 ? <Empty /> : (
-            <ul className="max-h-32 overflow-y-auto space-y-1">
-              {attributions.map((a) => (
-                <li key={a.id} className="text-[10px]">
-                  <span className="text-tertiary">[{a.actionType}]</span>{' '}
-                  <span className={a.justified ? 'text-on-surface' : 'text-error'}>{a.justified ? 'justified' : 'unjustified'}</span>{' '}
-                  <span className="text-on-surface-variant">conf={Math.round((a.judgeConfidence || 0) * 100)}%</span>{' '}
-                  <span className="text-on-surface-variant">{a.judgeReason || ''}</span>
-                </li>
-              ))}
-            </ul>
-          )}
-        </Section>
-      </div>
-    </ModalShell>
-  );
-}

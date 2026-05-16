@@ -12,6 +12,13 @@ import { generateBattlefield } from './battlefieldGenerator.js';
 import { hasLineOfSight, checkRangedPath } from './combatLineOfSight.js';
 import { shortId } from '../utils/ids';
 import { devLog } from '../stores/devEventLogStore';
+import {
+  computeTypedDamage,
+  applyResistancesAndDR,
+  inferWeaponDamageComponents,
+  inferArmorDR,
+  evaluateComponent,
+} from '../../shared/domain/damageTypes.js';
 
 // Crit-triggered effects — applied when a critical hit lands (roll=1)
 const CRIT_EFFECTS = [
@@ -579,6 +586,62 @@ function getWeaponDamage(weaponData, attacker, rarity = 'common') {
   }
 }
 
+/**
+ * Compute typed weapon damage via damageComponents.
+ * Returns { components: [{ type, amount }], total }.
+ */
+function computeWeaponTypedDamage(weaponData, attacker, rarity = 'common') {
+  const components = inferWeaponDamageComponents(weaponData);
+  const scale = RARITY_BONUS_SCALE[rarity] || 1;
+  const attrs = attacker.attributes || {};
+  const resolved = components.map((c) => {
+    const raw = evaluateComponent(c, attrs);
+    return { type: c.type || 'fizyczne', amount: Math.max(0, Math.round(raw * scale)) };
+  });
+  const total = resolved.reduce((s, r) => s + r.amount, 0);
+  return { components: resolved, total };
+}
+
+/**
+ * Get typed armor DR for a combatant.
+ * Returns a dr map: { fizyczne: N, ogien: N, ... }
+ */
+function getCombatantTypedDR(combatant) {
+  if (combatant.armourDR != null) {
+    const scale = RARITY_DR_SCALE[getEnemyArmourRarity(combatant)] || 1;
+    const baseDR = Math.round(combatant.armourDR * scale);
+    return combatant.armorDr || { fizyczne: baseDR };
+  }
+  if (combatant.equipped?.armour) {
+    const item = (combatant.inventory || []).find(i => i.id === combatant.equipped.armour);
+    if (item) {
+      const armourData = gameData.getArmourDataByBaseType(item.baseType);
+      if (armourData) {
+        const scale = RARITY_DR_SCALE[item.rarity || 'common'] || 1;
+        const dr = inferArmorDR(armourData);
+        const scaled = {};
+        for (const [type, val] of Object.entries(dr)) {
+          scaled[type] = Math.round(val * scale);
+        }
+        return scaled;
+      }
+    }
+  }
+  if (typeof combatant.equippedArmour === 'string') {
+    const armourData = gameData.armour?.[combatant.equippedArmour];
+    if (armourData) {
+      const scale = RARITY_DR_SCALE[getEnemyArmourRarity(combatant)] || 1;
+      const dr = inferArmorDR(armourData);
+      const scaled = {};
+      for (const [type, val] of Object.entries(dr)) {
+        scaled[type] = Math.round(val * scale);
+      }
+      return scaled;
+    }
+  }
+  return {};
+}
+
 function getCombatantDR(combatant) {
   // NPC direct armourDR — apply enemy rarity scaling
   if (combatant.armourDR != null) {
@@ -877,6 +940,8 @@ function createCombatantFromCharacter(character, id, type) {
     traits: character.traits || [],
     // NPC direct fields (bestiary entries)
     armourDR: character.armourDR ?? null,
+    armorDr: character.armorDr || null,
+    resistances: character.resistances || null,
     equippedArmour: character.equippedArmour || null,
     equippedShield: character.equippedShield || null,
     spriteUrl: character.spriteUrl || null,
@@ -1233,35 +1298,21 @@ export function resolveManoeuvre(combat, actorId, manoeuvreKey, targetId, option
     };
 
     if (test.success) {
-      const spellStats = spellName ? findSpell(spellName)?.spell?.combatStats : null;
-      const dmg = spellStats?.damage;
-      const baseDamage = dmg
-        ? Math.max(1, Math.floor(inteligencja * dmg.intScale) + dmg.flat)
-        : Math.max(1, Math.floor(inteligencja / 2));
-      const toughness = getToughness(target);
-      const magicTargetMods = computeEffectiveMods(target.activeEffects);
-      let totalDamage = Math.max(1, baseDamage - Math.floor(toughness / 3) - magicTargetMods.damageReduction);
+      const foundSpell = spellName ? findSpell(spellName) : null;
+      const spellStats = foundSpell?.spell?.combatStats || null;
+      const spellType = spellStats?.type || 'offensive';
 
-      const magicTargetPos = normalizePos(target.position);
-      const magicTargetTile = getTileAt(state.terrainTiles, magicTargetPos.x, magicTargetPos.y);
-      if (magicTargetTile?.type === 'damageReduction') {
-        totalDamage = Math.max(1, Math.ceil(totalDamage * 0.5));
-      }
-
-      target.wounds = Math.max(0, target.wounds - totalDamage);
-      if (target.wounds <= 0) target.isDefeated = true;
-
-      // Apply spell effect if defined
-      const spellFx = spellName ? SPELL_EFFECTS[spellName] : null;
-      if (spellFx) {
-        const fxTarget = spellFx.target === 'self' ? actor : target;
+      // Apply spell status effect (shared across all spell types)
+      const _applySpellFx = (fxTargetOverride) => {
+        const spellFx = spellName ? SPELL_EFFECTS[spellName] : null;
+        if (!spellFx) return;
+        const fxTarget = fxTargetOverride || (spellFx.target === 'self' ? actor : target);
         const fx = { ...spellFx.effect, id: `sfx_${shortId(6)}` };
         if (!fxTarget.activeEffects) fxTarget.activeEffects = [];
         fxTarget.activeEffects = addEffect(fxTarget.activeEffects, fx);
         log.push(`${fxTarget.name} gains effect: ${fx.name}.`);
         result.appliedEffects.push({ target: fxTarget.name, action: 'add', effectName: fx.name, category: fx.category });
 
-        // all_enemies: apply to every active enemy (besides primary target already handled)
         if (spellFx.target === 'all_enemies') {
           for (const c of state.combatants) {
             if (c.id === target.id || c.isDefeated) continue;
@@ -1272,22 +1323,112 @@ export function resolveManoeuvre(combat, actorId, manoeuvreKey, targetId, option
             }
           }
         }
-      }
-
-      result.damageBreakdown = {
-        weaponDmg: baseDamage,
-        marginBonus: 0,
-        blocked: false,
-        dr: Math.floor(toughness / 3) + magicTargetMods.damageReduction,
-        totalDamage,
-        isMagic: true,
       };
 
-      const spellLabel = spellName ? `"${spellName}"` : 'a spell';
-      log.push(`${actor.name} casts ${spellLabel} at ${target.name}: ${test.total} vs ${test.threshold}. Damage: ${totalDamage}.${target.isDefeated ? ` ${target.name} is defeated!` : ''}`);
-      result.outcome = 'hit';
-      result.damage = totalDamage;
-      result.targetDefeated = target.isDefeated;
+      if (spellType === 'heal') {
+        // Heal — auto-redirect to self if target is an enemy
+        const healTarget = (target.type === 'enemy') ? actor : target;
+        const healComps = spellStats.healComponents;
+        let healAmount;
+        if (healComps?.length) {
+          healAmount = healComps.reduce((s, c) => s + evaluateComponent(c, actor.attributes || {}), 0);
+        } else if (spellStats.heal) {
+          healAmount = Math.max(1, Math.floor(inteligencja * spellStats.heal.intScale) + spellStats.heal.flat);
+        } else {
+          healAmount = Math.max(1, Math.floor(inteligencja / 3) + 2);
+        }
+        healAmount = Math.max(1, healAmount);
+        const before = healTarget.wounds;
+        healTarget.wounds = Math.min(healTarget.maxWounds || 999, healTarget.wounds + healAmount);
+        const healed = healTarget.wounds - before;
+        _applySpellFx(healTarget);
+
+        const spellLabel = spellName ? `"${spellName}"` : 'a heal spell';
+        log.push(`${actor.name} casts ${spellLabel} on ${healTarget.name}: heals ${healed} HP. (${healTarget.wounds}/${healTarget.maxWounds})`);
+        result.outcome = 'heal';
+        result.healAmount = healed;
+        result.healTarget = healTarget.name;
+        result.healTargetId = healTarget.id;
+        result.damageBreakdown = { weaponDmg: healAmount, marginBonus: 0, blocked: false, dr: 0, totalDamage: 0, isMagic: true, isHeal: true, healAmount: healed };
+
+      } else if (spellType === 'buff' || spellType === 'utility') {
+        // Buff/utility — apply effect to self (or target for ally-targeted buffs)
+        const buffTarget = (target.type === 'enemy') ? actor : target;
+        _applySpellFx(buffTarget);
+
+        const spellLabel = spellName ? `"${spellName}"` : 'a spell';
+        log.push(`${actor.name} casts ${spellLabel} on ${buffTarget.name}.`);
+        result.outcome = 'buff';
+        result.buffTarget = buffTarget.name;
+        result.buffTargetId = buffTarget.id;
+
+      } else if (spellType === 'control') {
+        // Control — applies effect on enemy, may deal minor psychic damage
+        _applySpellFx();
+
+        const spellLabel = spellName ? `"${spellName}"` : 'a control spell';
+        log.push(`${actor.name} casts ${spellLabel} on ${target.name}.`);
+        result.outcome = 'hit';
+        result.damage = 0;
+        result.targetDefeated = false;
+
+      } else {
+        // Offensive — typed damage
+        const dmgComps = spellStats?.damageComponents;
+        let typedRaw;
+        if (dmgComps?.length) {
+          typedRaw = computeTypedDamage(dmgComps, actor.attributes || {});
+        } else if (spellStats?.damage) {
+          const baseDmg = Math.max(1, Math.floor(inteligencja * spellStats.damage.intScale) + spellStats.damage.flat);
+          typedRaw = { components: [{ type: 'magiczne', amount: baseDmg }], total: baseDmg };
+        } else {
+          const fallback = Math.max(1, Math.floor(inteligencja / 2));
+          typedRaw = { components: [{ type: 'magiczne', amount: fallback }], total: fallback };
+        }
+
+        // Apply resistances and target DR for magic
+        const magicTargetMods = computeEffectiveMods(target.activeEffects);
+        const toughnessDR = Math.floor(getToughness(target) / 3);
+        const effectDR = magicTargetMods.damageReduction || 0;
+        const magicDRMap = { magiczne: toughnessDR + effectDR };
+        // Copy typed dr if target has special typed resistances
+        for (const c of typedRaw.components) {
+          if (c.type !== 'magiczne' && !(c.type in magicDRMap)) {
+            magicDRMap[c.type] = toughnessDR + effectDR;
+          }
+        }
+        const resistances = target.resistances || {};
+        const resolved = applyResistancesAndDR(typedRaw, resistances, { dr: magicDRMap });
+        let totalDamage = Math.max(1, resolved.total);
+
+        const magicTargetPos = normalizePos(target.position);
+        const magicTargetTile = getTileAt(state.terrainTiles, magicTargetPos.x, magicTargetPos.y);
+        if (magicTargetTile?.type === 'damageReduction') {
+          totalDamage = Math.max(1, Math.ceil(totalDamage * 0.5));
+        }
+
+        target.wounds = Math.max(0, target.wounds - totalDamage);
+        if (target.wounds <= 0) target.isDefeated = true;
+
+        _applySpellFx();
+
+        const legacyDR = resolved.components.reduce((s, c) => s + c.dr, 0) + resolved.components.reduce((s, c) => s + Math.round(c.raw * (1 - c.resistance)), 0);
+        result.damageBreakdown = {
+          weaponDmg: typedRaw.total,
+          marginBonus: 0,
+          blocked: false,
+          dr: legacyDR,
+          totalDamage,
+          isMagic: true,
+          components: resolved.components,
+        };
+
+        const spellLabel = spellName ? `"${spellName}"` : 'a spell';
+        log.push(`${actor.name} casts ${spellLabel} at ${target.name}: ${test.total} vs ${test.threshold}. Damage: ${totalDamage}.${target.isDefeated ? ` ${target.name} is defeated!` : ''}`);
+        result.outcome = 'hit';
+        result.damage = totalDamage;
+        result.targetDefeated = target.isDefeated;
+      }
     } else {
       log.push(`${actor.name} tries to cast a spell at ${target.name}: ${test.total} vs ${test.threshold}. Spell fizzles!`);
       result.outcome = 'miss';
@@ -1430,30 +1571,45 @@ export function resolveManoeuvre(combat, actorId, manoeuvreKey, targetId, option
     };
 
     if (test.success) {
-      // Damage: weapon formula + margin bonus → shield block → armour DR
       const mainWeapon = getMainWeapon(actor);
       const weaponData = getWeaponData(mainWeapon);
       result.weaponName = mainWeapon;
       const weaponRarity = actor.equipped?.mainHand
         ? getEquippedItemRarity(actor, 'mainHand')
         : getEnemyWeaponRarity(actor);
-      const weaponDmg = getWeaponDamage(weaponData, actor, weaponRarity);
-      const marginBonus = Math.max(0, Math.floor(test.margin / 5));
-      let rawDamage = weaponDmg + marginBonus;
 
-      // Shield block
-      const blockResult = resolveShieldBlock(target, rawDamage, weaponData);
-      if (blockResult.blocked) rawDamage = blockResult.damage;
+      // Typed damage computation
+      const typedRaw = computeWeaponTypedDamage(weaponData, actor, weaponRarity);
+      const marginBonus = Math.max(0, Math.floor(test.margin / 5));
+      // Add margin bonus to first (primary) damage component
+      if (typedRaw.components.length > 0) {
+        typedRaw.components[0].amount += marginBonus;
+        typedRaw.total += marginBonus;
+      }
+
+      // Shield block — reduces total proportionally
+      const blockResult = resolveShieldBlock(target, typedRaw.total, weaponData);
+      if (blockResult.blocked && typedRaw.total > 0) {
+        const ratio = blockResult.damage / typedRaw.total;
+        for (const c of typedRaw.components) c.amount = Math.max(0, Math.ceil(c.amount * ratio));
+        typedRaw.total = typedRaw.components.reduce((s, c) => s + c.amount, 0);
+      }
 
       // Fury tile: +50% raw damage
       if (actorTile?.type === 'fury') {
-        rawDamage = Math.ceil(rawDamage * 1.5);
+        for (const c of typedRaw.components) c.amount = Math.ceil(c.amount * 1.5);
+        typedRaw.total = typedRaw.components.reduce((s, c) => s + c.amount, 0);
       }
 
-      // Armour DR + effect-based DR (e.g. Ochrona, Wielka Ochrona)
+      // Typed DR + resistance
       const targetMods = computeEffectiveMods(target.activeEffects);
-      const dr = getCombatantDR(target) + targetMods.damageReduction;
-      let totalDamage = Math.max(1, rawDamage - dr);
+      const typedDRMap = getCombatantTypedDR(target);
+      const effectDR = targetMods.damageReduction || 0;
+      // Add effect-based flat DR to fizyczne DR bucket
+      if (effectDR > 0) typedDRMap.fizyczne = (typedDRMap.fizyczne || 0) + effectDR;
+      const resistances = target.resistances || {};
+      const resolved = applyResistancesAndDR(typedRaw, resistances, { dr: typedDRMap });
+      let totalDamage = Math.max(1, resolved.total);
 
       // Damage Reduction tile: target takes 50% less
       const targetPos = normalizePos(target.position);
@@ -1479,17 +1635,27 @@ export function resolveManoeuvre(combat, actorId, manoeuvreKey, targetId, option
         log.push(`${actor.name} feints ${target.name}! Next attack will be easier.`);
       }
 
+      const legacyWeaponDmg = typedRaw.total - marginBonus;
+      const legacyDR = resolved.components.reduce((s, c) => s + c.dr, 0);
       const blockMsg = blockResult.blocked ? ` Blocked (${Math.round((blockResult.reduction ?? 0) * 100)}%)!` : '';
       log.push(
         `${actor.name} attacks ${target.name}: ${test.total} vs ${effectiveThreshold} (margin ${test.margin}). ` +
         `${test.luckySuccess ? 'LUCKY HIT! ' : ''}` +
-        `Damage: ${weaponDmg}+${marginBonus}${blockMsg} - ${dr} DR = ${totalDamage}.` +
+        `Damage: ${legacyWeaponDmg}+${marginBonus}${blockMsg} - ${legacyDR} DR = ${totalDamage}.` +
         `${target.isDefeated ? ` ${target.name} is defeated!` : ''}`
       );
 
       result.outcome = 'hit';
       result.damage = totalDamage;
-      result.damageBreakdown = { weaponDmg, marginBonus, rawDamage: weaponDmg + marginBonus, blocked: blockResult.blocked, dr, totalDamage };
+      result.damageBreakdown = {
+        weaponDmg: legacyWeaponDmg,
+        marginBonus,
+        rawDamage: typedRaw.total,
+        blocked: blockResult.blocked,
+        dr: legacyDR,
+        totalDamage,
+        components: resolved.components,
+      };
       result.targetDefeated = target.isDefeated;
     } else {
       const mainWeapon = getMainWeapon(actor);

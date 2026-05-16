@@ -3,7 +3,7 @@ import { childLogger } from '../../lib/logger.js';
 import { config } from '../../config.js';
 import { requireServerApiKey } from '../apiKeyService.js';
 import { resolveModelForTask } from '../serverConfig.js';
-import { selectBestiaryEncounter } from '../../data/equipment/index.js';
+import { selectBestiaryEncounter, applyTierScale } from '../../data/equipment/index.js';
 import { logLlmCallStart, logLlmCallFinish, logLlmCallFail } from '../llmCallLogger.js';
 import { wrapPlayerInput } from '../../../../shared/domain/playerInputSanitizer.js';
 
@@ -147,7 +147,7 @@ export function tryTradeShortcut(intentResult, coreState, dbNpcs) {
  * bestiary-selected enemy encounter. Returns { handled, result } just like
  * tryTradeShortcut.
  */
-export async function tryCombatFastPath(intentResult, playerAction, dbNpcs, provider, { campaignDifficultyTier = null } = {}) {
+export async function tryCombatFastPath(intentResult, playerAction, dbNpcs, provider, { campaignDifficultyTier = null, tierScale = null } = {}) {
   if (!intentResult.clear_combat || !intentResult.combat_enemies) {
     return { handled: false };
   }
@@ -179,21 +179,25 @@ export async function tryCombatFastPath(intentResult, playerAction, dbNpcs, prov
     };
   }
 
-  // Select enemies from bestiary (with G1 difficulty-tier cap)
+  // Select enemies from bestiary (with G1 difficulty-tier cap + tier scaling)
   const enemies = selectBestiaryEncounter({
     ...intentResult.combat_enemies,
     campaignDifficultyTier,
+    tierScale,
   });
-  const filledEnemies = enemies.map(e => ({
-    name: e.name,
-    attributes: e.attributes,
-    wounds: e.maxWounds,
-    maxWounds: e.maxWounds,
-    skills: e.skills,
-    traits: e.traits,
-    armourDR: e.armourDR,
-    weapons: e.weapons,
-  }));
+  const filledEnemies = enemies.map(e => {
+    const base = {
+      name: e.name,
+      attributes: e.attributes,
+      wounds: e.maxWounds,
+      maxWounds: e.maxWounds,
+      skills: e.skills,
+      traits: e.traits,
+      armourDR: e.armourDR,
+      weapons: e.weapons,
+    };
+    return tierScale ? applyTierScale(base, tierScale) : base;
+  });
 
   if (filledEnemies.length === 0) return { handled: false };
 

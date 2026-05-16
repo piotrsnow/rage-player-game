@@ -153,6 +153,7 @@ export const BESTIARY = {
     maxWounds: 7,
     skills: { 'Walka wrecz': 2 },
     traits: ['Magia'], armourDR: 0, weapons: ['Kij Bojowy'],
+    resistances: { magiczne: 0.5 },
   },
 
   // ── Nieumarli ──
@@ -162,6 +163,7 @@ export const BESTIARY = {
     maxWounds: 12,
     skills: { 'Walka wrecz': 2 },
     traits: ['Nieumarły', 'Strach 1'], armourDR: 0, weapons: ['Hand Weapon'],
+    resistances: { trucizna: 0, psychiczne: 0, ogien: 1.5 },
   },
   'Szkielet Wojownik': {
     race: 'nieumarli', locations: ['ruiny', 'jaskinia'], difficulty: 'low',
@@ -169,6 +171,7 @@ export const BESTIARY = {
     maxWounds: 8,
     skills: { 'Walka bronia jednoręczna': 4, 'Uniki': 2 },
     traits: ['Nieumarły', 'Strach 1'], armourDR: 1, weapons: ['Hand Weapon'],
+    resistances: { trucizna: 0, psychiczne: 0, ogien: 1.5, lod: 0.5 },
   },
   'Duch': {
     race: 'nieumarli', locations: ['ruiny', 'jaskinia', 'miasto'], difficulty: 'medium',
@@ -176,6 +179,7 @@ export const BESTIARY = {
     maxWounds: 10,
     skills: { 'Walka wrecz': 5 },
     traits: ['Nieumarły', 'Eteryczny', 'Strach 2'], armourDR: 0, weapons: ['Hand Weapon'],
+    resistances: { fizyczne: 0.5, trucizna: 0, psychiczne: 0, magiczne: 1.5 },
   },
   'Upiór': {
     race: 'nieumarli', locations: ['ruiny', 'jaskinia'], difficulty: 'deadly',
@@ -183,6 +187,7 @@ export const BESTIARY = {
     maxWounds: 24,
     skills: { 'Walka bronia jednoręczna': 14, 'Uniki': 10 },
     traits: ['Nieumarły', 'Strach 3', 'Terror 1'], armourDR: 5, weapons: ['Hand Weapon'],
+    resistances: { trucizna: 0, psychiczne: 0, ogien: 1.5, magiczne: 0.5 },
   },
 
   // ── Zwierzęta ──
@@ -192,6 +197,7 @@ export const BESTIARY = {
     maxWounds: 4,
     skills: { 'Walka wrecz': 1 },
     traits: ['Bestia', 'Zaraza'], armourDR: 0, weapons: ['Hand Weapon'],
+    resistances: { trucizna: 0.5 },
   },
   'Wąż': {
     race: 'zwierzeta', locations: ['las', 'bagno', 'pole'], difficulty: 'trivial',
@@ -199,6 +205,7 @@ export const BESTIARY = {
     maxWounds: 3,
     skills: { 'Walka wrecz': 1 },
     traits: ['Bestia', 'Jad'], armourDR: 0, weapons: ['Hand Weapon'],
+    resistances: { trucizna: 0 },
   },
   'Wilk': {
     race: 'zwierzeta', locations: ['las', 'gory', 'pole'], difficulty: 'low',
@@ -229,6 +236,7 @@ export const BESTIARY = {
     maxWounds: 16,
     skills: { 'Walka wrecz': 7, 'Uniki': 4 },
     traits: ['Demon', 'Strach 2'], armourDR: 2, weapons: ['Hand Weapon'],
+    resistances: { ogien: 0.5, psychiczne: 0.5 },
   },
   'Demon Ognia': {
     race: 'demony', locations: ['ruiny', 'jaskinia'], difficulty: 'high',
@@ -236,6 +244,7 @@ export const BESTIARY = {
     maxWounds: 22,
     skills: { 'Walka bronia jednoręczna': 10, 'Uniki': 7 },
     traits: ['Demon', 'Strach 3', 'Ognisty'], armourDR: 3, weapons: ['Great Weapon'],
+    resistances: { ogien: 0, lod: 2.0, psychiczne: 0.5 },
   },
   'Demon Cieni': {
     race: 'demony', locations: ['ruiny', 'jaskinia'], difficulty: 'deadly',
@@ -243,6 +252,7 @@ export const BESTIARY = {
     maxWounds: 26,
     skills: { 'Walka bronia jednoręczna': 13, 'Uniki': 12 },
     traits: ['Demon', 'Strach 3', 'Terror 2'], armourDR: 2, weapons: ['Great Weapon'],
+    resistances: { fizyczne: 0.5, psychiczne: 0, magiczne: 0.5, blyskawica: 1.5 },
   },
 
   // ── Trolle ──
@@ -252,6 +262,7 @@ export const BESTIARY = {
     maxWounds: 28,
     skills: { 'Walka bronia dwureczna': 8 },
     traits: ['Duży', 'Regeneracja'], armourDR: 4, weapons: ['Great Weapon'],
+    resistances: { ogien: 1.5, lod: 0.5, trucizna: 0.5 },
   },
   'Troll Jaskiniowy': {
     race: 'trolle', locations: ['jaskinia', 'gory'], difficulty: 'deadly',
@@ -259,6 +270,7 @@ export const BESTIARY = {
     maxWounds: 35,
     skills: { 'Walka bronia dwureczna': 12 },
     traits: ['Duży', 'Regeneracja'], armourDR: 6, weapons: ['Great Weapon'],
+    resistances: { ogien: 1.5, lod: 0.5, trucizna: 0.5 },
   },
   'Troll Rzeczny': {
     race: 'trolle', locations: ['bagno', 'wybrzeze'], difficulty: 'high',
@@ -266,6 +278,7 @@ export const BESTIARY = {
     maxWounds: 26,
     skills: { 'Walka bronia dwureczna': 8, 'Walka wrecz': 6 },
     traits: ['Duży', 'Regeneracja'], armourDR: 4, weapons: ['Great Weapon'],
+    resistances: { ogien: 1.5, lod: 0.5, trucizna: 0.5 },
   },
 
   // ── Pająki ──
@@ -275,6 +288,7 @@ export const BESTIARY = {
     maxWounds: 8,
     skills: { 'Walka wrecz': 3 },
     traits: ['Jad', 'Sieć'], armourDR: 1, weapons: ['Hand Weapon'],
+    resistances: { trucizna: 0, ogien: 1.5 },
   },
   'Pająk Olbrzymi': {
     race: 'pajaki', locations: ['jaskinia', 'las'], difficulty: 'medium',
@@ -282,6 +296,7 @@ export const BESTIARY = {
     maxWounds: 18,
     skills: { 'Walka wrecz': 7 },
     traits: ['Jad', 'Sieć', 'Duży'], armourDR: 2, weapons: ['Hand Weapon'],
+    resistances: { trucizna: 0, ogien: 1.5 },
   },
   'Królowa Pająków': {
     race: 'pajaki', locations: ['jaskinia'], difficulty: 'high',
@@ -289,6 +304,7 @@ export const BESTIARY = {
     maxWounds: 24,
     skills: { 'Walka wrecz': 10, 'Uniki': 6 },
     traits: ['Jad', 'Sieć', 'Duży'], armourDR: 3, weapons: ['Hand Weapon'],
+    resistances: { trucizna: 0, ogien: 1.5 },
   },
 
   // ── Krasnoludy ──
@@ -378,6 +394,45 @@ export function applyAttributeVariance(baseAttributes, variance) {
 }
 
 /**
+ * Apply campaign difficulty tier scaling to a spawned enemy.
+ * tierConfig is { attrMul, woundsMul, skillBonus, armourBonus } from ServerSettings.
+ * Returns a new object — never mutates the input.
+ */
+export function applyTierScale(enemy, tierConfig) {
+  if (!tierConfig || (tierConfig.attrMul === 1 && tierConfig.woundsMul === 1 && !tierConfig.skillBonus && !tierConfig.armourBonus)) {
+    return enemy;
+  }
+  const scaled = { ...enemy };
+
+  if (scaled.attributes) {
+    const attrs = { ...scaled.attributes };
+    for (const key of ['sila', 'inteligencja', 'charyzma', 'zrecznosc', 'wytrzymalosc']) {
+      attrs[key] = Math.min(25, Math.max(1, Math.round(attrs[key] * tierConfig.attrMul)));
+    }
+    scaled.attributes = attrs;
+  }
+
+  if (scaled.maxWounds) {
+    scaled.maxWounds = Math.round(scaled.maxWounds * tierConfig.woundsMul);
+    scaled.wounds = scaled.maxWounds;
+  }
+
+  if (scaled.skills && tierConfig.skillBonus) {
+    const skills = { ...scaled.skills };
+    for (const key of Object.keys(skills)) {
+      skills[key] = Math.min(25, skills[key] + tierConfig.skillBonus);
+    }
+    scaled.skills = skills;
+  }
+
+  if (tierConfig.armourBonus) {
+    scaled.armourDR = (scaled.armourDR || 0) + tierConfig.armourBonus;
+  }
+
+  return scaled;
+}
+
+/**
  * Select a group of enemies from the bestiary using the encounter budget system.
  *
  * @param {object} params
@@ -388,7 +443,7 @@ export function applyAttributeVariance(baseAttributes, variance) {
  * @param {string}  [params.race]          - Filter by race (from BESTIARY_RACES)
  * @returns {Array<object>} Array of bestiary entries with name attached
  */
-export function selectBestiaryEncounter({ location, budget = 4, maxDifficulty, count = 1, race, campaignDifficultyTier } = {}) {
+export function selectBestiaryEncounter({ location, budget = 4, maxDifficulty, count = 1, race, campaignDifficultyTier, tierScale = null } = {}) {
   // G1 — clamp the per-encounter cap to the campaign's configured tier.
   // BESTIARY_DIFFICULTIES uses the same names as Campaign.difficultyTier
   // (low < medium < high < deadly) so we can compare by index directly.
@@ -452,14 +507,15 @@ export function selectBestiaryEncounter({ location, budget = 4, maxDifficulty, c
 
     const [name, entry] = pick;
     const variance = entry.variance ?? DIFFICULTY_VARIANCE[entry.difficulty] ?? 1;
-    selected.push({
+    const spawned = {
       ...entry,
       name,
       attributes: applyAttributeVariance(entry.attributes, variance),
       wounds: entry.maxWounds,
       weaponRarity: rollEnemyRarity(entry.difficulty),
       armourRarity: rollEnemyRarity(entry.difficulty),
-    });
+    };
+    selected.push(tierScale ? applyTierScale(spawned, tierScale) : spawned);
     remainingBudget -= THREAT_COSTS[entry.difficulty] || 1;
   }
 
@@ -467,14 +523,15 @@ export function selectBestiaryEncounter({ location, budget = 4, maxDifficulty, c
   if (selected.length === 0 && pool.length > 0) {
     const [name, entry] = pool[pool.length - 1]; // cheapest
     const variance = entry.variance ?? DIFFICULTY_VARIANCE[entry.difficulty] ?? 1;
-    selected.push({
+    const spawned = {
       ...entry,
       name,
       attributes: applyAttributeVariance(entry.attributes, variance),
       wounds: entry.maxWounds,
       weaponRarity: rollEnemyRarity(entry.difficulty),
       armourRarity: rollEnemyRarity(entry.difficulty),
-    });
+    };
+    selected.push(tierScale ? applyTierScale(spawned, tierScale) : spawned);
   }
 
   return selected;
@@ -535,11 +592,14 @@ export function searchBestiary(query) {
     const a = e.attributes;
     const attrs = `S:${a.sila} I:${a.inteligencja} Ch:${a.charyzma} Z:${a.zrecznosc} W:${a.wytrzymalosc}`;
     const skills = Object.entries(e.skills || {}).map(([s, v]) => `${s}+${v}`).join(', ') || 'brak';
+    const resStr = e.resistances
+      ? Object.entries(e.resistances).map(([t, v]) => `${t}:×${v}`).join(', ')
+      : null;
     return `${name} [${e.difficulty}, ${e.race}]
   Atrybuty: ${attrs} | HP: ${e.maxWounds} | DR: ${e.armourDR}
   Broń: ${(e.weapons || ['Hand Weapon']).join(', ')}
   Umiejętności: ${skills}
-  Cechy: ${(e.traits || []).join(', ') || 'brak'}
+  Cechy: ${(e.traits || []).join(', ') || 'brak'}${resStr ? `\n  Odporności: ${resStr}` : ''}
   Lokacje: ${e.locations.join(', ')}`;
   }).join('\n\n');
 }

@@ -145,12 +145,13 @@ MANDATORY RULES:
   "itemConsumed": false
 }
 
-- enemyDamage: array of enemies hit. damage=0 if none hit.
+- enemyDamage: array of enemies hit. damage=0 if none hit. Optional "damageType" field: fizyczne|ogien|lod|blyskawica|magiczne|trucizna|psychiczne. Default: fizyczne for weapons, spell-dependent for magic.
 - playerDamage: damage taken by the player this turn (usually 0 for player's own action, but possible if action backfires).
 - playerHealing: HP restored to player (e.g. potion).
-- statusEffects: structured effects to add/remove. action="add"|"remove". effect has name, category (buff/debuff/dot/control/mixed), duration ({type:"rounds", remaining:N}), mechanics (optional: restrictions[], attributeMods, testMod, damageReduction, dotDamage, movementMod). duration in rounds (2-4 minimum).
+- statusEffects: structured effects to add/remove. action="add"|"remove". effect has name, category (buff/debuff/dot/control/mixed), duration ({type:"rounds", remaining:N}), mechanics (optional: restrictions[], attributeMods, testMod, damageReduction, dotDamage, dotDamageType, movementMod). duration in rounds (2-4 minimum). dotDamageType: ogien|lod|blyskawica|trucizna etc.
 - manaChange: mana spent (negative) or restored (positive). 0 if no magic involved.
-- itemConsumed: true if the item was used up (potion, scroll, single-use).`,
+- itemConsumed: true if the item was used up (potion, scroll, single-use).
+- DAMAGE TYPES: fizyczne, ogien, lod, blyskawica, magiczne, trucizna, psychiczne. Narrate elemental damage with matching descriptions. Some enemies have resistances/vulnerabilities.`,
 
     user: `Resolve this combat turn.
 

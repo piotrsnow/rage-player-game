@@ -2,6 +2,8 @@ import { useCallback, useEffect, useState } from 'react';
 import { apiClient } from '../../../../services/apiClient';
 import FilterSelect from '../shared/FilterSelect';
 import ActionBtn from '../shared/ActionBtn';
+import NpcDetailModal from '../shared/NpcDetailModal';
+import LocationDetailModal from '../shared/LocationDetailModal';
 
 const TYPES = ['WorldNPC', 'WorldLocation', 'CustomSpell', 'WorldItemDefinition'];
 const TYPE_LABELS = {
@@ -34,6 +36,8 @@ export default function EntityRegistryTab() {
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(false);
   const [busy, setBusy] = useState(null);
+  const [inspectNpcId, setInspectNpcId] = useState(null);
+  const [inspectLocId, setInspectLocId] = useState(null);
 
   const refresh = useCallback(async () => {
     setLoading(true);
@@ -122,7 +126,20 @@ export default function EntityRegistryTab() {
               className="flex items-center gap-2 px-2 py-1.5 rounded bg-surface-variant/20 hover:bg-surface-variant/40 text-[11px]"
             >
               <div className="flex-1 min-w-0">
-                <div className="font-medium text-on-surface truncate">{entityDisplayName(type, row)}</div>
+                {(type === 'WorldNPC' || type === 'WorldLocation') ? (
+                  <button
+                    type="button"
+                    className="font-medium text-primary hover:underline truncate block text-left w-full"
+                    onClick={() => {
+                      if (type === 'WorldNPC') setInspectNpcId(id);
+                      else setInspectLocId(id);
+                    }}
+                  >
+                    {entityDisplayName(type, row)}
+                  </button>
+                ) : (
+                  <div className="font-medium text-on-surface truncate">{entityDisplayName(type, row)}</div>
+                )}
                 {row.originCampaignId && (
                   <div className="text-[9px] text-on-surface-variant truncate">
                     origin: {row.originCampaignId.slice(0, 8)}…
@@ -183,6 +200,8 @@ export default function EntityRegistryTab() {
           <div className="text-center py-6 text-on-surface-variant text-[11px]">Brak wyników</div>
         )}
       </div>
+      {inspectNpcId && <NpcDetailModal id={inspectNpcId} onClose={() => setInspectNpcId(null)} />}
+      {inspectLocId && <LocationDetailModal id={inspectLocId} onClose={() => setInspectLocId(null)} />}
     </div>
   );
 }

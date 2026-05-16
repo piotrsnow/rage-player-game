@@ -8,6 +8,7 @@ import { filterNpcsHere } from '../../utils/npcLocation';
 import { generateFieldTiles } from './combat/generateFieldTiles';
 import {
   getFieldCellSize,
+  fieldCellToPixel,
   initFieldParticles,
   drawFieldBackground,
   drawFieldGrid,
@@ -15,10 +16,9 @@ import {
   COLORS,
 } from './combat/fieldMapDraw';
 import { useFieldMapKeyboard } from '../../hooks/useFieldMapKeyboard';
+import { useFieldMapInteraction } from '../../hooks/useFieldMapInteraction';
+import { gridDimensionsForScale } from '../../../shared/domain/fieldMapScale';
 
-const DEFAULT_WIDTH = 28;
-const DEFAULT_HEIGHT = 16;
-const ASPECT_RATIO = DEFAULT_WIDTH / DEFAULT_HEIGHT;
 const WALK_ANIM_MS = 400;
 
 function getInitials(name) {
@@ -187,6 +187,9 @@ export default function FieldMapCanvas({
   characterName,
   interactive = false,
   multiplayerPlayers = [],
+  onNpcInteract,
+  onPortalEnter,
+  locationScale,
 }) {
   const { t } = useTranslation();
   const canvasRef = useRef(null);
@@ -201,8 +204,12 @@ export default function FieldMapCanvas({
   const dispatch = useGameDispatch();
   const playerSpriteSheet = useGameSlice((s) => s.character?.spriteSheetUrl);
 
-  const gridW = DEFAULT_WIDTH;
-  const gridH = DEFAULT_HEIGHT;
+  const persisted = scene?.fieldMapTiles;
+
+  const scaledGrid = useMemo(() => gridDimensionsForScale(locationScale), [locationScale]);
+  const gridW = persisted?.width || scaledGrid.w;
+  const gridH = persisted?.height || scaledGrid.h;
+  const ASPECT_RATIO = gridW / gridH;
 
   // Resolve biome from scene context
   const biomeKey = useMemo(() => {
@@ -212,10 +219,8 @@ export default function FieldMapCanvas({
     return resolveBiome(locationName, narrative, imagePrompt);
   }, [world?.currentLocation, scene?.narrative, scene?.imagePrompt]);
 
-  // Use persisted AI tiles when available, procedural as fallback
-  const persisted = scene?.fieldMapTiles;
-  const tiles = useMemo(() => {
-    if (persisted?.tiles) return persisted.tiles;
+  const { tiles, portals } = useMemo(() => {
+    if (persisted?.tiles) return { tiles: persisted.tiles, portals: persisted.portals || [] };
     return generateFieldTiles(biomeKey, gridW, gridH, scene?.id || 'default');
   }, [persisted, biomeKey, gridW, gridH, scene?.id]);
 
@@ -287,27 +292,39 @@ export default function FieldMapCanvas({
     enabled: interactive,
   });
 
+  const { adjacentNpc, standingOnPortal } = useFieldMapInteraction({
+    entities,
+    portals,
+    playerEntityId: '__player__',
+    onNpcInteract,
+    onPortalEnter,
+    enabled: interactive,
+  });
+
   // Responsive sizing
   useEffect(() => {
     const el = sizerRef.current;
     if (!el) return;
-    const ro = new ResizeObserver(([entry]) => {
+    const ar = ASPECT_RATIO;
+    const handleResize = ([entry]) => {
       const { width: pw, height: ph } = entry.contentRect;
       if (pw <= 0 || ph <= 0) return;
       let w, h;
-      if (pw / ph > ASPECT_RATIO) {
+      if (pw / ph > ar) {
         h = Math.floor(ph);
-        w = Math.floor(h * ASPECT_RATIO);
+        w = Math.floor(h * ar);
       } else {
         w = Math.floor(pw);
-        h = Math.floor(w / ASPECT_RATIO);
+        h = Math.floor(w / ar);
       }
       setContainerSize({ w, h });
       animRef.current.particles = initFieldParticles(w, h);
-    });
+    };
+    const ro = new ResizeObserver(handleResize);
     ro.observe(el);
+    handleResize([{ contentRect: el.getBoundingClientRect() }]);
     return () => ro.disconnect();
-  }, []);
+  }, [ASPECT_RATIO]);
 
   // Token positions
   const tokenPositions = useMemo(
@@ -384,12 +401,54 @@ export default function FieldMapCanvas({
           ))}
         </div>
 
+        {/* Portal destination labels */}
+        <div className="absolute inset-0 pointer-events-none">
+          {portals.map((p) => {
+            const px = fieldCellToPixel(p.x, p.y, containerSize.w, containerSize.h, gridW, gridH);
+            return (
+              <div
+                key={`portal-${p.x}:${p.y}`}
+                className="absolute flex flex-col items-center"
+                style={{ left: px.x, top: px.y, transform: 'translate(-50%, -120%)' }}
+              >
+                <span className="text-[9px] font-label text-cyan-300 bg-surface-container/70 px-1.5 py-0.5 rounded-sm border border-cyan-400/30 backdrop-blur-sm whitespace-nowrap">
+                  {p.destinationName}
+                </span>
+              </div>
+            );
+          })}
+        </div>
+
         {/* Location label */}
         {world?.currentLocation && (
           <div className="absolute top-2 left-2 z-10 flex items-center gap-1.5 px-2.5 py-1 rounded-sm bg-surface-container/80 border border-outline-variant/20 backdrop-blur-sm">
             <span className="material-symbols-outlined text-primary text-sm">explore</span>
             <span className="text-[10px] font-label uppercase tracking-widest text-on-surface-variant">
               {world.currentLocation}
+            </span>
+          </div>
+        )}
+
+        {/* Interaction prompts */}
+        {interactive && adjacentNpc && (
+          (() => {
+            const npcPx = fieldCellToPixel(adjacentNpc.x, adjacentNpc.y, containerSize.w, containerSize.h, gridW, gridH);
+            return (
+              <div
+                className="absolute z-20 pointer-events-none animate-pulse"
+                style={{ left: npcPx.x, top: npcPx.y, transform: 'translate(-50%, -180%)' }}
+              >
+                <span className="text-[10px] font-bold text-amber-300 bg-surface-container/80 px-2 py-0.5 rounded-sm border border-amber-400/40 backdrop-blur-sm whitespace-nowrap">
+                  [E] {t('gameplay.fieldMapInteractNpc', 'Rozmawiaj')}
+                </span>
+              </div>
+            );
+          })()
+        )}
+        {interactive && standingOnPortal && (
+          <div className="absolute bottom-2 left-1/2 -translate-x-1/2 z-20 pointer-events-none animate-pulse">
+            <span className="text-[10px] font-bold text-cyan-300 bg-surface-container/80 px-2 py-0.5 rounded-sm border border-cyan-400/40 backdrop-blur-sm whitespace-nowrap">
+              [E] {t('gameplay.fieldMapEnterPortal', 'Podróżuj do')} {standingOnPortal.destinationName}
             </span>
           </div>
         )}

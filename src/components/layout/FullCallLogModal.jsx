@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 
 export const TYPE_ICONS = {
@@ -106,70 +106,76 @@ function truncateText(value, maxLen = 120) {
 function FullCallEntry({ entry, onOpenEntry, onCloseModal }) {
   const icon = TYPE_ICONS[entry.type] || 'smart_toy';
   const statusColor =
-    entry.status === 'error' ? 'text-error'
-    : entry.status === 'pending' ? 'text-tertiary animate-pulse'
-    : 'text-primary';
-  const sourceTag = entry.source === 'backend' ? 'bg-tertiary/20 text-tertiary' : 'bg-primary/20 text-primary';
+    entry.status === 'error' ? 'text-red-400'
+    : entry.status === 'pending' ? 'text-purple-400 animate-pulse'
+    : 'text-blue-400';
+  const sourceTag = entry.source === 'backend' ? 'bg-purple-400/15 text-purple-400' : 'bg-blue-400/15 text-blue-400';
 
   return (
     <button
       onClick={() => { onOpenEntry(entry.id); onCloseModal(); }}
-      className="w-full text-left px-4 py-3 rounded-md bg-surface-container-low/40 hover:bg-surface-container/60 border border-outline-variant/10 hover:border-primary/30 transition-all group"
+      className="w-full text-left px-3 py-2 rounded-sm hover:bg-white/[0.04] border border-white/5 hover:border-white/10 transition-all group"
     >
-      <div className="flex items-center gap-2 mb-1">
-        <span className={`material-symbols-outlined text-lg ${statusColor}`}>
+      <div className="flex items-center gap-1.5 mb-0.5">
+        <span className={`material-symbols-outlined text-sm ${statusColor}`}>
           {entry.status === 'pending' ? 'hourglass_top' : entry.status === 'error' ? 'error' : icon}
         </span>
-        <span className="text-xs font-label uppercase tracking-widest text-on-surface-variant truncate">
+        <span className="text-[10px] font-label uppercase tracking-widest text-gray-400 truncate">
           {entry.type}
         </span>
-        <span className={`text-[9px] px-1.5 py-0.5 rounded-sm ${sourceTag} shrink-0`}>
-          {entry.source === 'backend' ? 'SERVER' : 'CLIENT'}
+        <span className={`text-[8px] px-1 py-px rounded-sm ${sourceTag} shrink-0`}>
+          {entry.source === 'backend' ? 'SRV' : 'CLI'}
         </span>
-        <span className="text-xs text-on-surface-variant/40 ml-auto shrink-0 tabular-nums">
+        <span className="text-[10px] text-gray-600 ml-auto shrink-0 tabular-nums">
           {formatTime(entry.startedAt)}
         </span>
       </div>
-      <div className="text-sm text-on-surface group-hover:text-primary transition-colors truncate">
+      <div className="text-xs text-gray-200 group-hover:text-blue-300 transition-colors truncate">
         {entry.label || '\u2014'}
       </div>
-      <div className="flex items-center gap-3 mt-1">
-        <span className="text-xs text-on-surface-variant/60">
+      <div className="flex items-center gap-2 mt-0.5">
+        <span className="text-[10px] text-gray-500">
           {entry.provider || '\u2014'}
           {entry.model ? ` \u00b7 ${entry.model}` : ''}
         </span>
         {entry.status === 'error' && entry.error && (
-          <span className="text-xs text-error truncate max-w-[200px]">{entry.error}</span>
+          <span className="text-[10px] text-red-400 truncate max-w-[180px]">{entry.error}</span>
         )}
         {entry.status === 'success' && entry.durationMs != null && (
-          <span className="text-xs text-on-surface-variant/40 ml-auto shrink-0 tabular-nums">
+          <span className="text-[10px] text-gray-600 ml-auto shrink-0 tabular-nums">
             {entry.durationMs < 1000 ? `${entry.durationMs}ms` : `${(entry.durationMs / 1000).toFixed(1)}s`}
           </span>
         )}
       </div>
-      {(entry.request || entry.response) && (
-        <div className="mt-2 pt-2 border-t border-outline-variant/10 space-y-1">
-          {entry.request && (
-            <div className="text-[10px] text-on-surface-variant/60">
-              <span className="text-primary/70 uppercase tracking-widest mr-1">req</span>
-              {truncateText(entry.request)}
-            </div>
-          )}
-          {entry.response && (
-            <div className="text-[10px] text-on-surface-variant/60">
-              <span className="text-tertiary/70 uppercase tracking-widest mr-1">res</span>
-              {truncateText(entry.response)}
-            </div>
-          )}
-        </div>
-      )}
     </button>
   );
+}
+
+const STORAGE_KEY = 'fullCallLog_pos';
+const DEFAULT_POS = { x: 60, y: 60, w: 620, h: 520 };
+
+function loadPosition() {
+  try {
+    const raw = sessionStorage.getItem(STORAGE_KEY);
+    if (raw) return { ...DEFAULT_POS, ...JSON.parse(raw) };
+  } catch { /* ignore */ }
+  return DEFAULT_POS;
+}
+
+function savePosition(pos) {
+  try { sessionStorage.setItem(STORAGE_KEY, JSON.stringify(pos)); } catch { /* ignore */ }
 }
 
 export default function FullCallLogModal({ logs, onClose, onOpenEntry }) {
   const { activeTypes, toggle, filter } = useTypeFilter();
   const filtered = useMemo(() => filter(logs), [filter, logs]);
+
+  const [pos, setPos] = useState(loadPosition);
+  const [minimized, setMinimized] = useState(false);
+  const dragRef = useRef(null);
+  const resizeRef = useRef(null);
+
+  useEffect(() => { savePosition(pos); }, [pos]);
 
   useEffect(() => {
     const onKey = (e) => { if (e.key === 'Escape') onClose(); };
@@ -177,43 +183,123 @@ export default function FullCallLogModal({ logs, onClose, onOpenEntry }) {
     return () => window.removeEventListener('keydown', onKey);
   }, [onClose]);
 
-  const modal = (
-    <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/70 backdrop-blur-sm" onClick={onClose}>
-      <div
-        className="bg-surface-container rounded-lg border border-outline-variant/20 shadow-2xl w-full max-w-3xl max-h-[85vh] flex flex-col"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="flex items-center justify-between px-6 py-4 border-b border-outline-variant/15">
-          <div className="flex items-center gap-3">
-            <span className="material-symbols-outlined text-primary">smart_toy</span>
-            <h2 className="text-lg font-headline text-on-surface">LLM Call Log</h2>
-            <span className="text-sm text-on-surface-variant/60">
-              {activeTypes.size > 0 ? `${filtered.length}/${logs.length}` : logs.length}
-            </span>
-          </div>
-          <button onClick={onClose} className="material-symbols-outlined text-on-surface-variant hover:text-on-surface text-xl">close</button>
+  const handleDragStart = useCallback((e) => {
+    if (e.target.closest('button') || e.target.closest('input')) return;
+    e.preventDefault();
+    const startX = e.clientX - pos.x;
+    const startY = e.clientY - pos.y;
+    const onMove = (ev) => {
+      setPos((p) => ({
+        ...p,
+        x: Math.max(0, Math.min(window.innerWidth - 100, ev.clientX - startX)),
+        y: Math.max(0, Math.min(window.innerHeight - 40, ev.clientY - startY)),
+      }));
+    };
+    const onUp = () => {
+      document.removeEventListener('pointermove', onMove);
+      document.removeEventListener('pointerup', onUp);
+    };
+    document.addEventListener('pointermove', onMove);
+    document.addEventListener('pointerup', onUp);
+  }, [pos.x, pos.y]);
+
+  const handleResizeStart = useCallback((e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const startX = e.clientX;
+    const startY = e.clientY;
+    const startW = pos.w;
+    const startH = pos.h;
+    const onMove = (ev) => {
+      setPos((p) => ({
+        ...p,
+        w: Math.max(380, startW + (ev.clientX - startX)),
+        h: Math.max(220, startH + (ev.clientY - startY)),
+      }));
+    };
+    const onUp = () => {
+      document.removeEventListener('pointermove', onMove);
+      document.removeEventListener('pointerup', onUp);
+    };
+    document.addEventListener('pointermove', onMove);
+    document.addEventListener('pointerup', onUp);
+  }, [pos.w, pos.h]);
+
+  const panel = (
+    <div
+      className="fixed z-[99997] select-none"
+      style={{ left: pos.x, top: pos.y, width: pos.w, height: minimized ? 'auto' : pos.h }}
+    >
+      <div className="flex flex-col h-full rounded-lg border border-white/10 shadow-2xl overflow-hidden bg-[#0d0d11]/95 backdrop-blur-xl">
+        {/* Titlebar */}
+        <div
+          ref={dragRef}
+          onPointerDown={handleDragStart}
+          className="flex items-center gap-2 px-3 py-2 bg-white/[0.03] border-b border-white/5 cursor-grab active:cursor-grabbing shrink-0"
+        >
+          <span className="material-symbols-outlined text-sm text-primary">smart_toy</span>
+          <span className="text-xs font-label text-gray-200 tracking-wide flex-1">
+            LLM Call Log
+          </span>
+          <span className="text-[10px] text-gray-500 tabular-nums">
+            {activeTypes.size > 0 ? `${filtered.length}/${logs.length}` : logs.length}
+          </span>
+          <button
+            onClick={() => setMinimized(!minimized)}
+            className="material-symbols-outlined text-sm text-gray-500 hover:text-gray-300 transition-colors"
+            title={minimized ? 'Expand' : 'Minimize'}
+          >
+            {minimized ? 'expand_content' : 'minimize'}
+          </button>
+          <button
+            onClick={onClose}
+            className="material-symbols-outlined text-sm text-gray-500 hover:text-gray-300 transition-colors"
+            title="Close"
+          >
+            close
+          </button>
         </div>
 
-        <div className="px-6 py-2.5 border-b border-outline-variant/10">
-          <TypeFilterBar logs={logs} activeTypes={activeTypes} onToggle={toggle} />
-        </div>
-
-        <div className="overflow-y-auto flex-1 p-4 custom-scrollbar">
-          {filtered.length === 0 ? (
-            <p className="text-sm text-on-surface-variant/50 italic text-center py-8">
-              {logs.length === 0 ? 'No LLM calls recorded.' : 'No calls match the filter.'}
-            </p>
-          ) : (
-            <div className="space-y-2">
-              {filtered.map((entry) => (
-                <FullCallEntry key={entry.id} entry={entry} onOpenEntry={onOpenEntry} onCloseModal={onClose} />
-              ))}
+        {!minimized && (
+          <>
+            {/* Filter bar */}
+            <div className="px-3 py-1.5 border-b border-white/5">
+              <TypeFilterBar logs={logs} activeTypes={activeTypes} onToggle={toggle} />
             </div>
-          )}
-        </div>
+
+            {/* Entry list */}
+            <div className="overflow-y-auto flex-1 p-2 custom-scrollbar min-h-0">
+              {filtered.length === 0 ? (
+                <div className="flex flex-col items-center justify-center h-full text-gray-600 gap-2 py-8">
+                  <span className="material-symbols-outlined text-2xl">inbox</span>
+                  <span className="text-xs">
+                    {logs.length === 0 ? 'No LLM calls recorded.' : 'No calls match the filter.'}
+                  </span>
+                </div>
+              ) : (
+                <div className="space-y-1">
+                  {filtered.map((entry) => (
+                    <FullCallEntry key={entry.id} entry={entry} onOpenEntry={onOpenEntry} onCloseModal={() => {}} />
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Resize handle */}
+            <div
+              ref={resizeRef}
+              onPointerDown={handleResizeStart}
+              className="absolute bottom-0 right-0 w-4 h-4 cursor-nwse-resize group"
+            >
+              <svg className="w-3 h-3 absolute bottom-0.5 right-0.5 text-gray-600 group-hover:text-gray-400 transition-colors" viewBox="0 0 12 12">
+                <path d="M11 1L1 11M11 5L5 11M11 9L9 11" stroke="currentColor" strokeWidth="1.5" fill="none" />
+              </svg>
+            </div>
+          </>
+        )}
       </div>
     </div>
   );
 
-  return createPortal(modal, document.body);
+  return createPortal(panel, document.body);
 }

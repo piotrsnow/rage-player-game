@@ -1,8 +1,6 @@
 import { useEffect, useState } from 'react';
 import { apiClient } from '../../../../services/apiClient';
-import ModalShell from '../shared/ModalShell';
-import EventList from '../shared/EventList';
-import { KV, Section, Empty } from '../shared/primitives';
+import LocationDetailModal from '../shared/LocationDetailModal';
 
 export default function LocationListTab({ campaignId = null }) {
   const [rows, setRows] = useState([]);
@@ -49,50 +47,6 @@ export default function LocationListTab({ campaignId = null }) {
       </div>
       {detailId && <LocationDetailModal id={detailId} onClose={() => setDetailId(null)} />}
     </div>
-  );
-}
-
-function LocationDetailModal({ id, onClose }) {
-  const [data, setData] = useState(null);
-  useEffect(() => {
-    apiClient.get(`/v1/admin/livingWorld/locations/${id}`).then(setData);
-  }, [id]);
-  if (!data) return <ModalShell onClose={onClose}><div>Loading…</div></ModalShell>;
-  const { location, npcs = [], events = [], aliases = [] } = data;
-  return (
-    <ModalShell onClose={onClose} title={location.canonicalName}>
-      <div className="text-[11px] text-on-surface">
-        <div className="flex items-center gap-2 mb-3">
-          <ScopeIcon />
-          <span className="text-[10px] font-label uppercase tracking-widest text-on-surface-variant">
-            World (canonical)
-          </span>
-        </div>
-        <div className="grid grid-cols-2 gap-3 mb-3">
-          <KV k="region" v={location.region || '—'} />
-          <KV k="category" v={location.category} />
-          <KV k="aliases" v={(aliases || []).join(', ') || '—'} />
-        </div>
-        {location.description && <p className="mb-3 text-on-surface-variant">{location.description}</p>}
-        <Section title={`NPCs here (${npcs.length})`}>
-          {npcs.length === 0 ? <Empty /> : (
-            <ul className="space-y-0.5">
-              {npcs.map((n) => (
-                <li key={n.id}>
-                  <span className="font-bold">{n.name}</span>
-                  {n.role && <span className="text-on-surface-variant"> ({n.role})</span>}
-                  {n.companionOfCampaignId && <span className="ml-2 text-tertiary">[companion]</span>}
-                  {n.pausedAt && <span className="ml-2 text-on-surface-variant">[paused]</span>}
-                </li>
-              ))}
-            </ul>
-          )}
-        </Section>
-        <Section title={`Recent events (${events.length})`}>
-          <EventList events={events} />
-        </Section>
-      </div>
-    </ModalShell>
   );
 }
 

@@ -9,6 +9,7 @@ import {
   resolveKnownSpellDisplay,
 } from '../../services/magicEngine';
 import { SPELL_TREES, formatSpellDamageLabel, computeSpellDamage, computeSpellHeal } from '../../data/rpgMagic';
+import { DAMAGE_TYPES } from '../../../shared/domain/damageTypes.js';
 
 function SectionToggle({ label, icon, open, onToggle, badge, children, desc }) {
   return (
@@ -233,9 +234,19 @@ export default function MagicPanel({ character, combat, onCastSpell }) {
                             const dmgVal = computeSpellDamage(s.name, int);
                             const healVal = computeSpellHeal(s.name, int);
                             const preview = dmgVal > 0 ? ` (${dmgVal})` : healVal > 0 ? ` (${healVal})` : '';
+                            const cs = s.combatStats;
+                            const dmgType = cs?.damageComponents?.[0]?.type || cs?.healComponents?.[0]?.type;
+                            const typeDef = dmgType ? DAMAGE_TYPES[dmgType] : null;
                             return (
-                              <div className="text-[8px] text-tertiary/80 leading-tight mt-0.5 font-label tabular-nums">
-                                {label}{preview && <span className="text-on-surface-variant/60">{preview}</span>}
+                              <div className="flex items-center gap-1 text-[8px] text-tertiary/80 leading-tight mt-0.5 font-label tabular-nums">
+                                {typeDef && (
+                                  <span className={`material-symbols-outlined text-[10px] ${typeDef.color}`}>{typeDef.icon}</span>
+                                )}
+                                {cs?.type === 'heal' && !typeDef && (
+                                  <span className="material-symbols-outlined text-[10px] text-emerald-400">healing</span>
+                                )}
+                                <span>{label}</span>
+                                {preview && <span className="text-on-surface-variant/60">{preview}</span>}
                               </div>
                             );
                           })()}

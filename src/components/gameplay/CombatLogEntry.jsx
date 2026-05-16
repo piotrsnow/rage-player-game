@@ -2,6 +2,7 @@ import { memo, useEffect, useMemo, useState } from 'react';
 import Tooltip from '../ui/Tooltip';
 import LoadingSpinner from '../ui/LoadingSpinner';
 import { translateAttribute, translateSkill } from '../../utils/rpgTranslate';
+import { DAMAGE_TYPES, formatDamageBreakdown } from '../../../shared/domain/damageTypes.js';
 
 const LOG_COLORS = {
   hit: { border: '#ff6e84', bg: 'rgba(255,110,132,0.06)' },
@@ -236,6 +237,9 @@ export function buildCombatLogDetails(result, t) {
       dr: db.dr || 0,
       totalDamage: db.totalDamage ?? 0,
       isMagic: Boolean(db.isMagic),
+      isHeal: Boolean(db.isHeal),
+      healAmount: db.healAmount ?? 0,
+      components: db.components || null,
     });
   }
 
@@ -496,20 +500,22 @@ function RollBox({ item, t }) {
 }
 
 function DamageBox({ item, t }) {
-  const rows = [];
-  const dmgLabel = item.isMagic
-    ? t('combat.logSpellDmg', 'moc zaklęcia')
-    : t('combat.logWeaponDmg', 'broń');
-  rows.push({ label: dmgLabel, value: String(item.weaponDmg) });
-  if (item.marginBonus) {
-    rows.push({ label: t('combat.logMarginBonus', 'margines'), value: formatSignedNumber(item.marginBonus) });
+  if (item.isHeal) {
+    return (
+      <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-2.5">
+        <p className="text-[12px] font-bold text-emerald-300 uppercase tracking-[0.2em] text-center mb-2">
+          {t('combat.logHeal', 'Leczenie')}
+        </p>
+        <div className="flex justify-between items-baseline font-mono text-sm">
+          <span className="text-on-surface-variant">{t('combat.logHealAmount', 'przywrócone HP')}</span>
+          <span className="font-bold text-emerald-300 text-base">+{item.healAmount}</span>
+        </div>
+      </div>
+    );
   }
-  if (item.blocked) {
-    rows.push({ label: t('combat.logBlocked', 'blok'), value: '✓' });
-  }
-  if (item.dr) {
-    rows.push({ label: t('combat.logDR', 'DR'), value: `−${item.dr}` });
-  }
+
+  const typedBreakdown = item.components ? formatDamageBreakdown(item.components) : null;
+  const hasTyped = typedBreakdown && typedBreakdown.length > 0;
 
   return (
     <div className="rounded-lg border border-error/30 bg-error/10 px-3 py-2.5">
@@ -517,12 +523,68 @@ function DamageBox({ item, t }) {
         {t('combat.logDamage', 'Obrażenia')}
       </p>
       <div className="space-y-1 font-mono text-sm">
-        {rows.map((row, i) => (
-          <div key={i} className="flex justify-between items-baseline">
-            <span className="text-on-surface-variant">{row.label}</span>
-            <span className="font-bold text-on-surface">{row.value}</span>
+        {hasTyped ? (
+          <>
+            {typedBreakdown.map((c, i) => (
+              <div key={i} className="flex justify-between items-center gap-2">
+                <span className="flex items-center gap-1">
+                  <span className={`material-symbols-outlined text-[13px] ${c.color}`}>{c.icon}</span>
+                  <span className={`text-xs ${c.color}`}>{c.label}</span>
+                </span>
+                <span className="text-on-surface-variant text-xs">
+                  {c.raw}
+                  {c.dr > 0 && <span className="text-cyan-400"> −{c.dr}</span>}
+                  {c.resistance !== 1 && <span className="text-amber-300"> ×{c.resistance}</span>}
+                  <span className="font-bold text-on-surface ml-1">= {c.final}</span>
+                </span>
+              </div>
+            ))}
+          </>
+        ) : (
+          <>
+            {(() => {
+              const dmgLabel = item.isMagic
+                ? t('combat.logSpellDmg', 'moc zaklęcia')
+                : t('combat.logWeaponDmg', 'broń');
+              return (
+                <div className="flex justify-between items-baseline">
+                  <span className="text-on-surface-variant">{dmgLabel}</span>
+                  <span className="font-bold text-on-surface">{item.weaponDmg}</span>
+                </div>
+              );
+            })()}
+            {item.marginBonus > 0 && (
+              <div className="flex justify-between items-baseline">
+                <span className="text-on-surface-variant">{t('combat.logMarginBonus', 'margines')}</span>
+                <span className="font-bold text-on-surface">{formatSignedNumber(item.marginBonus)}</span>
+              </div>
+            )}
+            {item.blocked && (
+              <div className="flex justify-between items-baseline">
+                <span className="text-on-surface-variant">{t('combat.logBlocked', 'blok')}</span>
+                <span className="font-bold text-on-surface">✓</span>
+              </div>
+            )}
+            {item.dr > 0 && (
+              <div className="flex justify-between items-baseline">
+                <span className="text-on-surface-variant">{t('combat.logDR', 'DR')}</span>
+                <span className="font-bold text-on-surface">−{item.dr}</span>
+              </div>
+            )}
+          </>
+        )}
+        {item.marginBonus > 0 && hasTyped && (
+          <div className="flex justify-between items-baseline text-xs">
+            <span className="text-on-surface-variant">{t('combat.logMarginBonus', 'margines')}</span>
+            <span className="text-on-surface">{formatSignedNumber(item.marginBonus)}</span>
           </div>
-        ))}
+        )}
+        {item.blocked && hasTyped && (
+          <div className="flex justify-between items-baseline text-xs">
+            <span className="text-on-surface-variant">{t('combat.logBlocked', 'blok')}</span>
+            <span className="text-on-surface">✓</span>
+          </div>
+        )}
         <div className="border-t border-outline-variant/20 my-1" />
         <div className="flex justify-between items-baseline">
           <span className="text-on-surface-variant font-semibold">{t('gameplay.diceRollSum')}</span>

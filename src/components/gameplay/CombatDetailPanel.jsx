@@ -2,6 +2,7 @@ import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { getDistance } from '../../services/combatEngine';
 import ActiveEffectsRow from '../ui/ActiveEffectsRow';
+import { DAMAGE_TYPES, DAMAGE_TYPE_IDS, DEFAULT_RESISTANCE, getResistanceLabel } from '../../../shared/domain/damageTypes.js';
 
 function ConditionBadge({ condition }) {
   const icons = {
@@ -163,6 +164,41 @@ export default function CombatDetailPanel({ combatant, myCombatant, allCombatant
           )}
         </div>
       )}
+
+      {isEnemy && combatant.resistances && (() => {
+        const entries = DAMAGE_TYPE_IDS
+          .map((id) => {
+            const val = combatant.resistances[id];
+            if (val == null || val === DEFAULT_RESISTANCE) return null;
+            const label = getResistanceLabel(val);
+            if (!label) return null;
+            const typeDef = DAMAGE_TYPES[id];
+            return { id, typeDef, val, label };
+          })
+          .filter(Boolean);
+        if (entries.length === 0) return null;
+        return (
+          <div className="pt-1 border-t border-outline-variant/10">
+            <div className="text-[9px] text-on-surface-variant uppercase tracking-wider mb-1">
+              {t('combat.resistances', 'Odporności')}
+            </div>
+            <div className="flex flex-wrap gap-1.5">
+              {entries.map(({ id, typeDef, val, label }) => (
+                <span
+                  key={id}
+                  className={`inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-sm text-[9px] font-bold ${
+                    val < 1 ? 'bg-cyan-900/30 text-cyan-300' : 'bg-red-900/30 text-red-300'
+                  }`}
+                  title={`${typeDef.label}: ×${val}`}
+                >
+                  <span className={`material-symbols-outlined text-[10px] ${typeDef.color}`}>{typeDef.icon}</span>
+                  {label}
+                </span>
+              ))}
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 }

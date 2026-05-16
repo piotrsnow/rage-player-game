@@ -887,16 +887,6 @@ function LoggedInBanner({ user }) {
   );
 }
 
-function SessionCheckBanner() {
-  return (
-    <div className="text-center py-6">
-      <span className="material-symbols-outlined text-primary/50 text-4xl mb-3 block animate-spin">
-        progress_activity
-      </span>
-    </div>
-  );
-}
-
 function LoginForm() {
   const { t } = useTranslation();
   const { backendLogin, backendRegister, settings } = useSettings();
@@ -1047,7 +1037,9 @@ function LoginForm() {
 export default function AuthPanel() {
   const { backendUser, backendAuthChecking } = useSettings();
 
-  if (!backendAuthChecking && backendUser) {
+  if (backendAuthChecking) return null;
+
+  if (backendUser) {
     return (
       <div className="w-full animate-slide-up relative z-10" style={{ animationDelay: '0.1s' }}>
         <LoggedInBanner user={backendUser} />
@@ -1058,11 +1050,7 @@ export default function AuthPanel() {
   return (
     <div className="w-full max-w-md animate-slide-up relative z-10" style={{ animationDelay: '0.1s' }}>
       <GlassCard elevated className="p-4 sm:p-6 md:p-8 lg:p-10">
-        {backendAuthChecking ? (
-          <SessionCheckBanner />
-        ) : (
-          <LoginForm />
-        )}
+        <LoginForm />
       </GlassCard>
     </div>
   );

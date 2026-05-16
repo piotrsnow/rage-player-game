@@ -57,6 +57,9 @@ export const TILE_TYPES = {
   well:      { id: 'well',      name: 'Studnia',   passable: true, blocksSight: false, destructible: false, directionalCover: null, color: '#506878', pattern: 'cobble',     biomes: ['village'] },
   door:      { id: 'door',      name: 'Drzwi',     passable: true, blocksSight: false, destructible: false, directionalCover: null, color: '#6a4e2a', pattern: 'wood_grain', biomes: ['dungeon', 'village', 'castle'] },
   stairs:    { id: 'stairs',    name: 'Schody',    passable: true, blocksSight: false, destructible: false, directionalCover: null, color: '#7a7a82', pattern: 'diagonal_stripes', biomes: ['dungeon', 'castle'] },
+
+  // ── Portal (passable exit point — triggers location transition) ──
+  portal:    { id: 'portal',    name: 'Przejście', passable: true, blocksSight: false, destructible: false, directionalCover: null, color: '#3a8a9a', pattern: 'waves', biomes: ['dungeon', 'forest', 'village', 'cave', 'field', 'ruins', 'swamp', 'castle'], portal: true },
 };
 
 export const BIOME_LIST = ['dungeon', 'forest', 'village', 'cave', 'field', 'ruins', 'swamp', 'castle'];
@@ -90,6 +93,11 @@ export function getDestructibleHp(tileId) {
 export function isPushable(tileId) {
   const def = TILE_TYPES[tileId];
   return def?.pushable === true;
+}
+
+export function isPortalTile(tileId) {
+  const def = TILE_TYPES[tileId];
+  return def?.portal === true;
 }
 
 export function tilesForBiome(biome) {

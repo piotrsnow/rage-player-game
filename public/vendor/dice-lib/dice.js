@@ -248,7 +248,18 @@ window.DICE = (function() {
         var vector = { x: (rnd() * 2 - 1) * box.w, y: -(rnd() * 2 - 1) * box.h };
         var dist = Math.sqrt(vector.x * vector.x + vector.y * vector.y);
         var boost = (rnd() + 3) * dist;
-        throw_dices(box, vector, boost, dist, before_roll, after_roll);
+        throw_dices(box, vector, boost, dist, before_roll, after_roll, false);
+    }
+
+    // Same as start_throw but uses roll_fast (no pre-simulation).
+    that.dice_box.prototype.start_throw_fast = function(before_roll, after_roll) {
+        var box = this;
+        if (box.rolling) return;
+
+        var vector = { x: (rnd() * 2 - 1) * box.w, y: -(rnd() * 2 - 1) * box.h };
+        var dist = Math.sqrt(vector.x * vector.x + vector.y * vector.y);
+        var boost = (rnd() + 3) * dist;
+        throw_dices(box, vector, boost, dist, before_roll, after_roll, true);
     }
 
     //call this to roll dice from swipe (will throw dice in direction swiped)
@@ -274,13 +285,12 @@ window.DICE = (function() {
         });
     }
 
-    function throw_dices(box, vector, boost, dist, before_roll, after_roll) {
+    function throw_dices(box, vector, boost, dist, before_roll, after_roll, fast) {
         var uat = vars.use_adapvite_timestep;
 
         vector.x /= dist; vector.y /= dist;
         var notation = that.parse_notation(box.diceToRoll);
         if (notation.set.length == 0) return;
-        //TODO: how do large numbers of vectors affect performance?
         var vectors = box.generate_vectors(notation, vector, boost);
         box.rolling = true;
         let request_results = null;        
@@ -292,7 +302,6 @@ window.DICE = (function() {
             if(volume <= 0) volume = 0.1;
             if(volume > 1) volume = 1;
             playSound(box.container, volume);
-            //todo: find a better way to do this
         }
 
         if (before_roll) {
@@ -300,11 +309,10 @@ window.DICE = (function() {
         }
         roll(request_results);
 
-        //@param request_results (optional) - pass in an array of desired roll results
-        //todo: when this param is used, animation isn't as smooth (uat not used?)
         function roll(request_results) {
             box.clear();
-            box.roll(vectors, request_results || notation.result, function(result) {
+            var rollFn = fast ? box.roll_fast : box.roll;
+            rollFn.call(box, vectors, request_results || notation.result, function(result) {
                 notation.result = result;
                 var res = result.join(' ');
                 if (notation.constant) {
@@ -426,11 +434,13 @@ window.DICE = (function() {
         time_diff = time_diff / dmul;
         ++this.iteration;
         if (vars.use_adapvite_timestep) {
-            while (time_diff > vars.frame_rate * 1.1) {
+            var catchUp = 0;
+            while (time_diff > vars.frame_rate * 1.1 && catchUp < 4) {
                 this.world.step(vars.frame_rate);
                 time_diff -= vars.frame_rate;
+                catchUp++;
             }
-            this.world.step(time_diff);
+            this.world.step(time_diff > 0 ? Math.min(time_diff, vars.frame_rate) : vars.frame_rate);
         }
         else {
             this.world.step(vars.frame_rate);
@@ -500,6 +510,25 @@ window.DICE = (function() {
             box.last_time = 0;
             box.__animate(box.running);
         }
+    }
+
+    // Like roll() but skips the expensive emulate_throw() pre-simulation.
+    // Uses a random "natural" face per die and shifts algebraically —
+    // the visual result is identical but startup is instant.
+    that.dice_box.prototype.roll_fast = function(vectors, values, callback) {
+        var box = this;
+        box.prepare_dices_for_roll(vectors);
+        if (values != undefined && values.length) {
+            for (var i = 0; i < box.dices.length; i++) {
+                var r = CONSTS.dice_face_range[box.dices[i].dice_type];
+                var fakeRes = r[0] + Math.floor(Math.random() * (r[1] - r[0] + 1));
+                shift_dice_faces(box.dices[i], values[i], fakeRes);
+            }
+        }
+        box.callback = callback;
+        box.running = performance.now();
+        box.last_time = 0;
+        box.__animate(box.running);
     }
 
     that.dice_box.prototype.search_dice_by_mouse = function(ev) {
@@ -943,18 +972,37 @@ window.DICE = (function() {
         dice.geometry = geom;
     }
     
-    //playSound function and audio file copied from 
-    //https://github.com/chukwumaijem/roll-a-die
+    var _audioCtx = null;
+    var _audioBuffer = null;
+    var _audioLoading = false;
+
+    function ensureAudioBuffer() {
+        if (_audioBuffer || _audioLoading) return;
+        _audioLoading = true;
+        try {
+            _audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            fetch('/sfx/dice-roll-1.mp3')
+                .then(function(r) { return r.arrayBuffer(); })
+                .then(function(buf) { return _audioCtx.decodeAudioData(buf); })
+                .then(function(decoded) { _audioBuffer = decoded; })
+                .catch(function() { _audioLoading = false; });
+        } catch(e) {
+            _audioLoading = false;
+        }
+    }
+
     function playSound(outerContainer, soundVolume) {
         if (soundVolume === 0) return;
-        const audio = document.createElement('audio');
-        outerContainer.appendChild(audio);
-        audio.src = '/sfx/dice-roll-1.mp3';
-        audio.volume = soundVolume;
-        audio.play();
-        audio.onended = () => {
-          audio.remove();
-        };
+        ensureAudioBuffer();
+        if (!_audioCtx || !_audioBuffer) return;
+        if (_audioCtx.state === 'suspended') _audioCtx.resume();
+        var source = _audioCtx.createBufferSource();
+        source.buffer = _audioBuffer;
+        var gain = _audioCtx.createGain();
+        gain.gain.value = soundVolume;
+        source.connect(gain);
+        gain.connect(_audioCtx.destination);
+        source.start(0);
     }
 
     return that;

@@ -878,6 +878,16 @@ export default function GameplayPage({ readOnly = false, shareToken = null, onRe
             mpErrorCode={mpErrorCode}
             isMultiplayer={isMultiplayer}
             onOpenSettings={openSettings}
+            interactiveMap={!isGeneratingScene && !readOnly && !combat?.active}
+            locationScale={currentLocationNode?.scale}
+            onNpcInteract={(npc) => {
+              if (npc?.name) handleAction(`Rozmawiam z ${npc.name}.`, true);
+            }}
+            onPortalEnter={(portal) => {
+              if (portal?.destinationName) {
+                handleAction(`Podróżuję do ${portal.destinationName}.`, true);
+              }
+            }}
             momentumDice={!readOnly && (momentum.active || momentum.result) ? {
               visible: momentum.diceVisible,
               position: momentum.position,

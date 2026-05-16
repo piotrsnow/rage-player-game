@@ -3,11 +3,79 @@ import { loadUserApiKeys } from '../../services/apiKeyService.js';
 import { callAIJson, parseJsonOrNull } from '../../services/aiJsonCall.js';
 import { generateFieldTiles, resolveBiomeFromText, ALL_TILE_IDS } from '../../../../shared/domain/generateFieldTiles.js';
 import { TILE_TYPES, isTilePassable } from '../../../../shared/domain/battlefieldTiles.js';
+import { gridDimensionsForScale } from '../../../../shared/domain/fieldMapScale.js';
 import { FIELD_MAP_SCHEMA } from './schemas.js';
 
-const GRID_W = 28;
-const GRID_H = 16;
 const TILE_ID_SET = new Set(ALL_TILE_IDS);
+
+const MOVEMENT_CATEGORIES = new Set(['movement', 'access', 'structural']);
+
+async function loadNeighbors(campaignId, currentLocationRef) {
+  if (!currentLocationRef?.kind || !currentLocationRef?.id) return [];
+
+  const { kind, id } = currentLocationRef;
+  const edges = await prisma.locationEdge.findMany({
+    where: {
+      isActive: true,
+      OR: [
+        { fromKind: kind, fromId: id },
+        { toKind: kind, toId: id, bidirectional: true },
+      ],
+    },
+    select: { fromKind: true, fromId: true, toKind: true, toId: true, category: true },
+  });
+
+  const neighborRefs = [];
+  for (const e of edges) {
+    if (!MOVEMENT_CATEGORIES.has(e.category)) continue;
+    const isFrom = e.fromKind === kind && e.fromId === id;
+    const nKind = isFrom ? e.toKind : e.fromKind;
+    const nId = isFrom ? e.toId : e.fromId;
+    neighborRefs.push({ kind: nKind, id: nId });
+  }
+
+  if (neighborRefs.length === 0) return [];
+
+  const worldIds = neighborRefs.filter(r => r.kind === 'world').map(r => r.id);
+  const campaignIds = neighborRefs.filter(r => r.kind === 'campaign').map(r => r.id);
+
+  const [worldLocs, campaignLocs] = await Promise.all([
+    worldIds.length > 0
+      ? prisma.worldLocation.findMany({ where: { id: { in: worldIds } }, select: { id: true, canonicalName: true, displayName: true, name: true } })
+      : [],
+    campaignIds.length > 0
+      ? prisma.campaignLocation.findMany({ where: { id: { in: campaignIds } }, select: { id: true, name: true } })
+      : [],
+  ]);
+
+  const nameMap = new Map();
+  for (const loc of worldLocs) nameMap.set(`world:${loc.id}`, loc.canonicalName || loc.displayName || loc.name);
+  for (const loc of campaignLocs) nameMap.set(`campaign:${loc.id}`, loc.name);
+
+  return neighborRefs
+    .map(r => ({ name: nameMap.get(`${r.kind}:${r.id}`) || null, ref: r }))
+    .filter(n => n.name)
+    .slice(0, 4);
+}
+
+const PORTAL_EDGE_SLOTS = [
+  (w, h) => ({ x: Math.floor(w / 2), y: 0 }),
+  (w, h) => ({ x: Math.floor(w / 2), y: h - 1 }),
+  (w, h) => ({ x: 0, y: Math.floor(h / 2) }),
+  (w, h) => ({ x: w - 1, y: Math.floor(h / 2) }),
+];
+
+function stampPortals(tiles, gridW, gridH, neighbors) {
+  if (!neighbors || neighbors.length === 0) return [];
+  const portals = [];
+  const capped = neighbors.slice(0, PORTAL_EDGE_SLOTS.length);
+  for (let i = 0; i < capped.length; i++) {
+    const { x, y } = PORTAL_EDGE_SLOTS[i](gridW, gridH);
+    tiles[x][y] = 'portal';
+    portals.push({ x, y, destinationName: capped[i].name, destinationRef: capped[i].ref });
+  }
+  return portals;
+}
 
 function defaultEntities(npcsHere, gridW, gridH) {
   const entities = [];
@@ -68,9 +136,22 @@ function validateEntities(entities, tiles, gridW, gridH) {
   });
 }
 
+async function resolveLocationScale(ref) {
+  if (!ref?.kind || !ref?.id) return 4;
+  try {
+    if (ref.kind === 'world') {
+      const loc = await prisma.worldLocation.findUnique({ where: { id: ref.id }, select: { scale: true } });
+      return loc?.scale ?? 4;
+    }
+    const loc = await prisma.campaignLocation.findUnique({ where: { id: ref.id }, select: { scale: true } });
+    return loc?.scale ?? 4;
+  } catch { return 4; }
+}
+
 function buildTilePalette() {
   const groups = { ground: [], obstacle: [], wall: [], cover: [], special: [] };
   for (const t of Object.values(TILE_TYPES)) {
+    if (t.portal) continue;
     if (t.passable && !t.destructible && !t.directionalCover) {
       if (['campfire', 'altar', 'well', 'door', 'stairs'].includes(t.id)) groups.special.push(t.id);
       else groups.ground.push(t.id);
@@ -85,7 +166,7 @@ function buildTilePalette() {
 
 const TILE_PALETTE_TEXT = buildTilePalette();
 
-function buildAIPrompt(scene, locationName, npcsHere, biome) {
+function buildAIPrompt(scene, locationName, npcsHere, biome, gridW, gridH) {
   const npcNames = npcsHere.map(n => n.name).filter(Boolean).join(', ') || 'none';
   const narrativeSnippet = (scene.narrative || '').substring(0, 500);
 
@@ -95,7 +176,7 @@ function buildAIPrompt(scene, locationName, npcsHere, biome) {
     `Scene: ${narrativeSnippet}`,
     `NPCs present: ${npcNames}`,
     ``,
-    `Grid: ${GRID_W} columns × ${GRID_H} rows (col-major: tiles[col][row])`,
+    `Grid: ${gridW} columns × ${gridH} rows (col-major: tiles[col][row])`,
     ``,
     `Tile palette (use ONLY these IDs):`,
     TILE_PALETTE_TEXT,
@@ -103,11 +184,13 @@ function buildAIPrompt(scene, locationName, npcsHere, biome) {
     `Entities to place: __player__${npcsHere.map(n => `, npc_${n.name}`).join('')}`,
     `Place them logically based on the narrative (e.g. player at door, NPC behind counter).`,
     ``,
-    `Return JSON: { "tiles": string[][] (${GRID_W} columns, each ${GRID_H} rows), "entities": [{ "id": string, "x": number, "y": number }] }`,
+    `Return JSON: { "tiles": string[][] (${gridW} columns, each ${gridH} rows), "entities": [{ "id": string, "x": number, "y": number }] }`,
   ].join('\n');
 }
 
-const SYSTEM_PROMPT = `You are a top-down RPG map designer. Given a scene description, produce a ${GRID_W}×${GRID_H} tile grid and character positions. Use ONLY tile IDs from the provided palette. Make the layout match the narrative — walls for interiors, trees/rocks for outdoors, furniture for taverns. Place characters where they would logically be in the scene. Respond with ONLY valid JSON.`;
+function buildSystemPrompt(gridW, gridH) {
+  return `You are a top-down RPG map designer. Given a scene description, produce a ${gridW}×${gridH} tile grid and character positions. Use ONLY tile IDs from the provided palette. Make the layout match the narrative — walls for interiors, trees/rocks for outdoors, furniture for taverns. Place characters where they would logically be in the scene. Respond with ONLY valid JSON.`;
+}
 
 export async function fieldMapRoutes(fastify) {
   fastify.post(
@@ -138,8 +221,14 @@ export async function fieldMapRoutes(fastify) {
       const coreState = campaign?.coreState || {};
       const world = coreState.world || {};
       const locationName = world.currentLocation || '';
+      const currentLocationRef = world.currentLocationRef || null;
       const npcsHere = (world.npcs || []).filter(n => n.alive !== false).slice(0, 12);
       const biome = resolveBiomeFromText(locationName, scene.narrative, scene.imagePrompt);
+
+      const neighbors = await loadNeighbors(campaignId, currentLocationRef);
+
+      const locationScale = await resolveLocationScale(currentLocationRef);
+      const { w: gridW, h: gridH } = gridDimensionsForScale(locationScale);
 
       let result;
       try {
@@ -148,8 +237,8 @@ export async function fieldMapRoutes(fastify) {
           modelTier: 'nano',
           taskType: 'field-map-gen',
           taskLabel: 'Field map tile generation',
-          systemPrompt: SYSTEM_PROMPT,
-          userPrompt: buildAIPrompt(scene, locationName, npcsHere, biome),
+          systemPrompt: buildSystemPrompt(gridW, gridH),
+          userPrompt: buildAIPrompt(scene, locationName, npcsHere, biome, gridW, gridH),
           maxTokens: 4000,
           temperature: 0.4,
           userApiKeys,
@@ -157,30 +246,31 @@ export async function fieldMapRoutes(fastify) {
         });
 
         const parsed = parseJsonOrNull(text);
-        if (parsed?.tiles && Array.isArray(parsed.tiles) && parsed.tiles.length === GRID_W) {
+        if (parsed?.tiles && Array.isArray(parsed.tiles) && parsed.tiles.length === gridW) {
           const sanitized = parsed.tiles.map(col =>
-            (Array.isArray(col) ? col : []).slice(0, GRID_H).map(sanitizeTileId),
+            (Array.isArray(col) ? col : []).slice(0, gridH).map(sanitizeTileId),
           );
-          // Pad short columns
           for (const col of sanitized) {
-            while (col.length < GRID_H) col.push('grass');
+            while (col.length < gridH) col.push('grass');
           }
-          const entities = validateEntities(parsed.entities, sanitized, GRID_W, GRID_H)
-            || defaultEntities(npcsHere, GRID_W, GRID_H);
+          const entities = validateEntities(parsed.entities, sanitized, gridW, gridH)
+            || defaultEntities(npcsHere, gridW, gridH);
 
-          result = { tiles: sanitized, width: GRID_W, height: GRID_H, biome, entities };
+          const portals = stampPortals(sanitized, gridW, gridH, neighbors);
+          result = { tiles: sanitized, width: gridW, height: gridH, biome, entities, portals };
         } else {
           throw new Error('Invalid AI tile response shape');
         }
       } catch (err) {
         request.log.warn({ err: err.message }, 'Field map AI fallback to procedural');
-        const tiles = generateFieldTiles(biome, GRID_W, GRID_H, scene.id);
+        const generated = generateFieldTiles(biome, gridW, gridH, scene.id, { neighbors });
         result = {
-          tiles,
-          width: GRID_W,
-          height: GRID_H,
+          tiles: generated.tiles,
+          portals: generated.portals,
+          width: gridW,
+          height: gridH,
           biome,
-          entities: defaultEntities(npcsHere, GRID_W, GRID_H),
+          entities: defaultEntities(npcsHere, gridW, gridH),
         };
       }
 

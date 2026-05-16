@@ -3,7 +3,7 @@
  * Mirrors combatCanvasDraw.js but for the non-combat "map" visualization mode.
  */
 
-import { getTileDef } from '../../../../shared/domain/battlefieldTiles.js';
+import { getTileDef, isPortalTile } from '../../../../shared/domain/battlefieldTiles.js';
 import { getTilePattern } from '../../../services/combat/tilePatterns.js';
 
 export const GRID_PAD = 10;
@@ -150,6 +150,25 @@ export function drawFieldGrid(ctx, canvasW, canvasH, gridW, gridH, tiles) {
         }
       }
     }
+  }
+
+  // Portal glow overlay
+  if (tiles) {
+    const now = performance.now();
+    for (let col = 0; col < gridW; col++) {
+      for (let row = 0; row < gridH; row++) {
+        if (!isPortalTile(tiles[col]?.[row])) continue;
+        const cx = origin.x + col * cell;
+        const cy = origin.y + row * cell;
+        const pulse = 0.25 + 0.15 * Math.sin(now / 600);
+        ctx.fillStyle = `rgba(58, 210, 230, ${pulse})`;
+        ctx.fillRect(cx, cy, cell, cell);
+        ctx.strokeStyle = `rgba(100, 240, 255, ${pulse + 0.1})`;
+        ctx.lineWidth = 1.5;
+        ctx.strokeRect(cx + 1, cy + 1, cell - 2, cell - 2);
+      }
+    }
+    ctx.lineWidth = 1;
   }
 
   // Subtle grid lines

@@ -28,7 +28,11 @@ export const SPELL_TREES = {
         unlockCondition: null, // starting spell
         unlockUses: 0,
         description: 'Tworzy maly impuls ognia do zapalania, aktywacji prostych obiektow albo zadania lekkich obrazen',
-        combatStats: { type: 'offensive', damage: { intScale: 0.25, flat: 0 } },
+        combatStats: {
+          type: 'offensive',
+          damage: { intScale: 0.25, flat: 0 },
+          damageComponents: [{ type: 'ogien', intScale: 0.25, flat: 0 }],
+        },
       },
       {
         name: 'Ognisty Pocisk',
@@ -38,7 +42,11 @@ export const SPELL_TREES = {
         unlockCondition: 'Iskra',
         unlockUses: 10, // 2 * (5 * 1)
         description: 'Wystrzeliwuje skupiony pocisk ognia w jeden cel',
-        combatStats: { type: 'offensive', damage: { intScale: 0.5, flat: 2 } },
+        combatStats: {
+          type: 'offensive',
+          damage: { intScale: 0.5, flat: 2 },
+          damageComponents: [{ type: 'ogien', intScale: 0.5, flat: 2 }],
+        },
       },
       {
         name: 'Kula Ognia',
@@ -48,7 +56,11 @@ export const SPELL_TREES = {
         unlockCondition: 'Ognisty Pocisk',
         unlockUses: 10, // 5 * 2
         description: 'Tworzy wybuch ognia raniacy wielu przeciwnikow na obszarze',
-        combatStats: { type: 'offensive', damage: { intScale: 0.5, flat: 4 } },
+        combatStats: {
+          type: 'offensive',
+          damage: { intScale: 0.5, flat: 4 },
+          damageComponents: [{ type: 'ogien', intScale: 0.5, flat: 4 }],
+        },
       },
     ],
   },
@@ -67,7 +79,11 @@ export const SPELL_TREES = {
         unlockCondition: null,
         unlockUses: 0,
         description: 'Uderza pojedynczy cel silnym wyladowaniem',
-        combatStats: { type: 'offensive', damage: { intScale: 0.75, flat: 0 } },
+        combatStats: {
+          type: 'offensive',
+          damage: { intScale: 0.75, flat: 0 },
+          damageComponents: [{ type: 'blyskawica', intScale: 0.75, flat: 0 }],
+        },
       },
       {
         name: 'Lancuch Blyskawic',
@@ -77,7 +93,11 @@ export const SPELL_TREES = {
         unlockCondition: 'Piorun',
         unlockUses: 30, // 2 * (5 * 3)
         description: 'Wyladowanie przeskakuje miedzy kilkoma przeciwnikami',
-        combatStats: { type: 'offensive', damage: { intScale: 0.5, flat: 3 } },
+        combatStats: {
+          type: 'offensive',
+          damage: { intScale: 0.5, flat: 3 },
+          damageComponents: [{ type: 'blyskawica', intScale: 0.5, flat: 3 }],
+        },
       },
     ],
   },
@@ -154,7 +174,11 @@ export const SPELL_TREES = {
         unlockCondition: null,
         unlockUses: 0,
         description: 'Zadaje obrazenia od zimna i lekko spowalnia cel',
-        combatStats: { type: 'offensive', damage: { intScale: 0.33, flat: 1 } },
+        combatStats: {
+          type: 'offensive',
+          damage: { intScale: 0.33, flat: 1 },
+          damageComponents: [{ type: 'lod', intScale: 0.33, flat: 1 }],
+        },
       },
       {
         name: 'Lodowa Bariera',
@@ -174,7 +198,11 @@ export const SPELL_TREES = {
         unlockCondition: 'Lodowa Bariera',
         unlockUses: 15,
         description: 'Atakuje obszar lodem i mrozem, spowalniajac wielu przeciwnikow',
-        combatStats: { type: 'offensive', damage: { intScale: 0.5, flat: 2 } },
+        combatStats: {
+          type: 'offensive',
+          damage: { intScale: 0.5, flat: 2 },
+          damageComponents: [{ type: 'lod', intScale: 0.5, flat: 2 }],
+        },
       },
     ],
   },
@@ -193,7 +221,11 @@ export const SPELL_TREES = {
         unlockCondition: null,
         unlockUses: 0,
         description: 'Przywraca niewielka ilosc zdrowia jednej postaci',
-        combatStats: { type: 'heal', heal: { intScale: 0.33, flat: 2 } },
+        combatStats: {
+          type: 'heal',
+          heal: { intScale: 0.33, flat: 2 },
+          healComponents: [{ type: 'magiczne', intScale: 0.33, flat: 2 }],
+        },
       },
       {
         name: 'Regeneracja',
@@ -203,7 +235,10 @@ export const SPELL_TREES = {
         unlockCondition: 'Leczenie Ran',
         unlockUses: 20,
         description: 'Leczy mocniej i moze przywracac zdrowie przez kilka tur lub chwil',
-        combatStats: { type: 'heal' },
+        combatStats: {
+          type: 'heal',
+          healComponents: [{ type: 'magiczne', intScale: 0.25, flat: 1 }],
+        },
       },
       {
         name: 'Wskrzeszenie Iskry Zycia',
@@ -213,7 +248,10 @@ export const SPELL_TREES = {
         unlockCondition: 'Regeneracja',
         unlockUses: 20,
         description: 'Ratuje swiezo powalona postac przed smiercia albo przywraca ja do stanu krytycznego',
-        combatStats: { type: 'heal' },
+        combatStats: {
+          type: 'heal',
+          healComponents: [{ type: 'magiczne', intScale: 0.5, flat: 5 }],
+        },
       },
     ],
   },
@@ -465,7 +503,7 @@ const SPELL_EFFECTS_RAW = {
       source: 'spell',
       category: 'dot',
       duration: { type: 'rounds', remaining: 2 },
-      mechanics: { dotDamage: 1 },
+      mechanics: { dotDamage: 1, dotDamageType: 'ogien' },
       stackable: false,
       description: 'Ogień pali lekko przez chwilę.',
     },
@@ -477,7 +515,7 @@ const SPELL_EFFECTS_RAW = {
       source: 'spell',
       category: 'dot',
       duration: { type: 'rounds', remaining: 3 },
-      mechanics: { dotDamage: 2 },
+      mechanics: { dotDamage: 2, dotDamageType: 'ogien' },
       stackable: false,
       description: 'Intensywny ogień zadaje obrażenia co rundę.',
     },
@@ -489,9 +527,57 @@ const SPELL_EFFECTS_RAW = {
       source: 'spell',
       category: 'dot',
       duration: { type: 'rounds', remaining: 2 },
-      mechanics: { dotDamage: 3 },
+      mechanics: { dotDamage: 3, dotDamageType: 'ogien' },
       stackable: false,
       description: 'Eksplozja ognia podpala wszystkich w zasięgu.',
+    },
+  },
+  'Piorun': {
+    target: 'enemy',
+    effect: {
+      name: 'Porażenie',
+      source: 'spell',
+      category: 'control',
+      duration: { type: 'rounds', remaining: 1 },
+      mechanics: { attributeMods: { zrecznosc: -4 }, restrictions: ['no_movement'] },
+      stackable: false,
+      description: 'Porażenie elektryczne chwilowo unieruchamia i obniża zwinność.',
+    },
+  },
+  'Lancuch Blyskawic': {
+    target: 'all_enemies',
+    effect: {
+      name: 'Porażenie łańcuchowe',
+      source: 'spell',
+      category: 'control',
+      duration: { type: 'rounds', remaining: 1 },
+      mechanics: { attributeMods: { zrecznosc: -2 } },
+      stackable: false,
+      description: 'Wyładowania elektryczne lekko paraliżują trafione cele.',
+    },
+  },
+  'Lodowa Bariera': {
+    target: 'self',
+    effect: {
+      name: 'Lodowa Bariera',
+      source: 'spell',
+      category: 'buff',
+      duration: { type: 'rounds', remaining: 3 },
+      mechanics: { damageReduction: 4 },
+      stackable: false,
+      description: 'Osłona z lodu pochłania obrażenia fizyczne.',
+    },
+  },
+  'Niewidzialnosc': {
+    target: 'self',
+    effect: {
+      name: 'Niewidzialność',
+      source: 'spell',
+      category: 'buff',
+      duration: { type: 'rounds', remaining: 3 },
+      mechanics: { attributeMods: { zrecznosc: 5 }, stealth: true },
+      stackable: false,
+      description: 'Postać staje się niewidoczna — trudniejsza do trafienia.',
     },
   },
 };
@@ -674,23 +760,44 @@ export function formatSpellDamageLabel(spell) {
   const hotInfo = fx?.effect?.mechanics?.dotHeal;
   const hotDuration = fx?.effect?.duration?.remaining;
 
-  if (cs.type === 'offensive' && cs.damage) {
-    const base = _formatScale(cs.damage.intScale);
-    const flat = cs.damage.flat > 0 ? ` + ${cs.damage.flat}` : '';
-    let label = `${base}${flat} obrz.`;
-    if (dotInfo) label += ` | DoT: ${dotInfo}/rd (${dotDuration} rd)`;
-    return label;
+  if (cs.type === 'offensive') {
+    if (cs.damageComponents?.length) {
+      const parts = cs.damageComponents.map((c) => {
+        const typeName = _DAMAGE_TYPE_LABELS[c.type] || c.type;
+        const formula = c.intScale ? _formatScale(c.intScale) : '';
+        const flat = (c.flat || 0) > 0 ? (formula ? ` + ${c.flat}` : `${c.flat}`) : '';
+        const dice = c.dice ? (formula || flat ? ` + ${c.dice}` : c.dice) : '';
+        return `${typeName}: ${formula}${flat}${dice} obrz.`;
+      });
+      let label = parts.join(' | ');
+      if (dotInfo) label += ` | DoT: ${dotInfo}/rd (${dotDuration} rd)`;
+      return label;
+    }
+    if (cs.damage) {
+      const base = _formatScale(cs.damage.intScale);
+      const flat = cs.damage.flat > 0 ? ` + ${cs.damage.flat}` : '';
+      let label = `${base}${flat} obrz.`;
+      if (dotInfo) label += ` | DoT: ${dotInfo}/rd (${dotDuration} rd)`;
+      return label;
+    }
   }
 
-  if (cs.type === 'heal' && cs.heal) {
-    const base = _formatScale(cs.heal.intScale);
-    const flat = cs.heal.flat > 0 ? ` + ${cs.heal.flat}` : '';
-    let label = `Leczy ${base}${flat} HP`;
-    if (hotInfo) label += ` | HoT: ${hotInfo}/rd (${hotDuration} rd)`;
-    return label;
-  }
-
-  if (cs.type === 'heal' && !cs.heal) {
+  if (cs.type === 'heal') {
+    if (cs.healComponents?.length) {
+      const c = cs.healComponents[0];
+      const formula = c.intScale ? _formatScale(c.intScale) : '';
+      const flat = (c.flat || 0) > 0 ? (formula ? ` + ${c.flat}` : `${c.flat}`) : '';
+      let label = `Leczy ${formula}${flat} HP`;
+      if (hotInfo) label += ` | HoT: ${hotInfo}/rd (${hotDuration} rd)`;
+      return label;
+    }
+    if (cs.heal) {
+      const base = _formatScale(cs.heal.intScale);
+      const flat = cs.heal.flat > 0 ? ` + ${cs.heal.flat}` : '';
+      let label = `Leczy ${base}${flat} HP`;
+      if (hotInfo) label += ` | HoT: ${hotInfo}/rd (${hotDuration} rd)`;
+      return label;
+    }
     if (hotInfo) return `HoT: ${hotInfo}/rd (${hotDuration} rd)`;
     return null;
   }
@@ -705,6 +812,16 @@ export function formatSpellDamageLabel(spell) {
 
   return null;
 }
+
+const _DAMAGE_TYPE_LABELS = {
+  fizyczne: 'Fiz.',
+  ogien: 'Ogień',
+  lod: 'Lód',
+  blyskawica: 'Błysk.',
+  magiczne: 'Mag.',
+  trucizna: 'Truc.',
+  psychiczne: 'Psych.',
+};
 
 /**
  * Format magic info for AI prompts.
