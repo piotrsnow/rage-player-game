@@ -181,6 +181,37 @@ export const campaignHandlers = {
     }
   },
 
+  /** Merge BE-authoritative location (+ optional NPC list) after POST /campaigns. */
+  HYDRATE_WORLD_FROM_BACKEND: (draft, action) => {
+    const { currentLocation, currentLocationRef, npcs } = action.payload || {};
+    if (!draft.world) draft.world = { ...initialState.world };
+
+    const prevRef = draft.world.currentLocationRef;
+    const refChanged = currentLocationRef?.kind && currentLocationRef?.id
+      && (prevRef?.kind !== currentLocationRef.kind || prevRef?.id !== currentLocationRef.id);
+    const nameChanged = typeof currentLocation === 'string'
+      && currentLocation
+      && draft.world.currentLocation !== currentLocation;
+
+    if (typeof currentLocation === 'string' && currentLocation) {
+      draft.world.currentLocation = currentLocation;
+    }
+    if (currentLocationRef?.kind && currentLocationRef?.id) {
+      draft.world.currentLocationRef = {
+        kind: currentLocationRef.kind,
+        id: currentLocationRef.id,
+      };
+    }
+    if (Array.isArray(npcs) && npcs.length > 0) {
+      draft.world.npcs = npcs;
+    }
+    if (refChanged || nameChanged) {
+      draft.world.locationBoard = null;
+      draft.world.boardPosition = null;
+      draft.world.boardVisited = {};
+    }
+  },
+
   RESET: () => initialState,
 
   SET_FREEROAM: (draft) => {

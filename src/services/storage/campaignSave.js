@@ -2,6 +2,7 @@ import { apiClient } from '../apiClient';
 import { saveLocalSnapshot } from './localSnapshot.js';
 import { setActiveCampaignId } from './activeCampaign.js';
 import { sceneIndexCache } from './sceneIndexCache.js';
+import { extractWorldHydrationFromCreateResponse } from './campaignCreateHydrate.js';
 
 // Per-campaign in-flight save dedup: a single save is allowed at a time per
 // campaign. Concurrent calls collapse into one follow-up save queued here,
@@ -109,6 +110,10 @@ async function doSave(gameState) {
         characterIds: Array.isArray(created.characterIds) ? created.characterIds : undefined,
       },
     });
+    const worldHydration = extractWorldHydrationFromCreateResponse(created);
+    if (worldHydration) {
+      gameDispatch({ type: 'HYDRATE_WORLD_FROM_BACKEND', payload: worldHydration });
+    }
     if (scenes?.length) {
       await saveNewScenes(created.id, scenes, true);
     }

@@ -3,6 +3,7 @@ import { AIServiceError, AI_ERROR_CODES, parseProviderError } from '../aiErrors.
 import { childLogger } from '../../lib/logger.js';
 import { logLlmCallStart, logLlmCallFinish, logLlmCallFail } from '../llmCallLogger.js';
 import { resolveModelForTask } from '../serverConfig.js';
+import { applyOpenAiTemperature } from '../openaiModelParams.js';
 
 const log = childLogger({ module: 'multiplayerAI' });
 
@@ -64,14 +65,18 @@ export async function callAIStreaming(messages, onChunk) {
 }
 
 async function _streamOpenAI(messages, apiKey, model, onChunk) {
+  const body = {
+    model,
+    messages,
+    response_format: { type: 'json_object' },
+    stream: true,
+    stream_options: { include_usage: true },
+  };
+  applyOpenAiTemperature(body, model, 0.8);
   const response = await fetch('https://api.openai.com/v1/chat/completions', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
-    body: JSON.stringify({
-      model, messages, temperature: 0.8,
-      response_format: { type: 'json_object' },
-      stream: true, stream_options: { include_usage: true },
-    }),
+    body: JSON.stringify(body),
   });
   if (!response.ok) await parseProviderError(response, 'openai');
 
@@ -172,18 +177,19 @@ export async function callAI(messages) {
           request: { messages },
         });
         const t0 = Date.now();
+        const body = {
+          model: openaiModel,
+          messages,
+          response_format: { type: 'json_object' },
+        };
+        applyOpenAiTemperature(body, openaiModel, 0.8);
         const response = await fetch('https://api.openai.com/v1/chat/completions', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
             Authorization: `Bearer ${openaiKey}`,
           },
-          body: JSON.stringify({
-            model: openaiModel,
-            messages,
-            temperature: 0.8,
-            response_format: { type: 'json_object' },
-          }),
+          body: JSON.stringify(body),
         });
         if (!response.ok) {
           await parseProviderError(response, 'openai');

@@ -606,7 +606,10 @@ export default function CampaignCreatorPage() {
         <CharacterCreationModal
           genre={form.genre}
           initialCharacter={createdCharacter}
-          onClose={() => setShowCharModal(false)}
+          onClose={(char) => {
+            if (char) setCreatedCharacter(char);
+            setShowCharModal(false);
+          }}
           onConfirm={(char) => {
             setCreatedCharacter(char);
             setShowCharModal(false);

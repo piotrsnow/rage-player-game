@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 import LpcSprite, { getAnimDirection } from '../shared/LpcSprite';
 import { apiClient } from '../../services/apiClient';
 import { useGameCampaign, useGameSlice, useGameDispatch } from '../../stores/gameSelectors';
+import { useGameStore } from '../../stores/gameStore';
 import { resolveBiome } from '../../effects/biomeResolver';
 import { filterNpcsHere } from '../../utils/npcLocation';
 import { generateFieldTiles } from './combat/generateFieldTiles';
@@ -18,8 +19,11 @@ import {
 } from './combat/fieldMapDraw';
 import { useFieldMapKeyboard } from '../../hooks/useFieldMapKeyboard';
 import { useFieldMapInteraction } from '../../hooks/useFieldMapInteraction';
+import { useLocationBoardVisuals } from '../../hooks/useLocationBoardVisuals';
+import { useCharacterSprites } from '../../hooks/useCharacterSprites';
 import { gridDimensionsForScale } from '../../../shared/domain/fieldMapScale';
 import { isTilePassable, isPortalTile } from '../../../shared/domain/battlefieldTiles.js';
+import { drawAtlasLayer, resolveObjectSprite } from './combat/fieldMapTileRenderer';
 
 const WALK_ANIM_MS = 400;
 const BFS_MOVE_DELAY = 120;
@@ -94,7 +98,7 @@ const EXIT_ARROWS = {
   N: '↑', S: '↓', E: '→', W: '←', up: '⬆', down: '⬇',
 };
 
-function buildEntities(characterName, playerSpriteSheet, npcsHere, multiplayerPlayers, gridW, gridH, aiEntities) {
+function buildEntities(characterName, playerSpriteSheet, npcsHere, multiplayerPlayers, gridW, gridH, aiEntities, npcSpriteMap) {
   const entities = [];
   const occupied = new Set();
 
@@ -162,16 +166,56 @@ function buildEntities(characterName, playerSpriteSheet, npcsHere, multiplayerPl
       if (npc.disposition >= 10) type = 'ally';
       else if (npc.disposition <= -10) type = 'enemy';
     }
+    // Lazy-generated sprite (campaignNpcId-keyed) wins over a stale value on
+    // the NPC row — fresh sheets arrive after the initial render.
+    const generated = npcSpriteMap && npc.campaignNpcId ? npcSpriteMap[npc.campaignNpcId] : null;
     entities.push({
       id: npcId,
       name: npc.name || `NPC ${i + 1}`,
       type,
-      spriteSheetUrl: npc.spriteSheetUrl || null,
+      spriteSheetUrl: generated || npc.spriteSheetUrl || null,
       ...pos,
     });
   }
 
   return entities;
+}
+
+function applyPlayerBoardPosition(ents, { isExplorationBoard, boardPosition, locationBoard }) {
+  if (!isExplorationBoard) return ents;
+  const player = ents.find((e) => e.id === '__player__');
+  if (!player) return ents;
+  if (boardPosition) {
+    player.x = boardPosition.x;
+    player.y = boardPosition.y;
+  } else if (locationBoard?.spawnPoint) {
+    player.x = locationBoard.spawnPoint.x;
+    player.y = locationBoard.spawnPoint.y;
+  }
+  return ents;
+}
+
+/** Merge rebuilt NPC/MP tokens with the live player cell (store + local movement). */
+function mergeRebuiltEntities(prev, ents, { isExplorationBoard, sameLocation }) {
+  if (!isExplorationBoard) return ents;
+  const { boardPosition, locationBoard } = useGameStore.getState().state.world ?? {};
+  const next = applyPlayerBoardPosition(ents, { isExplorationBoard, boardPosition, locationBoard });
+  if (!sameLocation) return next;
+  const prevPlayer = prev?.find((e) => e.id === '__player__');
+  const nextPlayer = next.find((e) => e.id === '__player__');
+  if (!prevPlayer || !nextPlayer) return next;
+  if (boardPosition) {
+    nextPlayer.x = boardPosition.x;
+    nextPlayer.y = boardPosition.y;
+    return next;
+  }
+  const sp = locationBoard?.spawnPoint;
+  const wasAtSpawn = sp && prevPlayer.x === sp.x && prevPlayer.y === sp.y;
+  if (!wasAtSpawn) {
+    nextPlayer.x = prevPlayer.x;
+    nextPlayer.y = prevPlayer.y;
+  }
+  return next;
 }
 
 function TokenOverlay({ entity, x, y, cellSize, isPlayer, animation }) {
@@ -238,17 +282,24 @@ export default function FieldMapCanvas({
   const rafRef = useRef(0);
   const fetchedRef = useRef(null);
   const bfsQueueRef = useRef(null);
+  const layoutLocationKeyRef = useRef(null);
 
   const campaign = useGameCampaign();
+  const backendCampaignId = campaign?.backendId || null;
   const dispatch = useGameDispatch();
   const playerSpriteSheet = useGameSlice((s) => s.character?.spriteSheetUrl);
   const boardPosition = useGameSlice((s) => s.world?.boardPosition);
   const locationBoard = useGameSlice((s) => s.world?.locationBoard);
-  const boardVisited = useGameSlice((s) => s.world?.boardVisited || {});
+  // Primitive only — never `|| {}` in a selector (new object every snapshot → infinite re-render).
+  const boardVisitedCellCount = useGameSlice((s) => {
+    const cells = s.world?.boardVisited;
+    return cells ? Object.keys(cells).length : 0;
+  });
 
   // Determine data source: location board (new) or scene field map (legacy)
   const persisted = locationBoard || scene?.fieldMapTiles;
-  const isExplorationBoard = locationBoard?.version === 1;
+  const isExplorationBoard = locationBoard?.version === 1 || locationBoard?.version === 2;
+  const isV2Board = locationBoard?.version === 2;
 
   const scaledGrid = useMemo(() => gridDimensionsForScale(locationScale), [locationScale]);
   const gridW = persisted?.width || scaledGrid.w;
@@ -281,22 +332,55 @@ export default function FieldMapCanvas({
     return legacyPortals;
   }, [isExplorationBoard, boardExits, legacyPortals]);
 
+  // V2 visual layer: poll + decode atlas while worker generates tileset.
+  const { atlasImage, status: visualStatus } = useLocationBoardVisuals({
+    campaignId: backendCampaignId,
+    locationBoard,
+  });
+
   const npcsHere = useMemo(
     () => filterNpcsHere(world?.npcs, world?.currentLocationRef, world?.currentLocation),
     [world?.npcs, world?.currentLocationRef, world?.currentLocation],
   );
 
+  // Lazy-generate chargen LPC sheets for NPCs at this location that lack a
+  // spritesheet. Without this the token falls back to an initials ellipse.
+  const npcSpriteItems = useMemo(
+    () => npcsHere
+      .filter((n) => n.campaignNpcId && !n.spriteSheetUrl)
+      .map((n) => ({ id: n.campaignNpcId, kind: 'campaign-npc', spriteUrl: null })),
+    [npcsHere],
+  );
+  const extraNpcSprites = useCharacterSprites(npcSpriteItems, {
+    campaignId: backendCampaignId,
+    endpoint: 'campaign',
+  });
+
+  const npcsHereKey = useMemo(
+    () => npcsHere.map((n) => `${n.id ?? n.name ?? ''}:${n.disposition ?? ''}`).join('|'),
+    [npcsHere],
+  );
+
+  const npcSpriteMapKey = useMemo(
+    () => Object.keys(extraNpcSprites).sort().join('|'),
+    [extraNpcSprites],
+  );
+
+  const multiplayerLayoutKey = useMemo(() => {
+    if (!multiplayerPlayers?.length) return '';
+    return multiplayerPlayers
+      .map((p) => `${p.id ?? ''}:${p.characterName ?? ''}:${p.spriteSheetUrl ?? ''}`)
+      .join('|');
+  }, [multiplayerPlayers]);
+
+  const locationKey = world?.currentLocationRef
+    ? `${world.currentLocationRef.kind}:${world.currentLocationRef.id}`
+    : (world?.currentLocation || '');
+
   const [entities, setEntities] = useState(() => {
     const aiEntities = persisted?.entities;
-    const ents = buildEntities(characterName, playerSpriteSheet, npcsHere, multiplayerPlayers, gridW, gridH, aiEntities);
-    if (isExplorationBoard && boardPosition) {
-      const player = ents.find((e) => e.id === '__player__');
-      if (player) { player.x = boardPosition.x; player.y = boardPosition.y; }
-    } else if (isExplorationBoard && locationBoard?.spawnPoint) {
-      const player = ents.find((e) => e.id === '__player__');
-      if (player) { player.x = locationBoard.spawnPoint.x; player.y = locationBoard.spawnPoint.y; }
-    }
-    return ents;
+    const ents = buildEntities(characterName, playerSpriteSheet, npcsHere, multiplayerPlayers, gridW, gridH, aiEntities, extraNpcSprites);
+    return applyPlayerBoardPosition(ents, { isExplorationBoard, boardPosition, locationBoard });
   });
 
   const [entityAnims, setEntityAnims] = useState({});
@@ -305,42 +389,41 @@ export default function FieldMapCanvas({
   // Camera offset for viewport scrolling
   const [cameraOffset, setCameraOffset] = useState({ x: 0, y: 0 });
 
+  // Rebuild tokens when board/NPC layout changes — not on every boardPosition update (movement).
   useEffect(() => {
+    const sameLocation = layoutLocationKeyRef.current === locationKey;
+    layoutLocationKeyRef.current = locationKey;
     const aiEntities = persisted?.entities;
-    const ents = buildEntities(characterName, playerSpriteSheet, npcsHere, multiplayerPlayers, gridW, gridH, aiEntities);
-    if (isExplorationBoard && boardPosition) {
-      const player = ents.find((e) => e.id === '__player__');
-      if (player) { player.x = boardPosition.x; player.y = boardPosition.y; }
-    } else if (isExplorationBoard && locationBoard?.spawnPoint) {
-      const player = ents.find((e) => e.id === '__player__');
-      if (player) { player.x = locationBoard.spawnPoint.x; player.y = locationBoard.spawnPoint.y; }
-    }
-    setEntities(ents);
-  }, [characterName, playerSpriteSheet, npcsHere, multiplayerPlayers, gridW, gridH, persisted, isExplorationBoard, boardPosition, locationBoard]);
+    const ents = buildEntities(characterName, playerSpriteSheet, npcsHere, multiplayerPlayers, gridW, gridH, aiEntities, extraNpcSprites);
+    setEntities((prev) => mergeRebuiltEntities(prev, ents, { isExplorationBoard, sameLocation }));
+    // npcsHere / multiplayerPlayers omitted — keys avoid solo `[]` retriggering every parent render
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [characterName, playerSpriteSheet, npcsHereKey, multiplayerLayoutKey, npcSpriteMapKey, gridW, gridH, persisted, isExplorationBoard, locationBoard, locationKey]);
 
   // Fetch location board from backend when not present
   useEffect(() => {
-    if (locationBoard || !campaign?.id) return;
+    if (locationBoard || !backendCampaignId) return;
     if (!world?.currentLocationRef?.kind || !world?.currentLocationRef?.id) return;
     const refKey = `${world.currentLocationRef.kind}:${world.currentLocationRef.id}`;
     if (fetchedRef.current === refKey) return;
     fetchedRef.current = refKey;
 
-    apiClient.generateLocationBoard(campaign.id)
+    apiClient.generateLocationBoard(backendCampaignId)
       .then((data) => {
         if (data?.tiles) {
           dispatch({ type: 'SET_LOCATION_BOARD', payload: data });
-          if (data.spawnPoint) {
+          const alreadyPlaced = useGameStore.getState().state.world?.boardPosition;
+          if (data.spawnPoint && !alreadyPlaced) {
             dispatch({ type: 'SET_BOARD_POSITION', payload: data.spawnPoint });
           }
         }
       })
       .catch(() => {});
-  }, [locationBoard, campaign?.id, world?.currentLocationRef, dispatch]);
+  }, [locationBoard, backendCampaignId, world?.currentLocationRef, dispatch]);
 
   // Legacy fallback: fetch per-scene field map
   useEffect(() => {
-    if (locationBoard || persisted || !scene?.id || !campaign?.id) return;
+    if (locationBoard || persisted || !scene?.id || !backendCampaignId) return;
     if (scene.subtype === 'quick_beat') return;
     const sceneIndex = scene.sceneIndex;
     if (sceneIndex == null) return;
@@ -348,20 +431,21 @@ export default function FieldMapCanvas({
     if (fetchedRef.current === legacyKey) return;
     fetchedRef.current = legacyKey;
 
-    apiClient.generateFieldMap(campaign.id, sceneIndex)
+    apiClient.generateFieldMap(backendCampaignId, sceneIndex)
       .then((data) => {
         if (data?.tiles) {
           dispatch({ type: 'UPDATE_SCENE_FIELD_MAP', payload: { sceneId: scene.id, fieldMapTiles: data } });
         }
       })
       .catch(() => {});
-  }, [locationBoard, scene?.id, scene?.sceneIndex, scene?.subtype, persisted, campaign?.id, dispatch]);
+  }, [locationBoard, scene?.id, scene?.sceneIndex, scene?.subtype, persisted, backendCampaignId, dispatch]);
 
-  // Track visited cells for fog-of-war
-  const visitedCellsRef = useRef(new Set(Object.keys(boardVisited)));
+  // Track visited cells for fog-of-war (ref avoids subscribing to unstable object snapshots).
+  const visitedCellsRef = useRef(new Set());
   useEffect(() => {
-    visitedCellsRef.current = new Set(Object.keys(boardVisited));
-  }, [boardVisited]);
+    const cells = useGameStore.getState().state.world?.boardVisited;
+    visitedCellsRef.current = new Set(cells ? Object.keys(cells) : []);
+  }, [boardVisitedCellCount, locationKey]);
 
   const revealFog = useCallback((px, py) => {
     const visible = computeVisibleCells(px, py, 4);
@@ -379,63 +463,49 @@ export default function FieldMapCanvas({
 
   // Movement handler with walk animation
   const handleMove = useCallback((entityId, nx, ny) => {
+    let walkDir = null;
     setEntities((prev) => {
       const ent = prev.find((e) => e.id === entityId);
       if (!ent) return prev;
       const dx = nx - ent.x;
       const dy = ny - ent.y;
-      const dir = getAnimDirection(dx, dy);
-
-      setEntityAnims((a) => ({ ...a, [entityId]: `walk_${dir}` }));
-      if (animTimersRef.current[entityId]) clearTimeout(animTimersRef.current[entityId]);
-      animTimersRef.current[entityId] = setTimeout(() => {
-        setEntityAnims((a) => ({ ...a, [entityId]: `idle_${dir}` }));
-      }, WALK_ANIM_MS);
-
-      if (entityId === '__player__') {
-        dispatch({ type: 'SET_BOARD_POSITION', payload: { x: nx, y: ny } });
-        revealFog(nx, ny);
-      }
-
+      walkDir = getAnimDirection(dx, dy);
       return prev.map((e) => (e.id === entityId ? { ...e, x: nx, y: ny } : e));
     });
+    if (!walkDir) return;
+
+    if (entityId === '__player__') {
+      dispatch({ type: 'SET_BOARD_POSITION', payload: { x: nx, y: ny } });
+      revealFog(nx, ny);
+    }
+
+    setEntityAnims((a) => ({ ...a, [entityId]: `walk_${walkDir}` }));
+    if (animTimersRef.current[entityId]) clearTimeout(animTimersRef.current[entityId]);
+    animTimersRef.current[entityId] = setTimeout(() => {
+      setEntityAnims((a) => ({ ...a, [entityId]: `idle_${walkDir}` }));
+    }, WALK_ANIM_MS);
   }, [dispatch, revealFog]);
 
-  // Click-to-move via BFS
-  const handleCanvasClick = useCallback((e) => {
-    if (!interactive) return;
+  const cellFromCanvasEvent = useCallback((e) => {
     const container = containerRef.current;
-    if (!container) return;
+    if (!container) return null;
     const rect = container.getBoundingClientRect();
     const px = e.clientX - rect.left + (needsViewport ? cameraOffset.x : 0);
     const py = e.clientY - rect.top + (needsViewport ? cameraOffset.y : 0);
-    const cell = fieldPixelToCell(
+    return fieldPixelToCell(
       px, py,
       needsViewport ? gridW * getFieldCellSize(containerSize.w, containerSize.h, gridW, gridH) + 20 : containerSize.w,
       needsViewport ? gridH * getFieldCellSize(containerSize.w, containerSize.h, gridW, gridH) + 20 : containerSize.h,
       gridW, gridH,
     );
-    if (!cell) return;
+  }, [needsViewport, cameraOffset, containerSize, gridW, gridH]);
 
-    // Check if clicking on an adjacent interactable object
+  const walkPlayerToCell = useCallback((cell) => {
     const player = entities.find((ent) => ent.id === '__player__');
-    if (player && onObjectInteract) {
-      const clickedObj = boardObjects.find((o) => o.x === cell.x && o.y === cell.y && o.interactable);
-      if (clickedObj) {
-        const dx = Math.abs(cell.x - player.x);
-        const dy = Math.abs(cell.y - player.y);
-        if (dx <= 1 && dy <= 1) {
-          onObjectInteract(clickedObj);
-          return;
-        }
-      }
-    }
-
     if (!player) return;
     if (bfsQueueRef.current) {
       bfsQueueRef.current = null;
     }
-
     const path = bfsPath(tiles, gridW, gridH, player, cell, entities, '__player__');
     if (!path || path.length === 0) return;
 
@@ -453,7 +523,34 @@ export default function FieldMapCanvas({
       }
     };
     walkStep();
-  }, [interactive, entities, tiles, gridW, gridH, containerSize, handleMove, needsViewport, cameraOffset, boardObjects, onObjectInteract]);
+  }, [entities, tiles, gridW, gridH, handleMove]);
+
+  // Single click — interact with adjacent objects only (no walking).
+  const handleCanvasClick = useCallback((e) => {
+    if (!interactive) return;
+    const cell = cellFromCanvasEvent(e);
+    if (!cell) return;
+
+    const player = entities.find((ent) => ent.id === '__player__');
+    if (!player || !onObjectInteract) return;
+
+    const clickedObj = boardObjects.find((o) => o.x === cell.x && o.y === cell.y && o.interactable);
+    if (!clickedObj) return;
+    const dx = Math.abs(cell.x - player.x);
+    const dy = Math.abs(cell.y - player.y);
+    if (dx <= 1 && dy <= 1) {
+      onObjectInteract(clickedObj);
+    }
+  }, [interactive, cellFromCanvasEvent, entities, boardObjects, onObjectInteract]);
+
+  // Double click — click-to-move via BFS.
+  const handleCanvasDoubleClick = useCallback((e) => {
+    if (!interactive) return;
+    e.preventDefault();
+    const cell = cellFromCanvasEvent(e);
+    if (!cell) return;
+    walkPlayerToCell(cell);
+  }, [interactive, cellFromCanvasEvent, walkPlayerToCell]);
 
   useFieldMapKeyboard({
     entities,
@@ -539,11 +636,18 @@ export default function FieldMapCanvas({
     setCameraOffset({ x: targetX, y: targetY });
   }, [entities, needsViewport, containerSize, gridW, gridH]);
 
-  // Reveal initial fog around spawn
+  // Reveal initial fog around spawn (once per location, after entities are placed).
+  const initialFogDoneRef = useRef(false);
   useEffect(() => {
+    initialFogDoneRef.current = false;
+  }, [locationKey]);
+  useEffect(() => {
+    if (initialFogDoneRef.current) return;
     const player = entities.find((e) => e.id === '__player__');
-    if (player) revealFog(player.x, player.y);
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+    if (!player) return;
+    initialFogDoneRef.current = true;
+    revealFog(player.x, player.y);
+  }, [entities, revealFog]);
 
   // Responsive sizing
   useEffect(() => {
@@ -617,6 +721,13 @@ export default function FieldMapCanvas({
 
     drawFieldGrid(ctx, w, h, gridW, gridH, tiles);
 
+    // Atlas layer on top of the colored tile grid (v2 boards only). The
+    // colored grid stays under as a fallback when the atlas is incomplete —
+    // any unpainted cells show their logical tile color underneath.
+    if (isV2Board && atlasImage) {
+      drawAtlasLayer({ ctx, board: locationBoard, atlasImage, canvasW: w, canvasH: h });
+    }
+
     // Draw fog-of-war overlay
     if (isExplorationBoard) {
       const cell = getFieldCellSize(w, h, gridW, gridH);
@@ -636,7 +747,7 @@ export default function FieldMapCanvas({
     }
 
     if (needsViewport) ctx.restore();
-  }, [containerSize, tiles, gridW, gridH, needsViewport, cameraOffset, isExplorationBoard]);
+  }, [containerSize, tiles, gridW, gridH, needsViewport, cameraOffset, isExplorationBoard, isV2Board, atlasImage, locationBoard]);
 
   useEffect(() => {
     let running = true;
@@ -750,6 +861,7 @@ export default function FieldMapCanvas({
         className="relative rounded-md overflow-hidden border border-outline-variant/20"
         style={{ width: containerSize.w, height: containerSize.h, cursor: interactive ? 'pointer' : 'default' }}
         onClick={handleCanvasClick}
+        onDoubleClick={handleCanvasDoubleClick}
       >
         <canvas ref={canvasRef} className="w-full h-full absolute inset-0" style={{ display: 'block' }} />
 
@@ -768,12 +880,21 @@ export default function FieldMapCanvas({
           ))}
         </div>
 
-        {/* Objects overlay */}
+        {/* Objects overlay — emoji fallback. Objects with `visualAssetId` are
+            drawn by the atlas layer (canvas) and skipped here to avoid double
+            rendering. */}
         {isExplorationBoard && (
           <div className="absolute inset-0 pointer-events-none">
             {objectPositions.map((op) => {
               const key = `${op.obj.x}:${op.obj.y}`;
               if (isExplorationBoard && !visitedCellsRef.current.has(key)) return null;
+              // Skip emoji if the object has a sprite in the loaded atlas.
+              const hasAtlasSprite = isV2Board && atlasImage && resolveObjectSprite({
+                board: locationBoard,
+                atlasImage,
+                visualAssetId: op.obj.visualAssetId,
+              });
+              if (hasAtlasSprite) return null;
               const icon = OBJECT_ICONS[op.obj.type] || '❓';
               return (
                 <div
@@ -828,6 +949,16 @@ export default function FieldMapCanvas({
                 </span>
               </div>
             ))}
+          </div>
+        )}
+
+        {/* Visual generation banner — v2 boards only, while worker runs */}
+        {isV2Board && visualStatus === 'pending' && (
+          <div className="absolute top-2 right-2 z-20 flex items-center gap-1.5 px-2.5 py-1 rounded-sm bg-surface-container/80 border border-primary/20 backdrop-blur-sm animate-pulse">
+            <span className="material-symbols-outlined text-primary text-xs">auto_awesome</span>
+            <span className="text-[10px] font-label uppercase tracking-widest text-primary-dim">
+              {t('gameplay.fieldMapGenerating', 'Generowanie mapy…')}
+            </span>
           </div>
         )}
 

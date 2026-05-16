@@ -57,3 +57,52 @@ export async function enqueuePostSceneWork(payload) {
   await tasksClient.createTask({ parent, task });
   log.debug({ sceneId: payload.sceneId, requestId: payload.requestId }, 'Enqueued post-scene-work task');
 }
+
+/**
+ * Enqueue field-map visual generation. Same dual-mode dispatch as
+ * post-scene-work — Cloud Tasks in prod, inline in dev.
+ *
+ * Payload: { campaignId, userId, locationKind: 'world'|'campaign',
+ *            locationId, requestId? }.
+ */
+export async function enqueuePostLocationBoardVisuals(payload) {
+  if (!config.cloudTasksEnabled) {
+    const { runLocationBoardVisuals } = await import('./fieldMapVisual/index.js');
+    runLocationBoardVisuals(payload).catch((err) =>
+      log.error({ err, payload }, 'Inline post-location-board-visuals failed'),
+    );
+    return;
+  }
+
+  const tasksClient = await getClient();
+  // Reuse the same queue as post-scene-work — both are bounded-rate async
+  // workers, splitting queues isn't worth the Terraform churn for V1.
+  const parent = tasksClient.queuePath(
+    config.gcpProjectId,
+    config.gcpRegion,
+    'post-scene-work',
+  );
+
+  const headers = { 'Content-Type': 'application/json' };
+  if (payload.requestId) {
+    headers['X-Request-Id'] = payload.requestId;
+  }
+
+  const task = {
+    httpRequest: {
+      httpMethod: 'POST',
+      url: `${config.selfUrl}/v1/internal/post-location-board-visuals`,
+      body: Buffer.from(JSON.stringify(payload)).toString('base64'),
+      headers,
+      oidcToken: {
+        serviceAccountEmail: config.runtimeServiceAccount,
+        audience: config.selfUrl,
+      },
+    },
+    dispatchDeadline: { seconds: 1800 },
+  };
+
+  await tasksClient.createTask({ parent, task });
+  log.debug({ locationId: payload.locationId, requestId: payload.requestId },
+    'Enqueued post-location-board-visuals task');
+}

@@ -16,6 +16,25 @@ import { SectionHeader } from './creation/Primitives';
 import AttributesSection from './creation/AttributesSection';
 import SkillsSection from './creation/SkillsSection';
 
+function emptyAttrAdded() {
+  const base = {};
+  for (const key of ATTRIBUTE_KEYS) base[key] = 0;
+  return base;
+}
+
+/** Reverse-engineer point-buy allocations from saved final attribute values. */
+function deriveAttrAddedFromCharacter(character) {
+  if (!character?.attributes) return emptyAttrAdded();
+  const sp = SPECIES[character.species || 'Human'] || SPECIES.Human;
+  const added = {};
+  for (const key of ATTRIBUTE_KEYS) {
+    const finalVal = character.attributes[key] ?? CREATION_LIMITS.baseAttribute;
+    const mod = sp.attributes[key] || 0;
+    added[key] = Math.max(0, finalVal - CREATION_LIMITS.baseAttribute - mod);
+  }
+  return added;
+}
+
 export default function CharacterCreationModal({ onConfirm, onClose, genre = 'Fantasy', initialCharacter }) {
   const { t } = useTranslation();
 
@@ -23,13 +42,7 @@ export default function CharacterCreationModal({ onConfirm, onClose, genre = 'Fa
   const [age, setAge] = useState(normalizeCharacterAge(initialCharacter?.age));
   const [gender, setGender] = useState(initialCharacter?.gender || 'male');
   const [species, setSpecies] = useState(initialCharacter?.species || 'Human');
-  // Point-buy: track added points per attribute (0 to maxPerAttributeAtCreation)
-  const initBase = () => {
-    const base = {};
-    for (const key of ATTRIBUTE_KEYS) base[key] = 0;
-    return base;
-  };
-  const [attrAdded, setAttrAdded] = useState(initBase);
+  const [attrAdded, setAttrAdded] = useState(() => deriveAttrAddedFromCharacter(initialCharacter));
   const [skills, setSkills] = useState(initialCharacter?.skills || createStartingSkills(initialCharacter?.species || 'Human'));
   const [backstory, setBackstory] = useState(initialCharacter?.backstory || '');
   const [portraitUrl, setPortraitUrl] = useState(initialCharacter?.portraitUrl || null);
@@ -59,7 +72,7 @@ export default function CharacterCreationModal({ onConfirm, onClose, genre = 'Fa
 
   const handleSpeciesChange = useCallback((sp) => {
     setSpecies(sp);
-    setAttrAdded(initBase());
+    setAttrAdded(emptyAttrAdded());
     setSkills(createStartingSkills(sp));
   }, []);
 
@@ -70,7 +83,7 @@ export default function CharacterCreationModal({ onConfirm, onClose, genre = 'Fa
   const handleRandomizeSpecies = useCallback(() => {
     const sp = randomizeSpecies();
     setSpecies(sp);
-    setAttrAdded(initBase());
+    setAttrAdded(emptyAttrAdded());
     setSkills(createStartingSkills(sp));
   }, []);
 
@@ -132,29 +145,35 @@ export default function CharacterCreationModal({ onConfirm, onClose, genre = 'Fa
     setSkills(char.skills || createStartingSkills(char.species));
   }, [genre]);
 
+  const buildCharacterPayload = useCallback(({ finalizeName = false } = {}) => ({
+    name: finalizeName ? (name.trim() || pickRandomName(genre)) : name.trim(),
+    age: normalizeCharacterAge(age),
+    gender,
+    species,
+    attributes,
+    wounds: maxWounds,
+    maxWounds,
+    movement: speciesData.movement,
+    mana: { current: speciesData.startingMana || 0, max: speciesData.startingMana || 0 },
+    spells: { known: [], usageCounts: {}, scrolls: [] },
+    skills,
+    inventory: [],
+    money: generateStartingMoney(),
+    statuses: [],
+    backstory,
+    portraitUrl: portraitUrl || '',
+    characterLevel: 1,
+    characterXp: 0,
+    attributePoints: 0,
+  }), [name, age, gender, species, attributes, maxWounds, speciesData, skills, backstory, portraitUrl, genre]);
+
+  const handleClose = useCallback(() => {
+    onClose?.(buildCharacterPayload());
+  }, [buildCharacterPayload, onClose]);
+
   const handleConfirm = useCallback(() => {
-    onConfirm({
-      name: name.trim() || pickRandomName(genre),
-      age: normalizeCharacterAge(age),
-      gender,
-      species,
-      attributes,
-      wounds: maxWounds,
-      maxWounds,
-      movement: speciesData.movement,
-      mana: { current: speciesData.startingMana || 0, max: speciesData.startingMana || 0 },
-      spells: { known: [], usageCounts: {}, scrolls: [] },
-      skills,
-      inventory: [],
-      money: generateStartingMoney(),
-      statuses: [],
-      backstory,
-      portraitUrl: portraitUrl || '',
-      characterLevel: 1,
-      characterXp: 0,
-      attributePoints: 0,
-    });
-  }, [name, age, gender, species, attributes, maxWounds, speciesData, skills, backstory, portraitUrl, genre, onConfirm]);
+    onConfirm(buildCharacterPayload({ finalizeName: true }));
+  }, [buildCharacterPayload, onConfirm]);
 
   // Skill points system for creation
   const racialSkillNames = useMemo(() => new Set(speciesData.skills || []), [speciesData]);
@@ -211,7 +230,7 @@ export default function CharacterCreationModal({ onConfirm, onClose, genre = 'Fa
   }, [racialSkillNames, racialBase]);
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4" onClick={onClose}>
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4" onClick={handleClose}>
       <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
       <div
         className="relative w-full max-w-3xl max-h-[90vh] bg-surface-container-highest/80 backdrop-blur-2xl border border-outline-variant/15 rounded-sm flex flex-col shadow-2xl animate-fade-in"
@@ -234,7 +253,7 @@ export default function CharacterCreationModal({ onConfirm, onClose, genre = 'Fa
               <span className="material-symbols-outlined text-sm">casino</span>
               {t('charCreator.randomizeAll')}
             </button>
-            <button onClick={onClose} className="material-symbols-outlined text-lg text-outline hover:text-on-surface transition-colors">
+            <button onClick={handleClose} className="material-symbols-outlined text-lg text-outline hover:text-on-surface transition-colors">
               close
             </button>
           </div>
@@ -391,7 +410,7 @@ export default function CharacterCreationModal({ onConfirm, onClose, genre = 'Fa
         <div className="flex items-center justify-end gap-3 px-5 py-4 border-t border-outline-variant/10 shrink-0">
           <button
             type="button"
-            onClick={onClose}
+            onClick={handleClose}
             className="px-4 py-2 text-sm font-label text-on-surface-variant hover:text-on-surface transition-colors"
           >
             {t('common.cancel')}

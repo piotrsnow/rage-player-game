@@ -3,6 +3,7 @@ import { parseProviderError } from './aiErrors.js';
 import { config } from '../config.js';
 import { resolveModelForTask } from './serverConfig.js';
 import { logLlmCallStart, logLlmCallFinish, logLlmCallFail, getLlmCallUserId } from './llmCallLogger.js';
+import { applyOpenAiTemperature } from './openaiModelParams.js';
 
 // Small helper for non-streaming, single-shot AI JSON calls. Used by the
 // "simple" AI endpoints (combat commentary, verify objective, recap stages)
@@ -65,22 +66,23 @@ export async function callAIJson({
 }
 
 async function callOpenAI({ apiKey, model, systemPrompt, userPrompt, maxTokens, temperature }) {
+  const body = {
+    model,
+    messages: [
+      { role: 'system', content: systemPrompt },
+      { role: 'user', content: userPrompt },
+    ],
+    max_completion_tokens: maxTokens,
+    response_format: { type: 'json_object' },
+  };
+  applyOpenAiTemperature(body, model, temperature);
   const response = await fetch('https://api.openai.com/v1/chat/completions', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
       Authorization: `Bearer ${apiKey}`,
     },
-    body: JSON.stringify({
-      model,
-      messages: [
-        { role: 'system', content: systemPrompt },
-        { role: 'user', content: userPrompt },
-      ],
-      temperature,
-      max_completion_tokens: maxTokens,
-      response_format: { type: 'json_object' },
-    }),
+    body: JSON.stringify(body),
   });
 
   if (!response.ok) await parseProviderError(response, 'openai');

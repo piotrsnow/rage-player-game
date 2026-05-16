@@ -10,6 +10,7 @@
 import { config } from '../../config.js';
 import { childLogger } from '../../lib/logger.js';
 import { resolveModelForTask } from '../serverConfig.js';
+import { applyOpenAiTemperature } from '../openaiModelParams.js';
 import { NANO_SYSTEM_PROMPT } from './nanoPrompt.js';
 import { wrapPlayerInput, sanitizeForPrompt } from '../../../../shared/domain/playerInputSanitizer.js';
 
@@ -127,22 +128,24 @@ async function callNanoOpenAI(userPrompt, signal) {
   if (!apiKey) throw new Error('No OpenAI API key for nano model');
 
   const overrideModel = await resolveModelForTask('intentClassification', 'openai');
+  const usedModel = overrideModel || config.aiModels.nano.openai;
+  const body = {
+    model: usedModel,
+    messages: [
+      { role: 'system', content: NANO_SYSTEM_PROMPT },
+      { role: 'user', content: userPrompt },
+    ],
+    max_completion_tokens: 250,
+    response_format: { type: 'json_object' },
+  };
+  applyOpenAiTemperature(body, usedModel, 0);
   const response = await fetch('https://api.openai.com/v1/chat/completions', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
       Authorization: `Bearer ${apiKey}`,
     },
-    body: JSON.stringify({
-      model: overrideModel || config.aiModels.nano.openai,
-      messages: [
-        { role: 'system', content: NANO_SYSTEM_PROMPT },
-        { role: 'user', content: userPrompt },
-      ],
-      temperature: 0,
-      max_completion_tokens: 250,
-      response_format: { type: 'json_object' },
-    }),
+    body: JSON.stringify(body),
     signal,
   });
 

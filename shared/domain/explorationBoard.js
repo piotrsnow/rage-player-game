@@ -5,6 +5,18 @@
  * Extends the existing battlefieldTiles tile-ID vocabulary.
  * Stored in `tacticalGrid` JSONB on WorldLocation / CampaignLocation.
  * Col-major: tiles[col][row] — same convention as battlefieldGenerator / generateFieldTiles.
+ *
+ * Versions:
+ *   v1 — logic-only grid (tiles + objects + exits + entities + spawn).
+ *   v2 — adds visual layer: assets (with EN prompts + footprints),
+ *        visualPlacements (where each asset is stamped on the grid),
+ *        styleAnchor (shared style across all assets),
+ *        visualPack (filled by worker after PNG generation + Map Studio import),
+ *        visualStatus ("pending" → "ready" | "failed").
+ *
+ *   v2 boards stay fully compatible with v1 readers: tiles[][] / objects /
+ *   exits / entities / spawnPoint are identical. Only the visual layer
+ *   ("look") is additive — gameplay logic ("logic") never reads from it.
  */
 
 import { z } from 'zod';
@@ -33,6 +45,9 @@ export const BoardObjectSchema = z.object({
   passable: z.boolean().default(true),
   state: z.string().max(20).optional(),
   metadata: z.record(z.unknown()).optional(),
+  // v2: optional pointer into ExplorationBoardV2.assets — renderer draws this
+  // asset sprite in place of the emoji fallback when the visual pack is ready.
+  visualAssetId: z.string().max(64).optional(),
 });
 
 export const BoardExitSchema = z.object({
@@ -69,7 +84,83 @@ export const BoardMutationSchema = z.object({
   description: z.string().max(300).optional(),
 });
 
-export const ExplorationBoardSchema = z.object({
+// ── v2 visual layer ──────────────────────────────────────────────────────
+
+export const ASSET_KINDS = ['tile', 'stamp'];
+export const ASSET_LAYERS = ['ground', 'overlay', 'object'];
+
+export const BoardAssetSchema = z.object({
+  id: z.string().min(1).max(64),
+  kind: z.enum(['tile', 'stamp']),
+  // Footprint in grid cells. tile=1×1, stamp can be 2×2 / 3×3 etc.
+  // PNG generated is footprint.w × baseTilePx by footprint.h × baseTilePx.
+  footprint: z.object({
+    w: z.number().int().min(1).max(8),
+    h: z.number().int().min(1).max(8),
+  }),
+  prompt: z.string().min(4).max(800),
+  layer: z.enum(['ground', 'overlay', 'object']),
+  passable: z.boolean().optional(),
+  // For multi-cell stamps, optional list of relative blocked cells. Empty/omitted
+  // means the entire footprint is blocked when `passable=false`.
+  blocks: z.array(z.object({
+    x: z.number().int().min(0).max(7),
+    y: z.number().int().min(0).max(7),
+  })).optional(),
+});
+
+export const BoardPlacementSchema = z.object({
+  assetId: z.string().min(1).max(64),
+  anchor: z.object({
+    x: z.number().int().min(0),
+    y: z.number().int().min(0),
+  }),
+  layer: z.enum(['ground', 'overlay', 'object']),
+});
+
+export const BoardVisualPackSchema = z.object({
+  packId: z.string().min(1),
+  tilesetId: z.string().min(1),
+  projectTilesize: z.number().int().min(8).max(256),
+  nativeTilesize: z.number().int().min(8).max(256).optional(),
+  atlasCols: z.number().int().nonnegative().optional(),
+  atlasRows: z.number().int().nonnegative().optional(),
+  // MediaAsset key or storage path of the atlas PNG. FE resolves via
+  // `/v1/media/file/<imageKey>` (the route accepts either form).
+  imageKey: z.string().min(1).optional(),
+  // assetId → atlas slot {localId, col, row} relative to the imported tileset.
+  palette: z.record(z.object({
+    localId: z.number().int().nonnegative(),
+    col: z.number().int().nonnegative(),
+    row: z.number().int().nonnegative(),
+    w: z.number().int().min(1).max(8).default(1),
+    h: z.number().int().min(1).max(8).default(1),
+  })),
+  generatedAt: z.string().datetime().optional(),
+});
+
+export const ExplorationBoardV2Schema = z.object({
+  version: z.literal(2),
+  width: z.number().int().min(6).max(48),
+  height: z.number().int().min(6).max(28),
+  tiles: z.array(z.array(z.string())),
+  objects: z.array(BoardObjectSchema).default([]),
+  exits: z.array(BoardExitSchema).default([]),
+  entities: z.array(BoardEntitySchema).default([]),
+  spawnPoint: SpawnPointSchema,
+  theme: z.string().max(40).optional(),
+  generatedAt: z.string().datetime(),
+  // Visual layer ───────────────────────────────────────────────────────────
+  baseTilePx: z.number().int().min(16).max(256).default(64),
+  styleAnchor: z.string().max(400).optional(),
+  assets: z.array(BoardAssetSchema).default([]),
+  visualPlacements: z.array(BoardPlacementSchema).default([]),
+  visualPack: BoardVisualPackSchema.nullable().optional(),
+  visualStatus: z.enum(['pending', 'ready', 'failed']).default('pending'),
+  visualError: z.string().max(400).optional(),
+});
+
+export const ExplorationBoardV1Schema = z.object({
   version: z.literal(1),
   width: z.number().int().min(6).max(48),
   height: z.number().int().min(6).max(28),
@@ -81,6 +172,13 @@ export const ExplorationBoardSchema = z.object({
   theme: z.string().max(40).optional(),
   generatedAt: z.string().datetime(),
 });
+
+// Union — readers should accept any persisted version. Discriminator keeps Zod
+// error messages targeted (it tells the caller which version failed).
+export const ExplorationBoardSchema = z.discriminatedUnion('version', [
+  ExplorationBoardV1Schema,
+  ExplorationBoardV2Schema,
+]);
 
 export const LOCATION_TYPE_GRID_SIZES = {
   room:         { w: 10, h: 8 },
@@ -117,7 +215,7 @@ export function gridSizeForLocationType(locationType) {
 }
 
 /**
- * Validate an exploration board object. Returns { ok, data?, error? }.
+ * Validate an exploration board object (any version). Returns { ok, data?, error? }.
  */
 export function safeValidateBoard(board) {
   const result = ExplorationBoardSchema.safeParse(board);
@@ -164,4 +262,21 @@ export function applyBoardMutations(board, mutations) {
     }
   }
   return board;
+}
+
+/**
+ * True if the board has the visual layer (v2) regardless of whether the
+ * worker has produced the pack yet. Used by FE renderer to decide whether
+ * to fall back to colored-tile drawing or look for atlas sprites.
+ */
+export function hasVisualLayer(board) {
+  return board?.version === 2 && Array.isArray(board.assets) && board.assets.length > 0;
+}
+
+/**
+ * Both v1 and v2 are "exploration boards" for the FE renderer (same logic,
+ * objects, exits, entities, spawn). Only the visual layer differs.
+ */
+export function isExplorationBoard(board) {
+  return board?.version === 1 || board?.version === 2;
 }

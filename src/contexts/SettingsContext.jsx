@@ -193,6 +193,13 @@ const defaultSettings = {
     promptProfile: 'balanced',
     llmPremiumTimeoutMs: 45000,
     llmNanoTimeoutMs: 15000,
+    // Field-map visual pipeline (async tileset generation per location).
+    // Synced to backend coreState.dmSettings; the worker reads these to pick
+    // an image provider and the atlas baseTilePx (PNG generation resolution).
+    fieldMapVisualProvider: 'sd-webui',
+    fieldMapBaseTilePx: 64,
+    fieldMapProjectTilesize: 24,
+    fieldMapStyleSuffix: 'top-down view, pixel art, seamless, no text',
   },
 };
 

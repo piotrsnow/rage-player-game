@@ -6,6 +6,7 @@ import { resolveModelForTask } from '../serverConfig.js';
 import { selectBestiaryEncounter, applyTierScale } from '../../data/equipment/index.js';
 import { logLlmCallStart, logLlmCallFinish, logLlmCallFail } from '../llmCallLogger.js';
 import { wrapPlayerInput } from '../../../../shared/domain/playerInputSanitizer.js';
+import { applyOpenAiTemperature } from '../openaiModelParams.js';
 
 const log = childLogger({ module: 'sceneGenerator' });
 
@@ -58,15 +59,16 @@ async function generateShortNarrative(instruction, playerAction, provider = 'ope
         return text;
       }
     } else {
+      const body = {
+        model: usedModel,
+        messages: [{ role: 'user', content: `${instruction}\n\nAkcja gracza: ${wrapPlayerInput(playerAction)}\n\nOdpowiedz TYLKO narracją, bez JSON.` }],
+        max_tokens: 200,
+      };
+      applyOpenAiTemperature(body, usedModel, 0.8);
       const resp = await fetch('https://api.openai.com/v1/chat/completions', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
-        body: JSON.stringify({
-          model: usedModel,
-          messages: [{ role: 'user', content: `${instruction}\n\nAkcja gracza: ${wrapPlayerInput(playerAction)}\n\nOdpowiedz TYLKO narracją, bez JSON.` }],
-          max_tokens: 200,
-          temperature: 0.8,
-        }),
+        body: JSON.stringify(body),
       });
       if (resp.ok) {
         const data = await resp.json();
