@@ -1,476 +1,169 @@
-// Round E Phase 12c — post-campaign LOCATION promotion batch.
-// F5b — source rows are now `CampaignLocation` (per-campaign sandbox), not
-// `WorldLocation isCanonical=false`. Pipeline:
+// Post-campaign location promotion — unified table version.
 //
-//   1. Collect — `CampaignLocation` rows for this campaign that the player
-//      actually engaged with (sceneCount + quest-objective count). Score-zero
-//      rows are dropped.
-//   2. Dedup — cosine similarity vs existing
-//      `LocationPromotionCandidate` rows at
-//      `entityType='location_promotion_candidate'`.
-//      Match ≥ 0.85 stashes `stats.dedupeOfId` + `stats.dedupeSimilarity` so
-//      the admin UI can collapse dupes without schema churn.
-//   3. Persist — upsert keyed by
-//      `[campaignId, sourceLocationKind, sourceLocationId]`. Stats refresh on
-//      re-run; admin decisions stay sticky.
-//   4. RAG index — fire-and-forget so the NEXT campaign's candidates dedup
-//      against this one.
-//   5. Promote — admin approval (route in `adminLivingWorld.js`) calls
-//      `promoteCampaignLocationToCanonical(id)` which destructively COPIES
-//      the CampaignLocation into a new canonical WorldLocation, RELINKS all
-//      polymorphic refs that pointed at the source CampaignLocation, then
-//      deletes the source row.
+// With the unified Location table, promotion is:
+//   UPDATE location SET campaignId = NULL, canonicalName = slug WHERE id = ?
 //
-// LLM verdict is intentionally omitted in the MVP. All candidates land
-// `status='pending'` and wait for manual admin review.
+// No more cross-table copy + destructive delete + multi-table relink.
 
 import { prisma } from '../../lib/prisma.js';
 import { childLogger } from '../../lib/logger.js';
-import * as ragService from './ragService.js';
-import {
-  LOCATION_KIND_WORLD,
-  LOCATION_KIND_CAMPAIGN,
-} from '../locationRefs.js';
+import { slugifyLocationName } from '../locationRefs.js';
+import { indexEntity } from './ragService.js';
 
 const log = childLogger({ module: 'postCampaignLocationPromotion' });
 
-const DEFAULT_TOP_N = 5;
-const DEDUP_SIMILARITY_THRESHOLD = 0.85;
-
-const WEIGHT_QUEST_OBJECTIVE = 5;
-
 /**
- * Pure — fuzzy compare two location names. Mirrors the strategy used in
- * memoryCompressor's location dedup (substring match in either direction,
- * case-insensitive).
- */
-export function fuzzyLocationNameMatch(a, b) {
-  if (!a || !b) return false;
-  const la = String(a).toLowerCase();
-  const lb = String(b).toLowerCase();
-  return la === lb || la.includes(lb) || lb.includes(la);
-}
-
-/**
- * Pure — count how many `CampaignQuest` rows reference a given location
- * by objective locationId / locationName. Returns a `Map<id, count>`.
- */
-export function computeQuestObjectiveCounts(locations, quests) {
-  const counts = new Map();
-  if (!Array.isArray(locations) || !Array.isArray(quests)) return counts;
-  for (const loc of locations) counts.set(loc.id, 0);
-  for (const q of quests) {
-    if (!q) continue;
-    const objectives = Array.isArray(q.objectives) ? q.objectives : [];
-    for (const obj of objectives) {
-      if (!obj) continue;
-      const meta = obj.metadata || obj;
-      for (const loc of locations) {
-        if (meta.locationId && meta.locationId === loc.id) {
-          counts.set(loc.id, (counts.get(loc.id) || 0) + 1);
-          break;
-        }
-        if (meta.locationName && fuzzyLocationNameMatch(meta.locationName, loc.name)) {
-          counts.set(loc.id, (counts.get(loc.id) || 0) + 1);
-          break;
-        }
-      }
-    }
-  }
-  return counts;
-}
-
-export function scoreLocationCandidate({ sceneCount = 0, questObjectiveCount = 0 }) {
-  return (sceneCount || 0) + (questObjectiveCount || 0) * WEIGHT_QUEST_OBJECTIVE;
-}
-
-export function selectTopNLocationCandidates(locations, sceneCountByLocId, questCountByLocId, topN = DEFAULT_TOP_N) {
-  if (!Array.isArray(locations) || locations.length === 0) return [];
-  const scored = [];
-  for (const loc of locations) {
-    if (!loc) continue;
-    const sceneCount = sceneCountByLocId.get(loc.id) || 0;
-    const questObjectiveCount = questCountByLocId.get(loc.id) || 0;
-    const stats = { sceneCount, questObjectiveCount };
-    const score = scoreLocationCandidate(stats);
-    if (score <= 0) continue;
-    scored.push({ loc, stats: { ...stats, score } });
-  }
-  scored.sort((a, b) => {
-    if (b.stats.score !== a.stats.score) return b.stats.score - a.stats.score;
-    if (b.stats.sceneCount !== a.stats.sceneCount) return b.stats.sceneCount - a.stats.sceneCount;
-    return (a.loc.name || '').localeCompare(b.loc.name || '');
-  });
-  return scored.slice(0, topN);
-}
-
-export function buildLocationCandidateEmbeddingText({ name, displayName, locationType, region, description }) {
-  const parts = [];
-  if (displayName || name) parts.push(String(displayName || name).trim());
-  if (locationType) parts.push(String(locationType).trim());
-  if (region) parts.push(String(region).trim());
-  if (description) parts.push(String(description).trim().slice(0, 200));
-  return parts.filter(Boolean).join(' — ');
-}
-
-export async function findDuplicateLocationCandidate(text) {
-  if (!text || !text.trim()) return { match: null };
-  try {
-    const hits = await ragService.query(text, {
-      filters: { entityType: 'location_promotion_candidate' },
-      topK: 1,
-      minSim: DEDUP_SIMILARITY_THRESHOLD,
-    });
-    if (!hits || hits.length === 0) return { match: null };
-    return { match: { entityId: hits[0].entityId, similarity: hits[0].similarity } };
-  } catch (err) {
-    log.warn({ err: err?.message }, 'findDuplicateLocationCandidate: ragService.query failed');
-    return { match: null };
-  }
-}
-
-/**
- * I/O — collect top-N CampaignLocation candidates for promotion. Joins
- * scene-count (CampaignLocationSummary fuzzy-match on `locationName`) and
- * quest-objective counts.
- */
-export async function collectLocationCandidates(campaignId, { topN = DEFAULT_TOP_N } = {}) {
-  if (!campaignId) return [];
-  try {
-    const [locations, summaries, quests] = await Promise.all([
-      prisma.campaignLocation.findMany({
-        where: { campaignId },
-        select: {
-          id: true, name: true, locationType: true, region: true,
-          description: true, parentLocationId: true,
-        },
-      }),
-      prisma.campaignLocationSummary.findMany({
-        where: { campaignId },
-        select: { locationName: true, sceneCount: true },
-      }),
-      prisma.campaignQuest.findMany({
-        where: { campaignId },
-        select: {
-          questId: true,
-          objectives: { select: { description: true, metadata: true } },
-        },
-      }),
-    ]);
-
-    const sceneCountByLocId = new Map();
-    for (const loc of locations) sceneCountByLocId.set(loc.id, 0);
-    for (const summary of summaries) {
-      for (const loc of locations) {
-        if (fuzzyLocationNameMatch(summary.locationName, loc.name)) {
-          sceneCountByLocId.set(loc.id, (sceneCountByLocId.get(loc.id) || 0) + (summary.sceneCount || 0));
-        }
-      }
-    }
-
-    const questCountByLocId = computeQuestObjectiveCounts(locations, quests);
-    return selectTopNLocationCandidates(locations, sceneCountByLocId, questCountByLocId, topN);
-  } catch (err) {
-    log.warn({ err: err?.message, campaignId }, 'collectLocationCandidates failed');
-    return [];
-  }
-}
-
-/**
- * I/O — upsert candidates into `LocationPromotionCandidate`, keyed by
- * `[campaignId, sourceLocationKind, sourceLocationId]`. F5b sources are
- * always `kind='campaign'` (CampaignLocation) — the kind column exists for
- * forward compatibility (e.g. relisting an admin-rejected CampaignLocation
- * after edits).
- */
-export async function persistLocationCandidates(campaignId, candidates, { dryRun = false } = {}) {
-  const persisted = [];
-  const skipped = [];
-
-  if (!campaignId || !Array.isArray(candidates) || candidates.length === 0) {
-    return { persisted, skipped };
-  }
-
-  for (const { loc, stats } of candidates) {
-    if (!loc?.id) { skipped.push({ reason: 'missing_location_id' }); continue; }
-
-    const embeddingText = buildLocationCandidateEmbeddingText(loc);
-    const { match } = await findDuplicateLocationCandidate(embeddingText);
-    const statsWithDedup = match && match.entityId !== loc.id
-      ? { ...stats, dedupeOfId: match.entityId, dedupeSimilarity: match.similarity }
-      : stats;
-
-    const createRow = {
-      campaignId,
-      sourceLocationKind: LOCATION_KIND_CAMPAIGN,
-      sourceLocationId: loc.id,
-      canonicalName: loc.name,
-      displayName: loc.name,
-      locationType: loc.locationType || null,
-      region: loc.region || null,
-      description: loc.description || null,
-      stats: statsWithDedup,
-      status: 'pending',
-    };
-
-    if (dryRun) {
-      persisted.push({ ...createRow, dryRun: true });
-      continue;
-    }
-
-    try {
-      const compositeKey = {
-        campaignId_sourceLocationKind_sourceLocationId: {
-          campaignId,
-          sourceLocationKind: LOCATION_KIND_CAMPAIGN,
-          sourceLocationId: loc.id,
-        },
-      };
-      const existing = await prisma.locationPromotionCandidate.findUnique({
-        where: compositeKey,
-        select: { status: true, reviewedBy: true },
-      });
-      const adminTouched = existing && (existing.reviewedBy || (existing.status && existing.status !== 'pending'));
-
-      const updateData = {
-        canonicalName: createRow.canonicalName,
-        displayName: createRow.displayName,
-        locationType: createRow.locationType,
-        region: createRow.region,
-        description: createRow.description,
-        stats: createRow.stats,
-      };
-      if (!adminTouched) updateData.status = createRow.status;
-
-      await prisma.locationPromotionCandidate.upsert({
-        where: compositeKey,
-        create: createRow,
-        update: updateData,
-      });
-
-      if (embeddingText) {
-        ragService.index('location_promotion_candidate', loc.id, embeddingText)
-          .catch((err) => log.warn({ err: err?.message, sourceLocationId: loc.id }, 'location candidate index failed'));
-      }
-      persisted.push(createRow);
-    } catch (err) {
-      log.warn({ err: err?.message, sourceLocationId: loc.id }, 'persistLocationCandidates write failed');
-      skipped.push({ sourceLocationId: loc.id, reason: 'write_failed', error: err?.message });
-    }
-  }
-
-  return { persisted, skipped };
-}
-
-export async function runLocationPromotionPipeline({ campaignId, dryRun = false, topN = DEFAULT_TOP_N } = {}) {
-  const collected = await collectLocationCandidates(campaignId, { topN });
-  const { persisted, skipped } = await persistLocationCandidates(campaignId, collected, { dryRun });
-
-  log.info({
-    campaignId, dryRun,
-    collectedCount: collected.length,
-    persistedCount: persisted.length,
-    skippedCount: skipped.length,
-  }, 'Location promotion pipeline complete');
-
-  return { collected, persisted, skipped };
-}
-
-/**
- * I/O — admin-triggered DESTRUCTIVE promotion of a CampaignLocation to a
- * canonical WorldLocation. Called by the Phase 13a approval route.
+ * Promote a campaign-scoped location to canonical.
  *
- * Flow:
- *   1. Load the source CampaignLocation. Reject if missing.
- *   2. CREATE a new WorldLocation with the source's display fields. The new
- *      `canonicalName` defaults to the source `name`; collisions surface as
- *      P2002 and abort.
- *   3. RELINK every polymorphic FK that pointed at the source CampaignLocation
- *      (Campaign.currentLocation*, CampaignNPC.lastLocation*,
- *      CampaignDiscoveredLocation, CharacterClearedDungeon,
- *      CampaignLocation.parentLocation, LocationEdge.from/to) to point at
- *      the new WorldLocation by flipping kind→'world' and id→new uuid.
- *   4. DELETE the source CampaignLocation row.
- *   5. Reindex as canonical `entityType='location'` so future canonical
- *      lookups dedup against it.
+ * Steps:
+ *   1. Validate: must be campaign-scoped
+ *   2. Assign canonicalName (slugified)
+ *   3. Flip campaignId → null
+ *   4. Auto-link to nearest settlement (Road + LocationEdge)
+ *   5. RAG index
  */
-export async function promoteCampaignLocationToCanonical(campaignLocationId) {
-  if (!campaignLocationId) return { ok: false, reason: 'missing_source_id' };
+export async function promoteCampaignLocationToCanonical(locationId) {
   try {
-    const source = await prisma.campaignLocation.findUnique({ where: { id: campaignLocationId } });
-    if (!source) return { ok: false, reason: 'campaign_location_not_found' };
+    const loc = await prisma.location.findUnique({ where: { id: locationId } });
+    if (!loc) return { ok: false, reason: 'not_found' };
+    if (!loc.campaignId) return { ok: false, reason: 'already_canonical' };
 
-    const worldLocation = await prisma.$transaction(async (tx) => {
-      const created = await tx.worldLocation.create({
-        data: {
-          canonicalName: source.name,
-          displayName: source.name,
-          aliases: Array.isArray(source.aliases) ? source.aliases : [source.name],
-          description: source.description || '',
-          category: source.category || source.locationType || 'generic',
-          locationType: source.locationType || 'generic',
-          region: source.region || null,
-          regionX: source.regionX || 0,
-          regionY: source.regionY || 0,
-          positionConfidence: 1.0,
-          subGridX: source.subGridX || null,
-          subGridY: source.subGridY || null,
-          maxKeyNpcs: source.maxKeyNpcs || 10,
-          maxSubLocations: source.maxSubLocations || 5,
-          slotType: source.slotType || null,
-          slotKind: source.slotKind || 'custom',
-          dangerLevel: source.dangerLevel || 'safe',
-          knownByDefault: false,
-          embeddingText: source.embeddingText || source.name,
-        },
-      });
+    const canonicalName = slugifyLocationName(loc.displayName || loc.canonicalName || loc.id);
 
-      // Relink polymorphic refs pointing at the source CampaignLocation.
-      const newRef = { kind: LOCATION_KIND_WORLD, id: created.id };
-      await Promise.all([
-        tx.campaign.updateMany({
-          where: { currentLocationKind: LOCATION_KIND_CAMPAIGN, currentLocationId: source.id },
-          data: { currentLocationKind: newRef.kind, currentLocationId: newRef.id },
-        }),
-        tx.campaignNPC.updateMany({
-          where: { lastLocationKind: LOCATION_KIND_CAMPAIGN, lastLocationId: source.id },
-          data: { lastLocationKind: newRef.kind, lastLocationId: newRef.id },
-        }),
-        tx.campaignDiscoveredLocation.updateMany({
-          where: { locationKind: LOCATION_KIND_CAMPAIGN, locationId: source.id },
-          data: { locationKind: newRef.kind, locationId: newRef.id },
-        }),
-        tx.characterClearedDungeon.updateMany({
-          where: { dungeonKind: LOCATION_KIND_CAMPAIGN, dungeonId: source.id },
-          data: { dungeonKind: newRef.kind, dungeonId: newRef.id },
-        }),
-        tx.campaignLocation.updateMany({
-          where: { parentLocationKind: LOCATION_KIND_CAMPAIGN, parentLocationId: source.id },
-          data: { parentLocationKind: newRef.kind, parentLocationId: newRef.id },
-        }),
-        tx.locationEdge.updateMany({
-          where: { fromKind: LOCATION_KIND_CAMPAIGN, fromId: source.id },
-          data: { fromKind: newRef.kind, fromId: newRef.id },
-        }),
-        tx.locationEdge.updateMany({
-          where: { toKind: LOCATION_KIND_CAMPAIGN, toId: source.id },
-          data: { toKind: newRef.kind, toId: newRef.id },
-        }),
-      ]);
-
-      // Drop the source. Cascades clean up nothing — no children FK to
-      // CampaignLocation in the schema today.
-      await tx.campaignLocation.delete({ where: { id: source.id } });
-      return created;
+    // Dedupe check
+    const existing = await prisma.location.findFirst({
+      where: { canonicalName, campaignId: null },
     });
-
-    const embeddingText = buildLocationCandidateEmbeddingText({
-      name: worldLocation.canonicalName,
-      displayName: worldLocation.displayName,
-      locationType: worldLocation.locationType,
-      region: worldLocation.region,
-      description: worldLocation.description,
-    });
-    if (embeddingText) {
-      ragService.index('location', worldLocation.id, embeddingText)
-        .catch((err) => log.warn({ err: err?.message, worldLocationId: worldLocation.id }, 'promoted location index failed'));
+    if (existing) {
+      return { ok: false, reason: 'name_collision', existingId: existing.id };
     }
 
-    // Auto-create Road + LocationEdge to the nearest canonical top-level
-    // settlement so the promoted location isn't left floating disconnected.
-    await autoLinkToNearestSettlement(worldLocation).catch((err) =>
-      log.warn({ err: err?.message, worldLocationId: worldLocation.id }, 'autoLinkToNearestSettlement failed (non-fatal)'),
-    );
+    // Promote: flip campaignId to null
+    const promoted = await prisma.location.update({
+      where: { id: locationId },
+      data: {
+        campaignId: null,
+        canonicalName,
+        knownByDefault: false,
+        positionConfidence: 1,
+        globallyActive: true,
+      },
+    });
 
-    log.info(
-      { sourceCampaignLocationId: campaignLocationId, worldLocationId: worldLocation.id, name: worldLocation.canonicalName },
-      'CampaignLocation destructively promoted to canonical WorldLocation',
-    );
-    return { ok: true, worldLocation };
+    // Auto-link: create a Road to the nearest top-level settlement
+    try {
+      await autoLinkToNearestSettlement(promoted);
+    } catch (linkErr) {
+      log.warn({ err: linkErr?.message, locationId: promoted.id }, 'autoLink after promote failed');
+    }
+
+    // RAG index
+    try {
+      const text = [loc.displayName || canonicalName, loc.locationType, loc.region, loc.description]
+        .filter(Boolean).join(' — ');
+      await indexEntity({ entityType: 'location', entityId: promoted.id, text });
+    } catch (ragErr) {
+      log.warn({ err: ragErr?.message, locationId: promoted.id }, 'RAG index after location promote failed');
+    }
+
+    return { ok: true, location: promoted };
   } catch (err) {
-    if (err?.code === 'P2002') {
-      log.warn({ campaignLocationId }, 'promoteCampaignLocationToCanonical: canonicalName collision');
-      return { ok: false, reason: 'canonical_name_collision' };
-    }
-    log.warn({ err: err?.message, campaignLocationId }, 'promoteCampaignLocationToCanonical failed');
-    return { ok: false, reason: 'write_failed', error: err?.message };
+    log.error({ err: err?.message, locationId }, 'promoteCampaignLocationToCanonical failed');
+    return { ok: false, reason: 'error', error: err?.message };
   }
 }
 
-/**
- * After a CampaignLocation is promoted to a canonical WorldLocation, find the
- * nearest canonical top-level settlement by Euclidean distance and create a
- * bidirectional Road + corresponding LocationEdge. Skips if the location
- * already has an outgoing Road or has no coordinates.
- */
-async function autoLinkToNearestSettlement(worldLocation) {
-  if (!worldLocation?.id) return;
-  const x = worldLocation.regionX || 0;
-  const y = worldLocation.regionY || 0;
-
-  const existingRoad = await prisma.road.findFirst({
-    where: { OR: [{ fromLocationId: worldLocation.id }, { toLocationId: worldLocation.id }] },
-    select: { id: true },
-  });
-  if (existingRoad) return;
-
-  const settlements = await prisma.worldLocation.findMany({
+async function autoLinkToNearestSettlement(promoted) {
+  const SETTLEMENT_TYPES = ['hamlet', 'village', 'town', 'city', 'capital'];
+  const nearest = await prisma.location.findFirst({
     where: {
+      campaignId: null,
+      locationType: { in: SETTLEMENT_TYPES },
       parentLocationId: null,
-      id: { not: worldLocation.id },
+      id: { not: promoted.id },
     },
-    select: { id: true, canonicalName: true, regionX: true, regionY: true },
+    orderBy: [{ regionX: 'asc' }],
   });
-  if (settlements.length === 0) return;
-
-  let nearest = null;
-  let minDist = Infinity;
-  for (const s of settlements) {
-    const dx = (s.regionX || 0) - x;
-    const dy = (s.regionY || 0) - y;
-    const dist = Math.sqrt(dx * dx + dy * dy);
-    if (dist < minDist) {
-      minDist = dist;
-      nearest = s;
-    }
-  }
   if (!nearest) return;
 
-  const distanceKm = Math.round(minDist * 10) / 10 || 1;
+  const dx = promoted.regionX - nearest.regionX;
+  const dy = promoted.regionY - nearest.regionY;
+  const distance = Math.sqrt(dx * dx + dy * dy);
 
   await prisma.road.create({
     data: {
-      fromLocationId: worldLocation.id,
-      toLocationId: nearest.id,
-      distance: distanceKm,
+      fromLocationId: nearest.id,
+      toLocationId: promoted.id,
+      distance,
       difficulty: 'safe',
-      terrainType: 'trail',
-    },
-  });
-
-  await prisma.locationEdge.create({
-    data: {
-      fromKind: LOCATION_KIND_WORLD,
-      fromId: worldLocation.id,
-      toKind: LOCATION_KIND_WORLD,
-      toId: nearest.id,
-      edgeType: 'path_to',
-      category: 'movement',
+      terrainType: 'path',
       bidirectional: true,
-      weight: distanceKm,
-      metadata: { distance: distanceKm, autoLinked: true },
-      discoveryState: 'unknown',
-      createdBy: 'system',
     },
   });
-
-  log.info(
-    { worldLocationId: worldLocation.id, nearestId: nearest.id, nearestName: nearest.canonicalName, distanceKm },
-    'Auto-linked promoted location to nearest settlement',
-  );
 }
 
-/** @deprecated F5b — kept as a thin alias for callers that still reference the
- * pre-F5b name. New code should call `promoteCampaignLocationToCanonical`
- * directly. */
-export const promoteWorldLocationToCanonical = promoteCampaignLocationToCanonical;
+// ─── Pipeline helpers ────────────────────────────────────────────────
+
+export function scoreLocationCandidate({ sceneCount = 0, questObjectiveCount = 0 }) {
+  return sceneCount * 2 + questObjectiveCount * 5;
+}
+
+export async function collectLocationCandidates(campaignId, { topN = 5 } = {}) {
+  const campaignLocations = await prisma.location.findMany({
+    where: { campaignId },
+  });
+  if (!campaignLocations.length) return [];
+
+  // Score by scene count (via CampaignLocationSummary) + quest objectives
+  const summaries = await prisma.campaignLocationSummary.findMany({
+    where: { campaignId },
+    select: { locationName: true, sceneCount: true },
+  });
+  const sceneCountByName = new Map(summaries.map((s) => [slugifyLocationName(s.locationName), s.sceneCount]));
+
+  const scored = campaignLocations.map((loc) => ({
+    loc,
+    score: scoreLocationCandidate({
+      sceneCount: sceneCountByName.get(loc.canonicalName) || 0,
+    }),
+  }));
+  scored.sort((a, b) => b.score - a.score);
+  return scored.slice(0, topN).map((s) => s.loc);
+}
+
+export async function runLocationPromotionPipeline({ campaignId, dryRun = false, topN = 5 } = {}) {
+  const candidates = await collectLocationCandidates(campaignId, { topN });
+  if (!candidates.length) return { collected: 0, persisted: 0, skipped: 0 };
+
+  let persisted = 0;
+  let skipped = 0;
+
+  for (const loc of candidates) {
+    if (dryRun) { persisted++; continue; }
+    try {
+      await prisma.locationPromotionCandidate.upsert({
+        where: { campaignId_sourceLocationId: { campaignId, sourceLocationId: loc.id } },
+        create: {
+          campaignId,
+          sourceLocationId: loc.id,
+          canonicalName: slugifyLocationName(loc.displayName || loc.canonicalName || ''),
+          displayName: loc.displayName,
+          locationType: loc.locationType,
+          region: loc.region,
+          description: loc.description,
+        },
+        update: {
+          canonicalName: slugifyLocationName(loc.displayName || loc.canonicalName || ''),
+          displayName: loc.displayName,
+          description: loc.description,
+        },
+      });
+      persisted++;
+    } catch (err) {
+      log.warn({ err: err?.message, locationId: loc.id }, 'Location candidate upsert failed');
+      skipped++;
+    }
+  }
+
+  return { collected: candidates.length, persisted, skipped };
+}

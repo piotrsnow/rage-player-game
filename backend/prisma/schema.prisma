@@ -10,9 +10,7 @@ datasource db {
 }
 
 // ═══════════════════════════════════════════════════════════════════════
-// Enums (F1) — only closed sets that don't churn. attitude / visibility /
-// difficultyTier / quest status stay String because they evolve faster
-// than migrations.
+// Enums
 // ═══════════════════════════════════════════════════════════════════════
 
 enum DangerLevel {
@@ -39,7 +37,6 @@ enum LocationType {
   interior
   dungeon_room
   campaignPlace
-  // Graph system — finer-grained location scales
   region
   area
   district
@@ -125,8 +122,7 @@ model Achievement {
 }
 
 // ═══════════════════════════════════════════════════════════════════════
-// Character (F4 — skills/inventory/materials decomposed into child tables;
-// equipped slots are itemKey text refs validated app-side, no FK).
+// Character
 // ═══════════════════════════════════════════════════════════════════════
 
 model Character {
@@ -150,9 +146,6 @@ model Character {
   spells Json @default("{\"known\":[],\"usageCounts\":{},\"scrolls\":[]}")
 
   money            Json    @default("{\"gold\":0,\"silver\":0,\"copper\":0}")
-  // F4: equipped slot stores itemKey (slugify(name)) referencing
-  // CharacterInventoryItem.itemKey. No FK constraint — app-level invariant
-  // (cleared on quantity → 0 / DELETE via clearEquippedRefs helper).
   equippedMainHand String?
   equippedOffHand  String?
   equippedArmour   String?
@@ -168,13 +161,13 @@ model Character {
   backstory           String @default("")
   customAttackPresets Json   @default("[]")
 
-  portraitUrl   String @default("")
+  portraitUrl       String @default("")
   spriteUrl         String?
   chargenAppearance Json?
   spriteSheetUrl    String?
   voiceId           String @default("")
-  voiceName     String @default("")
-  campaignCount Int    @default(0)
+  voiceName         String @default("")
+  campaignCount     Int    @default(0)
 
   badgeSummary   String?
   badgeLegend    String?
@@ -190,7 +183,7 @@ model Character {
   user            User                       @relation(fields: [userId], references: [id], onDelete: Cascade)
   participants    CampaignParticipant[]
   mpPlayers       MultiplayerSessionPlayer[]
-  npcAttributions WorldNpcAttribution[]
+  npcAttributions NpcAttribution[]
   reputations     WorldReputation[]
   clearedDungeons CharacterClearedDungeon[]
   inventoryItems  CharacterInventoryItem[]
@@ -225,8 +218,6 @@ model CharacterBadge {
   @@index([characterId, earnedAt])
 }
 
-// F4 — skills as a child table. Atomic UPDATE xp = xp + delta WHERE
-// (characterId, skillName) instead of full-rewrite of a skills JSONB blob.
 model CharacterSkill {
   characterId String    @db.Uuid
   skillName   String
@@ -259,9 +250,6 @@ model CharacterSkillGain {
   @@index([characterId])
 }
 
-// F4 — inventory keyed by slugify(name). Items with the same name stack
-// (quantity-merge); props of the latest write win. See
-// shared/domain/itemKeys.js for the slug rules.
 model CharacterInventoryItem {
   characterId String    @db.Uuid
   itemKey     String
@@ -277,8 +265,6 @@ model CharacterInventoryItem {
   @@index([characterId, addedAt])
 }
 
-// F4 — materialBag as a child table. Same pattern as items; PK is the
-// lowercased name (no `props`, no slot semantics).
 model CharacterMaterial {
   characterId String    @db.Uuid
   materialKey String
@@ -290,8 +276,7 @@ model CharacterMaterial {
 }
 
 // ═══════════════════════════════════════════════════════════════════════
-// Campaign (F1 — coreState stays as JSONB monolith; F5 splits hot scalars
-// out into columns).
+// Campaign
 // ═══════════════════════════════════════════════════════════════════════
 
 model Campaign {
@@ -309,82 +294,53 @@ model Campaign {
   lastSaved  DateTime @default(now()) @db.Timestamptz
 
   livingWorldEnabled  Boolean @default(false)
-  // Branching quest graph + diegetic discovery (oś 1+5). Nowe kampanie
-  // dostają true, stare zostają na liniowych questach — opt-in upgrade
-  // przez admin endpoint /api/admin/campaigns/:id/upgrade-quest-graph.
   questGraphEnabled   Boolean @default(false)
   worldTimeRatio      Float   @default(24.0)
   worldTimeMaxGapDays Int     @default(7)
-  // low|medium|high|deadly — encounter cap; separate scale from WorldLocation.dangerLevel
   difficultyTier      String  @default("low")
   settlementCaps      Json?
 
-  // F5 — worldBounds JSONB exploded into 4 nullable Float columns. AI/seeder
-  // placement guardrail; null on legacy/non-living-world campaigns. Read via
-  // unpackWorldBounds(campaign) helper which rebuilds the legacy {minX,maxX,minY,maxY}
-  // shape for callsites that share logic with seeders.
   boundsMinX Float?
   boundsMaxX Float?
   boundsMinY Float?
   boundsMaxY Float?
 
-  // DEPRECATED (Faza 3a) — flavor name lifted z coreState.world.currentLocation.
-  // Faza 0 zachowuje kolumnę aby nie złamać callsite'ów (campaignSerialize,
-  // campaignSync, livingWorld, public/crud routes). Usunięcie + cleanup
-  // callsite'ów wraz z migracją state na composite ref w Fazie 3a.
+  // DEPRECATED (Faza 3a) — flavor name fallback.
   currentLocationName String?
 
-  // Composite ref: `currentLocationKind` + `currentLocationId` (polymorphic
-  // FK do WorldLocation lub CampaignLocation). Po Fazie 3a — jedyny ref.
-  currentLocationKind String?
-  currentLocationId   String? @db.Uuid
+  // Plain FK to unified Location table (no more kind+id pair).
+  currentLocationId String? @db.Uuid
 
-  // Continuous (km-scale) world position for off-location wandering. When
-  // anchored at a POI, callers derive (x, y) from currentLocation.regionX/Y.
-  // These columns are written only when the player walks off the POI graph
-  // (Phase 2 step movement: "1 km na północ"). Null = at currentLocation.
-  // 1 unit = 1 km (matches WorldLocation.regionX/Y scale).
+  // Continuous world position for off-location wandering.
   currentX Float?
   currentY Float?
 
-  // One-shot narrative injection from incident system. Scene gen reads it,
-  // injects into user prompt, then clears it after generation.
-  pendingSlip String?
-
-  // One-shot "providence" payload set by the incident route after a positive
-  // verdict that produced concrete corrections (correctionSummary non-empty).
-  // The next scene generation reads this, weaves a short atmospheric scene
-  // where the world reveals/manifests the correction, then clears it.
-  // Shape: { summary: string[], narrativeComment: string|null }
-  pendingProvidence Json?
-
-  // One-shot correction payload written by the post-scene nano auditor when
-  // it detects location/NPC state inconsistencies with the transcript. FE
-  // polls GET /v1/campaigns/:id/pending-correction which reads + clears.
-  // Shape: { correctedLocation?, locationReason?, npcCorrections[]? }
+  pendingSlip            String?
+  pendingProvidence      Json?
   pendingStateCorrection Json?
 
   createdAt DateTime @default(now()) @db.Timestamptz
   updatedAt DateTime @updatedAt @db.Timestamptz
 
   user                        User                         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  currentLocation             Location?                    @relation("campaignCurrentLoc", fields: [currentLocationId], references: [id], onDelete: SetNull)
   participants                CampaignParticipant[]
   scenes                      CampaignScene[]
-  npcs                        CampaignNPC[]
+  npcs                        Npc[]                        @relation("npcCampaign")
   knowledge                   CampaignKnowledge[]
   codex                       CampaignCodex[]
   quests                      CampaignQuest[]
   locationSummaries           CampaignLocationSummary[]
   dmAgent                     CampaignDmAgent?
-  npcAttributions             WorldNpcAttribution[]
+  npcAttributions             NpcAttribution[]
   pendingWorldStateChanges    PendingWorldStateChange[]
   npcPromotionCandidates      NPCPromotionCandidate[]
   locationPromotionCandidates LocationPromotionCandidate[]
   achievements                Achievement[]
-  worldNpcDialogTurns         WorldNpcDialogTurn[]
-  discoveredLocations         CampaignDiscoveredLocation[]
+  npcDialogTurns              NpcDialogTurn[]
+  discoveredLocations         DiscoveredLocation[]
   edgeDiscoveries             CampaignEdgeDiscovery[]
-  campaignLocations           CampaignLocation[]
+  locations                   Location[]                   @relation("locationCampaign")
   locationEdges               LocationEdge[]
   campaignEdges               CampaignEdge[]
   favoriteScenes              FavoriteScene[]
@@ -399,7 +355,6 @@ model Campaign {
   @@index([isPublic])
 }
 
-// F1 — replaces Campaign.characterIds[] @db.ObjectId
 model CampaignParticipant {
   campaignId  String   @db.Uuid
   characterId String   @db.Uuid
@@ -414,8 +369,7 @@ model CampaignParticipant {
 }
 
 // ═══════════════════════════════════════════════════════════════════════
-// Campaign-scoped entities (F1 keeps relationships/experienceLog/objectives
-// /prerequisiteQuestIds as JSONB; later phases decompose).
+// Campaign-scoped entities (scenes, quests, knowledge, codex, DM agent)
 // ═══════════════════════════════════════════════════════════════════════
 
 model CampaignScene {
@@ -447,12 +401,6 @@ model CampaignScene {
   @@index([campaignId, sceneIndex])
 }
 
-// Lightweight RP-beat that does NOT bump sceneIndex or trigger postSceneWork.
-// Used by the "Mała akcja" quick-beat path: nano-generated narration (1-3
-// sentences) anchored to the most recent CampaignScene. No imagePrompt,
-// no embedding, no stateChanges (only optional timeAdvance applied to
-// Character via the standard mutation path). Persisted so the chat history
-// survives reload, but invisible to memoryCompressor / vectorSearchService.
 model CampaignQuickBeat {
   id               String   @id @default(uuid(7)) @db.Uuid
   campaignId       String   @db.Uuid
@@ -486,8 +434,6 @@ model CampaignNeedsCommentary {
   @@index([campaignId, createdAt])
 }
 
-// Per-character bookmarked scenes. Heart toggle in gameplay UI; surfaced as a
-// list in the character panel alongside skill gain history.
 model FavoriteScene {
   id          String   @id @default(uuid(7)) @db.Uuid
   characterId String   @db.Uuid
@@ -514,7 +460,6 @@ model CampaignIncident {
   technicalDetails       String?  @db.Text
   corrections            Json?
   narrativeComment       String?  @db.Text
-  /// When isPlayerRight: true — whether processStateChanges finished without throw (world/campaign side-effects).
   worldCorrectionApplied Boolean?
   createdAt              DateTime @default(now()) @db.Timestamptz
 
@@ -525,11 +470,6 @@ model CampaignIncident {
   @@index([userId])
 }
 
-// Admin panel — point-in-time snapshot of full campaign graph (Campaign + all
-// child rows + linked Characters + referenced WorldNPCs/WorldLocations). Created
-// automatically before each admin edit, plus manual user-pinned snapshots.
-// Restore: deleteMany children → recreate from payload → reconstructFromNormalized.
-// FIFO trim to 20 non-pinned per campaign.
 model CampaignSnapshot {
   id         String   @id @default(uuid(7)) @db.Uuid
   campaignId String   @db.Uuid
@@ -564,33 +504,72 @@ model CampaignKnowledge {
   @@index([campaignId, entryType])
 }
 
-model CampaignNPC {
-  id                        String    @id @default(uuid(7)) @db.Uuid
-  campaignId                String    @db.Uuid
-  npcId                     String
-  name                      String
-  gender                    String    @default("unknown")
-  role                      String?
-  personality               String?
-  attitude                  String    @default("neutral")
-  disposition               Int       @default(0)
-  alive                     Boolean   @default(true)
-  // DEPRECATED (Faza 3a) — flavor name fallback (npr. AI-emitted "the inn"
-  // bez resolved node). Faza 0 zachowuje kolumnę aby nie złamać callsite'ów
-  // (campaignSync, intentClassifier/nanoSelector, aiContextTools/handlers/npc).
-  // Usunięcie wraz z BE cleanup w Fazie 3a.
-  lastLocation              String?
-  // Composite ref do grafu (polymorphic). Po Fazie 3a — jedyny ref.
-  lastLocationKind          String?
-  lastLocationId            String?   @db.Uuid
-  factionId                 String?
-  notes                     String?
-  worldNpcId                String?   @db.Uuid
-  isAgent                   Boolean   @default(false)
-  category                  String    @default("commoner")
+// ═══════════════════════════════════════════════════════════════════════
+// NPC — unified table (replaces WorldNPC + CampaignNPC).
+//
+// Scope discriminator:
+//   campaignId IS NULL  → canonical (world-level, globally visible)
+//   campaignId = <uuid> → scoped to one campaign
+//
+// Campaign shadows link back to their canonical source via canonicalNpcId.
+// AI-created mid-play NPCs have campaignId set but canonicalNpcId = null.
+// Promotion = UPDATE SET campaignId = NULL, assign canonicalId.
+// ═══════════════════════════════════════════════════════════════════════
+
+model Npc {
+  id         String  @id @default(uuid(7)) @db.Uuid
+  // NULL = canonical (world); set = campaign-scoped
+  campaignId String? @db.Uuid
+  // Human-readable slug for canonical NPCs (unique among canonicals)
+  canonicalId String?
+  // For campaign shadows: FK to the canonical NPC this row is a shadow of
+  canonicalNpcId String? @db.Uuid
+  // Legacy npcId field (campaign-scoped identifier within a campaign)
+  npcId      String?
+
+  name                  String
+  gender                String    @default("unknown")
+  role                  String?
+  personality           String?
+  // 'attitude' for campaign-scoped, 'alignment' for canonical
+  alignment             String    @default("neutral")
+  alive                 Boolean   @default(true)
+  disposition           Int       @default(0)
+  category              String    @default("commoner")
+  factionId             String?
+  notes                 String?
+
+  // Location — plain FK to unified Location table
+  currentLocationId     String?   @db.Uuid
+  homeLocationId        String?   @db.Uuid
+  // DEPRECATED — flavor name fallback (to be removed)
+  lastLocation          String?
+
+  // Agent / tick state (canonical only)
+  isAgent               Boolean   @default(false)
+  activeGoal            String?
+  goalProgress          Json?
+  schedule              Json?
+  lastTickAt            DateTime? @db.Timestamptz
+  tickIntervalHours     Int       @default(24)
+  lastTickSceneIndex    Int?
+  tickIntervalScenes    Int       @default(2)
+  goalDeadlineAt        DateTime? @db.Timestamptz
+  lastLocationPingAt    DateTime? @db.Timestamptz
+  keyNpc                Boolean   @default(true)
+
+  // Companion state (canonical only)
+  pausedAt              DateTime? @db.Timestamptz
+  pauseSnapshot         Json?
+  companionOfCampaignId String?   @db.Uuid
+  companionJoinedAt     DateTime? @db.Timestamptz
+  companionLoyalty      Int       @default(50)
+  lockedByCampaignId    String?   @db.Uuid
+  lockedAt              DateTime? @db.Timestamptz
+  lockedSnapshot        Json?
+
+  // Campaign-specific interaction tracking
   pendingIntroHint          String?
-  activeGoal                String?
-  goalProgress              Json?
   hasAcknowledgedFame       Boolean   @default(false)
   interactionCount          Int       @default(0)
   dialogCharCount           Int       @default(0)
@@ -598,10 +577,7 @@ model CampaignNPC {
   lastInteractionAt         DateTime? @db.Timestamptz
   lastInteractionSceneIndex Int?
 
-  // NPC character card — race is one of NPC_RACES (Human/Dwarf/Halfling/Orc)
-  // or null for story creatures (zjawy, sfinksy, demony, ...) which instead
-  // carry a free-text creatureKind tag. `stats` holds the full stat sheet
-  // emitted by npcCharacterSheet.generateNpcSheet.
+  // Character card
   race         String?
   creatureKind String?
   level        Int     @default(1)
@@ -610,14 +586,13 @@ model CampaignNPC {
   spriteUrl         String?
   chargenAppearance Json?
   spriteSheetUrl    String?
+  appearance        String?
+  dialect           String?
 
-  // Stable physical description (PL, ~1 sentence) used as the canonical
-  // source for portrait generation and player-facing NPC modals.
-  appearance String?
-  // Way of speaking (PL, ~1 sentence): dialect, accent, characteristic
-  // turns of phrase. Injected into the dialog system prompt; NOT shown
-  // in player UI.
-  dialect String?
+  // Entity registry lifecycle
+  globallyActive   Boolean   @default(true)
+  softDeletedAt    DateTime? @db.Timestamptz
+  originCampaignId String?   @db.Uuid
 
   embeddingText String?
   embedding     Unsupported("vector(1536)")?
@@ -625,56 +600,145 @@ model CampaignNPC {
   createdAt DateTime @default(now()) @db.Timestamptz
   updatedAt DateTime @updatedAt @db.Timestamptz
 
-  campaign      Campaign                  @relation(fields: [campaignId], references: [id], onDelete: Cascade)
-  worldNpc      WorldNPC?                 @relation(fields: [worldNpcId], references: [id], onDelete: SetNull)
-  experiences   CampaignNpcExperience[]
-  relationships CampaignNpcRelationship[]
-  locationMoves CampaignNpcLocationMovement[]
+  campaign        Campaign?          @relation("npcCampaign", fields: [campaignId], references: [id], onDelete: Cascade)
+  canonicalNpc    Npc?               @relation("npcShadow", fields: [canonicalNpcId], references: [id], onDelete: SetNull)
+  shadows         Npc[]              @relation("npcShadow")
+  currentLocation Location?          @relation("npcCurrentLoc", fields: [currentLocationId], references: [id], onDelete: SetNull)
+  homeLocation    Location?          @relation("npcHomeLoc", fields: [homeLocationId], references: [id], onDelete: SetNull)
+  attributions    NpcAttribution[]
+  knowledgeEntries NpcKnowledge[]
+  dialogTurns     NpcDialogTurn[]
+  knownLocations  NpcKnownLocation[]
+  experiences     NpcExperience[]
+  relationships   NpcRelationship[]
+  locationMoves   NpcLocationMovement[]
+  promotionCandidates NPCPromotionCandidate[]
 
+  @@unique([canonicalId])
   @@unique([campaignId, npcId])
   @@index([campaignId])
-  @@index([worldNpcId])
-  @@index([campaignId, worldNpcId])
+  @@index([canonicalNpcId])
+  @@index([campaignId, canonicalNpcId])
+  @@index([currentLocationId])
+  @@index([alive])
+  @@index([companionOfCampaignId])
+  @@index([lockedByCampaignId])
+  @@index([globallyActive, softDeletedAt])
 }
 
-// F4 — replaces CampaignNPC.relationships JSONB.
-// targetType = "npc" | "character" | "faction"; targetRef is the unique
-// reference within that namespace (npc name today, since `npcName` was the
-// shape used). Unique on the triple so `relation` updates idempotently.
-model CampaignNpcRelationship {
-  id            BigInt      @id @default(autoincrement())
-  campaignNpcId String      @db.Uuid
-  targetType    String
-  targetRef     String
-  relation      String
-  // strength: -100..+100 — kierunkowa wartość relacji (negatywna = wrogość).
-  strength      Int         @default(0)
-  // rippleStrength: 0..100 — natężenie z jakim X reaguje na zmiany u target-a
-  // (oś 2). Asymmetric: brat może mocno reagować na siostrę (90), a siostra
-  // tylko trochę na brata (40). Backfill SQL: LEAST(100, ABS(strength)).
-  rippleStrength Int        @default(50)
-  campaignNpc   CampaignNPC @relation(fields: [campaignNpcId], references: [id], onDelete: Cascade)
+// NPC memory entries (merges WorldNpcKnowledge + CampaignNpcExperience).
+// scope: 'baseline' = canonical knowledge, 'campaign' = campaign experience
+model NpcKnowledge {
+  id          BigInt    @id @default(autoincrement())
+  npcId       String    @db.Uuid
+  content     String
+  source      String
+  kind        String
+  importance  String?
+  confidence  Float?
+  similarity  Float?
+  sensitivity String?
+  sceneIndex  Int?
+  addedAt     DateTime  @default(now()) @db.Timestamptz
+  learnedAt   DateTime? @db.Timestamptz
 
-  @@unique([campaignNpcId, targetType, targetRef])
-  @@index([campaignNpcId])
+  npc Npc @relation(fields: [npcId], references: [id], onDelete: Cascade)
+
+  @@index([npcId, addedAt])
 }
 
-/// Append-only log of CampaignNPC graph-node location changes for location-graph inspector.
-model CampaignNpcLocationMovement {
-  id              BigInt   @id @default(autoincrement())
-  campaignNpcId   String   @db.Uuid
-  fromKind        String?
-  fromId          String?  @db.Uuid
-  toKind          String
-  toId            String   @db.Uuid
-  /// scene_process | location_graph_manual
-  source          String
-  sceneIndex      Int?
-  movedAt         DateTime @default(now()) @db.Timestamptz
+// NPC experience log (campaign-specific lived experience)
+model NpcExperience {
+  id         BigInt   @id @default(autoincrement())
+  npcId      String   @db.Uuid
+  content    String
+  importance String?
+  sceneIndex Int?
+  addedAt    DateTime @default(now()) @db.Timestamptz
 
-  campaignNpc CampaignNPC @relation(fields: [campaignNpcId], references: [id], onDelete: Cascade)
+  npc Npc @relation(fields: [npcId], references: [id], onDelete: Cascade)
 
-  @@index([campaignNpcId, movedAt(sort: Desc)])
+  @@index([npcId, addedAt])
+}
+
+model NpcRelationship {
+  id             BigInt @id @default(autoincrement())
+  npcId          String @db.Uuid
+  targetType     String
+  targetRef      String
+  relation       String
+  strength       Int    @default(0)
+  rippleStrength Int    @default(50)
+
+  npc Npc @relation(fields: [npcId], references: [id], onDelete: Cascade)
+
+  @@unique([npcId, targetType, targetRef])
+  @@index([npcId])
+}
+
+model NpcLocationMovement {
+  id         BigInt   @id @default(autoincrement())
+  npcId      String   @db.Uuid
+  fromId     String?  @db.Uuid
+  toId       String   @db.Uuid
+  source     String
+  sceneIndex Int?
+  movedAt    DateTime @default(now()) @db.Timestamptz
+
+  npc  Npc       @relation(fields: [npcId], references: [id], onDelete: Cascade)
+  from Location? @relation("moveFrom", fields: [fromId], references: [id], onDelete: SetNull)
+  to   Location  @relation("moveTo", fields: [toId], references: [id], onDelete: Cascade)
+
+  @@index([npcId, movedAt(sort: Desc)])
+}
+
+model NpcDialogTurn {
+  id          BigInt   @id @default(autoincrement())
+  npcId       String   @db.Uuid
+  campaignId  String   @db.Uuid
+  playerMsg   String
+  npcResponse String
+  emote       String?
+  createdAt   DateTime @default(now()) @db.Timestamptz
+
+  npc      Npc      @relation(fields: [npcId], references: [id], onDelete: Cascade)
+  campaign Campaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+
+  @@index([npcId, campaignId, createdAt])
+}
+
+model NpcAttribution {
+  id               BigInt   @id @default(autoincrement())
+  npcId            String   @db.Uuid
+  actorCharacterId String   @db.Uuid
+  actorCampaignId  String   @db.Uuid
+  actionType       String
+  justified        Boolean  @default(false)
+  justificationRaw String?
+  sceneIndex       Int?
+  createdAt        DateTime @default(now()) @db.Timestamptz
+
+  npc       Npc       @relation(fields: [npcId], references: [id], onDelete: Cascade)
+  character Character @relation(fields: [actorCharacterId], references: [id], onDelete: Cascade)
+  campaign  Campaign  @relation(fields: [actorCampaignId], references: [id], onDelete: Cascade)
+
+  @@unique([npcId, actorCharacterId, actorCampaignId, actionType])
+  @@index([npcId, createdAt])
+  @@index([actorCharacterId])
+  @@index([actorCampaignId])
+}
+
+model NpcKnownLocation {
+  npcId      String   @db.Uuid
+  locationId String   @db.Uuid
+  grantedBy  String   @default("seed")
+  grantedAt  DateTime @default(now()) @db.Timestamptz
+
+  npc      Npc      @relation(fields: [npcId], references: [id], onDelete: Cascade)
+  location Location @relation(fields: [locationId], references: [id], onDelete: Cascade)
+
+  @@id([npcId, locationId])
+  @@index([locationId])
 }
 
 model CampaignCodex {
@@ -707,26 +771,18 @@ model CampaignQuest {
   completionCondition String?
   questGiverId        String?
   turnInNpcId         String?
-  // Faza 0 — composite ref do grafu (kind+id). `locationId` zachowuje nazwę
-  // dla zgodności call-site, ale teraz musi być parą z `locationKind`. AI
-  // emituje nazwę → BE resolver (aiResolver.js) mapuje na composite ref
-  // przed apply state.
-  locationKind        String?
-  locationId          String?
+  // Plain FK to Location (no more kind+id)
+  locationId          String?   @db.Uuid
   reward              Json?
-  // status: active|completed|stalled|failed (oś 4 — `stalled` 1st-class
-  // dla rescue hooks; `failed` gdy questgiver dead i brak rescue path).
   status              String    @default("active")
   completedAt         DateTime? @db.Timestamptz
   forcedGiver         Boolean   @default(false)
-  // Append-only ledger mutacji (oś 4): { ts, mutation: stall|fail|reroute,
-  // reason, sceneIndex, payload }. Cap 10 entries — questDynamicsService
-  // truncates head-first.
   mutationLog         Json      @default("[]")
   createdAt           DateTime  @default(now()) @db.Timestamptz
   updatedAt           DateTime  @updatedAt @db.Timestamptz
 
   campaign        Campaign                    @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  location        Location?                   @relation(fields: [locationId], references: [id], onDelete: SetNull)
   prerequisites   CampaignQuestPrerequisite[] @relation("questSide")
   prerequisiteFor CampaignQuestPrerequisite[] @relation("prereqSide")
   objectives      CampaignQuestObjective[]
@@ -736,9 +792,6 @@ model CampaignQuest {
   @@index([campaignId, status])
 }
 
-// F4 — replaces CampaignQuest.objectives JSONB. displayOrder is the
-// canonical sort key (insertion order from AI). Replace-on-quest-update
-// strategy (deleteMany + createMany), same pattern as F3 prerequisites.
 model CampaignQuestObjective {
   id           BigInt        @id @default(autoincrement())
   questId      String        @db.Uuid
@@ -746,33 +799,10 @@ model CampaignQuestObjective {
   description  String
   progress     Int           @default(0)
   targetAmount Int           @default(1)
-  // status: pending|done|locked|skipped|failed (rozszerzone w osi 1).
-  // - pending: parents satisfied, do zrobienia
-  // - done: ukończone
-  // - locked: parents niespełnione (czeka na unlock z grafu)
-  // - skipped: branchChoice w XOR group zamknął tę gałąź
-  // - failed: failsOn match (np. questgiver dead) lub explicit questMutation
   status       String        @default("pending")
-  // Per-objective JSONB bag — graf + diegetic + triggers:
-  //   metadata.parents: string[]            — nodeKey-i które muszą być done
-  //   metadata.unlocks: string[]            — nodeKey-i odblokowane przy done
-  //   metadata.branchType: "and"|"path"|"or"  — XOR/równoległe/dowolny
-  //   metadata.branchGroup: string          — id grupy branchy
-  //   metadata.choiceLabel: string          — UI label dla wyboru
-  //   metadata.failsOn: { npcDead?, locationDestroyed?, deadline? } (oś 4)
-  //   metadata.discovered: boolean          — diegetic gating (oś 5)
-  //   metadata.placeholderHint?: string     — vague hint w UI "???"
-  //   metadata.lastKnownLocation?: string   — quest dynamics tick payload
-  //   metadata.onComplete: { moveNpcToPlayer, message }   — trigger (legacy)
   metadata     Json          @default("{}")
-  // Objective type tag (kill, escort, fetch, etc.) — visual badge + prompt hint.
-  // Nullable for backward compat with objectives created before this feature.
   objectiveType String?
-  // Tracks XP already awarded for this objective (prevents double-award).
   xpAwarded    Int           @default(0)
-  // Stable string ref dla LLM (snake_case). Generowany przez questOffers,
-  // BE waliduje [a-z0-9_]{1,40}. Resolver fallback do displayOrder index
-  // dla legacy linear questów (bez nodeKey).
   nodeKey      String?
   quest        CampaignQuest @relation(fields: [questId], references: [id], onDelete: Cascade)
 
@@ -787,9 +817,8 @@ model CampaignLocationSummary {
   summary         String
   keyNpcs         Json     @default("[]")
   unresolvedHooks Json     @default("[]")
-  sceneDigests    Json     @default("[]")
   sceneCount      Int      @default(0)
-  lastVisitScene  Int      @default(0)
+  lastSceneIndex  Int?
   createdAt       DateTime @default(now()) @db.Timestamptz
   updatedAt       DateTime @updatedAt @db.Timestamptz
 
@@ -808,23 +837,6 @@ model CampaignDmAgent {
   pendingHookEntries CampaignDmPendingHook[]
 }
 
-// F2 — child table replacing CampaignNPC.experienceLog JSONB array.
-// FIFO-capped at 20 per campaignNpcId via trigger.
-model CampaignNpcExperience {
-  id            BigInt   @id @default(autoincrement())
-  campaignNpcId String   @db.Uuid
-  content       String
-  importance    String?
-  sceneIndex    Int?
-  addedAt       DateTime @default(now()) @db.Timestamptz
-
-  campaignNpc CampaignNPC @relation(fields: [campaignNpcId], references: [id], onDelete: Cascade)
-
-  @@index([campaignNpcId, addedAt])
-}
-
-// F2 — child table replacing CampaignDmAgent.dmMemory JSONB array.
-// FIFO-capped at 20 per campaignId via trigger.
 model CampaignDmMemoryEntry {
   id         BigInt   @id @default(autoincrement())
   campaignId String   @db.Uuid
@@ -838,9 +850,6 @@ model CampaignDmMemoryEntry {
   @@index([campaignId, at])
 }
 
-// F2 — child table replacing CampaignDmAgent.pendingHooks JSONB array.
-// FIFO-capped at 12 per campaignId via trigger (oldest dropped, NOT lowest priority —
-// `clampList` semantics in dmMemoryService.js).
 model CampaignDmPendingHook {
   id          String   @id @default(uuid(7)) @db.Uuid
   campaignId  String   @db.Uuid
@@ -856,12 +865,21 @@ model CampaignDmPendingHook {
 }
 
 // ═══════════════════════════════════════════════════════════════════════
-// Living World — canonical world state shared across campaigns.
+// Location — unified table (replaces WorldLocation + CampaignLocation).
+//
+// Scope discriminator:
+//   campaignId IS NULL  → canonical (world-level, globally visible)
+//   campaignId = <uuid> → scoped to one campaign (sandbox)
+//
+// Promotion = UPDATE SET campaignId = NULL, assign canonicalName.
 // ═══════════════════════════════════════════════════════════════════════
 
-model WorldLocation {
+model Location {
   id                 String       @id @default(uuid(7)) @db.Uuid
-  canonicalName      String       @unique
+  // NULL = canonical (world); set = campaign-scoped
+  campaignId         String?      @db.Uuid
+  // Unique slug for canonical locations (NULL for campaign-scoped)
+  canonicalName      String?
   displayName        String?
   description        String       @default("")
   category           String       @default("generic")
@@ -880,7 +898,7 @@ model WorldLocation {
   knownByDefault     Boolean      @default(false)
   dangerLevel        DangerLevel  @default(safe)
 
-  // Entity registry lifecycle — existing rows backfilled as globally active.
+  // Entity registry lifecycle
   globallyActive   Boolean   @default(true)
   softDeletedAt    DateTime? @db.Timestamptz
   originCampaignId String?   @db.Uuid
@@ -895,13 +913,6 @@ model WorldLocation {
   nodeIcon       String?
   nodeImageUrl   String?
 
-  // Faza 0 — graf jako jedyne źródło prawdy o lokacjach.
-  // tacticalGrid: 12×12 (lub inny WxH) tile grid do walki; tiles[y][x] = 'P'|'F'|'W'|'D'|'S'.
-  // anchorType: explicit override mapowania na sceneAnchors (tavern|forest|dungeon|...).
-  // biome: po wywaleniu fieldMap zachowuje semantykę biomu.
-  // visitCount + npcsEncountered + modificationsLog: replace world.knowledgeBase.locations[].
-  // dungeonState: per-room flags (entryCleared, trapSprung, lootTaken).
-  // liberatedAt: timestamp gdy locationLiberated boolean ustawiony przez AI promotion.
   tacticalGrid     Json?
   biome            String?
   anchorType       String?
@@ -917,17 +928,31 @@ model WorldLocation {
   createdAt DateTime @default(now()) @db.Timestamptz
   updatedAt DateTime @updatedAt @db.Timestamptz
 
-  parent       WorldLocation?  @relation("subloc", fields: [parentLocationId], references: [id], onDelete: SetNull)
-  sublocations WorldLocation[] @relation("subloc")
+  campaign       Campaign?  @relation("locationCampaign", fields: [campaignId], references: [id], onDelete: Cascade)
+  parent         Location?  @relation("subloc", fields: [parentLocationId], references: [id], onDelete: SetNull)
+  sublocations   Location[] @relation("subloc")
 
-  outgoingEdges     Road[]                   @relation("fromLoc")
-  incomingEdges     Road[]                   @relation("toLoc")
-  npcsHere          WorldNPC[]               @relation("npcCurrentLoc")
-  npcsHome          WorldNPC[]               @relation("npcHomeLoc")
-  knowledgeEntries  WorldLocationKnowledge[]
+  outgoingRoads     Road[]              @relation("fromLoc")
+  incomingRoads     Road[]              @relation("toLoc")
+  outgoingEdges     LocationEdge[]      @relation("edgeFrom")
+  incomingEdges     LocationEdge[]      @relation("edgeTo")
+  campaignEdgesFrom CampaignEdge[]      @relation("campaignEdgeFrom")
+  campaignEdgesTo   CampaignEdge[]      @relation("campaignEdgeTo")
+  npcsHere          Npc[]               @relation("npcCurrentLoc")
+  npcsHome          Npc[]               @relation("npcHomeLoc")
+  knowledgeEntries  LocationKnowledge[]
   userDiscoveries   UserDiscoveredLocation[]
-  npcKnownByEntries WorldNpcKnownLocation[]
+  npcKnownByEntries NpcKnownLocation[]
+  campaignsHere     Campaign[]          @relation("campaignCurrentLoc")
+  questsHere        CampaignQuest[]
+  discoveredBy      DiscoveredLocation[]
+  clearedBy         CharacterClearedDungeon[]
+  movesFrom         NpcLocationMovement[] @relation("moveFrom")
+  movesTo           NpcLocationMovement[] @relation("moveTo")
+  promotionCandidates LocationPromotionCandidate[] @relation("promotionSource")
 
+  @@unique([canonicalName])
+  @@index([campaignId])
   @@index([region])
   @@index([parentLocationId])
   @@index([locationType])
@@ -935,22 +960,8 @@ model WorldLocation {
   @@index([globallyActive, softDeletedAt])
 }
 
-// DEPRECATED (Faza 0) — Road jest zaszeregowany do usunięcia w Fazie 8.
-// Wszystkie movement-edges migrują do polymorphic `LocationEdge` (category=
-// 'movement') przez one-shot dev script `migrate-roads-to-edges.js`. Po
-// migracji: travel graph (Dijkstra) operuje na LocationEdge, Road table dropped.
-//
-// Historical: F5b — renamed from WorldLocationEdge. Roads connect two CANONICAL
-// WorldLocations only; campaign-created CampaignLocation rows are off-graph
-// (no auto-Road on creation). Travel graph (Dijkstra in travelGraph.js) walks
-// Road edges only.
-//
-// Graph system: `relationType` discriminates edge semantics (road, path, door,
-// stairs, tunnel, bridge, portal, secret_path, visible_from, audible_from,
-// controlled_by, etc.). Dijkstra filters on MOVEMENT_RELATION_TYPES only.
-// `metadata` holds per-type structured data (requirements, perception range,
-// faction info, narrative hooks). Legacy `gated`/`gateHint` kept for backward
-// compat; new edges use `metadata.requirements` instead.
+// Road — canonical edges between locations (Dijkstra travel graph).
+// DEPRECATED — migrating to LocationEdge (category='movement').
 model Road {
   id             String      @id @default(uuid(7)) @db.Uuid
   fromLocationId String      @db.Uuid
@@ -962,139 +973,33 @@ model Road {
   gated          Boolean     @default(false)
   gateHint       String?
 
-  // Graph system — rich relation taxonomy
   relationType    String  @default("road")
   bidirectional   Boolean @default(true)
   metadata        Json    @default("{}")
-  visibility      String  @default("visible") // visible | hidden | secret | legendary
-  risk            String? // none | low | moderate | high | extreme
-  travelTime      Float? // minutes (optional, derived from distance/terrain if absent)
-  weight          Float? // Dijkstra cost override (default = distance)
-  edgeDescription String? @map("description") // "Wąska ścieżka wzdłuż klifu"
-  confidence      Float? // 0-1, for rumor-based edges
+  visibility      String  @default("visible")
+  risk            String?
+  travelTime      Float?
+  weight          Float?
+  edgeDescription String? @map("description")
+  confidence      Float?
 
   createdAt DateTime @default(now()) @db.Timestamptz
 
-  from                WorldLocation           @relation("fromLoc", fields: [fromLocationId], references: [id], onDelete: Cascade)
-  to                  WorldLocation           @relation("toLoc", fields: [toLocationId], references: [id], onDelete: Cascade)
+  from                Location                @relation("fromLoc", fields: [fromLocationId], references: [id], onDelete: Cascade)
+  to                  Location                @relation("toLoc", fields: [toLocationId], references: [id], onDelete: Cascade)
   campaignDiscoveries CampaignEdgeDiscovery[]
   userDiscoveries     UserDiscoveredEdge[]
 
-  @@unique([fromLocationId, toLocationId, relationType])
   @@index([fromLocationId])
   @@index([toLocationId])
-  @@index([relationType])
 }
 
-// Graph system — per-campaign sandbox edges. CampaignLocation rows are off the
-// canonical Road graph by design; CampaignEdge provides rich edges between ANY
-// combination of WorldLocation and CampaignLocation nodes within a campaign.
-// Uses the same polymorphic kind+id pattern as CampaignDiscoveredLocation.
-// Cascades with the campaign. relationType uses the same taxonomy as Road
-// (validated app-side via RELATION_TYPES in edgeRelations.js).
-model CampaignEdge {
-  id              String       @id @default(uuid(7)) @db.Uuid
-  campaignId      String       @db.Uuid
-  fromKind        String // "world" | "campaign"
-  fromId          String       @db.Uuid
-  toKind          String // "world" | "campaign"
-  toId            String       @db.Uuid
-  relationType    String       @default("path")
-  bidirectional   Boolean      @default(true)
-  distance        Float?
-  difficulty      DangerLevel?
-  metadata        Json         @default("{}")
-  visibility      String       @default("visible") // visible | hidden | secret
-  risk            String? // none | low | moderate | high | extreme
-  travelTime      Float? // minutes
-  edgeDescription String?      @map("description")
-  confidence      Float? // 0-1 for rumor-based edges
-  createdAt       DateTime     @default(now()) @db.Timestamptz
-
-  campaign Campaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
-
-  @@unique([campaignId, fromKind, fromId, toKind, toId, relationType])
-  @@index([campaignId])
-  @@index([fromKind, fromId])
-  @@index([toKind, toId])
-  @@index([relationType])
-}
-
-// F5b — per-campaign sandbox location. AI-emitted locations during play go
-// here, NOT into WorldLocation (which is reserved for canonical hand-authored
-// or admin-promoted rows). Off the canonical Road graph by design — travel
-// in/out is by selection, not Dijkstra. Cascades with the campaign — deleted
-// when the parent Campaign is deleted, or destructively replaced (relink +
-// delete) by promotion to a canonical WorldLocation.
-//
-// `parentLocationKind`/`parentLocationId` is polymorphic: a CampaignLocation
-// sublocation can live inside a canonical city OR another CampaignLocation.
-model CampaignLocation {
-  id                 String       @id @default(uuid(7)) @db.Uuid
-  campaignId         String       @db.Uuid
-  name               String
-  canonicalSlug      String
-  description        String       @default("")
-  category           String       @default("generic")
-  locationType       LocationType @default(generic)
-  region             String?
-  aliases            Json         @default("[]")
-  regionX            Float        @default(0)
-  regionY            Float        @default(0)
-  positionConfidence Float        @default(0.5)
-  subGridX           Int?
-  subGridY           Int?
-  parentLocationKind String?
-  parentLocationId   String?      @db.Uuid
-  maxKeyNpcs         Int          @default(10)
-  maxSubLocations    Int          @default(5)
-  slotType           String?
-  slotKind           String       @default("custom")
-  dangerLevel        DangerLevel  @default(safe)
-  roomMetadata       Json?
-  tags               Json         @default("[]")
-  atmosphere         String?
-  narrativeRoles     Json         @default("[]")
-  scale              Int          @default(5)
-  nodeShape          String?
-  nodeIcon           String?
-  nodeImageUrl       String?
-
-  // Faza 0 — graf jako jedyne źródło prawdy. Kopia pól z WorldLocation
-  // by per-campaign sandbox lokacje miały te same możliwości metadane.
-  tacticalGrid     Json?
-  biome            String?
-  anchorType       String?
-  visitCount       Int       @default(0)
-  npcsEncountered  Json      @default("[]")
-  modificationsLog Json      @default("[]")
-  dungeonState     Json?
-  liberatedAt      DateTime? @db.Timestamptz
-
-  embeddingText String?
-  embedding     Unsupported("vector(1536)")?
-
-  createdAt DateTime @default(now()) @db.Timestamptz
-  updatedAt DateTime @updatedAt @db.Timestamptz
-
-  campaign Campaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
-
-  @@unique([campaignId, canonicalSlug])
-  @@index([campaignId])
-  @@index([regionX, regionY])
-  @@index([locationType])
-}
-
-// Location Graph — semantic edges between any pair of locations (canonical
-// WorldLocation OR per-campaign CampaignLocation). Polymorphic from/to via
-// kind+id pairs. Supplements Road (which stays for Dijkstra travel) with
-// richer spatial, perception, social, narrative, and temporal relations.
+// LocationEdge — rich semantic edges between any pair of locations.
+// No more polymorphic kind+id — plain FKs to unified Location table.
 model LocationEdge {
   id             String   @id @default(uuid(7)) @db.Uuid
-  fromKind       String
-  fromId         String   @db.Uuid
-  toKind         String
-  toId           String   @db.Uuid
+  fromLocationId String   @db.Uuid
+  toLocationId   String   @db.Uuid
   edgeType       String
   category       String
   bidirectional  Boolean  @default(true)
@@ -1108,13 +1013,45 @@ model LocationEdge {
   createdAt      DateTime @default(now()) @db.Timestamptz
   updatedAt      DateTime @updatedAt @db.Timestamptz
 
-  campaign Campaign? @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  fromLocation Location  @relation("edgeFrom", fields: [fromLocationId], references: [id], onDelete: Cascade)
+  toLocation   Location  @relation("edgeTo", fields: [toLocationId], references: [id], onDelete: Cascade)
+  campaign     Campaign? @relation(fields: [campaignId], references: [id], onDelete: Cascade)
 
-  @@index([fromKind, fromId])
-  @@index([toKind, toId])
+  @@index([fromLocationId])
+  @@index([toLocationId])
   @@index([edgeType])
   @@index([category])
   @@index([campaignId])
+}
+
+// CampaignEdge — per-campaign edges (supplement canonical Roads/LocationEdges).
+// No more polymorphic kind — plain FKs.
+model CampaignEdge {
+  id              String       @id @default(uuid(7)) @db.Uuid
+  campaignId      String       @db.Uuid
+  fromLocationId  String       @db.Uuid
+  toLocationId    String       @db.Uuid
+  relationType    String       @default("path")
+  bidirectional   Boolean      @default(true)
+  distance        Float?
+  difficulty      DangerLevel?
+  metadata        Json         @default("{}")
+  visibility      String       @default("visible")
+  risk            String?
+  travelTime      Float?
+  edgeDescription String?      @map("description")
+  confidence      Float?
+  createdAt       DateTime     @default(now()) @db.Timestamptz
+
+  campaign     Campaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  fromLocation Location @relation("campaignEdgeFrom", fields: [fromLocationId], references: [id], onDelete: Cascade)
+  toLocation   Location @relation("campaignEdgeTo", fields: [toLocationId], references: [id], onDelete: Cascade)
+
+  @@unique([campaignId, fromLocationId, toLocationId, relationType])
+  @@index([campaignId])
+  @@index([fromLocationId])
+  @@index([toLocationId])
+  @@index([relationType])
 }
 
 model UserWorldKnowledge {
@@ -1126,103 +1063,120 @@ model UserWorldKnowledge {
   discoveredEdges     UserDiscoveredEdge[]
 }
 
-model WorldNPC {
-  id                    String    @id @default(uuid(7)) @db.Uuid
-  canonicalId           String    @unique
-  name                  String
-  role                  String?
-  personality           String?
-  alignment             String    @default("neutral")
-  alive                 Boolean   @default(true)
-  currentLocationId     String?   @db.Uuid
-  homeLocationId        String?   @db.Uuid
-  pausedAt              DateTime? @db.Timestamptz
-  pauseSnapshot         Json?
-  companionOfCampaignId String?   @db.Uuid
-  companionJoinedAt     DateTime? @db.Timestamptz
-  companionLoyalty      Int       @default(50)
-  lockedByCampaignId    String?   @db.Uuid
-  lockedAt              DateTime? @db.Timestamptz
-  lockedSnapshot        Json?
+// Location knowledge (canonical location info — seeds, world facts)
+model LocationKnowledge {
+  id         BigInt   @id @default(autoincrement())
+  locationId String   @db.Uuid
+  content    String
+  source     String
+  kind       String
+  confidence Float?
+  similarity Float?
+  addedAt    DateTime @default(now()) @db.Timestamptz
 
-  activeGoal         String?
-  goalProgress       Json?
-  schedule           Json?
-  lastTickAt         DateTime? @db.Timestamptz
-  tickIntervalHours  Int       @default(24)
-  lastTickSceneIndex Int?
-  tickIntervalScenes Int       @default(2)
-  goalDeadlineAt     DateTime? @db.Timestamptz
-  lastLocationPingAt DateTime? @db.Timestamptz
-  category           String    @default("commoner")
-  keyNpc             Boolean   @default(true)
+  location Location @relation(fields: [locationId], references: [id], onDelete: Cascade)
 
-  // NPC character card — see CampaignNPC.race/creatureKind/stats.
-  race         String?
-  creatureKind String?
-  level        Int     @default(1)
-  stats             Json    @default("{}")
-  spriteUrl         String?
-  chargenAppearance Json?
-  spriteSheetUrl    String?
-
-  // Stable physical description (PL, ~1 sentence) used as the canonical
-  // source for portrait generation and player-facing NPC modals.
-  appearance String?
-  // Way of speaking (PL, ~1 sentence): dialect, accent, characteristic
-  // turns of phrase. Injected into the dialog system prompt; NOT shown
-  // in player UI.
-  dialect String?
-
-  // Entity registry lifecycle — existing rows backfilled as globally active.
-  globallyActive   Boolean   @default(true)
-  softDeletedAt    DateTime? @db.Timestamptz
-  originCampaignId String?   @db.Uuid
-
-  embeddingText String?
-  embedding     Unsupported("vector(1536)")?
-
-  createdAt DateTime @default(now()) @db.Timestamptz
-  updatedAt DateTime @updatedAt @db.Timestamptz
-
-  currentLocation  WorldLocation?          @relation("npcCurrentLoc", fields: [currentLocationId], references: [id], onDelete: SetNull)
-  homeLocation     WorldLocation?          @relation("npcHomeLoc", fields: [homeLocationId], references: [id], onDelete: SetNull)
-  campaignShadows  CampaignNPC[]
-  attributions     WorldNpcAttribution[]
-  knowledgeEntries WorldNpcKnowledge[]
-  dialogTurns      WorldNpcDialogTurn[]
-  knownLocations   WorldNpcKnownLocation[]
-
-  @@index([currentLocationId])
-  @@index([alive])
-  @@index([companionOfCampaignId])
-  @@index([lockedByCampaignId])
-  @@index([globallyActive, softDeletedAt])
+  @@index([locationId, addedAt])
 }
 
-model WorldEvent {
-  id              BigInt   @id @default(autoincrement())
-  worldNpcId      String?  @db.Uuid
-  // Legacy — ref tylko do canonical WorldLocation. Po Fazie 4.5 callsite
-  // używają composite ref (locationKind+locationId). worldLocationId zostaje
-  // dla kompatybilności z istniejącymi indeksami i raportami.
-  worldLocationId String?  @db.Uuid
-  // Faza 0 — composite ref polymorphic do node grafu (WorldLocation lub
-  // CampaignLocation). Używany w nowym pipeline (locationLiberated,
-  // dungeonComplete, party meetings).
-  locationKind    String?
-  locationId      String?  @db.Uuid
-  campaignId      String?  @db.Uuid
-  userId          String?  @db.Uuid
-  eventType       String
-  payload         Json     @default("{}")
-  visibility      String   @default("campaign")
-  gameTime        DateTime @db.Timestamptz
-  createdAt       DateTime @default(now()) @db.Timestamptz
+// Per-campaign fog-of-war for locations (plain FK, no polymorphic kind).
+model DiscoveredLocation {
+  campaignId   String         @db.Uuid
+  locationId   String         @db.Uuid
+  state        DiscoveryState
+  discoveredAt DateTime       @default(now()) @db.Timestamptz
 
-  @@index([worldNpcId, createdAt])
-  @@index([worldLocationId, createdAt])
-  @@index([locationKind, locationId, createdAt])
+  campaign Campaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  location Location @relation(fields: [locationId], references: [id], onDelete: Cascade)
+
+  @@id([campaignId, locationId])
+  @@index([locationId])
+  @@index([campaignId, state])
+}
+
+// Account-level fog-of-war for canonical locations.
+model UserDiscoveredLocation {
+  userId       String         @db.Uuid
+  locationId   String         @db.Uuid
+  state        DiscoveryState
+  discoveredAt DateTime       @default(now()) @db.Timestamptz
+
+  userKnowledge UserWorldKnowledge @relation(fields: [userId], references: [userId], onDelete: Cascade)
+  location      Location           @relation(fields: [locationId], references: [id], onDelete: Cascade)
+
+  @@id([userId, locationId])
+  @@index([locationId])
+  @@index([userId, state])
+}
+
+// Per-user edge discovery (Road-based).
+model UserDiscoveredEdge {
+  userId       String   @db.Uuid
+  edgeId       String   @db.Uuid
+  discoveredAt DateTime @default(now()) @db.Timestamptz
+
+  userKnowledge UserWorldKnowledge @relation(fields: [userId], references: [userId], onDelete: Cascade)
+  edge          Road               @relation(fields: [edgeId], references: [id], onDelete: Cascade)
+
+  @@id([userId, edgeId])
+  @@index([edgeId])
+}
+
+// Per-campaign Road edge discovery.
+model CampaignEdgeDiscovery {
+  edgeId       String   @db.Uuid
+  campaignId   String   @db.Uuid
+  discoveredAt DateTime @default(now()) @db.Timestamptz
+
+  edge     Road     @relation(fields: [edgeId], references: [id], onDelete: Cascade)
+  campaign Campaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+
+  @@id([edgeId, campaignId])
+  @@index([campaignId])
+}
+
+// Dungeon clear tracking (plain FK to Location, no polymorphic kind).
+model CharacterClearedDungeon {
+  characterId String   @db.Uuid
+  dungeonId   String   @db.Uuid
+  clearedAt   DateTime @default(now()) @db.Timestamptz
+
+  character Character @relation(fields: [characterId], references: [id], onDelete: Cascade)
+  dungeon   Location  @relation(fields: [dungeonId], references: [id], onDelete: Cascade)
+
+  @@id([characterId, dungeonId])
+  @@index([dungeonId])
+}
+
+model CampaignQuestPrerequisite {
+  questId  String @db.Uuid
+  prereqId String @db.Uuid
+
+  quest  CampaignQuest @relation("questSide", fields: [questId], references: [id], onDelete: Cascade)
+  prereq CampaignQuest @relation("prereqSide", fields: [prereqId], references: [id], onDelete: Cascade)
+
+  @@id([questId, prereqId])
+  @@index([prereqId])
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// World Events / Reputation / Lore
+// ═══════════════════════════════════════════════════════════════════════
+
+model WorldEvent {
+  id         BigInt   @id @default(autoincrement())
+  npcId      String?  @db.Uuid
+  locationId String?  @db.Uuid
+  campaignId String?  @db.Uuid
+  userId     String?  @db.Uuid
+  eventType  String
+  payload    Json     @default("{}")
+  visibility String   @default("campaign")
+  gameTime   DateTime @db.Timestamptz
+  createdAt  DateTime @default(now()) @db.Timestamptz
+
+  @@index([npcId, createdAt])
+  @@index([locationId, createdAt])
   @@index([campaignId, createdAt])
   @@index([eventType])
   @@index([eventType, visibility, createdAt])
@@ -1249,190 +1203,6 @@ model WorldReputation {
   @@index([scope, scopeKey, score])
 }
 
-model WorldNpcAttribution {
-  id               BigInt   @id @default(autoincrement())
-  worldNpcId       String   @db.Uuid
-  actorCharacterId String   @db.Uuid
-  actorCampaignId  String   @db.Uuid
-  actionType       String
-  justified        Boolean  @default(false)
-  judgeConfidence  Float    @default(0)
-  judgeReason      String?
-  alignmentImpact  String
-  visibility       String   @default("campaign")
-  gameTime         DateTime @db.Timestamptz
-  createdAt        DateTime @default(now()) @db.Timestamptz
-
-  npc      WorldNPC  @relation(fields: [worldNpcId], references: [id], onDelete: Cascade)
-  actor    Character @relation(fields: [actorCharacterId], references: [id], onDelete: Cascade)
-  campaign Campaign  @relation(fields: [actorCampaignId], references: [id], onDelete: Cascade)
-
-  @@index([actorCharacterId, createdAt])
-  @@index([worldNpcId])
-}
-
-// F2 — child table replacing WorldNPC.knowledgeBase JSONB array.
-// FIFO-capped at 50 per npcId via plpgsql trigger (see migration SQL).
-model WorldNpcKnowledge {
-  id          BigInt    @id @default(autoincrement())
-  npcId       String    @db.Uuid
-  content     String
-  source      String
-  kind        String
-  importance  String?
-  confidence  Float?
-  similarity  Float?
-  sensitivity String?
-  addedAt     DateTime  @default(now()) @db.Timestamptz
-  learnedAt   DateTime? @db.Timestamptz
-
-  npc WorldNPC @relation(fields: [npcId], references: [id], onDelete: Cascade)
-
-  @@index([npcId, addedAt])
-}
-
-// F2 — child table replacing WorldNPC.dialogHistory JSONB map.
-// FIFO-capped at 50 per (npcId, campaignId) via trigger.
-model WorldNpcDialogTurn {
-  id          BigInt   @id @default(autoincrement())
-  npcId       String   @db.Uuid
-  campaignId  String   @db.Uuid
-  playerMsg   String
-  npcResponse String
-  emote       String?
-  createdAt   DateTime @default(now()) @db.Timestamptz
-
-  npc      WorldNPC @relation(fields: [npcId], references: [id], onDelete: Cascade)
-  campaign Campaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
-
-  @@index([npcId, campaignId, createdAt])
-}
-
-// F2 — child table replacing WorldLocation.knowledgeBase JSONB array.
-// FIFO-capped at 50 per locationId via trigger.
-model WorldLocationKnowledge {
-  id         BigInt   @id @default(autoincrement())
-  locationId String   @db.Uuid
-  content    String
-  source     String
-  kind       String
-  confidence Float?
-  similarity Float?
-  addedAt    DateTime @default(now()) @db.Timestamptz
-
-  location WorldLocation @relation(fields: [locationId], references: [id], onDelete: Cascade)
-
-  @@index([locationId, addedAt])
-}
-
-// F3 — replaces Campaign.{discovered,heardAbout,discoveredSub}LocationIds.
-// F5b — `locationKind` discriminates "world" | "campaign". Per-campaign fog-of-war
-// holds CampaignLocation rows (the campaign-scoped sandbox); canonical lookups
-// land in UserDiscoveredLocation so the player carries that knowledge across
-// campaigns. No DB FK — locationId is polymorphic and resolved app-side.
-model CampaignDiscoveredLocation {
-  campaignId   String         @db.Uuid
-  locationKind String
-  locationId   String         @db.Uuid
-  state        DiscoveryState
-  discoveredAt DateTime       @default(now()) @db.Timestamptz
-
-  campaign Campaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
-
-  @@id([campaignId, locationKind, locationId])
-  @@index([locationKind, locationId])
-  @@index([campaignId, state])
-}
-
-// F3 — replaces UserWorldKnowledge.{discovered,heardAbout}LocationIds.
-// Account-level fog-of-war for canonical (world-seeded) locations only.
-model UserDiscoveredLocation {
-  userId       String         @db.Uuid
-  locationId   String         @db.Uuid
-  state        DiscoveryState
-  discoveredAt DateTime       @default(now()) @db.Timestamptz
-
-  userKnowledge UserWorldKnowledge @relation(fields: [userId], references: [userId], onDelete: Cascade)
-  location      WorldLocation      @relation(fields: [locationId], references: [id], onDelete: Cascade)
-
-  @@id([userId, locationId])
-  @@index([locationId])
-  @@index([userId, state])
-}
-
-// F3 — replaces UserWorldKnowledge.discoveredEdgeIds. Per-user edge discovery.
-model UserDiscoveredEdge {
-  userId       String   @db.Uuid
-  edgeId       String   @db.Uuid
-  discoveredAt DateTime @default(now()) @db.Timestamptz
-
-  userKnowledge UserWorldKnowledge @relation(fields: [userId], references: [userId], onDelete: Cascade)
-  edge          Road               @relation(fields: [edgeId], references: [id], onDelete: Cascade)
-
-  @@id([userId, edgeId])
-  @@index([edgeId])
-}
-
-// F3 — replaces WorldLocationEdge.discoveredByCampaigns.
-// Renamed vs plan (was "WorldEdgeDiscovery") because the discovery scope is
-// per-campaign, not per-world.
-model CampaignEdgeDiscovery {
-  edgeId       String   @db.Uuid
-  campaignId   String   @db.Uuid
-  discoveredAt DateTime @default(now()) @db.Timestamptz
-
-  edge     Road     @relation(fields: [edgeId], references: [id], onDelete: Cascade)
-  campaign Campaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
-
-  @@id([edgeId, campaignId])
-  @@index([campaignId])
-}
-
-// F3 — replaces WorldNPC.knownLocationIds. NPC's geographic awareness graph;
-// `grantedBy` flags provenance: 'seed' (hand-authored), 'promotion' (post-
-// campaign promote), 'dialog' (learned in conversation).
-model WorldNpcKnownLocation {
-  npcId      String   @db.Uuid
-  locationId String   @db.Uuid
-  grantedBy  String   @default("seed")
-  grantedAt  DateTime @default(now()) @db.Timestamptz
-
-  npc      WorldNPC      @relation(fields: [npcId], references: [id], onDelete: Cascade)
-  location WorldLocation @relation(fields: [locationId], references: [id], onDelete: Cascade)
-
-  @@id([npcId, locationId])
-  @@index([locationId])
-}
-
-// F3 — replaces Character.clearedDungeonIds.
-// F5b — `dungeonKind` discriminates "world" | "campaign". Dungeons can be
-// canonical (seeded) or campaign-created. No DB FK — dungeonId is polymorphic.
-model CharacterClearedDungeon {
-  characterId String   @db.Uuid
-  dungeonKind String
-  dungeonId   String   @db.Uuid
-  clearedAt   DateTime @default(now()) @db.Timestamptz
-
-  character Character @relation(fields: [characterId], references: [id], onDelete: Cascade)
-
-  @@id([characterId, dungeonKind, dungeonId])
-  @@index([dungeonKind, dungeonId])
-}
-
-// F3 — replaces CampaignQuest.prerequisiteQuestIds. Self-join on CampaignQuest.
-// `questSide` = the dependent quest, `prereqSide` = the prerequisite that must
-// complete first.
-model CampaignQuestPrerequisite {
-  questId        String @db.Uuid
-  prerequisiteId String @db.Uuid
-
-  quest        CampaignQuest @relation("questSide", fields: [questId], references: [id], onDelete: Cascade)
-  prerequisite CampaignQuest @relation("prereqSide", fields: [prerequisiteId], references: [id], onDelete: Cascade)
-
-  @@id([questId, prerequisiteId])
-  @@index([prerequisiteId])
-}
-
 model WorldLoreSection {
   id        String   @id @default(uuid(7)) @db.Uuid
   slug      String   @unique
@@ -1447,8 +1217,6 @@ model WorldLoreSection {
 }
 
 // Round E Phase 9 — unified embedding store for world-scope retrieval.
-// F1: switched from Json to native vector(1536). Cosine distance via
-// pgvector operator (`<=>`); HNSW index added in migration SQL.
 model WorldEntityEmbedding {
   id         BigInt                      @id @default(autoincrement())
   entityType String
@@ -1489,14 +1257,14 @@ model PendingWorldStateChange {
 }
 
 model NPCPromotionCandidate {
-  id                BigInt       @id @default(autoincrement())
-  campaignId        String       @db.Uuid
-  campaignNpcId     String       @db.Uuid
-  name              String
-  role              String?
-  personality       String?
-  stats             Json         @default("{}")
-  dialogSample      String?
+  id            BigInt       @id @default(autoincrement())
+  campaignId    String       @db.Uuid
+  npcId         String       @db.Uuid
+  name          String
+  role          String?
+  personality   String?
+  stats         Json         @default("{}")
+  dialogSample  String?
   smallModelVerdict String?
   status            ReviewStatus @default(pending)
   reviewedBy        String?      @db.Uuid
@@ -1506,28 +1274,22 @@ model NPCPromotionCandidate {
   updatedAt         DateTime     @updatedAt @db.Timestamptz
 
   campaign Campaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  npc      Npc      @relation(fields: [npcId], references: [id], onDelete: Cascade)
 
-  @@unique([campaignId, campaignNpcId])
+  @@unique([campaignId, npcId])
   @@index([status, createdAt])
 }
 
-// F5b — source is a CampaignLocation today (the only kind of non-canonical
-// location after F5b). `sourceLocationKind` exists for symmetry with other
-// polymorphic refs and to keep us future-proof if we ever promote canonical
-// rows for a different reason. No DB FK — source resolved app-side. After
-// destructive promotion the source CampaignLocation row is DELETED, so this
-// candidate is moot post-approval (the route deletes it as part of approve).
 model LocationPromotionCandidate {
-  id                 BigInt       @id @default(autoincrement())
-  campaignId         String       @db.Uuid
-  sourceLocationKind String       @default("campaign")
-  sourceLocationId   String       @db.Uuid
-  canonicalName      String
-  displayName        String?
-  locationType       String?
-  region             String?
-  description        String?
-  stats              Json         @default("{}")
+  id               BigInt       @id @default(autoincrement())
+  campaignId       String       @db.Uuid
+  sourceLocationId String       @db.Uuid
+  canonicalName    String
+  displayName      String?
+  locationType     String?
+  region           String?
+  description      String?
+  stats            Json         @default("{}")
   smallModelVerdict  String?
   status             ReviewStatus @default(pending)
   reviewedBy         String?      @db.Uuid
@@ -1536,9 +1298,10 @@ model LocationPromotionCandidate {
   createdAt          DateTime     @default(now()) @db.Timestamptz
   updatedAt          DateTime     @updatedAt @db.Timestamptz
 
-  campaign Campaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  campaign       Campaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  sourceLocation Location @relation("promotionSource", fields: [sourceLocationId], references: [id], onDelete: Cascade)
 
-  @@unique([campaignId, sourceLocationKind, sourceLocationId])
+  @@unique([campaignId, sourceLocationId])
   @@index([status, createdAt])
 }
 
@@ -1564,7 +1327,6 @@ model MultiplayerSession {
   @@index([campaignId])
 }
 
-// F1 — replaces MultiplayerSession.players (JSON) + characterIds[] (ObjectId array)
 model MultiplayerSessionPlayer {
   sessionId   String   @db.Uuid
   odId        String
@@ -1654,7 +1416,7 @@ model Wanted3D {
   @@map("3dwanted")
 }
 
-// ── Map Studio (dev tool — no auth, pseudo-user) ────────────────────
+// ── Map Studio ──────────────────────────────────────────────────────
 
 model TilesetPack {
   id              String   @id @default(uuid(7)) @db.Uuid
@@ -1790,8 +1552,7 @@ model MapActor {
 }
 
 // ═══════════════════════════════════════════════════════════════════════
-// Topic History — stores seed text + AI-generated topic pairs from the
-// campaign creator "ułóż temat z wpisanego tekstu" feature.
+// Topic History
 // ═══════════════════════════════════════════════════════════════════════
 
 model TopicHistory {
@@ -1809,10 +1570,7 @@ model TopicHistory {
 }
 
 // ═══════════════════════════════════════════════════════════════════════
-// Server Settings — singleton row for global configuration (admin-only).
-// voiceConfig stores per-provider voice pools (ElevenLabs + XTTS).
-// sceneModelConfig stores admin-set enablement + per-scene pricing for
-// TTS and image providers, surfaced to users in the "Koszt sceny" UI.
+// Server Settings
 // ═══════════════════════════════════════════════════════════════════════
 
 model ServerSettings {
@@ -1827,8 +1585,7 @@ model ServerSettings {
 }
 
 // ═══════════════════════════════════════════════════════════════════════
-// LLM call log — every backend AI call is recorded here for the sidebar
-// observability panel. Capped per user via periodic cleanup.
+// LLM Call Log
 // ═══════════════════════════════════════════════════════════════════════
 
 model LlmCallLog {
@@ -1852,8 +1609,7 @@ model LlmCallLog {
 }
 
 // ═══════════════════════════════════════════════════════════════════════
-// System metadata — generic key-value store for infra markers (e.g. seed
-// version). One row per key, no relations.
+// System metadata
 // ═══════════════════════════════════════════════════════════════════════
 
 model SystemMeta {
@@ -1863,8 +1619,7 @@ model SystemMeta {
 }
 
 // ═══════════════════════════════════════════════════════════════════════
-// Global spell catalog — player-invented spells visible to all campaigns
-// (characters still need to learn them individually).
+// Global spell catalog
 // ═══════════════════════════════════════════════════════════════════════
 
 model CustomSpell {
@@ -1886,9 +1641,7 @@ model CustomSpell {
 }
 
 // ═══════════════════════════════════════════════════════════════════════
-// Global item definition registry — tracks item definitions born in
-// campaigns. Characters hold their own inventory stacks; this table is
-// the canonical catalog of "item templates" that the world knows about.
+// Global item definitions
 // ═══════════════════════════════════════════════════════════════════════
 
 model WorldItemDefinition {
@@ -1908,8 +1661,7 @@ model WorldItemDefinition {
 }
 
 // ═══════════════════════════════════════════════════════════════════════
-// Global spell images — once generated for a spell name, shared across
-// all players and campaigns.
+// Spell Images
 // ═══════════════════════════════════════════════════════════════════════
 
 model SpellImage {
@@ -1920,23 +1672,21 @@ model SpellImage {
 }
 
 // ═══════════════════════════════════════════════════════════════════════
-// Bulk location-sprite generation jobs — admin-only background pipeline
-// that iterates over graph nodes and generates PixelLab sprites for
-// those without a nodeImageUrl.
+// Location Sprite Jobs
 // ═══════════════════════════════════════════════════════════════════════
 
 model LocationSpriteJob {
-  id          String   @id @default(uuid(7)) @db.Uuid
-  status      String   @default("pending") // pending | running | completed | cancelled | failed
-  total       Int      @default(0)
-  done        Int      @default(0)
-  failed      Int      @default(0)
-  concurrency Int      @default(3)
-  createdBy   String?  @db.Uuid
+  id          String    @id @default(uuid(7)) @db.Uuid
+  status      String    @default("pending")
+  total       Int       @default(0)
+  done        Int       @default(0)
+  failed      Int       @default(0)
+  concurrency Int       @default(3)
+  createdBy   String?   @db.Uuid
   startedAt   DateTime? @db.Timestamptz
   finishedAt  DateTime? @db.Timestamptz
-  createdAt   DateTime @default(now()) @db.Timestamptz
-  updatedAt   DateTime @updatedAt @db.Timestamptz
+  createdAt   DateTime  @default(now()) @db.Timestamptz
+  updatedAt   DateTime  @updatedAt @db.Timestamptz
 
   items LocationSpriteJobItem[]
 
@@ -1947,9 +1697,8 @@ model LocationSpriteJobItem {
   id           String   @id @default(uuid(7)) @db.Uuid
   jobId        String   @db.Uuid
   job          LocationSpriteJob @relation(fields: [jobId], references: [id], onDelete: Cascade)
-  nodeKind     String   // world | campaign
-  nodeId       String   @db.Uuid
-  status       String   @default("pending") // pending | running | done | failed
+  locationId   String   @db.Uuid
+  status       String   @default("pending")
   attempts     Int      @default(0)
   error        String?
   resultingUrl String?
@@ -1957,5 +1706,5 @@ model LocationSpriteJobItem {
   updatedAt    DateTime @updatedAt @db.Timestamptz
 
   @@index([jobId, status])
-  @@unique([jobId, nodeKind, nodeId])
+  @@unique([jobId, locationId])
 }
