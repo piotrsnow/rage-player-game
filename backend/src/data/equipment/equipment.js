@@ -360,6 +360,11 @@ export const EQUIPMENT = {
     availability: 'common',
     description: 'Pitch-soaked brand; light and improvised club.',
     properties: ['Light source', '1 hour'],
+    attackModes: {
+      melee: { damageComponents: [{ type: 'fizyczne', flat: 1 }, { type: 'ogien', flat: 1 }] },
+      ranged: null,
+      aoe: null,
+    },
   },
   lantern: {
     name: 'Lantern',
@@ -378,6 +383,11 @@ export const EQUIPMENT = {
     availability: 'common',
     description: 'Enough oil for several hours of lantern light.',
     properties: ['Consumable', 'Flammable'],
+    attackModes: {
+      melee: null,
+      ranged: { damageComponents: [{ type: 'ogien', flat: 3 }], range: 5 },
+      aoe: null,
+    },
   },
   candle: {
     name: 'Candle',
@@ -432,6 +442,11 @@ export const EQUIPMENT = {
     availability: 'common',
     description: 'Iron bar for prying doors and crates.',
     properties: ['Tool', 'Improvised weapon'],
+    attackModes: {
+      melee: { damageComponents: [{ type: 'fizyczne', formula: 'str', bonus: 1 }], qualities: ['Improvised'] },
+      ranged: null,
+      aoe: null,
+    },
   },
   hammer: {
     name: 'Hammer',

@@ -19,6 +19,7 @@ import {
   inferArmorDR,
   evaluateComponent,
 } from '../../shared/domain/damageTypes.js';
+import { inferAttackModesFromLegacy } from '../../shared/domain/attackModes.js';
 
 // Crit-triggered effects — applied when a critical hit lands (roll=1)
 const CRIT_EFFECTS = [
@@ -505,7 +506,11 @@ function getWeaponSkillName(actor) {
   const mainWeapon = getMainWeapon(actor);
   const weaponInfo = getWeaponData(mainWeapon);
   if (!weaponInfo) return WEAPON_SKILL_MAP.unarmed;
-  if (weaponInfo.group === 'Ranged' || weaponInfo.reach === 'ranged') return WEAPON_SKILL_MAP.ranged;
+  // Ranged detection: group-based or attackModes-based
+  const isRangedWeapon = weaponInfo.group?.startsWith('Ranged')
+    || weaponInfo.reach === 'ranged'
+    || (weaponInfo.attackModes?.ranged && !weaponInfo.attackModes?.melee);
+  if (isRangedWeapon) return WEAPON_SKILL_MAP.ranged;
   if (weaponInfo.twoHanded || weaponInfo.group === 'Two-Handed') return WEAPON_SKILL_MAP.melee_2h;
   return WEAPON_SKILL_MAP.melee_1h;
 }
@@ -572,6 +577,9 @@ function resolveCombatTest(actor, attribute, skillLevel, creativityBonus = 0, th
   return resolveD50Test({ attribute: adjustedAttribute, skillLevel, creativityBonus, threshold, luck: getLuck(actor) });
 }
 
+/**
+ * @deprecated Legacy scalar damage — kept only for NPC/bestiary backward compat.
+ */
 function getWeaponDamage(weaponData, attacker, rarity = 'common') {
   const str = attacker.attributes?.sila ?? 0;
   const dex = attacker.attributes?.zrecznosc ?? 0;
@@ -587,11 +595,23 @@ function getWeaponDamage(weaponData, attacker, rarity = 'common') {
 }
 
 /**
- * Compute typed weapon damage via damageComponents.
+ * Resolve damageComponents for a weapon, preferring attackModes.
+ * For ranged manoeuvres, picks the ranged mode; otherwise melee.
+ */
+function resolveWeaponDamageComponents(weaponData, modeKey = 'melee') {
+  if (weaponData?.attackModes) {
+    const mode = weaponData.attackModes[modeKey] || weaponData.attackModes.melee;
+    if (mode?.damageComponents) return mode.damageComponents;
+  }
+  return inferWeaponDamageComponents(weaponData);
+}
+
+/**
+ * Compute typed weapon damage via attackModes (preferred) or legacy damageComponents.
  * Returns { components: [{ type, amount }], total }.
  */
-function computeWeaponTypedDamage(weaponData, attacker, rarity = 'common') {
-  const components = inferWeaponDamageComponents(weaponData);
+function computeWeaponTypedDamage(weaponData, attacker, rarity = 'common', modeKey = 'melee') {
+  const components = resolveWeaponDamageComponents(weaponData, modeKey);
   const scale = RARITY_BONUS_SCALE[rarity] || 1;
   const attrs = attacker.attributes || {};
   const resolved = components.map((c) => {
@@ -1328,14 +1348,27 @@ export function resolveManoeuvre(combat, actorId, manoeuvreKey, targetId, option
       if (spellType === 'heal') {
         // Heal — auto-redirect to self if target is an enemy
         const healTarget = (target.type === 'enemy') ? actor : target;
-        const healComps = spellStats.healComponents;
         let healAmount;
-        if (healComps?.length) {
-          healAmount = healComps.reduce((s, c) => s + evaluateComponent(c, actor.attributes || {}), 0);
-        } else if (spellStats.heal) {
-          healAmount = Math.max(1, Math.floor(inteligencja * spellStats.heal.intScale) + spellStats.heal.flat);
-        } else {
-          healAmount = Math.max(1, Math.floor(inteligencja / 3) + 2);
+        // New: supportModes
+        const supportModes = spellStats.supportModes;
+        if (supportModes) {
+          const healMode = supportModes.melee || supportModes.ranged || supportModes.aoe;
+          if (healMode?.healComponents?.length) {
+            healAmount = healMode.healComponents.reduce(
+              (s, c) => s + evaluateComponent(c, actor.attributes || {}), 0,
+            );
+          }
+        }
+        // Legacy fallbacks
+        if (healAmount == null) {
+          const healComps = spellStats.healComponents;
+          if (healComps?.length) {
+            healAmount = healComps.reduce((s, c) => s + evaluateComponent(c, actor.attributes || {}), 0);
+          } else if (spellStats.heal) {
+            healAmount = Math.max(1, Math.floor(inteligencja * spellStats.heal.intScale) + spellStats.heal.flat);
+          } else {
+            healAmount = Math.max(1, Math.floor(inteligencja / 3) + 2);
+          }
         }
         healAmount = Math.max(1, healAmount);
         const before = healTarget.wounds;
@@ -1373,17 +1406,26 @@ export function resolveManoeuvre(combat, actorId, manoeuvreKey, targetId, option
         result.targetDefeated = false;
 
       } else {
-        // Offensive — typed damage
-        const dmgComps = spellStats?.damageComponents;
+        // Offensive — typed damage via attackModes (preferred) or legacy
         let typedRaw;
-        if (dmgComps?.length) {
-          typedRaw = computeTypedDamage(dmgComps, actor.attributes || {});
-        } else if (spellStats?.damage) {
-          const baseDmg = Math.max(1, Math.floor(inteligencja * spellStats.damage.intScale) + spellStats.damage.flat);
-          typedRaw = { components: [{ type: 'magiczne', amount: baseDmg }], total: baseDmg };
-        } else {
-          const fallback = Math.max(1, Math.floor(inteligencja / 2));
-          typedRaw = { components: [{ type: 'magiczne', amount: fallback }], total: fallback };
+        const spellAttackModes = spellStats?.attackModes;
+        if (spellAttackModes) {
+          const spellMode = spellAttackModes.ranged || spellAttackModes.melee || spellAttackModes.aoe;
+          if (spellMode?.damageComponents?.length) {
+            typedRaw = computeTypedDamage(spellMode.damageComponents, actor.attributes || {});
+          }
+        }
+        if (!typedRaw) {
+          const dmgComps = spellStats?.damageComponents;
+          if (dmgComps?.length) {
+            typedRaw = computeTypedDamage(dmgComps, actor.attributes || {});
+          } else if (spellStats?.damage) {
+            const baseDmg = Math.max(1, Math.floor(inteligencja * spellStats.damage.intScale) + spellStats.damage.flat);
+            typedRaw = { components: [{ type: 'magiczne', amount: baseDmg }], total: baseDmg };
+          } else {
+            const fallback = Math.max(1, Math.floor(inteligencja / 2));
+            typedRaw = { components: [{ type: 'magiczne', amount: fallback }], total: fallback };
+          }
         }
 
         // Apply resistances and target DR for magic
@@ -1579,8 +1621,9 @@ export function resolveManoeuvre(combat, actorId, manoeuvreKey, targetId, option
         ? getEquippedItemRarity(actor, 'mainHand')
         : getEnemyWeaponRarity(actor);
 
-      // Typed damage computation
-      const typedRaw = computeWeaponTypedDamage(weaponData, actor, weaponRarity);
+      // Typed damage computation — pick mode based on attack type
+      const modeKey = isRanged ? 'ranged' : 'melee';
+      const typedRaw = computeWeaponTypedDamage(weaponData, actor, weaponRarity, modeKey);
       const marginBonus = Math.max(0, Math.floor(test.margin / 5));
       // Add margin bonus to first (primary) damage component
       if (typedRaw.components.length > 0) {

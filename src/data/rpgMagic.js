@@ -1,6 +1,13 @@
 // RPGon — Magic System Data
 // Based on RPG_SYSTEM.md §7
 
+import { evaluateComponent as _evalComp } from '../../shared/domain/damageTypes.js';
+
+// Lazy accessor to avoid circular-dep issues in test mocks
+function _getDamageTypesModule() {
+  return { evaluateComponent: _evalComp };
+}
+
 // ── SCROLL MECHANICS ──
 
 export const SCROLL_BASE_CHANCE = 0.25; // 25% base chance to learn a spell from a scroll
@@ -25,13 +32,16 @@ export const SPELL_TREES = {
         icon: 'local_fire_department',
         level: 1,
         manaCost: 1,
-        unlockCondition: null, // starting spell
+        unlockCondition: null,
         unlockUses: 0,
         description: 'Tworzy maly impuls ognia do zapalania, aktywacji prostych obiektow albo zadania lekkich obrazen',
         combatStats: {
           type: 'offensive',
-          damage: { intScale: 0.25, flat: 0 },
-          damageComponents: [{ type: 'ogien', intScale: 0.25, flat: 0 }],
+          attackModes: {
+            melee: { damageComponents: [{ type: 'ogien', intScale: 0.25, flat: 0 }] },
+            ranged: null,
+            aoe: null,
+          },
         },
       },
       {
@@ -40,12 +50,15 @@ export const SPELL_TREES = {
         level: 2,
         manaCost: 2,
         unlockCondition: 'Iskra',
-        unlockUses: 10, // 2 * (5 * 1)
+        unlockUses: 10,
         description: 'Wystrzeliwuje skupiony pocisk ognia w jeden cel',
         combatStats: {
           type: 'offensive',
-          damage: { intScale: 0.5, flat: 2 },
-          damageComponents: [{ type: 'ogien', intScale: 0.5, flat: 2 }],
+          attackModes: {
+            melee: { damageComponents: [{ type: 'ogien', intScale: 0.25, flat: 1 }] },
+            ranged: { damageComponents: [{ type: 'ogien', intScale: 0.5, flat: 2 }], range: 10 },
+            aoe: null,
+          },
         },
       },
       {
@@ -54,12 +67,15 @@ export const SPELL_TREES = {
         level: 3,
         manaCost: 4,
         unlockCondition: 'Ognisty Pocisk',
-        unlockUses: 10, // 5 * 2
+        unlockUses: 10,
         description: 'Tworzy wybuch ognia raniacy wielu przeciwnikow na obszarze',
         combatStats: {
           type: 'offensive',
-          damage: { intScale: 0.5, flat: 4 },
-          damageComponents: [{ type: 'ogien', intScale: 0.5, flat: 4 }],
+          attackModes: {
+            melee: { damageComponents: [{ type: 'ogien', intScale: 0.25, flat: 1 }] },
+            ranged: { damageComponents: [{ type: 'ogien', intScale: 0.5, flat: 2 }], range: 10 },
+            aoe: { damageComponents: [{ type: 'ogien', intScale: 0.5, flat: 4 }], range: 10, aoeShape: 'radius', aoeSize: 2 },
+          },
         },
       },
     ],
@@ -81,8 +97,11 @@ export const SPELL_TREES = {
         description: 'Uderza pojedynczy cel silnym wyladowaniem',
         combatStats: {
           type: 'offensive',
-          damage: { intScale: 0.75, flat: 0 },
-          damageComponents: [{ type: 'blyskawica', intScale: 0.75, flat: 0 }],
+          attackModes: {
+            melee: { damageComponents: [{ type: 'blyskawica', intScale: 0.5, flat: 0 }] },
+            ranged: { damageComponents: [{ type: 'blyskawica', intScale: 0.75, flat: 0 }], range: 8 },
+            aoe: null,
+          },
         },
       },
       {
@@ -91,12 +110,15 @@ export const SPELL_TREES = {
         level: 2,
         manaCost: 5,
         unlockCondition: 'Piorun',
-        unlockUses: 30, // 2 * (5 * 3)
+        unlockUses: 30,
         description: 'Wyladowanie przeskakuje miedzy kilkoma przeciwnikami',
         combatStats: {
           type: 'offensive',
-          damage: { intScale: 0.5, flat: 3 },
-          damageComponents: [{ type: 'blyskawica', intScale: 0.5, flat: 3 }],
+          attackModes: {
+            melee: null,
+            ranged: { damageComponents: [{ type: 'blyskawica', intScale: 0.5, flat: 3 }], range: 10 },
+            aoe: { damageComponents: [{ type: 'blyskawica', intScale: 0.5, flat: 3 }], range: 10, aoeShape: 'line', aoeSize: 3 },
+          },
         },
       },
     ],
@@ -176,8 +198,11 @@ export const SPELL_TREES = {
         description: 'Zadaje obrazenia od zimna i lekko spowalnia cel',
         combatStats: {
           type: 'offensive',
-          damage: { intScale: 0.33, flat: 1 },
-          damageComponents: [{ type: 'lod', intScale: 0.33, flat: 1 }],
+          attackModes: {
+            melee: { damageComponents: [{ type: 'lod', intScale: 0.33, flat: 1 }] },
+            ranged: null,
+            aoe: null,
+          },
         },
       },
       {
@@ -200,8 +225,11 @@ export const SPELL_TREES = {
         description: 'Atakuje obszar lodem i mrozem, spowalniajac wielu przeciwnikow',
         combatStats: {
           type: 'offensive',
-          damage: { intScale: 0.5, flat: 2 },
-          damageComponents: [{ type: 'lod', intScale: 0.5, flat: 2 }],
+          attackModes: {
+            melee: null,
+            ranged: { damageComponents: [{ type: 'lod', intScale: 0.33, flat: 1 }], range: 8 },
+            aoe: { damageComponents: [{ type: 'lod', intScale: 0.5, flat: 2 }], range: 8, aoeShape: 'radius', aoeSize: 3 },
+          },
         },
       },
     ],
@@ -223,8 +251,11 @@ export const SPELL_TREES = {
         description: 'Przywraca niewielka ilosc zdrowia jednej postaci',
         combatStats: {
           type: 'heal',
-          heal: { intScale: 0.33, flat: 2 },
-          healComponents: [{ type: 'magiczne', intScale: 0.33, flat: 2 }],
+          supportModes: {
+            melee: { healComponents: [{ type: 'magiczne', intScale: 0.33, flat: 2 }] },
+            ranged: null,
+            aoe: null,
+          },
         },
       },
       {
@@ -237,7 +268,11 @@ export const SPELL_TREES = {
         description: 'Leczy mocniej i moze przywracac zdrowie przez kilka tur lub chwil',
         combatStats: {
           type: 'heal',
-          healComponents: [{ type: 'magiczne', intScale: 0.25, flat: 1 }],
+          supportModes: {
+            melee: { healComponents: [{ type: 'magiczne', intScale: 0.25, flat: 1 }] },
+            ranged: null,
+            aoe: null,
+          },
         },
       },
       {
@@ -250,7 +285,11 @@ export const SPELL_TREES = {
         description: 'Ratuje swiezo powalona postac przed smiercia albo przywraca ja do stanu krytycznego',
         combatStats: {
           type: 'heal',
-          healComponents: [{ type: 'magiczne', intScale: 0.5, flat: 5 }],
+          supportModes: {
+            melee: { healComponents: [{ type: 'magiczne', intScale: 0.5, flat: 5 }] },
+            ranged: null,
+            aoe: null,
+          },
         },
       },
     ],
@@ -716,22 +755,56 @@ export function getAvailableSpells(knownTrees = [], usageCounts = {}) {
 
 /**
  * Compute spell damage for a given inteligencja value.
+ * Reads from attackModes (preferred ranged mode, then first available).
  * Returns 0 for spells without a damage formula.
  */
 export function computeSpellDamage(spellName, inteligencja) {
   const found = findSpell(spellName);
-  const dmg = found?.spell?.combatStats?.damage;
+  const cs = found?.spell?.combatStats;
+  if (!cs) return 0;
+
+  const modes = cs.attackModes;
+  if (modes) {
+    const mode = modes.ranged || modes.melee || modes.aoe;
+    if (mode?.damageComponents?.length) {
+      const attrs = { inteligencja };
+      const { evaluateComponent } = _getDamageTypesModule();
+      return Math.max(1, mode.damageComponents.reduce(
+        (sum, c) => sum + evaluateComponent(c, attrs), 0,
+      ));
+    }
+  }
+
+  // Legacy fallback
+  const dmg = cs.damage;
   if (!dmg) return 0;
   return Math.max(1, Math.floor(inteligencja * dmg.intScale) + dmg.flat);
 }
 
 /**
  * Compute spell heal for a given inteligencja value.
+ * Reads from supportModes (preferred melee mode, then first available).
  * Returns 0 for spells without a heal formula.
  */
 export function computeSpellHeal(spellName, inteligencja) {
   const found = findSpell(spellName);
-  const h = found?.spell?.combatStats?.heal;
+  const cs = found?.spell?.combatStats;
+  if (!cs) return 0;
+
+  const modes = cs.supportModes;
+  if (modes) {
+    const mode = modes.melee || modes.ranged || modes.aoe;
+    if (mode?.healComponents?.length) {
+      const attrs = { inteligencja };
+      const { evaluateComponent } = _getDamageTypesModule();
+      return Math.max(1, mode.healComponents.reduce(
+        (sum, c) => sum + evaluateComponent(c, attrs), 0,
+      ));
+    }
+  }
+
+  // Legacy fallback
+  const h = cs.heal;
   if (!h) return 0;
   return Math.max(1, Math.floor(inteligencja * h.intScale) + h.flat);
 }
@@ -747,6 +820,7 @@ function _formatScale(scale) {
 
 /**
  * Build a human-readable stat label for a spell's combat stats.
+ * Reads from attackModes/supportModes, with legacy fallbacks.
  * Includes DoT/HoT info from SPELL_EFFECTS when present.
  * Returns null for spells with no displayable stats.
  */
@@ -761,6 +835,23 @@ export function formatSpellDamageLabel(spell) {
   const hotDuration = fx?.effect?.duration?.remaining;
 
   if (cs.type === 'offensive') {
+    // New: attackModes — show best mode's damage
+    if (cs.attackModes) {
+      const mode = cs.attackModes.ranged || cs.attackModes.melee || cs.attackModes.aoe;
+      if (mode?.damageComponents?.length) {
+        const parts = mode.damageComponents.map((c) => {
+          const typeName = _DAMAGE_TYPE_LABELS[c.type] || c.type;
+          const formula = c.intScale ? _formatScale(c.intScale) : '';
+          const flat = (c.flat || 0) > 0 ? (formula ? ` + ${c.flat}` : `${c.flat}`) : '';
+          const dice = c.dice ? (formula || flat ? ` + ${c.dice}` : c.dice) : '';
+          return `${typeName}: ${formula}${flat}${dice} obrz.`;
+        });
+        let label = parts.join(' | ');
+        if (dotInfo) label += ` | DoT: ${dotInfo}/rd (${dotDuration} rd)`;
+        return label;
+      }
+    }
+    // Legacy fallbacks
     if (cs.damageComponents?.length) {
       const parts = cs.damageComponents.map((c) => {
         const typeName = _DAMAGE_TYPE_LABELS[c.type] || c.type;
@@ -783,6 +874,19 @@ export function formatSpellDamageLabel(spell) {
   }
 
   if (cs.type === 'heal') {
+    // New: supportModes
+    if (cs.supportModes) {
+      const mode = cs.supportModes.melee || cs.supportModes.ranged || cs.supportModes.aoe;
+      if (mode?.healComponents?.length) {
+        const c = mode.healComponents[0];
+        const formula = c.intScale ? _formatScale(c.intScale) : '';
+        const flat = (c.flat || 0) > 0 ? (formula ? ` + ${c.flat}` : `${c.flat}`) : '';
+        let label = `Leczy ${formula}${flat} HP`;
+        if (hotInfo) label += ` | HoT: ${hotInfo}/rd (${hotDuration} rd)`;
+        return label;
+      }
+    }
+    // Legacy fallbacks
     if (cs.healComponents?.length) {
       const c = cs.healComponents[0];
       const formula = c.intScale ? _formatScale(c.intScale) : '';

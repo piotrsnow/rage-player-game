@@ -1,6 +1,7 @@
 import { useTranslation } from 'react-i18next';
 import { apiClient } from '../../../services/apiClient';
 import { gameData } from '../../../services/gameDataService';
+import AttackModesDisplay from '../../shared/AttackModesDisplay';
 import { rarityColors, typeIcons, rarityLabels, rarityBadgeColors } from './constants';
 
 function formatPrice(price, t) {
@@ -10,28 +11,6 @@ function formatPrice(price, t) {
   if (price.silver > 0) parts.push(`${price.silver} ${t('currency.silverShort', 'SK')}`);
   if (price.copper > 0) parts.push(`${price.copper} ${t('currency.copperShort', 'MK')}`);
   return parts.join(' ');
-}
-
-function DamageTypeLabel({ damageType, t }) {
-  if (damageType === 'melee-2h') return t('inventory.damageMelee2h', 'Broń dwuręczna');
-  if (damageType === 'melee-1h') return t('inventory.damageMelee1h', 'Broń jednoręczna');
-  if (damageType === 'ranged-dex') return t('inventory.damageRangedDex', 'Broń dystansowa');
-  if (damageType === 'ranged-str-dex') return t('inventory.damageRangedStrDex', 'Broń miotana');
-  if (damageType === 'ranged-fixed') return t('inventory.damageRangedFixed', 'Broń palna');
-  return null;
-}
-
-function weaponFormulaLabel(combat, t) {
-  const bonus = combat.bonus ?? 0;
-  const bonusStr = bonus !== 0 ? ` + ${bonus}` : '';
-  switch (combat.damageType) {
-    case 'melee-1h':       return `${t('rpgAttributeShort.sila', 'SIŁ')}${bonusStr}`;
-    case 'melee-2h':       return `${t('rpgAttributeShort.sila', 'SIŁ')} ×2${bonusStr}`;
-    case 'ranged-dex':     return `${t('rpgAttributeShort.zrecznosc', 'ZRĘ')}${bonusStr}`;
-    case 'ranged-str-dex': return `${t('rpgAttributeShort.sila', 'SIŁ')} + ${t('rpgAttributeShort.zrecznosc', 'ZRĘ')}${bonusStr}`;
-    case 'ranged-fixed':   return `${combat.fixedDamage ?? 0}`;
-    default:               return `+${bonus}`;
-  }
 }
 
 export default function ItemTooltip({ item }) {
@@ -86,38 +65,20 @@ export default function ItemTooltip({ item }) {
         </div>
       </div>
 
-      {combatSource === 'weapon' && combat && (
-        <div className="mt-2 pt-2 border-t border-outline-variant/15 space-y-1">
-          <div className="flex items-center gap-1.5 text-xs text-on-surface">
-            <span className="material-symbols-outlined text-sm text-error/80">swords</span>
-            <span className="font-label uppercase tracking-wider text-on-surface-variant/60">
-              {t('inventory.damage', 'Obrażenia')}
-            </span>
-            <span className="font-headline text-sm text-error">
-              {weaponFormulaLabel(combat, t)}
-            </span>
-            {combat.twoHanded && (
-              <span className="text-[11px] font-label text-on-surface-variant/50 ml-auto">2H</span>
-            )}
-          </div>
-          {combat.damageType !== 'ranged-fixed' && (
-            <div className="text-[10px] text-on-surface-variant/50 font-label leading-tight">
-              {t('inventory.damageFormulaSuffix', '- WYT celu - Pancerz = finalne obrażenia')}
-            </div>
-          )}
-          <div className="text-[11px] text-on-surface-variant/60 font-label">
-            <DamageTypeLabel damageType={combat.damageType} t={t} />
-            {combat.range && <span> · {t('inventory.range', 'Zasięg')} {combat.range}</span>}
-          </div>
-          {combat.qualities?.length > 0 && (
-            <div className="flex flex-wrap gap-1 pt-1">
-              {combat.qualities.map((q) => (
-                <span key={q} className="text-[10px] px-1.5 py-0.5 bg-error/10 border border-error/20 rounded-sm text-error/90">
-                  {q}
-                </span>
-              ))}
-            </div>
-          )}
+      {combatSource === 'weapon' && combat?.attackModes && (
+        <div className="mt-2 pt-2 border-t border-outline-variant/15">
+          <AttackModesDisplay
+            attackModes={combat.attackModes}
+            qualities={combat.qualities}
+            twoHanded={combat.twoHanded}
+            compact
+          />
+        </div>
+      )}
+
+      {!combatSource && resolved?.attackModes && (
+        <div className="mt-2 pt-2 border-t border-outline-variant/15">
+          <AttackModesDisplay attackModes={resolved.attackModes} compact />
         </div>
       )}
 
