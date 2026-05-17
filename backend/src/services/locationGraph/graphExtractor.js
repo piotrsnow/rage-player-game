@@ -61,12 +61,11 @@ export async function extractGraphUpdate({
   stateChanges,
   campaignId,
   locationId,
-  locationKind,
   provider = 'openai',
   userApiKeys = null,
   timeoutMs,
 }) {
-  const graphContext = await buildExtractionContext(locationId, locationKind, campaignId);
+  const graphContext = await buildExtractionContext(locationId, campaignId);
   if (!graphContext) {
     log.warn({ campaignId }, 'No graph context — skipping extraction');
     return null;

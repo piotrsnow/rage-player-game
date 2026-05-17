@@ -7,7 +7,7 @@ const log = childLogger({ module: 'graphService' });
  * Load outgoing edges from a location. Includes both
  * canonical (campaignId IS NULL) and campaign-scoped edges.
  */
-export async function getOutgoingEdges(locationKind, locationId, { campaignId = null } = {}) {
+export async function getOutgoingEdges(locationId, { campaignId = null } = {}) {
   const where = {
     fromLocationId: locationId,
     isActive: true,
@@ -22,7 +22,7 @@ export async function getOutgoingEdges(locationKind, locationId, { campaignId = 
  * Load the N-hop subgraph from a starting location.
  * Returns { nodes: Map<"world:<id>", row>, edges: LocationEdge[] }.
  */
-export async function loadSubgraph(locationKind, locationId, { campaignId = null, hops = 2 } = {}) {
+export async function loadSubgraph(locationId, { campaignId = null, hops = 2 } = {}) {
   const visited = new Set();
   const frontier = [locationId];
   const allEdges = [];
@@ -127,14 +127,14 @@ export async function updateEdge(edgeId, data) {
  * Look up the traversalCount from the movement edge between two locations.
  * Returns `{ traversalCount, lastTraversedSceneIndex }` or null.
  */
-export async function lookupEdgeFamiliarity(fromKind, fromId, toKind, toId, { campaignId = null } = {}) {
-  if (!fromId || !toId) return null;
+export async function lookupEdgeFamiliarity(fromLocationId, toLocationId, { campaignId = null } = {}) {
+  if (!fromLocationId || !toLocationId) return null;
   const where = {
     isActive: true,
     category: 'movement',
     OR: [
-      { fromLocationId: fromId, toLocationId: toId },
-      { fromLocationId: toId, toLocationId: fromId, bidirectional: true },
+      { fromLocationId, toLocationId },
+      { fromLocationId: toLocationId, toLocationId: fromLocationId, bidirectional: true },
     ],
   };
   if (campaignId) {
@@ -227,7 +227,7 @@ export async function setDungeonState(kind, id, state) {
 /**
  * Find NPCs at a specific location.
  */
-export async function getNpcsAtLocation(locationKind, locationId, campaignId) {
+export async function getNpcsAtLocation(locationId, campaignId) {
   return prisma.npc.findMany({
     where: {
       campaignId,
@@ -262,9 +262,9 @@ export async function loadWorldGraph() {
 /**
  * Load full graph view for a campaign (used by the API endpoint).
  */
-export async function loadCampaignGraph(campaignId, { focusKind, focusId, hops = 2 } = {}) {
-  if (focusKind && focusId) {
-    return loadSubgraph(focusKind, focusId, { campaignId, hops });
+export async function loadCampaignGraph(campaignId, { focusId, hops = 2 } = {}) {
+  if (focusId) {
+    return loadSubgraph(focusId, { campaignId, hops });
   }
   const edges = await prisma.locationEdge.findMany({
     where: {

@@ -6,7 +6,6 @@ import {
   safeValidateTacticalGrid,
 } from '../../../../shared/domain/locationGraph.js';
 import { inferScaleFromType, clampLocationScale } from '../../../../shared/domain/locationGraphLayout.js';
-import { LOCATION_KIND_WORLD, LOCATION_KIND_CAMPAIGN } from '../locationRefs.js';
 import { createEdge, updateEdge } from './graphService.js';
 import { findSimilarNodeImage } from './imageMatcher.js';
 import { childLogger } from '../../lib/logger.js';
@@ -67,13 +66,12 @@ export async function applyGraphUpdate(update, { campaignId }) {
   if (!update) return;
   const applied = { nodes: 0, edges: 0, discoveries: 0, npcMoves: 0 };
 
-  // Resolve location names → (kind, id) for the campaign
   const nameIndex = await buildNameIndex(campaignId);
 
   let npcNames = new Set();
   try { npcNames = await loadCampaignNpcNames(campaignId); } catch { /* permissive */ }
 
-  // 1. Create new nodes (as CampaignLocation)
+  // 1. Create new nodes (as campaign Location)
   for (const node of update.newNodes || []) {
     if (nameIndex.has(normalize(node.name))) continue;
     if (isNpcName(node.name, npcNames)) {
@@ -95,7 +93,6 @@ export async function applyGraphUpdate(update, { campaignId }) {
         locationType: mapNodeType(node.type),
         tags: node.tags || [],
         scale: resolvedScale,
-        parentLocationKind: parentRef?.kind || null,
         parentLocationId: parentRef?.id || null,
       };
       if (node.biome) data.biome = node.biome;
@@ -105,7 +102,7 @@ export async function applyGraphUpdate(update, { campaignId }) {
         if (r.success) data.tacticalGrid = node.tacticalGrid;
       }
       const row = await prisma.location.create({ data });
-      nameIndex.set(slug, { kind: LOCATION_KIND_CAMPAIGN, id: row.id });
+      nameIndex.set(slug, { id: row.id });
       applied.nodes++;
 
       const matchedUrl = await findSimilarNodeImage({
@@ -132,10 +129,8 @@ export async function applyGraphUpdate(update, { campaignId }) {
     if (!EDGE_TYPES[edge.edgeType]) continue;
     try {
       await createEdge({
-        fromKind: from.kind,
-        fromId: from.id,
-        toKind: to.kind,
-        toId: to.id,
+        fromLocationId: from.id,
+        toLocationId: to.id,
         edgeType: edge.edgeType,
         category: edge.category || EDGE_TYPES[edge.edgeType]?.category || 'movement',
         bidirectional: edge.bidirectional ?? true,
@@ -157,8 +152,8 @@ export async function applyGraphUpdate(update, { campaignId }) {
     try {
       const existing = await prisma.locationEdge.findFirst({
         where: {
-          fromKind: from.kind, fromId: from.id,
-          toKind: to.kind, toId: to.id,
+          fromLocationId: from.id,
+          toLocationId: to.id,
           edgeType: entry.edgeType,
           isActive: true,
         },
@@ -176,14 +171,14 @@ export async function applyGraphUpdate(update, { campaignId }) {
     }
   }
 
-  // 4. NPC moves — update CampaignNPC.lastLocation*
+  // 4. NPC moves — update Npc.currentLocationId
   for (const move of update.npcMoves || []) {
     const target = nameIndex.get(normalize(move.toLocationName));
     if (!target) continue;
     try {
       await prisma.npc.updateMany({
         where: { campaignId, name: move.npcName },
-        data: { lastLocationKind: target.kind, lastLocationId: target.id },
+        data: { currentLocationId: target.id },
       });
       applied.npcMoves++;
     } catch (err) {
@@ -196,22 +191,28 @@ export async function applyGraphUpdate(update, { campaignId }) {
 }
 
 /**
- * Build a name → {kind, id} index for all locations visible to a campaign.
+ * Build a name → { id } index for all locations visible to a campaign.
  */
 async function buildNameIndex(campaignId) {
-  const [worldLocs, campaignLocs] = await Promise.all([
-    prisma.location.findMany({ select: { id: true, canonicalName: true, displayName: true } }),
-    prisma.location.findMany({ where: { campaignId }, select: { id: true, name: true, canonicalSlug: true } }),
+  const [canonicalLocs, campaignLocs] = await Promise.all([
+    prisma.location.findMany({
+      where: { campaignId: null },
+      select: { id: true, canonicalName: true, displayName: true },
+    }),
+    prisma.location.findMany({
+      where: { campaignId },
+      select: { id: true, name: true, canonicalSlug: true },
+    }),
   ]);
   const index = new Map();
-  for (const r of worldLocs) {
+  for (const r of canonicalLocs) {
     const key = normalize(r.canonicalName);
-    index.set(key, { kind: LOCATION_KIND_WORLD, id: r.id });
-    if (r.displayName) index.set(normalize(r.displayName), { kind: LOCATION_KIND_WORLD, id: r.id });
+    index.set(key, { id: r.id });
+    if (r.displayName) index.set(normalize(r.displayName), { id: r.id });
   }
   for (const r of campaignLocs) {
-    index.set(normalize(r.name), { kind: LOCATION_KIND_CAMPAIGN, id: r.id });
-    if (r.canonicalSlug) index.set(r.canonicalSlug, { kind: LOCATION_KIND_CAMPAIGN, id: r.id });
+    index.set(normalize(r.name), { id: r.id });
+    if (r.canonicalSlug) index.set(r.canonicalSlug, { id: r.id });
   }
   return index;
 }
@@ -239,9 +240,8 @@ function mapNodeType(type) {
 }
 
 async function resolveNodeScale(ref) {
-  if (!ref?.kind || !ref?.id) return null;
-  const model = ref.kind === LOCATION_KIND_WORLD ? 'worldLocation' : 'campaignLocation';
-  const row = await prisma[model].findUnique({ where: { id: ref.id }, select: { scale: true } });
+  if (!ref?.id) return null;
+  const row = await prisma.location.findUnique({ where: { id: ref.id }, select: { scale: true } });
   return row?.scale ?? null;
 }
 
@@ -258,8 +258,6 @@ function resolveChildScale(aiScale, nodeType, parentScale) {
 }
 
 // ── Campaign graph consistency report ────────────────────────────────
-//
-// Returns { errors: [], warnings: [], info: [] } with structured entries.
 
 /**
  * Run a full consistency check for a campaign's location graph.
@@ -268,70 +266,67 @@ function resolveChildScale(aiScale, nodeType, parentScale) {
 export async function runGraphConsistencyCheck(campaignId) {
   const report = { errors: [], warnings: [], info: [] };
 
-  const [edges, npcs, worldLocs, campaignLocs] = await Promise.all([
+  const [edges, npcs, locations] = await Promise.all([
     prisma.locationEdge.findMany({
       where: { isActive: true, OR: [{ campaignId: null }, { campaignId }] },
-      select: { id: true, fromKind: true, fromId: true, toKind: true, toId: true, edgeType: true, category: true, bidirectional: true },
+      select: { id: true, fromLocationId: true, toLocationId: true, edgeType: true, category: true, bidirectional: true },
     }),
     prisma.npc.findMany({
       where: { campaignId },
-      select: { id: true, name: true, lastLocationKind: true, lastLocationId: true },
+      select: { id: true, name: true, currentLocationId: true },
     }),
-    prisma.location.findMany({ select: { id: true } }),
-    prisma.location.findMany({ where: { campaignId }, select: { id: true } }),
+    prisma.location.findMany({
+      where: { OR: [{ campaignId: null }, { campaignId }] },
+      select: { id: true },
+    }),
   ]);
 
-  const validNodes = new Set();
-  for (const r of worldLocs) validNodes.add(`${LOCATION_KIND_WORLD}:${r.id}`);
-  for (const r of campaignLocs) validNodes.add(`${LOCATION_KIND_CAMPAIGN}:${r.id}`);
+  const validNodeIds = new Set(locations.map((r) => r.id));
 
   // Check: NPCs at non-existent/deactivated locations
   for (const npc of npcs) {
-    if (!npc.lastLocationKind || !npc.lastLocationId) continue;
-    const key = `${npc.lastLocationKind}:${npc.lastLocationId}`;
-    if (!validNodes.has(key)) {
+    if (!npc.currentLocationId) continue;
+    if (!validNodeIds.has(npc.currentLocationId)) {
       report.errors.push({
         type: 'npc_orphan_location',
-        msg: `NPC "${npc.name}" points to non-existent location ${key}`,
-        data: { npcId: npc.id, npcName: npc.name, locationKey: key },
+        msg: `NPC "${npc.name}" points to non-existent location ${npc.currentLocationId}`,
+        data: { npcId: npc.id, npcName: npc.name, locationId: npc.currentLocationId },
       });
     }
   }
 
   // Check: orphan nodes (no edges at all)
-  const connectedNodes = new Set();
+  const connectedNodeIds = new Set();
   for (const e of edges) {
-    connectedNodes.add(`${e.fromKind}:${e.fromId}`);
-    connectedNodes.add(`${e.toKind}:${e.toId}`);
+    connectedNodeIds.add(e.fromLocationId);
+    connectedNodeIds.add(e.toLocationId);
   }
-  for (const key of validNodes) {
-    if (!connectedNodes.has(key)) {
+  for (const id of validNodeIds) {
+    if (!connectedNodeIds.has(id)) {
       report.info.push({
         type: 'orphan_node',
-        msg: `Location ${key} has no edges`,
-        data: { locationKey: key },
+        msg: `Location ${id} has no edges`,
+        data: { locationId: id },
       });
     }
   }
 
   // Check: one-directional movement edges that should likely be bidirectional
-  const movementEdgeKeys = new Map();
   for (const e of edges) {
     if (e.category !== 'movement') continue;
-    const fwd = `${e.fromKind}:${e.fromId}→${e.toKind}:${e.toId}`;
-    const rev = `${e.toKind}:${e.toId}→${e.fromKind}:${e.fromId}`;
-    movementEdgeKeys.set(fwd, e);
+    const fwd = `${e.fromLocationId}→${e.toLocationId}`;
     if (!e.bidirectional) {
       const reverseExists = edges.some(
-        (o) => o.category === 'movement' && o.fromKind === e.toKind && o.fromId === e.toId
-          && o.toKind === e.fromKind && o.toId === e.fromId,
+        (o) => o.category === 'movement'
+          && o.fromLocationId === e.toLocationId
+          && o.toLocationId === e.fromLocationId,
       );
       const shouldBeBidi = ['path_to', 'road_to', 'door_to', 'stairs_to', 'tunnel_to', 'bridge_to', 'ferry_to', 'dangerous_path_to'];
       if (!reverseExists && shouldBeBidi.includes(e.edgeType)) {
         report.warnings.push({
           type: 'unidirectional_movement',
           msg: `Movement edge ${e.edgeType} (${fwd}) is one-way but type suggests bidirectional`,
-          data: { edgeId: e.id, edgeType: e.edgeType, from: `${e.fromKind}:${e.fromId}`, to: `${e.toKind}:${e.toId}` },
+          data: { edgeId: e.id, edgeType: e.edgeType, fromLocationId: e.fromLocationId, toLocationId: e.toLocationId },
         });
       }
     }
@@ -341,8 +336,7 @@ export async function runGraphConsistencyCheck(campaignId) {
   const containsEdges = edges.filter((e) => e.edgeType === 'contains');
   const parentMap = new Map();
   for (const e of containsEdges) {
-    const childKey = `${e.toKind}:${e.toId}`;
-    parentMap.set(childKey, `${e.fromKind}:${e.fromId}`);
+    parentMap.set(e.toLocationId, e.fromLocationId);
   }
   for (const [child, parent] of parentMap) {
     const visited = new Set([child]);
@@ -364,20 +358,18 @@ export async function runGraphConsistencyCheck(campaignId) {
 
   // Check: edges pointing to non-existent nodes
   for (const e of edges) {
-    const fromKey = `${e.fromKind}:${e.fromId}`;
-    const toKey = `${e.toKind}:${e.toId}`;
-    if (!validNodes.has(fromKey)) {
+    if (!validNodeIds.has(e.fromLocationId)) {
       report.warnings.push({
         type: 'edge_dangling_from',
-        msg: `Edge ${e.id} from-node ${fromKey} does not exist`,
-        data: { edgeId: e.id, nodeKey: fromKey },
+        msg: `Edge ${e.id} from-node ${e.fromLocationId} does not exist`,
+        data: { edgeId: e.id, locationId: e.fromLocationId },
       });
     }
-    if (!validNodes.has(toKey)) {
+    if (!validNodeIds.has(e.toLocationId)) {
       report.warnings.push({
         type: 'edge_dangling_to',
-        msg: `Edge ${e.id} to-node ${toKey} does not exist`,
-        data: { edgeId: e.id, nodeKey: toKey },
+        msg: `Edge ${e.id} to-node ${e.toLocationId} does not exist`,
+        data: { edgeId: e.id, locationId: e.toLocationId },
       });
     }
   }

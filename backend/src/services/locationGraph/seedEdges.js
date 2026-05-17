@@ -1,5 +1,4 @@
 import { prisma } from '../../lib/prisma.js';
-import { LOCATION_KIND_WORLD } from '../locationRefs.js';
 import { childLogger } from '../../lib/logger.js';
 
 const log = childLogger({ module: 'seedEdges' });
@@ -13,8 +12,8 @@ export async function ensureContainsEdge(parentId, childId) {
   if (!parentId || !childId) return;
   const existing = await prisma.locationEdge.findFirst({
     where: {
-      fromKind: LOCATION_KIND_WORLD, fromId: parentId,
-      toKind: LOCATION_KIND_WORLD, toId: childId,
+      fromLocationId: parentId,
+      toLocationId: childId,
       edgeType: 'contains', isActive: true,
     },
     select: { id: true },
@@ -22,8 +21,8 @@ export async function ensureContainsEdge(parentId, childId) {
   if (existing) return;
   await prisma.locationEdge.create({
     data: {
-      fromKind: LOCATION_KIND_WORLD, fromId: parentId,
-      toKind: LOCATION_KIND_WORLD, toId: childId,
+      fromLocationId: parentId,
+      toLocationId: childId,
       edgeType: 'contains',
       category: 'structural',
       bidirectional: false,
@@ -70,23 +69,21 @@ async function seedFromRoads() {
 
   const existing = await prisma.locationEdge.findMany({
     where: { createdBy: 'system', category: 'movement' },
-    select: { fromKind: true, fromId: true, toKind: true, toId: true, edgeType: true },
+    select: { fromLocationId: true, toLocationId: true, edgeType: true },
   });
   const existingKeys = new Set(
-    existing.map((e) => `${e.fromKind}:${e.fromId}→${e.toKind}:${e.toId}:${e.edgeType}`),
+    existing.map((e) => `${e.fromLocationId}→${e.toLocationId}:${e.edgeType}`),
   );
 
   const toCreate = [];
   for (const road of roads) {
     const edgeType = road.terrainType === 'road' ? 'road_to' : 'path_to';
-    const key = `${LOCATION_KIND_WORLD}:${road.fromLocationId}→${LOCATION_KIND_WORLD}:${road.toLocationId}:${edgeType}`;
+    const key = `${road.fromLocationId}→${road.toLocationId}:${edgeType}`;
     if (existingKeys.has(key)) continue;
 
     toCreate.push({
-      fromKind: LOCATION_KIND_WORLD,
-      fromId: road.fromLocationId,
-      toKind: LOCATION_KIND_WORLD,
-      toId: road.toLocationId,
+      fromLocationId: road.fromLocationId,
+      toLocationId: road.toLocationId,
       edgeType,
       category: 'movement',
       bidirectional: true,
@@ -121,9 +118,9 @@ async function seedFromParentHierarchy() {
 
   const existing = await prisma.locationEdge.findMany({
     where: { createdBy: 'system', edgeType: 'contains' },
-    select: { fromId: true, toId: true },
+    select: { fromLocationId: true, toLocationId: true },
   });
-  const existingKeys = new Set(existing.map((e) => `${e.fromId}→${e.toId}`));
+  const existingKeys = new Set(existing.map((e) => `${e.fromLocationId}→${e.toLocationId}`));
 
   const toCreate = [];
   for (const loc of locations) {
@@ -132,10 +129,8 @@ async function seedFromParentHierarchy() {
     if (existingKeys.has(key)) continue;
 
     toCreate.push({
-      fromKind: LOCATION_KIND_WORLD,
-      fromId: loc.parentLocationId,
-      toKind: LOCATION_KIND_WORLD,
-      toId: loc.id,
+      fromLocationId: loc.parentLocationId,
+      toLocationId: loc.id,
       edgeType: 'contains',
       category: 'structural',
       bidirectional: false,
