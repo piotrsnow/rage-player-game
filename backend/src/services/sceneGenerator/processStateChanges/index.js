@@ -301,15 +301,14 @@ export async function processStateChanges(campaignId, stateChanges, { prevLoc = 
           if (created) {
             aiNameResolved = true;
             updates = {
-              currentLocationName: created.name,
-              currentLocationKind: LOCATION_KIND_CAMPAIGN,
+              currentLocationName: created.displayName || created.canonicalName || aiName,
               currentLocationId: created.id,
               currentX: created.regionX ?? newRegionX,
               currentY: created.regionY ?? newRegionY,
             };
             log.info(
-              { campaignId, name: created.name, id: created.id, regionX: updates.currentX, regionY: updates.currentY },
-              'currentLocation create-on-miss — new CampaignLocation materialized',
+              { campaignId, name: updates.currentLocationName, id: created.id, regionX: updates.currentX, regionY: updates.currentY },
+              'currentLocation create-on-miss — new campaign Location materialized',
             );
             // Best-effort node image inheritance — same pattern as
             // processSublocationEntry.
@@ -331,7 +330,6 @@ export async function processStateChanges(campaignId, stateChanges, { prevLoc = 
               try {
                 await markLocationDiscovered({
                   userId: ownerUserId,
-                  locationKind: LOCATION_KIND_CAMPAIGN,
                   locationId: created.id,
                   campaignId,
                 });
@@ -343,7 +341,6 @@ export async function processStateChanges(campaignId, stateChanges, { prevLoc = 
             // Fall back to wandering if creation failed.
             updates = {
               currentLocationName: aiName,
-              currentLocationKind: null,
               currentLocationId: null,
               currentX: aiX,
               currentY: aiY,
@@ -353,7 +350,6 @@ export async function processStateChanges(campaignId, stateChanges, { prevLoc = 
         } else if (hasCoords) {
           updates = {
             currentLocationName: aiName,
-            currentLocationKind: null,
             currentLocationId: null,
             currentX: aiX,
             currentY: aiY,
@@ -368,7 +364,6 @@ export async function processStateChanges(campaignId, stateChanges, { prevLoc = 
       } else {
         updates = {
           currentLocationName: null,
-          currentLocationKind: null,
           currentLocationId: null,
           currentX: aiX,
           currentY: aiY,
@@ -378,10 +373,10 @@ export async function processStateChanges(campaignId, stateChanges, { prevLoc = 
       if (updates) {
         await prisma.campaign.update({ where: { id: campaignId }, data: updates });
 
-        if (updates.currentLocationKind && updates.currentLocationId) {
+        if (updates.currentLocationId) {
           await ensureMovementEdge({
             from: currentRef,
-            to: { kind: updates.currentLocationKind, id: updates.currentLocationId },
+            to: updates.currentLocationId,
             sceneIndex,
             campaignId,
           });
@@ -405,7 +400,7 @@ export async function processStateChanges(campaignId, stateChanges, { prevLoc = 
       if (retryResolved) {
         const retryCoords = await lookupLocationByKindId({
           prisma,
-          kind: retryResolved.kind,
+          kind: null,
           id: retryResolved.id,
           select: { regionX: true, regionY: true },
         }).catch(() => null);
@@ -413,7 +408,6 @@ export async function processStateChanges(campaignId, stateChanges, { prevLoc = 
           where: { id: campaignId },
           data: {
             currentLocationName: retryResolved.name,
-            currentLocationKind: retryResolved.kind,
             currentLocationId: retryResolved.id,
             currentX: retryCoords?.regionX ?? null,
             currentY: retryCoords?.regionY ?? null,
@@ -421,12 +415,12 @@ export async function processStateChanges(campaignId, stateChanges, { prevLoc = 
         });
         aiNameResolved = true;
         log.info(
-          { campaignId, name: retryResolved.name, kind: retryResolved.kind },
+          { campaignId, name: retryResolved.name, locId: retryResolved.id },
           'currentLocation resolved on retry (sublocation created by newLocations in same scene)',
         );
         await ensureMovementEdge({
           from: currentRef,
-          to: { kind: retryResolved.kind, id: retryResolved.id },
+          to: retryResolved.id,
           sceneIndex,
           campaignId,
         });
@@ -450,10 +444,9 @@ export async function processStateChanges(campaignId, stateChanges, { prevLoc = 
       let shouldPromote = false;
 
       if (currentRef) {
-        // Normal path: verify parent is in the ancestor chain of current location.
-        const parentKey = `${created.row.parentLocationKind}:${created.row.parentLocationId}`;
+        const parentId = created.row.parentLocationId;
         const ancestors = await walkUpAncestors(currentRef);
-        shouldPromote = ancestors.has(parentKey);
+        shouldPromote = ancestors.has(parentId);
       } else {
         // Wandering: no currentRef — promote unconditionally. The player
         // explicitly walked into this sublocation (AI emitted exactly one).
