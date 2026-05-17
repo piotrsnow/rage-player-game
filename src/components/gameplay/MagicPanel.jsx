@@ -235,7 +235,12 @@ export default function MagicPanel({ character, combat, onCastSpell }) {
                             const healVal = computeSpellHeal(s.name, int);
                             const preview = dmgVal > 0 ? ` (${dmgVal})` : healVal > 0 ? ` (${healVal})` : '';
                             const cs = s.combatStats;
-                            const dmgType = cs?.damageComponents?.[0]?.type || cs?.healComponents?.[0]?.type;
+                            const modes = cs?.attackModes;
+                            const primaryMode = modes?.ranged || modes?.melee || modes?.aoe;
+                            const dmgType = primaryMode?.damageComponents?.[0]?.type
+                              || cs?.supportModes?.heal?.healComponents?.[0]?.type
+                              || cs?.damageComponents?.[0]?.type
+                              || cs?.healComponents?.[0]?.type;
                             const typeDef = dmgType ? DAMAGE_TYPES[dmgType] : null;
                             return (
                               <div className="flex items-center gap-1 text-[8px] text-tertiary/80 leading-tight mt-0.5 font-label tabular-nums">

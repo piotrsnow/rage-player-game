@@ -12,8 +12,22 @@ vi.mock('./gameDataService.js', () => ({
   gameData: {
     getWeaponData: (name) => {
       const weapons = {
-        'Hand Weapon': { damageType: 'melee-1h', bonus: 3, qualities: [], group: 'Melee (Basic)', twoHanded: false, enchantSlots: 1 },
-        'Dagger': { damageType: 'melee-1h', bonus: 2, qualities: ['Fast'], group: 'Melee (Basic)', twoHanded: false, enchantSlots: 0 },
+        'Hand Weapon': {
+          attackModes: {
+            melee: { damageComponents: [{ type: 'fizyczne', formula: 'str', bonus: 3 }] },
+            ranged: null,
+            aoe: null,
+          },
+          qualities: [], group: 'Melee (Basic)', twoHanded: false, enchantSlots: 1,
+        },
+        'Dagger': {
+          attackModes: {
+            melee: { damageComponents: [{ type: 'fizyczne', formula: 'str', bonus: 2 }] },
+            ranged: null,
+            aoe: null,
+          },
+          qualities: ['Fast'], group: 'Melee (Basic)', twoHanded: false, enchantSlots: 0,
+        },
       };
       return weapons[name] || weapons['Hand Weapon'];
     },

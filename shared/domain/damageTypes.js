@@ -275,7 +275,7 @@ export function formatDamageBreakdown(resolvedComponents) {
 
 /**
  * Infer damageComponents from legacy weapon data (pre-typed-damage weapons).
- * Used for backward compatibility when a weapon has no damageComponents field.
+ * @deprecated Use attackModes on weapon data directly. Kept for legacy NPC/bestiary compat.
  */
 export function inferWeaponDamageComponents(weaponData) {
   if (!weaponData) return [{ type: 'fizyczne', formula: 'str', bonus: 3 }];

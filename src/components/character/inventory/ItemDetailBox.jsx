@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { apiClient } from '../../../services/apiClient';
 import { gameData } from '../../../services/gameDataService';
 import { isManaCrystal } from '../../../data/rpgMagic';
+import AttackModesDisplay from '../../shared/AttackModesDisplay';
 import InventoryImage from './InventoryImage';
 import { rarityColors, typeIcons, SLOT_CONFIG, rarityLabels, rarityBadgeColors } from './constants';
 
@@ -13,15 +14,6 @@ function formatPrice(price, t) {
   if (price.silver > 0) parts.push(`${price.silver} ${t('currency.silverShort', 'SK')}`);
   if (price.copper > 0) parts.push(`${price.copper} ${t('currency.copperShort', 'MK')}`);
   return parts.length ? parts.join(' ') : null;
-}
-
-function damageTypeLabel(damageType, t) {
-  if (damageType === 'melee-2h') return t('inventory.damageMelee2h', 'Broń dwuręczna');
-  if (damageType === 'melee-1h') return t('inventory.damageMelee1h', 'Broń jednoręczna');
-  if (damageType === 'ranged-dex') return t('inventory.damageRangedDex', 'Broń dystansowa');
-  if (damageType === 'ranged-str-dex') return t('inventory.damageRangedStrDex', 'Broń miotana');
-  if (damageType === 'ranged-fixed') return t('inventory.damageRangedFixed', 'Broń palna');
-  return null;
 }
 
 function Delta({ value, invert = false, suffix = '', t }) {
@@ -48,59 +40,13 @@ function getResolved(item) {
   return item?.baseType ? gameData.resolveBaseType(item.baseType) : null;
 }
 
-function weaponFormulaLabel(combat, t) {
-  const bonus = combat.bonus ?? 0;
-  const bonusStr = bonus !== 0 ? ` + ${bonus}` : '';
-  switch (combat.damageType) {
-    case 'melee-1h':       return `${t('rpgAttributeShort.sila', 'SIŁ')}${bonusStr}`;
-    case 'melee-2h':       return `${t('rpgAttributeShort.sila', 'SIŁ')} ×2${bonusStr}`;
-    case 'ranged-dex':     return `${t('rpgAttributeShort.zrecznosc', 'ZRĘ')}${bonusStr}`;
-    case 'ranged-str-dex': return `${t('rpgAttributeShort.sila', 'SIŁ')} + ${t('rpgAttributeShort.zrecznosc', 'ZRĘ')}${bonusStr}`;
-    case 'ranged-fixed':   return `${combat.fixedDamage ?? 0}`;
-    default:               return `+${bonus}`;
-  }
-}
-
-function WeaponStats({ combat, compareCombat, t }) {
-  const formula = weaponFormulaLabel(combat, t);
-  const damageDelta = combat.damageType === 'ranged-fixed'
-    ? (compareCombat?.damageType === 'ranged-fixed'
-        ? (combat.fixedDamage ?? 0) - (compareCombat.fixedDamage ?? 0)
-        : null)
-    : (compareCombat ? (combat.bonus ?? 0) - (compareCombat.bonus ?? 0) : null);
-
+function WeaponStats({ combat, t }) {
   return (
-    <div className="space-y-1.5">
-      <div className="flex items-center gap-2">
-        <span className="material-symbols-outlined text-sm text-error/80">swords</span>
-        <span className="text-[10px] font-label uppercase tracking-wider text-on-surface-variant/60">
-          {t('inventory.damage', 'Obrażenia')}
-        </span>
-        <span className="font-headline text-sm text-error">{formula}</span>
-        <Delta value={damageDelta} t={t} />
-        {combat.twoHanded && (
-          <span className="ml-auto text-[9px] font-label text-on-surface-variant/60 uppercase tracking-wider">2H</span>
-        )}
-      </div>
-      {combat.damageType !== 'ranged-fixed' && (
-        <div className="text-[9px] text-on-surface-variant/50 font-label leading-tight">
-          {t('inventory.damageFormulaSuffix', '- WYT celu - Pancerz = finalne obrażenia')}
-        </div>
-      )}
-      <div className="text-[10px] text-on-surface-variant/60 font-label">
-        {damageTypeLabel(combat.damageType, t)}
-        {combat.range && <span> · {t('inventory.range', 'Zasięg')} {combat.range}</span>}
-      </div>
-      {combat.qualities?.length > 0 && (
-        <div className="flex flex-wrap gap-1">
-          {combat.qualities.map((q) => (
-            <span key={q} className="text-[9px] px-1.5 py-0.5 bg-error/10 border border-error/20 rounded-sm text-error/90">
-              {q}
-            </span>
-          ))}
-        </div>
-      )}
-    </div>
+    <AttackModesDisplay
+      attackModes={combat.attackModes}
+      qualities={combat.qualities}
+      twoHanded={combat.twoHanded}
+    />
   );
 }
 
@@ -344,7 +290,7 @@ export default function ItemDetailBox({
 
       {combat && (
         <div className="border-t border-outline-variant/15 pt-3 mt-3">
-          {combatSource === 'weapon' && <WeaponStats combat={combat} compareCombat={compareCombat} t={t} />}
+          {combatSource === 'weapon' && <WeaponStats combat={combat} t={t} />}
           {combatSource === 'armour' && <ArmourStats combat={combat} compareCombat={compareCombat} t={t} />}
           {combatSource === 'shield' && <ShieldStats combat={combat} compareCombat={compareCombat} t={t} />}
           {compareItem && compareCombat && (
@@ -352,6 +298,12 @@ export default function ItemDetailBox({
               {t('inventory.compareWith', 'Porównanie z')}: {compareItem.name}
             </div>
           )}
+        </div>
+      )}
+
+      {!combatSource && resolved?.attackModes && (
+        <div className="border-t border-outline-variant/15 pt-3 mt-3">
+          <AttackModesDisplay attackModes={resolved.attackModes} />
         </div>
       )}
 
