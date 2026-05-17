@@ -31,7 +31,7 @@ const OBJECTIVE_PARAM = {
 
 const QUEST_FIELDS = [
   'questId', 'name', 'type', 'description', 'completionCondition',
-  'questGiverId', 'turnInNpcId', 'locationKind', 'locationId',
+  'questGiverId', 'turnInNpcId', 'locationId',
   'reward', 'status', 'completedAt', 'forcedGiver', 'mutationLog',
 ];
 

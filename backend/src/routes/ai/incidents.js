@@ -61,7 +61,6 @@ export async function incidentRoutes(fastify) {
         select: {
           id: true,
           coreState: true,
-          currentLocationKind: true,
           currentLocationId: true,
           currentLocationName: true,
         },
@@ -215,8 +214,8 @@ export async function incidentRoutes(fastify) {
           let worldCorrectionApplied = false;
           let providenceQueued = false;
           try {
-            const currentRef = (campaign.currentLocationKind && campaign.currentLocationId)
-              ? { kind: campaign.currentLocationKind, id: campaign.currentLocationId, name: campaign.currentLocationName }
+            const currentRef = campaign.currentLocationId
+              ? { id: campaign.currentLocationId, name: campaign.currentLocationName }
               : null;
             await processStateChanges(campaignId, stateChanges, {
               prevLoc: campaign.currentLocationName || null,

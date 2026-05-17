@@ -129,7 +129,6 @@ export async function crudCampaignRoutes(app) {
     const coreState = campaign.coreState || {};
     await reconstructFromNormalized(campaign.id, coreState, {
       currentLocationName: campaign.currentLocationName || null,
-      currentLocationKind: campaign.currentLocationKind || null,
       currentLocationId: campaign.currentLocationId || null,
     });
 
@@ -312,7 +311,6 @@ export async function crudCampaignRoutes(app) {
             where: { id: campaign.id },
             data: {
               currentLocationName: seededStartingLocation,
-              currentLocationKind: seedResult.startingLocationKind || null,
               currentLocationId: seedResult.startingLocationId || null,
             },
           }).catch((err) => log.warn({ err, campaignId: campaign.id }, 'Failed to persist seeded currentLocation'));
@@ -400,9 +398,8 @@ export async function crudCampaignRoutes(app) {
       const resolved = await resolveLocationByName(startSpawn.sublocationName, { campaignId: campaign.id }).catch(() => null);
       await prisma.campaign.update({
         where: { id: campaign.id },
-        data: {
+          data: {
           currentLocationName: startSpawn.sublocationName,
-          currentLocationKind: resolved?.kind || null,
           currentLocationId: resolved?.row?.id || null,
         },
       }).catch((err) => log.warn({ err, campaignId: campaign.id }, 'Failed to override currentLocation for startSpawn'));
@@ -461,13 +458,12 @@ export async function crudCampaignRoutes(app) {
     // startSpawn override's canonical sublocation, or null (LLM-only path).
     const finalStart = await prisma.campaign.findUnique({
       where: { id: campaign.id },
-      select: { currentLocationKind: true, currentLocationId: true },
+      select: { currentLocationId: true },
     }).catch(() => null);
-    if (finalStart?.currentLocationKind && finalStart?.currentLocationId) {
+    if (finalStart?.currentLocationId) {
       await markStartLocationVisible({
         userId: request.user.id,
         campaignId: campaign.id,
-        locationKind: finalStart.currentLocationKind,
         locationId: finalStart.currentLocationId,
       });
     }
@@ -482,16 +478,14 @@ export async function crudCampaignRoutes(app) {
       where: { id: campaign.id },
       select: {
         currentLocationName: true,
-        currentLocationKind: true,
         currentLocationId: true,
       },
     }).catch(() => null);
 
     // NPCs at the start sublocation often only have a string lastLocation from
-    // campaign-gen; backfill kind/id so the field map can match by ref.
+    // campaign-gen; backfill currentLocationId so the field map can match by ref.
     if (
-      freshLocation?.currentLocationKind
-      && freshLocation?.currentLocationId
+      freshLocation?.currentLocationId
       && freshLocation?.currentLocationName
     ) {
       await prisma.npc.updateMany({
@@ -500,15 +494,13 @@ export async function crudCampaignRoutes(app) {
           lastLocation: { equals: freshLocation.currentLocationName, mode: 'insensitive' },
         },
         data: {
-          lastLocationKind: freshLocation.currentLocationKind,
-          lastLocationId: freshLocation.currentLocationId,
+          currentLocationId: freshLocation.currentLocationId,
         },
       }).catch((err) => log.warn({ err: err?.message, campaignId: campaign.id }, 'start NPC location ref backfill failed'));
     }
 
     await reconstructFromNormalized(campaign.id, fullState, {
       currentLocationName: freshLocation?.currentLocationName ?? null,
-      currentLocationKind: freshLocation?.currentLocationKind ?? null,
       currentLocationId: freshLocation?.currentLocationId ?? null,
     });
 
@@ -516,7 +508,6 @@ export async function crudCampaignRoutes(app) {
     return {
       ...campaign,
       currentLocationName: freshLocation?.currentLocationName ?? campaign.currentLocationName,
-      currentLocationKind: freshLocation?.currentLocationKind ?? campaign.currentLocationKind,
       currentLocationId: freshLocation?.currentLocationId ?? campaign.currentLocationId,
       coreState: fullState,
       characterIds,

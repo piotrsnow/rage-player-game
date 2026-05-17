@@ -152,7 +152,6 @@ export async function inventSpellRoutes(fastify) {
           id: true,
           coreState: true,
           currentLocationName: true,
-          currentLocationKind: true,
           currentLocationId: true,
         },
       });
@@ -382,8 +381,8 @@ export async function inventSpellRoutes(fastify) {
 
       if (isNew && codexUpdates) {
         try {
-          const currentRef = (campaign.currentLocationKind && campaign.currentLocationId)
-            ? { kind: campaign.currentLocationKind, id: campaign.currentLocationId, name: campaign.currentLocationName }
+          const currentRef = campaign.currentLocationId
+            ? { id: campaign.currentLocationId, name: campaign.currentLocationName }
             : null;
           await processStateChanges(campaignId, { codexUpdates }, {
             prevLoc: campaign.currentLocationName || null,

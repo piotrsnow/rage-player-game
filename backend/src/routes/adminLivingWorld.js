@@ -200,7 +200,7 @@ export async function adminLivingWorldRoutes(fastify) {
         where: { worldNpcId: id },
         select: {
           id: true, npcId: true, name: true, alive: true, disposition: true,
-          activeGoal: true, lastLocationKind: true, lastLocationId: true,
+          activeGoal: true, currentLocationId: true,
           campaignId: true, interactionCount: true,
           campaign: { select: { id: true, name: true } },
         },
@@ -261,7 +261,7 @@ export async function adminLivingWorldRoutes(fastify) {
     if (region) where.region = region;
     if (campaignId) {
       const discovered = await prisma.discoveredLocation.findMany({
-        where: { campaignId, locationKind: 'world' },
+        where: { campaignId },
         select: { locationId: true },
       });
       where.id = { in: discovered.map((d) => d.locationId) };
@@ -325,10 +325,10 @@ export async function adminLivingWorldRoutes(fastify) {
         take: 50,
       }),
       prisma.discoveredLocation.count({
-        where: { locationKind: 'world', locationId: id },
+        where: { locationId: id },
       }),
       prisma.campaignQuest.findMany({
-        where: { locationKind: 'world', locationId: id },
+        where: { locationId: id },
         include: {
           objectives: { orderBy: { displayOrder: 'asc' } },
           campaign: { select: { id: true, name: true } },
@@ -797,67 +797,39 @@ export async function adminLivingWorldRoutes(fastify) {
       }
     }
 
-    const discoveryWhereOr = [];
-    if (worldIdsAll.length > 0) {
-      discoveryWhereOr.push({
-        locationKind: LOCATION_KIND_WORLD,
-        locationId: { in: worldIdsAll },
-        state: 'visited',
-      });
-    }
-    if (campaignLocIdsAll.length > 0) {
-      discoveryWhereOr.push({
-        locationKind: LOCATION_KIND_CAMPAIGN,
-        locationId: { in: campaignLocIdsAll },
-        state: 'visited',
-      });
-    }
-    const discoveries = discoveryWhereOr.length > 0
+    const allDiscoveryIds = [...worldIdsAll, ...campaignLocIdsAll];
+    const discoveries = allDiscoveryIds.length > 0
       ? await prisma.discoveredLocation.findMany({
-          where: { OR: discoveryWhereOr },
+          where: {
+            locationId: { in: allDiscoveryIds },
+            state: 'visited',
+          },
           include: { campaign: { select: { id: true, name: true } } },
         })
       : [];
+    const worldIdSet = new Set(worldIdsAll);
     for (const d of discoveries) {
-      const compositeKey = `${d.locationKind}:${d.locationId}`;
+      const kind = worldIdSet.has(d.locationId) ? LOCATION_KIND_WORLD : LOCATION_KIND_CAMPAIGN;
+      const compositeKey = `${kind}:${d.locationId}`;
       mergeCampaignRef(compositeKey, d.campaignId, d.campaign?.name ?? '', {
         relation: 'visited',
         discoveredAt: d.discoveredAt,
       });
     }
 
-    const [atWorld, atSandbox] = await Promise.all([
-      worldIdsAll.length > 0
-        ? prisma.campaign.findMany({
-            where: {
-              currentLocationKind: LOCATION_KIND_WORLD,
-              currentLocationId: { in: worldIdsAll },
-            },
-            select: { id: true, name: true, currentLocationId: true },
-          })
-        : [],
-      campaignLocIdsAll.length > 0
-        ? prisma.campaign.findMany({
-            where: {
-              currentLocationKind: LOCATION_KIND_CAMPAIGN,
-              currentLocationId: { in: campaignLocIdsAll },
-            },
-            select: { id: true, name: true, currentLocationId: true },
-          })
-        : [],
-    ]);
+    const atLocations = allDiscoveryIds.length > 0
+      ? await prisma.campaign.findMany({
+          where: {
+            currentLocationId: { in: allDiscoveryIds },
+          },
+          select: { id: true, name: true, currentLocationId: true },
+        })
+      : [];
 
-    for (const c of atWorld) {
+    for (const c of atLocations) {
+      const kind = worldIdSet.has(c.currentLocationId) ? LOCATION_KIND_WORLD : LOCATION_KIND_CAMPAIGN;
       mergeCampaignRef(
-        `${LOCATION_KIND_WORLD}:${c.currentLocationId}`,
-        c.id,
-        c.name,
-        { relation: 'current_here' },
-      );
-    }
-    for (const c of atSandbox) {
-      mergeCampaignRef(
-        `${LOCATION_KIND_CAMPAIGN}:${c.currentLocationId}`,
+        `${kind}:${c.currentLocationId}`,
         c.id,
         c.name,
         { relation: 'current_here' },
@@ -928,10 +900,8 @@ export async function adminLivingWorldRoutes(fastify) {
 
     const edgeList = dedupedEdges.map((e) => ({
       id: e.id,
-      fromKind: e.fromKind,
-      fromId: e.fromId,
-      toKind: e.toKind,
-      toId: e.toId,
+      fromLocationId: e.fromLocationId,
+      toLocationId: e.toLocationId,
       edgeType: e.edgeType,
       category: e.category,
       bidirectional: e.bidirectional,
@@ -945,8 +915,8 @@ export async function adminLivingWorldRoutes(fastify) {
     const factionOverlay = dedupedEdges
       .filter((e) => e.category === 'social' && FACTION_EDGE_TYPES.has(e.edgeType))
       .map((e) => ({
-        locationId: e.fromId,
-        locationKind: e.fromKind,
+        locationId: e.fromLocationId,
+        locationKind: 'world',
         factionId: e.metadata?.factionId || null,
         factionName: e.metadata?.factionName || e.metadata?.factionId || null,
         strength: e.metadata?.strength ?? 50,
@@ -1810,7 +1780,7 @@ export async function adminLivingWorldRoutes(fastify) {
       const { nodes, edges } = await loadCampaignGraph(id);
       const npcs = await prisma.npc.findMany({
         where: { campaignId: id },
-        select: { id: true, name: true, lastLocationKind: true, lastLocationId: true },
+        select: { id: true, name: true, currentLocationId: true },
       });
 
       const nodeList = [];
@@ -1830,10 +1800,8 @@ export async function adminLivingWorldRoutes(fastify) {
 
       const edgeList = edges.map((e) => ({
         id: e.id,
-        fromKind: e.fromKind,
-        fromId: e.fromId,
-        toKind: e.toKind,
-        toId: e.toId,
+        fromLocationId: e.fromLocationId,
+        toLocationId: e.toLocationId,
         edgeType: e.edgeType,
         category: e.category,
         bidirectional: e.bidirectional,
@@ -1853,8 +1821,8 @@ export async function adminLivingWorldRoutes(fastify) {
         npcPositions: npcs.map((n) => ({
           npcId: n.id,
           npcName: n.name,
-          locationKind: n.lastLocationKind,
-          locationId: n.lastLocationId,
+          locationKind: 'world',
+          locationId: n.currentLocationId,
         })),
       });
     } catch (err) {
@@ -1891,7 +1859,7 @@ export async function adminLivingWorldRoutes(fastify) {
       const nameToId = new Map();
       for (const node of nodes) {
         if (node.kind === 'world') {
-          nameToId.set(node.id, { kind: LOCATION_KIND_WORLD, id: node.id });
+          nameToId.set(node.id, { id: node.id });
           continue;
         }
         try {
@@ -1899,7 +1867,7 @@ export async function adminLivingWorldRoutes(fastify) {
             where: { campaignId: id, name: node.name },
           });
           if (existing) {
-            nameToId.set(node.id, { kind: LOCATION_KIND_CAMPAIGN, id: existing.id });
+            nameToId.set(node.id, { id: existing.id });
           } else {
             const row = await prisma.location.create({
               data: {
@@ -1913,7 +1881,7 @@ export async function adminLivingWorldRoutes(fastify) {
                 regionY: node.regionY ?? 0,
               },
             });
-            nameToId.set(node.id, { kind: LOCATION_KIND_CAMPAIGN, id: row.id });
+            nameToId.set(node.id, { id: row.id });
             result.nodesCreated++;
           }
         } catch (err) {
@@ -1923,22 +1891,22 @@ export async function adminLivingWorldRoutes(fastify) {
 
       // Create edges
       for (const edge of edges) {
-        const from = nameToId.get(edge.fromId) || { kind: edge.fromKind, id: edge.fromId };
-        const to = nameToId.get(edge.toId) || { kind: edge.toKind, id: edge.toId };
-        if (!from.id || !to.id) { result.errors.push(`Edge missing endpoint`); continue; }
+        const fromId = nameToId.get(edge.fromId)?.id || edge.fromId;
+        const toId = nameToId.get(edge.toId)?.id || edge.toId;
+        if (!fromId || !toId) { result.errors.push(`Edge missing endpoint`); continue; }
 
         try {
           const exists = await prisma.locationEdge.findFirst({
             where: {
-              fromKind: from.kind, fromId: from.id,
-              toKind: to.kind, toId: to.id,
+              fromLocationId: fromId,
+              toLocationId: toId,
               edgeType: edge.edgeType, isActive: true,
             },
           });
           if (!exists) {
             await createEdge({
-              fromKind: from.kind, fromId: from.id,
-              toKind: to.kind, toId: to.id,
+              fromLocationId: fromId,
+              toLocationId: toId,
               edgeType: edge.edgeType,
               category: edge.category || 'movement',
               bidirectional: edge.bidirectional ?? true,
@@ -1961,7 +1929,7 @@ export async function adminLivingWorldRoutes(fastify) {
         try {
           await prisma.npc.updateMany({
             where: { id: pos.npcId, campaignId: id },
-            data: { lastLocationKind: pos.locationKind || LOCATION_KIND_WORLD, lastLocationId: pos.locationId },
+            data: { currentLocationId: pos.locationId },
           });
           result.npcsMoved++;
         } catch (err) {
@@ -2012,7 +1980,7 @@ export async function adminLivingWorldRoutes(fastify) {
     const needsWorldLocFilter = campaignId && (typesToQuery.includes('WorldLocation'));
     const campaignWorldLocIds = needsWorldLocFilter
       ? (await prisma.discoveredLocation.findMany({
-          where: { campaignId, locationKind: 'world' },
+          where: { campaignId },
           select: { locationId: true },
         })).map((d) => d.locationId)
       : null;
@@ -2079,8 +2047,8 @@ export async function adminLivingWorldRoutes(fastify) {
       queries.CampaignEdge = prisma.campaignEdge.findMany({
         where, take: limit, skip, orderBy: { createdAt: 'desc' },
         select: {
-          id: true, campaignId: true, relationType: true, fromKind: true, fromId: true,
-          toKind: true, toId: true, distance: true, visibility: true,
+          id: true, campaignId: true, relationType: true, fromLocationId: true,
+          toLocationId: true, distance: true, visibility: true,
           campaign: { select: { name: true } },
           createdAt: true,
         },
@@ -2585,7 +2553,7 @@ function normalizeEntity(type, row) {
     case 'CampaignLocation':
       return { id: row.id, type, name: row.name, status: row.locationType, details: '', source: 'campaign', campaignId: row.campaignId, campaignName: row.campaign?.name || null };
     case 'CampaignEdge':
-      return { id: row.id, type, name: `${row.fromKind}:${row.fromId} ↔ ${row.toKind}:${row.toId}`, status: row.relationType, details: row.distance ? `${row.distance} km` : row.visibility, source: 'campaign', campaignId: row.campaignId, campaignName: row.campaign?.name || null };
+      return { id: row.id, type, name: `${row.fromLocationId} ↔ ${row.toLocationId}`, status: row.relationType, details: row.distance ? `${row.distance} km` : row.visibility, source: 'campaign', campaignId: row.campaignId, campaignName: row.campaign?.name || null };
     case 'CampaignQuest':
       return { id: row.id, type, name: row.name, status: row.status, details: row.type || '', source: 'campaign', campaignId: row.campaignId, campaignName: row.campaign?.name || null };
     case 'Character':

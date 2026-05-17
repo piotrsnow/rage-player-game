@@ -14,7 +14,7 @@ const ID_PARAM = {
 // belongs to a child-table endpoint (quests, npcs, etc).
 const ALLOWED_PATCH_FIELDS = new Set([
   'name', 'genre', 'tone', 'coreState', 'isPublic',
-  'currentLocationName', 'currentLocationKind', 'currentLocationId',
+  'currentLocationName', 'currentLocationId',
   'currentX', 'currentY', 'pendingSlip', 'pendingProvidence',
   'livingWorldEnabled', 'questGraphEnabled', 'worldTimeRatio',
   'worldTimeMaxGapDays', 'difficultyTier', 'settlementCaps',
@@ -207,7 +207,7 @@ export async function adminCrudRoutes(fastify) {
         await tx.campaignKnowledge.deleteMany({ where: { campaignId: id } });
         await tx.campaignCodex.deleteMany({ where: { campaignId: id } });
         await tx.campaignIncident.deleteMany({ where: { campaignId: id } });
-        await tx.campaignDiscoveredLocation.deleteMany({ where: { campaignId: id } });
+        await tx.discoveredLocation.deleteMany({ where: { campaignId: id } });
         await tx.campaignEdgeDiscovery.deleteMany({ where: { campaignId: id } });
         await tx.campaignDmAgent.deleteMany({ where: { campaignId: id } });
 
@@ -217,7 +217,6 @@ export async function adminCrudRoutes(fastify) {
             coreState: {},
             totalCost: 0,
             currentLocationName: null,
-            currentLocationKind: null,
             currentLocationId: null,
             currentX: null,
             currentY: null,
