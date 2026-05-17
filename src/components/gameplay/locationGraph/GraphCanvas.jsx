@@ -356,13 +356,14 @@ export default forwardRef(function GraphCanvas({
       <defs>
         <style>{`g[data-node]:hover .node-img { opacity: 1 !important; }
 g[data-node]:hover .node-label { opacity: 1 !important; }
-.npc-token {
-  transform-box: fill-box;
-  transform-origin: center;
-  transition: transform 200ms ease var(--npc-token-delay, 0ms);
+.npc-token-glow {
+  opacity: 0;
+  transition: opacity 220ms ease var(--npc-token-delay, 0ms);
 }
-g[data-node]:hover .npc-token,
-.npc-token:hover { transform: scale(1.25); }`}</style>
+g[data-node]:hover .npc-token-glow { opacity: 1; }`}</style>
+        <filter id="npc-token-glow-blur" x="-80%" y="-80%" width="260%" height="260%">
+          <feGaussianBlur stdDeviation="4" />
+        </filter>
         <pattern id="graph-grid" width={GRID_STEP} height={GRID_STEP} patternUnits="userSpaceOnUse">
           <circle cx={GRID_STEP / 2} cy={GRID_STEP / 2} r={0.8} fill="rgba(255,255,255,0.12)" />
         </pattern>
@@ -645,7 +646,7 @@ g[data-node]:hover .npc-token,
                 const spriteHref = occupantSpriteMap[occ.id];
                 const sheetHref = occupantSpriteSheetMap[occ.id];
                 const tokenPx = isPlayer ? 44 : 40;
-                const orbitR = imgR * 0.35 + tokenPx / 2;
+                const orbitR = imgR * 0.1 + (locOccupants.length > 1 ? tokenPx * 0.28 : tokenPx * 0.12);
                 const ox = Math.cos(angle) * orbitR;
                 const oy = Math.sin(angle) * orbitR;
                 const labelY = (spriteHref || sheetHref ? tokenPx / 2 : dotR) + 10;
@@ -657,6 +658,16 @@ g[data-node]:hover .npc-token,
                     className="npc-token"
                     style={{ cursor: 'pointer', '--npc-token-delay': `${tokenDelayMs}ms` }}
                   >
+                    <ellipse
+                      className="npc-token-glow"
+                      cx={0}
+                      cy={tokenPx * 0.12}
+                      rx={tokenPx * 0.52}
+                      ry={tokenPx * 0.38}
+                      fill={isPlayer ? 'rgba(34, 211, 238, 0.5)' : 'rgba(212, 212, 216, 0.42)'}
+                      filter="url(#npc-token-glow-blur)"
+                      pointerEvents="none"
+                    />
                     {sheetHref ? (
                       <>
                         <rect

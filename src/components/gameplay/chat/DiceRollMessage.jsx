@@ -111,6 +111,16 @@ function BonusTags({ d, t, className = '' }) {
           tooltipAccentClassName={d.dispositionBonus > 0 ? 'text-pink-200' : 'text-orange-200'}
         />
       )}
+      {(d.luckBonus ?? d.luck ?? 0) > 0 && (
+        <ModifierIconTag
+          icon="casino"
+          value={`+${d.luckBonus ?? d.luck}`}
+          label={`${t('attributes.szczescie', 'Szczęście')} +${d.luckBonus ?? d.luck}`}
+          toneClass="bg-emerald-400/15 text-emerald-300 border-emerald-400/30"
+          tooltipClassName="border-emerald-400/45 bg-[linear-gradient(135deg,rgba(52,211,153,0.24),rgba(18,18,24,0.96))] shadow-[0_18px_48px_rgba(52,211,153,0.18)]"
+          tooltipAccentClassName="text-emerald-200"
+        />
+      )}
     </div>
   );
 }
@@ -183,7 +193,8 @@ export default function DiceRollMessage({ message }) {
     + (Number(d.creativityBonus) || 0)
     + (Number(d.difficultyModifier) || 0)
     + (Number(d.momentumBonus) || 0)
-    + (Number(d.dispositionBonus) || 0);
+    + (Number(d.dispositionBonus) || 0)
+    + (Number(d.luckBonus ?? d.luck) || 0);
   const totalValue = Number.isFinite(Number(d.total))
     ? Number(d.total)
     : rawRoll + fallbackModsSum;

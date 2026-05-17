@@ -102,10 +102,14 @@ export default function DiceRollAnimationOverlay({ diceRoll, onDismiss, holdOpen
   if (nd.creativityBonus > 0) {
     modTags.push({ label: t('gameplay.creativityBonus', { bonus: '' }).trim(), value: nd.creativityBonus, cls: 'text-amber-300/80' });
   }
+  if (nd.luckBonus > 0) {
+    modTags.push({ label: translateAttribute('szczescie', t), value: nd.luckBonus, cls: 'text-emerald-300/80' });
+  }
 
   const totalModifiers = (nd.attributeValue ?? 0)
     + (nd.skillLevel ?? 0)
     + (nd.creativityBonus ?? 0)
+    + (nd.luckBonus ?? 0)
     + (nd.thresholdBreakdown?.modifiers ?? []).reduce((sum, m) => sum + m.value, 0);
   const effectiveTarget = target != null ? Math.max(1, target - totalModifiers) : null;
 

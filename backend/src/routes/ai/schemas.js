@@ -90,6 +90,8 @@ export const TRANSLATE_IMAGE_PROMPT_SCHEMA = {
   additionalProperties: false,
   properties: {
     text: { type: 'string', maxLength: 1000 },
+    /** general = scenes/portraits (keep people/place names); item|spell = translate object names fully */
+    kind: { type: 'string', enum: ['general', 'item', 'spell'] },
   },
   required: ['text'],
 };

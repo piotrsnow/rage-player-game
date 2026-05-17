@@ -1,7 +1,7 @@
 import { useRef, useEffect, useCallback, useMemo, useState, lazy, Suspense } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSettings } from '../../contexts/SettingsContext';
-import { useGameCampaign, useGameSlice, useGameDispatch } from '../../stores/gameSelectors';
+import { useGameCampaign, useGameDispatch } from '../../stores/gameSelectors';
 import { apiClient } from '../../services/apiClient';
 import { countHighlightWords } from '../../services/elevenlabs';
 import EffectEngine from '../../effects/EffectEngine';
@@ -11,6 +11,11 @@ import SceneCanvas from './SceneCanvas';
 import DiceRollCard from './DiceRollCard';
 import HighlightedNarrative, { splitIntoSentences } from './scene/HighlightedNarrative';
 import FieldMapCanvas from './FieldMapCanvas';
+import {
+  SKIRMISH_MODE_BEER_DUEL,
+  SKIRMISH_MODE_CARD_GAME,
+  SKIRMISH_MODE_DICE_GAME,
+} from '../../services/combatEngine.js';
 
 const Scene3DPanel = lazy(() => import('./Scene3D/Scene3DPanel'));
 
@@ -109,7 +114,14 @@ export default function ScenePanel({
   const { settings, updateSettings } = useSettings();
   const campaign = useGameCampaign();
   const dispatch = useGameDispatch();
-  const characterSpriteSheet = useGameSlice((s) => s.character?.spriteSheetUrl);
+
+  const suppressMapTokens = useMemo(() => {
+    if (!combat?.active) return false;
+    const mode = combat.mode;
+    return mode !== SKIRMISH_MODE_BEER_DUEL
+      && mode !== SKIRMISH_MODE_CARD_GAME
+      && mode !== SKIRMISH_MODE_DICE_GAME;
+  }, [combat?.active, combat?.mode]);
 
   const lastSentenceRef = useRef(null);
 
@@ -401,7 +413,7 @@ export default function ScenePanel({
           world={world}
           characterName={characterName}
           interactive={interactiveMap}
-          character={characterSpriteSheet ? { spriteSheetUrl: characterSpriteSheet } : null}
+          suppressTokens={suppressMapTokens}
           multiplayerPlayers={multiplayerPlayers}
           onNpcInteract={onNpcInteract}
           onPortalEnter={onPortalEnter}

@@ -9,6 +9,7 @@ import { toCanonicalStoragePath } from '../services/urlCanonical.js';
 import { callAIJson, parseJsonOrNull } from '../services/aiJsonCall.js';
 import { loadUserApiKeys } from '../services/apiKeyService.js';
 import { SCENE_CLIENT_SELECT, normalizeSceneAssetUrls } from '../services/campaignSerialize.js';
+import { resolveBadgeImageProviderForUser } from '../services/badgeImageGen.js';
 import { generateBadge, regenerateBadgeImage } from '../services/badgeGenerator.js';
 import { ensureCharacterSprite } from '../services/characterSpriteService.js';
 
@@ -700,6 +701,15 @@ Return JSON with exactly three fields, all written in ${isPolish ? 'Polish' : 'E
     let userApiKeys = null;
     try { userApiKeys = await loadUserApiKeys(prisma, request.user.id); } catch {}
 
+    const badgeOwner = await prisma.user.findUnique({
+      where: { id: request.user.id },
+      select: { settings: true },
+    });
+    const imageProvider = resolveBadgeImageProviderForUser(
+      badgeOwner?.settings,
+      userApiKeys || '{}',
+    );
+
     try {
       const badge = await generateBadge({
         characterId: character.id,
@@ -708,6 +718,7 @@ Return JSON with exactly three fields, all written in ${isPolish ? 'Polish' : 'E
         sceneFrom: request.body?.sceneFrom ?? null,
         sceneTo: request.body?.sceneTo ?? null,
         userApiKeys,
+        imageProvider,
       });
       return reply.code(201).send(badge);
     } catch (err) {

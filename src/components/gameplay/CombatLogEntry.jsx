@@ -140,6 +140,7 @@ export function buildCombatLogDetails(result, t) {
     }
     const item = buildRollItem(t('combat.logAttack', 'Atak'), ab, attackRoll, mods);
     if (item) {
+      if (ab.sureHit) item.sureHit = true;
       const db = result.defenseBreakdown;
       if (db) {
         const thresholdMods = [];
@@ -427,6 +428,12 @@ function RollBox({ item, t }) {
       <p className="text-[12px] font-bold text-on-surface-variant uppercase tracking-[0.2em] text-center mb-2">
         {item.label}
       </p>
+
+      {item.sureHit && (
+        <p className="text-center text-[11px] font-semibold text-amber-300/90 mb-2">
+          {t('combat.preRoll.sureHit', 'Automatyczne trafienie!')}
+        </p>
+      )}
 
       <div className="space-y-1 font-mono text-sm">
         <div className="flex justify-between items-baseline">

@@ -16,6 +16,8 @@ import { extractGraphUpdate, validateGraphUpdate, applyGraphUpdate } from './loc
 import { setLlmCallUserId } from './llmCallLogger.js';
 import { checkQuestProgress } from './questProgressChecker.js';
 import { auditSceneState, applyAndPushCorrections } from './sceneGenerator/sceneStateAuditor.js';
+import { loadUserApiKeys } from './apiKeyService.js';
+import { resolveBadgeImageProviderForUser } from './badgeImageGen.js';
 import { generateBadge } from './badgeGenerator.js';
 
 const log = childLogger({ module: 'postSceneWork' });
@@ -243,6 +245,17 @@ export async function handlePostSceneWork({
   // Periodic badge generation — every 7 scenes, award a collectible badge.
   if (scene.sceneIndex > 0 && scene.sceneIndex % 7 === 0 && campaign?.userId) {
     const charIds = await getCampaignCharacterIds(campaignId).catch(() => []);
+    const [userApiKeys, badgeOwner] = await Promise.all([
+      loadUserApiKeys(prisma, campaign.userId),
+      prisma.user.findUnique({
+        where: { id: campaign.userId },
+        select: { settings: true },
+      }),
+    ]);
+    const imageProvider = resolveBadgeImageProviderForUser(
+      badgeOwner?.settings,
+      userApiKeys,
+    );
     for (const charId of charIds) {
       generateBadge({
         characterId: charId,
@@ -251,6 +264,8 @@ export async function handlePostSceneWork({
         sceneFrom: Math.max(0, scene.sceneIndex - 6),
         sceneTo: scene.sceneIndex,
         provider,
+        userApiKeys,
+        imageProvider,
       }).catch((err) =>
         log.warn({ err: err?.message, campaignId, charId }, 'Badge generation failed (non-fatal)'),
       );

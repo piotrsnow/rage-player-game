@@ -31,25 +31,32 @@ function cacheSet(key, value) {
 // image-generation template. Graceful: returns the original text unchanged on
 // empty input, already-English input, network error, or backend failure —
 // image generation never blocks on this call.
-export async function ensureEnglish(text) {
+/**
+ * @param {string} text
+ * @param {{ kind?: 'general'|'item'|'spell' }} [options]
+ */
+export async function ensureEnglish(text, { kind = 'general' } = {}) {
   if (!text || typeof text !== 'string') return text || '';
   const trimmed = text.trim();
   if (!trimmed) return text;
-  if (!PL_RE.test(trimmed)) return text;
 
-  const cached = cacheGet(trimmed);
+  const forceTranslate = kind === 'item' || kind === 'spell';
+  if (!forceTranslate && !PL_RE.test(trimmed)) return text;
+
+  const cacheKey = `${kind}:${trimmed}`;
+  const cached = cacheGet(cacheKey);
   if (cached !== undefined) return cached;
 
   const logId = aiCallLog.start({
     type: 'translate-prompt',
-    label: `Translate: ${trimmed.slice(0, 60)}`,
+    label: `Translate (${kind}): ${trimmed.slice(0, 60)}`,
     provider: null,
     model: null,
   });
   try {
-    const { english } = await apiClient.post('/ai/translate-image-prompt', { text: trimmed });
+    const { english } = await apiClient.post('/ai/translate-image-prompt', { text: trimmed, kind });
     const out = typeof english === 'string' && english.trim() ? english.trim() : text;
-    cacheSet(trimmed, out);
+    cacheSet(cacheKey, out);
     aiCallLog.finish(logId, { original: trimmed, translated: out });
     return out;
   } catch (e) {

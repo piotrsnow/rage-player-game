@@ -200,6 +200,24 @@ describe('resolveManoeuvre — new combat system', () => {
     expect(result.rolls[0].success).toBe(false);
   });
 
+  it('sureHit terrain guarantees hit without inflating roll total or margin', () => {
+    vi.mocked(rollD50).mockReturnValue(2);
+
+    const combat = makeCombatState();
+    combat.terrainTiles = [{ x: 2, y: 3, type: 'sureHit', consumed: false }];
+
+    const { result, combat: updated } = resolveManoeuvre(combat, 'player', 'attack', 'enemy_guard');
+
+    expect(result.outcome).toBe('hit');
+    expect(result.attackBreakdown.sureHit).toBe(true);
+    expect(result.rolls[0].roll).toBe(2);
+    expect(result.rolls[0].total).toBe(19);
+    expect(result.rolls[0].total).toBeLessThan(100);
+    expect(result.rolls[0].margin).toBe(0);
+    expect(result.damageBreakdown.marginBonus).toBe(0);
+    expect(updated.terrainTiles[0].consumed).toBe(true);
+  });
+
   it('adds creativity bonus from custom description', () => {
     vi.mocked(rollD50).mockReturnValue(30);
 
@@ -322,8 +340,6 @@ describe('beer duel vomit', () => {
     expect(p.position).toEqual({ x: 4, y: 4 });
     expect(p.movementUsed).toBe(1);
     expect(p.beerDuelVomitSlipUses).toBe(1);
-  });
-
   });
 });
 

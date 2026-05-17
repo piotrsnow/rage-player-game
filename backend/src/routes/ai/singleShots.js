@@ -171,10 +171,10 @@ export async function singleShotRoutes(fastify) {
    * response shape dead simple and let errors bubble up as 502/504.
    */
   fastify.post('/translate-image-prompt', { schema: { body: TRANSLATE_IMAGE_PROMPT_SCHEMA } }, async (request, reply) => {
-    const { text } = request.body || {};
+    const { text, kind } = request.body || {};
     const userApiKeys = await loadUserApiKeys(prisma, request.user?.id);
     try {
-      return await translateImagePromptToEnglish({ text, userApiKeys });
+      return await translateImagePromptToEnglish({ text, userApiKeys, kind });
     } catch (err) {
       const status = err.statusCode || 502;
       return reply.code(status).send({ error: err.message, code: err.code || 'AI_REQUEST_FAILED' });

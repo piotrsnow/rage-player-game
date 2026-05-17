@@ -1,15 +1,11 @@
 import { prisma } from '../lib/prisma.js';
 import { childLogger } from '../lib/logger.js';
 import { callAIJson, parseJsonOrNull } from './aiJsonCall.js';
-import { resolveApiKey } from './apiKeyService.js';
-import { generateKey } from './hashService.js';
-import { downscaleGeneratedImage } from './imageResize.js';
-import { createMediaStore } from './mediaStore.js';
-import { config } from '../config.js';
+import { loadUserApiKeys } from './apiKeyService.js';
+import { generateBadgeImage, resolveBadgeImageProviderForUser } from './badgeImageGen.js';
 import { SCENE_CLIENT_SELECT } from './campaignSerialize.js';
 
 const log = childLogger({ module: 'badgeGenerator' });
-const store = createMediaStore(config);
 
 const BADGE_ICONS = [
   'shield', 'military_tech', 'local_fire_department', 'bolt',
@@ -21,64 +17,24 @@ function pickIcon() {
   return BADGE_ICONS[Math.floor(Math.random() * BADGE_ICONS.length)];
 }
 
-async function generateBadgeImage(imagePrompt, userId) {
-  const user = await prisma.user.findUnique({
-    where: { id: userId },
-    select: { apiKeys: true },
-  });
-  const apiKey = resolveApiKey(user?.apiKeys || '{}', 'stability');
-  if (!apiKey) return null;
+async function loadBadgeImageContext(userId, userApiKeys, imageProvider) {
+  let keys = userApiKeys;
+  let settings = null;
 
-  try {
-    const formData = new FormData();
-    formData.append('prompt', imagePrompt);
-    formData.append('negative_prompt', 'text, watermark, signature, blurry, low quality, photo, realistic face, human face');
-    formData.append('model', 'sd3.5-large-turbo');
-    formData.append('aspect_ratio', '1:1');
-    formData.append('output_format', 'jpeg');
-    formData.append('none', '');
-
-    const response = await fetch('https://api.stability.ai/v2beta/stable-image/generate/sd3', {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${apiKey}`, Accept: 'application/json' },
-      body: formData,
+  if (!keys || imageProvider === undefined) {
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { apiKeys: true, settings: true },
     });
-
-    if (!response.ok) {
-      log.warn({ status: response.status }, 'Stability API badge image generation failed');
-      return null;
-    }
-
-    const data = await response.json();
-    if (data.finish_reason === 'CONTENT_FILTERED') return null;
-
-    const originalBuffer = Buffer.from(data.image, 'base64');
-    const buffer = await downscaleGeneratedImage(originalBuffer);
-
-    const cacheKey = generateKey('image', { provider: 'stability', type: 'badge', prompt: imagePrompt, ts: Date.now() });
-    const storagePath = cacheKey.replace('.png', '.jpg');
-    const storeResult = await store.put(storagePath, buffer, 'image/jpeg');
-
-    await prisma.mediaAsset.upsert({
-      where: { key: cacheKey },
-      create: {
-        userId,
-        key: cacheKey,
-        type: 'image',
-        contentType: 'image/jpeg',
-        size: buffer.length,
-        backend: config.mediaBackend,
-        path: storagePath,
-        metadata: { provider: 'stability', type: 'badge', prompt: imagePrompt },
-      },
-      update: {},
-    });
-
-    return storeResult.url;
-  } catch (err) {
-    log.warn({ err: err?.message }, 'Badge image generation failed (non-fatal)');
-    return null;
+    if (!keys) keys = user?.apiKeys || '{}';
+    settings = user?.settings;
   }
+
+  const resolvedProvider = imageProvider !== undefined
+    ? imageProvider
+    : resolveBadgeImageProviderForUser(settings, keys);
+
+  return { userApiKeys: keys, imageProvider: resolvedProvider };
 }
 
 /**
@@ -90,8 +46,9 @@ async function generateBadgeImage(imagePrompt, userId) {
  * @param {string} [opts.campaignId]  - scope to a single campaign
  * @param {number} [opts.sceneFrom]
  * @param {number} [opts.sceneTo]
- * @param {string} [opts.provider]    - AI provider
+ * @param {string} [opts.provider]    - AI text provider (nano)
  * @param {object} [opts.userApiKeys] - pre-loaded encrypted key blob
+ * @param {string|null} [opts.imageProvider] - image backend; null skips image
  * @returns {Promise<Object>} The created CharacterBadge row
  */
 export async function generateBadge({
@@ -102,6 +59,7 @@ export async function generateBadge({
   sceneTo = null,
   provider = 'openai',
   userApiKeys = null,
+  imageProvider = undefined,
 }) {
   const char = await prisma.character.findUnique({
     where: { id: characterId },
@@ -161,6 +119,8 @@ Return JSON with exactly five fields:
 
   const userPrompt = `CHARACTER:\n${charContext}\n\nRECENT SCENES:\n${sceneTexts || 'No scenes yet — invent brief backstory events.'}`;
 
+  const keysForAi = userApiKeys ?? (await loadUserApiKeys(prisma, userId));
+
   const { text } = await callAIJson({
     provider,
     modelTier: 'nano',
@@ -169,7 +129,7 @@ Return JSON with exactly five fields:
     userPrompt,
     maxTokens: 500,
     temperature: 0.9,
-    userApiKeys,
+    userApiKeys: keysForAi,
     taskType: 'character-badge-gen',
     taskLabel: 'Badge generation',
   });
@@ -181,9 +141,16 @@ Return JSON with exactly five fields:
   const color = /^#[0-9a-fA-F]{6}$/.test(parsed?.color) ? parsed.color : null;
   const imagePrompt = (parsed?.imagePrompt || '').trim().slice(0, 2000) || null;
 
+  const { userApiKeys: keysForImage, imageProvider: resolvedImageProvider } =
+    await loadBadgeImageContext(userId, keysForAi, imageProvider);
+
   let imageUrl = null;
-  if (imagePrompt) {
-    imageUrl = await generateBadgeImage(imagePrompt, userId);
+  if (imagePrompt && resolvedImageProvider) {
+    imageUrl = await generateBadgeImage(imagePrompt, {
+      userId,
+      userApiKeys: keysForImage,
+      imageProvider: resolvedImageProvider,
+    });
   }
 
   const badge = await prisma.characterBadge.create({
@@ -201,21 +168,36 @@ Return JSON with exactly five fields:
     },
   });
 
-  log.info({ badgeId: badge.id, characterId, name }, 'Badge generated');
+  log.info({
+    badgeId: badge.id,
+    characterId,
+    name,
+    hasImage: Boolean(imageUrl),
+    imageProvider: resolvedImageProvider,
+  }, 'Badge generated');
   return badge;
 }
 
 /**
- * Re-generate only the badge image using the stored (or fresh) imagePrompt.
+ * Re-generate only the badge image using the stored imagePrompt.
  */
-export async function regenerateBadgeImage(badgeId, userId) {
+export async function regenerateBadgeImage(badgeId, userId, { userApiKeys = null, imageProvider = undefined } = {}) {
   const badge = await prisma.characterBadge.findUnique({ where: { id: badgeId } });
   if (!badge) throw new Error('Badge not found');
 
   const prompt = badge.imagePrompt;
   if (!prompt) throw new Error('No image prompt stored for this badge');
 
-  const imageUrl = await generateBadgeImage(prompt, userId);
+  const { userApiKeys: keys, imageProvider: resolvedProvider } =
+    await loadBadgeImageContext(userId, userApiKeys, imageProvider);
+
+  if (!resolvedProvider) throw new Error('Image generation disabled in user settings');
+
+  const imageUrl = await generateBadgeImage(prompt, {
+    userId,
+    userApiKeys: keys,
+    imageProvider: resolvedProvider,
+  });
   if (!imageUrl) throw new Error('Image generation failed');
 
   await prisma.characterBadge.update({

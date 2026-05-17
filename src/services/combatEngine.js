@@ -1528,13 +1528,14 @@ export function resolveManoeuvre(combat, actorId, manoeuvreKey, targetId, option
     const actorTile = getTileAt(state.terrainTiles, actorPos.x, actorPos.y);
     const isSureHit = actorTile?.type === 'sureHit';
 
-    let test;
+    let test = resolveCombatTest(actor, attackAttr, attackSkillLevel, creativityBonus, effectiveThreshold);
     if (isSureHit) {
-      test = { roll: 2, total: 999, threshold: effectiveThreshold, margin: 999, success: true, luckySuccess: false };
+      if (!test.success) {
+        test.success = true;
+        test.margin = 0;
+      }
       const tile = state.terrainTiles.find(t => t.x === actorPos.x && t.y === actorPos.y);
       if (tile) tile.consumed = true;
-    } else {
-      test = resolveCombatTest(actor, attackAttr, attackSkillLevel, creativityBonus, effectiveThreshold);
     }
 
     result.rolls.push({

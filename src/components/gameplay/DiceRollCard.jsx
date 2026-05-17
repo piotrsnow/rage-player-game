@@ -91,6 +91,14 @@ function buildModifierLines(nd, t) {
     });
   }
 
+  if (nd.luckBonus > 0) {
+    lines.push({
+      label: translateAttribute('szczescie', t),
+      value: formatSignedValue(nd.luckBonus),
+      color: 'text-emerald-300',
+    });
+  }
+
   return lines;
 }
 
@@ -223,7 +231,8 @@ function computeTotal(nd) {
   if (Number.isFinite(Number(nd.total))) return Number(nd.total);
   const roll = Number(nd.roll) || 0;
   return roll + (nd.attributeValue || 0) + (nd.skillLevel || 0)
-    + (nd.creativityBonus || 0) + (nd.momentumBonus || 0) + (nd.dispositionBonus || 0);
+    + (nd.creativityBonus || 0) + (nd.momentumBonus || 0) + (nd.dispositionBonus || 0)
+    + (nd.luckBonus || 0);
 }
 
 // ── Main component ──

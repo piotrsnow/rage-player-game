@@ -30,6 +30,7 @@ export function normalizeDiceRoll(dr) {
     roll: dr.roll ?? dr.rolledValue,
     attributeKey,
     attributeValue,
+    luckBonus: dr.luckBonus ?? dr.luck ?? 0,
     skillLevel: dr.skillLevel ?? dr.skillAdvances ?? 0,
     difficulty: dr.difficulty || null,
     threshold: dr.threshold ?? dr.target ?? dr.dc ?? null,

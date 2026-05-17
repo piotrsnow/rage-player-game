@@ -73,7 +73,7 @@ export default function BadgesSection({ characterId }) {
     lastSceneCountRef.current = sceneCount;
 
     const sceneIndex = sceneCount - 1;
-    if (sceneIndex <= 0 || sceneIndex % 5 !== 0) return;
+    if (sceneIndex <= 0 || sceneIndex % 7 !== 0) return;
     if (!characterId) return;
 
     let cancelled = false;
@@ -100,6 +100,21 @@ export default function BadgesSection({ characterId }) {
         if (newBadgeNoImage) {
           setBadges(fetched);
           knownBadgeIdsRef.current = new Set(fetched.map((b) => b.id));
+          if (newBadgeNoImage.imagePrompt) {
+            try {
+              const updated = await apiClient.post(
+                `/characters/${characterId}/badges/${newBadgeNoImage.id}/regenerate-image`,
+                {},
+              );
+              if (updated?.imageUrl) {
+                const withImage = { ...newBadgeNoImage, imageUrl: updated.imageUrl };
+                setBadges((prev) => prev.map((b) => (b.id === withImage.id ? withImage : b)));
+                await preloadImage(apiClient.resolveMediaUrl(updated.imageUrl));
+                if (!cancelled) setSelectedBadge(withImage);
+                return;
+              }
+            } catch { /* fall through to badge without image */ }
+          }
           if (!cancelled) setSelectedBadge(newBadgeNoImage);
           return;
         }

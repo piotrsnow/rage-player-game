@@ -79,6 +79,7 @@ function buildAiDiceLogDetails(diceResult, t) {
   const skillLevel = Number(diceResult.skillLevel) || 0;
   const momentumBonus = Number(diceResult.momentumBonus) || 0;
   const creativityBonus = Number(diceResult.creativityBonus) || 0;
+  const luckBonus = Number(diceResult.luckBonus ?? diceResult.luck) || 0;
   const margin = Number(diceResult.margin) || (total - threshold);
 
   const modifiers = [
@@ -105,6 +106,13 @@ function buildAiDiceLogDetails(diceResult, t) {
       label: t('gameplay.diceRollCreativity', 'Kreatywność'),
       value: creativityBonus > 0 ? `+${creativityBonus}` : `${creativityBonus}`,
       color: 'text-amber-300',
+    });
+  }
+  if (luckBonus > 0) {
+    modifiers.push({
+      label: t('attributes.szczescie', 'Szczęście'),
+      value: `+${luckBonus}`,
+      color: 'text-emerald-300',
     });
   }
 

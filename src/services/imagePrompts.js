@@ -537,7 +537,7 @@ export function buildItemImagePrompt(item, { genre = 'Fantasy', tone = 'Epic', p
   const traitParts = [rarityVisual, visualTraits].filter(Boolean).join(', ');
 
   if (isSdWebui) {
-    const sdSubject = `single ${itemType} on solid black background, ${itemName}${traitParts ? `, ${traitParts}` : ''}, centered object, inventory icon, no person, no hands, no character, no scene, no environment`;
+    const sdSubject = `single item(type:${itemType}) on solid black background, ${itemName}${traitParts ? `, ${traitParts}` : ''}, centered object, inventory icon, no person, no hands, no character, no scene, no environment`;
     return buildSdPrompt({
       subject: sdSubject,
       tone,

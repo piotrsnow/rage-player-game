@@ -119,7 +119,7 @@ export function generateStateChangeMessages(stateChanges, state, t) {
   if (stateChanges.woundsChange != null && stateChanges.woundsChange !== 0) {
     if (stateChanges.woundsChange < 0) {
       msgs.push({ id: mkId(), role: 'system', subtype: 'damage', content: t('system.damageTaken', { name: charName, amount: Math.abs(stateChanges.woundsChange) }), timestamp: ts });
-    } else {
+    } else if (stateChanges.woundsChange > 0) {
       msgs.push({ id: mkId(), role: 'system', subtype: 'healing', content: t('system.healed', { name: charName, amount: stateChanges.woundsChange }), timestamp: ts });
     }
   }

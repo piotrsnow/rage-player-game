@@ -267,6 +267,7 @@ export default function FieldMapCanvas({
   world,
   characterName,
   interactive = false,
+  suppressTokens = false,
   multiplayerPlayers = [],
   onNpcInteract,
   onPortalEnter,
@@ -822,23 +823,23 @@ export default function FieldMapCanvas({
       }
     }
 
-    // Draw player dot
-    const player = entities.find((e) => e.id === '__player__');
-    if (player) {
-      ctx.fillStyle = COLORS.playerRing;
-      ctx.beginPath();
-      ctx.arc((player.x + 0.5) * cw, (player.y + 0.5) * ch, Math.max(2, cw), 0, Math.PI * 2);
-      ctx.fill();
-    }
+    if (!suppressTokens) {
+      const player = entities.find((e) => e.id === '__player__');
+      if (player) {
+        ctx.fillStyle = COLORS.playerRing;
+        ctx.beginPath();
+        ctx.arc((player.x + 0.5) * cw, (player.y + 0.5) * ch, Math.max(2, cw), 0, Math.PI * 2);
+        ctx.fill();
+      }
 
-    // NPC dots
-    for (const e of entities) {
-      if (e.id === '__player__') continue;
-      const c = e.type === 'enemy' ? COLORS.enemyRing : e.type === 'ally' ? COLORS.allyRing : COLORS.neutralRing;
-      ctx.fillStyle = c;
-      ctx.beginPath();
-      ctx.arc((e.x + 0.5) * cw, (e.y + 0.5) * ch, Math.max(1.5, cw * 0.7), 0, Math.PI * 2);
-      ctx.fill();
+      for (const e of entities) {
+        if (e.id === '__player__') continue;
+        const c = e.type === 'enemy' ? COLORS.enemyRing : e.type === 'ally' ? COLORS.allyRing : COLORS.neutralRing;
+        ctx.fillStyle = c;
+        ctx.beginPath();
+        ctx.arc((e.x + 0.5) * cw, (e.y + 0.5) * ch, Math.max(1.5, cw * 0.7), 0, Math.PI * 2);
+        ctx.fill();
+      }
     }
 
     // Viewport rect
@@ -852,7 +853,7 @@ export default function FieldMapCanvas({
     ctx.strokeStyle = 'rgba(255,255,255,0.5)';
     ctx.lineWidth = 1;
     ctx.strokeRect(vx, vy, vw, vh);
-  }, [needsViewport, tiles, gridW, gridH, entities, containerSize, cameraOffset, isExplorationBoard]);
+  }, [needsViewport, tiles, gridW, gridH, entities, containerSize, cameraOffset, isExplorationBoard, suppressTokens]);
 
   return (
     <div ref={sizerRef} className="w-full h-full flex items-center justify-center">
@@ -865,7 +866,11 @@ export default function FieldMapCanvas({
       >
         <canvas ref={canvasRef} className="w-full h-full absolute inset-0" style={{ display: 'block' }} />
 
-        {/* Token overlay */}
+        {suppressTokens && (
+          <div className="absolute inset-0 bg-black/40 pointer-events-none z-[5]" aria-hidden="true" />
+        )}
+
+        {!suppressTokens && (
         <div className="absolute inset-0 pointer-events-none">
           {tokenPositions.map((pos) => (
             <TokenOverlay
@@ -879,6 +884,7 @@ export default function FieldMapCanvas({
             />
           ))}
         </div>
+        )}
 
         {/* Objects overlay — emoji fallback. Objects with `visualAssetId` are
             drawn by the atlas layer (canvas) and skipped here to avoid double

@@ -3,6 +3,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { callAIJson, parseJsonOrNull } from './aiJsonCall.js';
 import { ActorAppearanceSchema } from '../../../shared/mapSchemas/mapActor.js';
+import { SKIN_SYNCED_SLOTS } from './chargenCompositor.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DEFAULT_CHARGEN_PATH = process.env.CHARGEN_ASSETS_PATH ||
@@ -189,8 +190,24 @@ function resolveAppearance(manifest, raw) {
 
   ensureRequiredSlots(manifest, cfg, bodyType, headType, raceId, slots);
   fillMissingSlots(manifest, cfg, bodyType, headType, raceId, slots);
+  syncSkinColors(slots);
 
   return ActorAppearanceSchema.parse({ race: raceId, config: cfg.id, bodyType, headType, slots });
+}
+
+// head/nose/ears manifest items have no primarycolors; without this their
+// color resolves to 'none' and the head/face/nose/ears render transparent
+// (the "missing head" bug). They share the body's skin color id.
+function syncSkinColors(slots) {
+  const skin = slots?.body?.color;
+  if (!skin || skin === 'none') return;
+  for (const slot of SKIN_SYNCED_SLOTS) {
+    const entry = slots[slot];
+    if (!entry) continue;
+    if (!entry.color || entry.color === 'none') {
+      slots[slot] = { ...entry, color: skin };
+    }
+  }
 }
 
 function ensureRequiredSlots(manifest, cfg, bodyType, headType, raceId, slots) {
@@ -283,6 +300,7 @@ export function pickRandomAppearance(manifest, { race: raceHint, gender } = {}) 
 
   ensureRequiredSlots(manifest, cfg, bodyType, headType, raceId, slots);
   fillMissingSlots(manifest, cfg, bodyType, headType, raceId, slots);
+  syncSkinColors(slots);
 
   return ActorAppearanceSchema.parse({ race: raceId, config: cfg.id, bodyType, headType, slots });
 }

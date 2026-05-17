@@ -16,7 +16,7 @@ import { loadSceneGenDurationHistory, appendSceneGenDuration, historyToSceneGenE
 import { useEvent } from '../useEvent';
 import { useSceneBackendStream } from './useSceneBackendStream';
 import { processSceneDialogue } from './processSceneDialogue';
-import { injectCombatFallback, fillBestiaryStats, applyNeedsAndRest, applySceneStateChanges } from './applySceneStateChanges';
+import { applySceneStateChanges } from './applySceneStateChanges';
 import { devLog } from '../../stores/devEventLogStore';
 import { stopAllDialogAudio } from '../../utils/readAloudExclusive';
 
@@ -320,12 +320,7 @@ export function useSceneGeneration({ ensureMissingInventoryImages, ensureMissing
           dispatch({ type: 'ADD_CHAT_MESSAGE', payload: { id: `msg_${Date.now()}_degrade_summary`, role: 'system', subtype: 'validation_warning', content: t('system.aiQualityWarning', `AI quality warning: ${degradeStatsRef.current.total} degraded scenes in this session (${degradeStatsRef.current.truncated} from prompt truncation). Consider increasing prompt profile/model tier.`), timestamp: Date.now() } });
         }
 
-        // Combat fallback + bestiary stats
-        const hadCombatBefore = !!result.stateChanges?.combatUpdate?.active;
-        injectCombatFallback(result, state, playerAction, isFirstScene, isPassiveSceneAction, t);
-        const combatInjected = !hadCombatBefore && !!result.stateChanges?.combatUpdate?.active;
-        if (combatInjected) devLog.emit({ category: 'combat', type: 'combat_fallback_injected', label: 'Combat fallback injected (AI missed combatUpdate)', severity: 'warn' });
-        fillBestiaryStats(result, state);
+        // Combat fallback + bestiary fill are done server-side (combatFallback.js + enemyFill.js)
 
         // Dice rolls
         const rawAiSpeech = {
@@ -346,10 +341,10 @@ export function useSceneGeneration({ ensureMissingInventoryImages, ensureMissing
           dispatch({ type: 'SET_MOMENTUM', payload: calculateNextMomentum(state.momentumBonus || 0, lastRoll.margin || lastRoll.sl || 0) });
         }
 
-        // Dialogue repair
+        // Voice assignment (dialogue repair is done server-side)
         const { finalSegments, stateChanges: mergedStateChanges } = processSceneDialogue(
           result, state, settings, dispatch,
-          { isFirstScene, playerAction, isPassiveSceneAction, voicePools }
+          { voicePools }
         );
         result.stateChanges = mergedStateChanges;
 
@@ -390,8 +385,7 @@ export function useSceneGeneration({ ensureMissingInventoryImages, ensureMissing
         // flash of empty chat between streaming → final.
         stream.clearStreamingOutput();
 
-        // State changes
-        applyNeedsAndRest(result, resolved, needsSystemEnabled);
+        // State changes (rest recovery is merged server-side by mergeRestRecoveryIntoStateChanges)
         const scBuckets = result.stateChanges ? Object.keys(result.stateChanges).filter((k) => result.stateChanges[k] != null) : [];
         devLog.emit({ category: 'state', type: 'apply_state_changes', label: `State changes: ${scBuckets.join(', ') || 'none'}`, data: { buckets: scBuckets, hasCharacterSnapshot: !!authoritativeCharacterSnapshot } });
         applySceneStateChanges({

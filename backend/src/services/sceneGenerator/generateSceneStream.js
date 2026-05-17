@@ -12,6 +12,7 @@ import {
 } from '../diceResolver.js';
 import { resolveAndApplyRewards } from '../rewardResolver.js';
 import { generateWrapupFallback, pickWrapupSpeaker } from '../questWrapupFallback.js';
+import { mergeRestRecoveryIntoStateChanges } from '../../../../shared/domain/mergeRestRecoveryIntoStateChanges.js';
 import { applyCharacterStateChanges } from '../characterMutations.js';
 import { persistCharacterSnapshot } from '../characterRelations.js';
 import { loadCampaignState } from './campaignLoader.js';
@@ -29,6 +30,9 @@ import {
   calculateFreeformSkillXP,
 } from './diceResolution.js';
 import { fillEnemiesFromBestiary } from './enemyFill.js';
+import { injectCombatFallback } from './combatFallback.js';
+import { repairSceneDialogue } from './dialogueRepairPipeline.js';
+import { checkWorldConsistency, applyConsistencyPatches } from '../../../../shared/domain/worldConsistency.js';
 import { getScaleForTier } from '../difficultyScalingConfig.js';
 import { handleDungeonEntry } from '../livingWorld/dungeonEntry.js';
 import { reconcileCloneBatch } from '../livingWorld/cloneReconciliation.js';
@@ -527,11 +531,90 @@ export async function generateSceneStream(campaignId, playerAction, options = {}
     const hasAnyDiceRoll = !!resolvedMechanics?.diceRoll || (sceneResult.diceRolls?.length > 0);
     calculateFreeformSkillXP(sceneResult.stateChanges, hasAnyDiceRoll, sceneResult.diceRolls);
 
-    // 6. Fill enemy stats from bestiary (with G1 difficulty-tier cap + scaling)
+    // 5d. Dialogue repair — normalize, repair speakers, dedup, introduce
+    // unknown NPC speakers into stateChanges. Runs before scene save so
+    // the DB gets clean segments (previously saved raw AI output).
+    const isPassiveSceneAction = Boolean(
+      (playerAction && playerAction.startsWith('[IDLE_WORLD_EVENT'))
+      || playerAction === '[WAIT]'
+    );
+    repairSceneDialogue(sceneResult, {
+      worldNpcs: coreState.world?.npcs || [],
+      playerName: activeCharacter?.name || '',
+      playerGender: activeCharacter?.gender || null,
+      playerAction,
+      isFirstScene,
+      isPassiveSceneAction,
+      currentLocation: coreState.world?.currentLocation || '',
+      campaignName: coreState.campaign?.name || '',
+      factionNames: Object.keys(coreState.world?.factions || {}),
+      locationNames: (coreState.world?.mapState || []).map((l) => l.name).filter(Boolean),
+    });
+
+    // 6. Combat fallback — if player expressed combat intent but AI omitted
+    // combatUpdate, inject a fallback enemy before bestiary fill so tier
+    // scaling applies uniformly.
+    injectCombatFallback(sceneResult, {
+      playerAction,
+      isFirstScene,
+      dbNpcs: coreState.world?.npcs || [],
+      currentRef: activeCurrentRef,
+      currentLocationName: coreState.world?.currentLocation || '',
+    });
+
+    // 6a. Fill enemy stats from bestiary (with G1 difficulty-tier cap + scaling)
     fillEnemiesFromBestiary(sceneResult.stateChanges, {
       campaignDifficultyTier: coreState.campaign?.difficultyTier || null,
       tierScale,
     });
+
+    // 6e. World consistency — NPC disposition drift from faction rep changes,
+    // dead quest-giver detection, orphan factions. Patches are applied to
+    // stateChanges so the persisted scene + character reflect fixes.
+    {
+      const previousFactions = { ...(coreState.world?.factions || {}) };
+      const postState = {
+        ...coreState,
+        world: {
+          ...coreState.world,
+          factions: { ...(coreState.world?.factions || {}), ...(sceneResult.stateChanges?.factionChanges || {}) },
+        },
+      };
+      const consistency = checkWorldConsistency(postState, previousFactions);
+      const patches = applyConsistencyPatches(postState, consistency.statePatches);
+      if (patches) {
+        if (patches.npcs) {
+          const existingNpcChanges = Array.isArray(sceneResult.stateChanges?.npcs) ? sceneResult.stateChanges.npcs : [];
+          for (const patchedNpc of patches.npcs) {
+            if (patchedNpc.disposition != null) {
+              const existing = existingNpcChanges.find(
+                (n) => n?.name?.toLowerCase() === patchedNpc.name?.toLowerCase()
+              );
+              if (existing) {
+                existing.disposition = patchedNpc.disposition;
+              } else {
+                existingNpcChanges.push({
+                  action: 'update',
+                  name: patchedNpc.name,
+                  disposition: patchedNpc.disposition,
+                });
+              }
+            }
+          }
+          sceneResult.stateChanges = { ...sceneResult.stateChanges, npcs: existingNpcChanges };
+        }
+        if (patches.newWorldFacts?.length > 0) {
+          const existing = Array.isArray(sceneResult.stateChanges?.worldFacts) ? sceneResult.stateChanges.worldFacts : [];
+          sceneResult.stateChanges = {
+            ...sceneResult.stateChanges,
+            worldFacts: [...existing, ...patches.newWorldFacts],
+          };
+        }
+      }
+      if (consistency.corrections.length > 0 || consistency.warnings.length > 0) {
+        log.info({ corrections: consistency.corrections, warnings: consistency.warnings }, 'World consistency check');
+      }
+    }
 
     // 7. Save scene
     const lastScene = recentScenes[recentScenes.length - 1];
@@ -656,6 +739,14 @@ export async function generateSceneStream(campaignId, playerAction, options = {}
     // 8. Apply character state changes + achievements (pure), then persist
     // scene + character in one tx so a half-saved scene can never reference
     // a character row that doesn't reflect its stateChanges.
+    if (sceneResult.stateChanges && resolvedMechanics) {
+      sceneResult.stateChanges = mergeRestRecoveryIntoStateChanges(sceneResult.stateChanges, {
+        isRest: resolvedMechanics.isRest,
+        restRecovery: resolvedMechanics.restRecovery,
+        needsSystemEnabled,
+      });
+    }
+
     let updatedCharacter = activeCharacter;
     let newlyUnlockedAchievements = [];
     let updatedAchievementState = achievementState;

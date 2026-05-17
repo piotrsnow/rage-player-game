@@ -101,6 +101,19 @@ vi.mock('./enemyFill.js', () => ({
   fillEnemiesFromBestiary: vi.fn(),
 }));
 
+vi.mock('./combatFallback.js', () => ({
+  injectCombatFallback: vi.fn(),
+}));
+
+vi.mock('./dialogueRepairPipeline.js', () => ({
+  repairSceneDialogue: vi.fn(),
+}));
+
+vi.mock('../../../../shared/domain/worldConsistency.js', () => ({
+  checkWorldConsistency: vi.fn().mockReturnValue({ corrections: [], warnings: [], statePatches: {} }),
+  applyConsistencyPatches: vi.fn().mockReturnValue(null),
+}));
+
 vi.mock('../livingWorld/dungeonEntry.js', () => ({
   handleDungeonEntry: vi.fn().mockResolvedValue(null),
 }));
@@ -144,6 +157,18 @@ vi.mock('./magicExposure.js', () => ({
 
 vi.mock('../aiContextTools.js', () => ({
   assembleContext: vi.fn().mockResolvedValue({}),
+}));
+
+vi.mock('../campaignSync.js', () => ({
+  loadQuestsForReconcile: vi.fn().mockResolvedValue([]),
+}));
+
+vi.mock('../../../../shared/domain/mergeRestRecoveryIntoStateChanges.js', () => ({
+  mergeRestRecoveryIntoStateChanges: vi.fn((sc) => sc),
+}));
+
+vi.mock('../difficultyScalingConfig.js', () => ({
+  getScaleForTier: vi.fn().mockReturnValue(null),
 }));
 
 vi.mock('../../lib/logger.js', () => ({

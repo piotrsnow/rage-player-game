@@ -163,6 +163,25 @@ function chooseColorId(appearanceEntry, item) {
   return 'none';
 }
 
+// The manifest defines no primarycolors for head/nose/ears items, so without
+// this sync their color resolves to 'none' → empty palette → the face,
+// nose, and ears render fully transparent (the "missing head" bug). LPC
+// head/nose/ears textures use the same paletted-skin convention as body,
+// so they share the body's skin color id.
+export const SKIN_SYNCED_SLOTS = ['head', 'nose', 'ears'];
+
+export function syncSkinColoredSlots(appearance) {
+  const skin = appearance?.slots?.body?.color;
+  if (!skin || skin === 'none') return;
+  for (const slot of SKIN_SYNCED_SLOTS) {
+    const entry = appearance.slots?.[slot];
+    if (!entry) continue;
+    if (!entry.color || entry.color === 'none') {
+      appearance.slots[slot] = { ...entry, color: skin };
+    }
+  }
+}
+
 // ── Layer renderer ──────────────────────────────────────────────────
 // Returns a raw RGBA Buffer sized to the texture, or null if skipped.
 
@@ -222,6 +241,8 @@ export async function composeSheetServer(appearance, {
     bodyType: appearance.bodyType || cfg['body-type'],
     headType: appearance.headType || cfg['head-type'],
   };
+
+  syncSkinColoredSlots(fullAppearance);
 
   const layers = [];
   let shadowDrawn = false;
