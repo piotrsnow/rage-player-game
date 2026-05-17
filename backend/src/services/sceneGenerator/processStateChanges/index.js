@@ -238,16 +238,15 @@ export async function processStateChanges(campaignId, stateChanges, { prevLoc = 
       // Prefer the composite ref if AI provided one.
       let resolved = null;
       if (aiLocRef) {
-        const refKind = aiLocRef[1].toLowerCase();
         const refId = aiLocRef[2];
         const row = await lookupLocationByKindId({
           prisma,
-          kind: refKind,
+          kind: null,
           id: refId,
-          select: { id: true, canonicalName: true, name: true, regionX: true, regionY: true },
+          select: { id: true, canonicalName: true, displayName: true, regionX: true, regionY: true },
         }).catch(() => null);
         if (row) {
-          resolved = { kind: refKind, id: refId, name: row.canonicalName || row.name || aiName || '' };
+          resolved = { id: refId, name: row.canonicalName || row.displayName || aiName || '' };
           log.info({ campaignId, ref: stateChanges.currentLocationRef }, 'currentLocation resolved via AI-emitted ref');
         }
       }
@@ -259,29 +258,28 @@ export async function processStateChanges(campaignId, stateChanges, { prevLoc = 
           aiNameResolved = true;
           const coords = await lookupLocationByKindId({
             prisma,
-            kind: resolved.kind,
+            kind: null,
             id: resolved.id,
             select: { regionX: true, regionY: true },
           }).catch(() => null);
           updates = {
             currentLocationName: resolved.name,
-            currentLocationKind: resolved.kind,
             currentLocationId: resolved.id,
             currentX: coords?.regionX ?? null,
             currentY: coords?.regionY ?? null,
           };
-          log.info({ campaignId, name: resolved.name, kind: resolved.kind, x: updates.currentX, y: updates.currentY }, 'currentLocation updated (anchored at POI)');
+          log.info({ campaignId, name: resolved.name, locId: resolved.id, x: updates.currentX, y: updates.currentY }, 'currentLocation updated (anchored at POI)');
         } else if (
           livingWorldEnabled
-          && currentRef?.kind && currentRef?.id
+          && currentRef
           && aiName.trim().split(/\s+/).length >= 2
           && !isGenericTerrainName(aiName)
           && !isNpcName(aiName, npcNames)
         ) {
           const anchorRow = await lookupLocationByKindId({
             prisma,
-            kind: currentRef.kind,
-            id: currentRef.id,
+            kind: null,
+            id: currentRef,
             select: { regionX: true, regionY: true, region: true },
           }).catch(() => null);
           const newRegionX = aiX ?? anchorRow?.regionX ?? 0;

@@ -617,10 +617,10 @@ export async function livingWorldRoutes(fastify) {
     const campaignId = request.params.id;
     const [campaignNpcs, campaignFull, latestScene] = await Promise.all([
       prisma.npc.findMany({
-        where: { campaignId, lastLocationKind: { not: null }, lastLocationId: { not: null } },
+        where: { campaignId, currentLocationId: { not: null } },
         select: {
           id: true, name: true, role: true, category: true,
-          lastLocationKind: true, lastLocationId: true,
+          currentLocationId: true,
           lastInteractionSceneIndex: true,
           spriteUrl: true, spriteSheetUrl: true,
         },
@@ -628,7 +628,6 @@ export async function livingWorldRoutes(fastify) {
       prisma.campaign.findUnique({
         where: { id: campaignId },
         select: {
-          currentLocationKind: true,
           currentLocationId: true,
           participants: {
             select: { character: { select: { id: true, name: true, species: true, spriteUrl: true, spriteSheetUrl: true } } },
@@ -643,22 +642,14 @@ export async function livingWorldRoutes(fastify) {
     ]);
 
     const latestSceneIndex = latestScene?.sceneIndex ?? null;
-    const campLocKind = campaignFull?.currentLocationKind;
     const campLocId = campaignFull?.currentLocationId;
 
     const occupants = [];
     for (const npc of campaignNpcs) {
-      // Self-healing display fallback: NPCs who participated in the latest
-      // scene but whose FK pair still points elsewhere get projected onto
-      // the campaign's current location. Underlying DB row stays untouched —
-      // next scene with this NPC will permanently relocate them via
-      // processNpcChanges.
-      let locKind = npc.lastLocationKind;
-      let locId = npc.lastLocationId;
-      if (latestSceneIndex != null && campLocKind && campLocId
+      let locId = npc.currentLocationId;
+      if (latestSceneIndex != null && campLocId
           && npc.lastInteractionSceneIndex === latestSceneIndex
-          && (locKind !== campLocKind || locId !== campLocId)) {
-        locKind = campLocKind;
+          && locId !== campLocId) {
         locId = campLocId;
       }
       occupants.push({
@@ -667,7 +658,6 @@ export async function livingWorldRoutes(fastify) {
         type: 'npc',
         role: npc.role,
         category: npc.category,
-        locationKind: locKind,
         locationId: locId,
         spriteUrl: npc.spriteUrl || null,
         spriteSheetUrl: npc.spriteSheetUrl || null,
@@ -734,14 +724,12 @@ export async function livingWorldRoutes(fastify) {
 
     const [movements, experienceRows] = await Promise.all([
       prisma.npcLocationMovement.findMany({
-        where: { campaignNpcId: npcId },
+        where: { npcId },
         orderBy: { movedAt: 'desc' },
         take: limit,
         select: {
           id: true,
-          fromKind: true,
           fromId: true,
-          toKind: true,
           toId: true,
           source: true,
           sceneIndex: true,
@@ -749,7 +737,7 @@ export async function livingWorldRoutes(fastify) {
         },
       }),
       prisma.npcExperience.findMany({
-        where: { campaignNpcId: npcId },
+        where: { npcId },
         orderBy: { addedAt: 'desc' },
         take: limit,
         select: {
