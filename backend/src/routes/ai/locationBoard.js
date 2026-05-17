@@ -13,7 +13,6 @@ import {
   ExplorationBoardSchema,
   ASSET_LAYERS,
 } from '../../../../shared/domain/explorationBoard.js';
-import { lookupLocationByKindId } from '../../services/locationRefs.js';
 import { enqueuePostLocationBoardVisuals } from '../../services/cloudTasks.js';
 import { config } from '../../config.js';
 import { childLogger } from '../../lib/logger.js';
@@ -26,12 +25,10 @@ const MOVEMENT_CATEGORIES = new Set(['movement', 'access', 'structural']);
 const DEFAULT_BASE_TILE_PX = 64;
 const MAX_ASSETS_PER_BOARD = 40;
 
-async function loadLocationRow(ref) {
-  if (!ref?.kind || !ref?.id) return null;
-  return lookupLocationByKindId({
-    prisma,
-    kind: ref.kind,
-    id: ref.id,
+async function loadLocationRow(locationId) {
+  if (!locationId) return null;
+  return prisma.location.findUnique({
+    where: { id: locationId },
     select: {
       id: true,
       name: true,
@@ -49,64 +46,55 @@ async function loadLocationRow(ref) {
   }).catch(() => null);
 }
 
-async function loadNeighborNames(campaignId, ref) {
-  if (!ref?.kind || !ref?.id) return [];
+async function loadNeighborNames(campaignId, locationId) {
+  if (!locationId) return [];
   const edges = await prisma.locationEdge.findMany({
     where: {
       isActive: true,
       OR: [
-        { fromKind: ref.kind, fromId: ref.id },
-        { toKind: ref.kind, toId: ref.id, bidirectional: true },
+        { fromLocationId: locationId },
+        { toLocationId: locationId, bidirectional: true },
       ],
     },
-    select: { fromKind: true, fromId: true, toKind: true, toId: true, category: true, edgeType: true },
+    select: { fromLocationId: true, toLocationId: true, category: true, edgeType: true },
   });
 
-  const neighborRefs = [];
+  const neighborIds = [];
   for (const e of edges) {
     if (!MOVEMENT_CATEGORIES.has(e.category)) continue;
-    const isFrom = e.fromKind === ref.kind && e.fromId === ref.id;
-    neighborRefs.push({
-      kind: isFrom ? e.toKind : e.fromKind,
-      id: isFrom ? e.toId : e.fromId,
+    const isFrom = e.fromLocationId === locationId;
+    neighborIds.push({
+      id: isFrom ? e.toLocationId : e.fromLocationId,
       edgeType: e.edgeType,
     });
   }
-  if (neighborRefs.length === 0) return [];
+  if (neighborIds.length === 0) return [];
 
-  const worldIds = neighborRefs.filter((r) => r.kind === 'world').map((r) => r.id);
-  const campIds = neighborRefs.filter((r) => r.kind === 'campaign').map((r) => r.id);
-
-  const [worldLocs, campLocs] = await Promise.all([
-    worldIds.length > 0
-      ? prisma.worldLocation.findMany({ where: { id: { in: worldIds } }, select: { id: true, canonicalName: true, displayName: true, name: true } })
-      : [],
-    campIds.length > 0
-      ? prisma.campaignLocation.findMany({ where: { id: { in: campIds } }, select: { id: true, name: true } })
-      : [],
-  ]);
+  const ids = neighborIds.map((r) => r.id);
+  const locs = await prisma.location.findMany({
+    where: { id: { in: ids } },
+    select: { id: true, canonicalName: true, displayName: true, name: true },
+  });
 
   const nameMap = new Map();
-  for (const loc of worldLocs) nameMap.set(`world:${loc.id}`, loc.canonicalName || loc.displayName || loc.name);
-  for (const loc of campLocs) nameMap.set(`campaign:${loc.id}`, loc.name);
+  for (const loc of locs) nameMap.set(loc.id, loc.canonicalName || loc.displayName || loc.name);
 
-  return neighborRefs
+  return neighborIds
     .map((r) => ({
-      name: nameMap.get(`${r.kind}:${r.id}`) || null,
-      ref: { kind: r.kind, id: r.id },
+      name: nameMap.get(r.id) || null,
+      ref: { id: r.id },
       edgeType: r.edgeType,
     }))
     .filter((n) => n.name)
     .slice(0, 6);
 }
 
-async function loadNpcsAtLocation(campaignId, ref) {
-  if (!ref?.kind || !ref?.id) return [];
-  const npcs = await prisma.campaignNPC.findMany({
+async function loadNpcsAtLocation(campaignId, locationId) {
+  if (!locationId) return [];
+  const npcs = await prisma.npc.findMany({
     where: {
       campaignId,
-      lastLocationKind: ref.kind,
-      lastLocationId: ref.id,
+      currentLocationId: locationId,
       alive: true,
     },
     select: { name: true, role: true },
@@ -408,7 +396,6 @@ export async function locationBoardRoutes(fastify) {
         where: { id: campaignId },
         select: {
           userId: true,
-          currentLocationKind: true,
           currentLocationId: true,
           currentLocationName: true,
           coreState: true,
@@ -419,15 +406,12 @@ export async function locationBoardRoutes(fastify) {
         return reply.code(403).send({ error: 'Not authorized' });
       }
 
-      const ref = campaign.currentLocationKind && campaign.currentLocationId
-        ? { kind: campaign.currentLocationKind, id: campaign.currentLocationId }
-        : null;
-
-      if (!ref) {
+      if (!campaign.currentLocationId) {
         return reply.code(404).send({ error: 'No current location' });
       }
 
-      const loc = await loadLocationRow(ref);
+      const locationId = campaign.currentLocationId;
+      const loc = await loadLocationRow(locationId);
       if (!loc) {
         return reply.code(404).send({ error: 'Location not found' });
       }
@@ -443,16 +427,15 @@ export async function locationBoardRoutes(fastify) {
           enqueuePostLocationBoardVisuals({
             campaignId,
             userId: campaign.userId,
-            locationKind: ref.kind,
-            locationId: ref.id,
+            locationId,
           }).catch((err) => log.warn({ err }, 'Re-enqueue location board visuals failed'));
         }
         return existing;
       }
 
       const [neighbors, npcsHere] = await Promise.all([
-        loadNeighborNames(campaignId, ref),
-        loadNpcsAtLocation(campaignId, ref),
+        loadNeighborNames(campaignId, locationId),
+        loadNpcsAtLocation(campaignId, locationId),
       ]);
 
       const locType = loc.locationType || '';
@@ -545,9 +528,8 @@ export async function locationBoardRoutes(fastify) {
         board = buildProceduralBoard(loc, neighbors, npcsHere, gridW, gridH);
       }
 
-      const updateTable = ref.kind === 'world' ? 'worldLocation' : 'campaignLocation';
-      await prisma[updateTable].update({
-        where: { id: ref.id },
+      await prisma.location.update({
+        where: { id: locationId },
         data: { tacticalGrid: board },
       });
 
@@ -556,8 +538,7 @@ export async function locationBoardRoutes(fastify) {
         enqueuePostLocationBoardVisuals({
           campaignId,
           userId: campaign.userId,
-          locationKind: ref.kind,
-          locationId: ref.id,
+          locationId,
         }).catch((err) => log.warn({ err }, 'Enqueue location board visuals failed'));
       }
 

@@ -1,23 +1,19 @@
-// Faza 2 — AI Resolver: mapuje AI-emitted string nazwy lokacji na composite
-// ref do node grafu. Resolwer scope'owany po `campaignId`.
+// AI Resolver: maps AI-emitted string location names to location IDs.
+// Scoped by `campaignId`.
 //
-// Strategia (po kolei):
-//   1. Composite ref string ("world:UUID" / "campaign:UUID") — zwróć po
-//      walidacji że node istnieje.
-//   2. Exact match po canonicalSlug (CampaignLocation) lub canonicalName (WorldLocation).
-//   3. Case-insensitive contains match na name/displayName.
-//   4. Fuzzy fallback (basic levenshtein) — opcjonalnie (TODO).
-//   5. Fail → log + zwróć null. Caller decyduje, czy utworzyć "unknown" node.
+// Strategy (in order):
+//   1. Composite ref string ("world:UUID" / "campaign:UUID") — return after
+//      validating node exists.  (Legacy format — both resolve to unified table.)
+//   2. Exact match on canonicalName or displayName.
+//   3. Case-insensitive contains match on name/displayName.
+//   4. Fuzzy fallback (basic levenshtein) — TODO.
+//   5. Fail → log + return null.
 //
-// `createNodeFromAIProposal` tworzy CampaignLocation + opcjonalnie edge
-// `parent → contains → new` jeśli AI podało parentLocationName.
+// `createNodeFromAIProposal` creates a campaign-scoped Location + optionally
+// an edge `parent → contains → new` if AI provided parentLocationName.
 
 import { prisma } from '../../lib/prisma.js';
-import {
-  LOCATION_KIND_WORLD,
-  LOCATION_KIND_CAMPAIGN,
-  slugifyLocationName,
-} from '../locationRefs.js';
+import { slugifyLocationName } from '../locationRefs.js';
 import { inferScaleFromType, clampLocationScale } from '../../../../shared/domain/locationGraphLayout.js';
 import { createEdge } from './graphService.js';
 import { childLogger } from '../../lib/logger.js';
@@ -26,37 +22,27 @@ const log = childLogger({ module: 'aiResolver' });
 
 const COMPOSITE_REF_REGEX = /^(world|campaign):([0-9a-f-]{36})$/i;
 
-/** Build a fast lookup index: normalized-name → { kind, id }. */
+/** Build a fast lookup index: normalized-name → { kind: 'world', id }. */
 async function buildNameIndex(campaignId) {
-  const [worldLocs, campaignLocs] = await Promise.all([
-    prisma.worldLocation.findMany({
-      select: { id: true, canonicalName: true, displayName: true, aliases: true },
-    }),
-    prisma.campaignLocation.findMany({
-      where: { campaignId },
-      select: { id: true, name: true, canonicalSlug: true, aliases: true },
-    }),
-  ]);
+  const rows = await prisma.location.findMany({
+    where: {
+      OR: [{ campaignId: null }, { campaignId }],
+    },
+    select: { id: true, canonicalName: true, displayName: true, aliases: true },
+  });
 
   const index = new Map();
-  const addEntry = (key, kind, id) => {
+  const addEntry = (key, id) => {
     const k = normalizeKey(key);
     if (!k) return;
-    if (!index.has(k)) index.set(k, { kind, id });
+    if (!index.has(k)) index.set(k, { kind: 'world', id });
   };
 
-  for (const r of worldLocs) {
-    addEntry(r.canonicalName, LOCATION_KIND_WORLD, r.id);
-    if (r.displayName) addEntry(r.displayName, LOCATION_KIND_WORLD, r.id);
+  for (const r of rows) {
+    if (r.canonicalName) addEntry(r.canonicalName, r.id);
+    if (r.displayName) addEntry(r.displayName, r.id);
     if (Array.isArray(r.aliases)) {
-      for (const alias of r.aliases) addEntry(alias, LOCATION_KIND_WORLD, r.id);
-    }
-  }
-  for (const r of campaignLocs) {
-    addEntry(r.name, LOCATION_KIND_CAMPAIGN, r.id);
-    addEntry(r.canonicalSlug, LOCATION_KIND_CAMPAIGN, r.id);
-    if (Array.isArray(r.aliases)) {
-      for (const alias of r.aliases) addEntry(alias, LOCATION_KIND_CAMPAIGN, r.id);
+      for (const alias of r.aliases) addEntry(alias, r.id);
     }
   }
   return index;
@@ -68,7 +54,7 @@ function normalizeKey(s) {
     .toLowerCase()
     .trim()
     .replace(/\s+/g, '_')
-    .replace(/[^a-z0-9_-]/g, ''); // strip diacritics — slugifyLocationName equivalent
+    .replace(/[^a-z0-9_-]/g, '');
 }
 
 /**
@@ -83,21 +69,21 @@ export async function resolveLocationRef(input, campaignId) {
   if (!input) return null;
 
   // 1) Already a structured ref object.
-  if (typeof input === 'object' && input.kind && input.id) {
-    const ok = await nodeExists(input.kind, input.id, campaignId);
-    return ok ? { kind: input.kind, id: input.id } : null;
+  if (typeof input === 'object' && input.id) {
+    const ok = await nodeExists(input.kind ?? 'world', input.id, campaignId);
+    return ok ? { kind: 'world', id: input.id } : null;
   }
 
   if (typeof input !== 'string') return null;
   const trimmed = input.trim();
   if (!trimmed) return null;
 
-  // 2) Composite ref string.
+  // 2) Composite ref string (legacy format — both kinds resolve to one table).
   const m = trimmed.match(COMPOSITE_REF_REGEX);
   if (m) {
-    const ref = { kind: m[1].toLowerCase(), id: m[2] };
-    const ok = await nodeExists(ref.kind, ref.id, campaignId);
-    return ok ? ref : null;
+    const id = m[2];
+    const ok = await nodeExists('world', id, campaignId);
+    return ok ? { kind: 'world', id } : null;
   }
 
   // 3) Name-based lookup.
@@ -108,7 +94,6 @@ export async function resolveLocationRef(input, campaignId) {
   // 4) Contains-match fallback (case-insensitive substring).
   const tLower = trimmed.toLowerCase();
   for (const [indexedKey, ref] of index.entries()) {
-    // Avoid false positives on very short queries (< 4 chars).
     if (tLower.length < 4) break;
     if (indexedKey.includes(key) || key.includes(indexedKey)) return ref;
   }
@@ -118,26 +103,21 @@ export async function resolveLocationRef(input, campaignId) {
 }
 
 /**
- * Verify that a node exists for the given composite ref.
- * Scope'uje campaign nodes po `campaignId`; world nodes są globalne.
+ * Verify that a location exists in the unified table.
+ * When campaignId is set, accepts both canonical and this-campaign rows.
  */
 export async function nodeExists(kind, id, campaignId = null) {
-  if (kind === LOCATION_KIND_WORLD) {
-    const row = await prisma.worldLocation.findUnique({ where: { id }, select: { id: true } });
-    return !!row;
+  const where = { id };
+  if (campaignId) {
+    where.OR = [{ campaignId: null }, { campaignId }];
   }
-  if (kind === LOCATION_KIND_CAMPAIGN) {
-    const where = { id };
-    if (campaignId) where.campaignId = campaignId;
-    const row = await prisma.campaignLocation.findFirst({ where, select: { id: true } });
-    return !!row;
-  }
-  return false;
+  const row = await prisma.location.findFirst({ where, select: { id: true } });
+  return !!row;
 }
 
 /**
- * Create a CampaignLocation from an AI proposal entry. Optionally wires up
- * a `contains` edge from `parentLocationName` (resolved via index).
+ * Create a campaign-scoped Location from an AI proposal entry. Optionally
+ * wires up a `contains` edge from `parentLocationName` (resolved via index).
  *
  * @param {object} entry — Output entry from `newLocations[]` AI schema.
  * @param {string} campaignId
@@ -147,12 +127,11 @@ export async function createNodeFromAIProposal(entry, campaignId) {
   if (!entry?.name || typeof entry.name !== 'string') return null;
   const slug = slugifyLocationName(entry.name);
 
-  // Idempotency: if already exists in this campaign, just return its ref.
-  const existing = await prisma.campaignLocation.findFirst({
-    where: { campaignId, canonicalSlug: slug },
+  const existing = await prisma.location.findFirst({
+    where: { campaignId, canonicalName: slug },
     select: { id: true },
   });
-  if (existing) return { kind: LOCATION_KIND_CAMPAIGN, id: existing.id };
+  if (existing) return { kind: 'world', id: existing.id };
 
   let parentRef = null;
   if (entry.parentLocationName) {
@@ -161,8 +140,10 @@ export async function createNodeFromAIProposal(entry, campaignId) {
 
   let parentScale = null;
   if (parentRef) {
-    const model = parentRef.kind === LOCATION_KIND_WORLD ? 'worldLocation' : 'campaignLocation';
-    const pRow = await prisma[model].findUnique({ where: { id: parentRef.id }, select: { scale: true } });
+    const pRow = await prisma.location.findUnique({
+      where: { id: parentRef.id },
+      select: { scale: true },
+    });
     parentScale = pRow?.scale ?? null;
   }
 
@@ -177,18 +158,17 @@ export async function createNodeFromAIProposal(entry, campaignId) {
 
   let row;
   try {
-    row = await prisma.campaignLocation.create({
+    row = await prisma.location.create({
       data: {
         campaignId,
-        name: entry.name,
-        canonicalSlug: slug,
+        displayName: entry.name,
+        canonicalName: slug,
         description: entry.description || '',
         locationType: entry.locationType || 'generic',
         slotType: entry.slotType || null,
         tags: Array.isArray(entry.tags) ? entry.tags : [],
         scale: resolvedScale,
         dangerLevel: entry.difficulty || 'safe',
-        parentLocationKind: parentRef?.kind || null,
         parentLocationId: parentRef?.id || null,
         biome: entry.biome || null,
         anchorType: entry.anchorType || null,
@@ -199,14 +179,11 @@ export async function createNodeFromAIProposal(entry, campaignId) {
     return null;
   }
 
-  // Auto-wire `parent contains new` edge.
   if (parentRef) {
     try {
       await createEdge({
-        fromKind: parentRef.kind,
-        fromId: parentRef.id,
-        toKind: LOCATION_KIND_CAMPAIGN,
-        toId: row.id,
+        fromLocationId: parentRef.id,
+        toLocationId: row.id,
         edgeType: 'contains',
         category: 'structural',
         bidirectional: false,
@@ -225,7 +202,7 @@ export async function createNodeFromAIProposal(entry, campaignId) {
     }
   }
 
-  return { kind: LOCATION_KIND_CAMPAIGN, id: row.id };
+  return { kind: 'world', id: row.id };
 }
 
 /**

@@ -7,19 +7,19 @@ import {
 } from './npcBaseline.js';
 
 describe('selectKeyNpcsWithWorldId (legacy alias)', () => {
-  it('drops ephemeral NPCs without worldNpcId', () => {
+  it('drops ephemeral NPCs without canonicalNpcId', () => {
     const ambient = [
-      { id: 'cnpc1', worldNpcId: 'w1', keyNpc: true },
-      { id: 'cnpc2', worldNpcId: null, keyNpc: true },
+      { id: 'cnpc1', canonicalNpcId: 'w1', keyNpc: true },
+      { id: 'cnpc2', canonicalNpcId: null, keyNpc: true },
     ];
     const withGoals = [{ name: 'Linked' }, { name: 'Ephemeral' }];
     const result = selectKeyNpcsWithWorldId(ambient, withGoals);
     expect(result).toHaveLength(1);
-    expect(result[0]).toEqual({ worldNpcId: 'w1', npcName: 'Linked' });
+    expect(result[0]).toEqual({ canonicalNpcId: 'w1', npcName: 'Linked' });
   });
 
   it('skips entries when withGoals slot is null', () => {
-    const ambient = [{ worldNpcId: 'w1', keyNpc: true }];
+    const ambient = [{ canonicalNpcId: 'w1', keyNpc: true }];
     const withGoals = [null];
     expect(selectKeyNpcsWithWorldId(ambient, withGoals)).toEqual([]);
   });
@@ -32,7 +32,7 @@ describe('formatBaselineEntries', () => {
     expect(formatBaselineEntries('not-an-array')).toEqual([]);
   });
 
-  it('shapes WorldNpcKnowledge baseline rows', () => {
+  it('shapes NpcKnowledge baseline rows', () => {
     const rows = [
       { content: 'Knows the king personally', source: 'baseline' },
       { content: 'Hates the baron', source: 'baseline' },
@@ -91,32 +91,32 @@ describe('formatBaselineEntries', () => {
 });
 
 describe('selectKeyNpcsForMemory', () => {
-  it('includes ephemeral NPC (no worldNpcId) if it has a CampaignNPC row', () => {
-    const ambient = [{ id: 'cnpc1', worldNpcId: null, keyNpc: true }];
+  it('includes ephemeral NPC (no canonicalNpcId) if it has a campaign-scoped Npc row', () => {
+    const ambient = [{ id: 'cnpc1', canonicalNpcId: null, keyNpc: true }];
     const withGoals = [{ name: 'Ephemeral Contact' }];
     expect(selectKeyNpcsForMemory(ambient, withGoals)).toEqual([
-      { worldNpcId: null, campaignNpcId: 'cnpc1', npcName: 'Ephemeral Contact' },
+      { canonicalNpcId: null, campaignNpcId: 'cnpc1', npcName: 'Ephemeral Contact' },
     ]);
   });
 
   it('skips background NPCs (keyNpc=false)', () => {
-    const ambient = [{ id: 'cnpc1', worldNpcId: 'w1', keyNpc: false }];
+    const ambient = [{ id: 'cnpc1', canonicalNpcId: 'w1', keyNpc: false }];
     const withGoals = [{ name: 'Villager' }];
     expect(selectKeyNpcsForMemory(ambient, withGoals)).toEqual([]);
   });
 
   it('returns canonical + shadow handles when both present', () => {
-    const ambient = [{ id: 'cnpc1', worldNpcId: 'w1', keyNpc: true }];
+    const ambient = [{ id: 'cnpc1', canonicalNpcId: 'w1', keyNpc: true }];
     const withGoals = [{ name: 'Gerent' }];
     expect(selectKeyNpcsForMemory(ambient, withGoals)).toEqual([
-      { worldNpcId: 'w1', campaignNpcId: 'cnpc1', npcName: 'Gerent' },
+      { canonicalNpcId: 'w1', campaignNpcId: 'cnpc1', npcName: 'Gerent' },
     ]);
   });
 
   it('selectKeyNpcsWithWorldId alias only keeps canonical-linked', () => {
     const ambient = [
-      { id: 'cnpc1', worldNpcId: 'w1', keyNpc: true },
-      { id: 'cnpc2', worldNpcId: null, keyNpc: true },
+      { id: 'cnpc1', canonicalNpcId: 'w1', keyNpc: true },
+      { id: 'cnpc2', canonicalNpcId: null, keyNpc: true },
     ];
     const withGoals = [{ name: 'Linked' }, { name: 'Ephemeral' }];
     const result = selectKeyNpcsWithWorldId(ambient, withGoals);

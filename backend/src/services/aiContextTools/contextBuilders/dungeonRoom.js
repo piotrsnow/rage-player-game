@@ -31,7 +31,7 @@ export async function buildDungeonRoomBlock(roomLocation, contentLanguage = 'pl'
   });
   const exitIds = exitEdges.map((e) => e.toLocationId).filter(Boolean);
   const exitRooms = exitIds.length
-    ? await prisma.worldLocation.findMany({
+    ? await prisma.location.findMany({
         where: { id: { in: exitIds } },
         select: { id: true, canonicalName: true, slotType: true, roomMetadata: true },
       })
@@ -46,7 +46,7 @@ export async function buildDungeonRoomBlock(roomLocation, contentLanguage = 'pl'
     return {
       direction: e.direction || 'unknown',
       targetRoomName: target?.canonicalName || null,
-      targetRef: target?.id ? `world:${target.id}` : null,
+      targetRef: target?.id || null,
       targetRole: target?.slotType || 'normal',
       gated: !!e.gated,
       gateHint: e.gateHint || null,
@@ -56,7 +56,7 @@ export async function buildDungeonRoomBlock(roomLocation, contentLanguage = 'pl'
 
   // Parent dungeon — for total room count + theme summary
   const parent = roomLocation.parentLocationId
-    ? await prisma.worldLocation.findUnique({
+    ? await prisma.location.findUnique({
         where: { id: roomLocation.parentLocationId },
         select: { id: true, canonicalName: true },
       })
@@ -64,7 +64,7 @@ export async function buildDungeonRoomBlock(roomLocation, contentLanguage = 'pl'
 
   return {
     roomName: roomLocation.canonicalName,
-    roomRef: `world:${roomLocation.id}`,
+    roomRef: roomLocation.id,
     dungeonName: parent?.canonicalName || null,
     role: meta.role || 'normal',
     theme: meta.theme || null,

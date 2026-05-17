@@ -1,31 +1,21 @@
-// Living World — canonical WorldNPC / WorldLocation CRUD + name-based dedupe.
+// Living World — canonical NPC / Location CRUD + name-based dedupe.
+// Unified table version — no more WorldNPC/WorldLocation/CampaignLocation split.
 //
-// Two write paths:
-//   - resolveWorldLocation: pure fuzzy-name LOOKUP across canonical only.
-//     NEVER creates — mid-play creation must go through CampaignLocation
-//     sandbox via `findOrCreateCampaignLocation` (smart placement) or admin
-//     promotion. Returns null when the name doesn't resolve.
-//   - findOrCreateWorldNPC: exact-match dedupe on (name + role).
-//
-// Both are idempotent — safe to call from scene processing even with retries.
-//
-// Semantic (embedding-based) dedupe is deferred — see
-// `knowledge/ideas/living-world-vector-search.md`. We still populate
-// `embeddingText` so a future backfill script can compute + index embeddings
-// once the scale (~1000+ NPCs) justifies the Atlas tier and per-write cost.
+// Key convention:
+//   prisma.npc      WHERE campaignId IS NULL  → canonical NPCs
+//   prisma.location WHERE campaignId IS NULL  → canonical locations
+//   prisma.location WHERE campaignId = X      → campaign sandbox locations
 
 import { prisma } from '../../lib/prisma.js';
 import { childLogger } from '../../lib/logger.js';
 import { buildNPCEmbeddingText, buildLocationEmbeddingText } from '../embeddingService.js';
-import { LOCATION_KIND_WORLD, LOCATION_KIND_CAMPAIGN, slugifyLocationName } from '../locationRefs.js';
+import { slugifyLocationName } from '../locationRefs.js';
 import * as ragService from './ragService.js';
 
 const log = childLogger({ module: 'worldStateService' });
 
 /**
- * Normalize a location name for fuzzy dedup. Strips Polish geo qualifiers
- * so variants collapse to one canonical record. Mirrors the logic in
- * memoryCompressor.normalizeLocationName but exported for reuse.
+ * Normalize a location name for fuzzy dedup.
  */
 export function normalizeLocationName(name) {
   if (!name || typeof name !== 'string') return '';
@@ -37,11 +27,6 @@ export function normalizeLocationName(name) {
     .trim();
 }
 
-/**
- * Canonical-id slug for a WorldNPC derived from name + role plus
- * a random suffix. Not stored as unique in Mongo — dedupe is done on
- * (name + role) via findFirst. Handy for logs/stable refs.
- */
 export function buildNpcCanonicalId({ name, role }) {
   const base = (name || '')
     .toLowerCase()
@@ -56,68 +41,45 @@ export function buildNpcCanonicalId({ name, role }) {
 }
 
 // ──────────────────────────────────────────────────────────────────────
-// WorldLocation
+// Location resolution
 // ──────────────────────────────────────────────────────────────────────
 
 /**
- * Pure LOOKUP — find an existing WorldLocation via fuzzy normalized-name
- * match across canonical only. Returns null when the name doesn't resolve.
- *
- * NEVER creates. Mid-play creation must go through CampaignLocation sandbox
- * (`findOrCreateCampaignLocation` with smart placement) or admin promotion.
- * Earlier versions of this function created a rogue WorldLocation at (0,0)
- * here as a fallback — that bypassed the smart placer and dumped sandbox
- * settlements onto the canonical map at the origin (overlapping the capital).
- *
- * Callers that need polymorphic resolve (canonical OR campaign sandbox)
- * should use `resolveLocationByName({ campaignId })` instead.
+ * Pure LOOKUP — find a canonical location via fuzzy name match.
+ * NEVER creates. Returns the Location row or null.
  */
 export async function resolveWorldLocation(rawName, { region = null } = {}) {
   if (!rawName || typeof rawName !== 'string') return null;
   const name = rawName.trim();
   if (!name) return null;
-
   const norm = normalizeLocationName(name);
   if (!norm) return null;
 
-  // Fast path: exact canonicalName hit (skip draft registry entries)
-  const exact = await prisma.worldLocation.findUnique({ where: { canonicalName: name } });
-  if (exact && !exact.softDeletedAt && !name.startsWith('__draft::')) return exact;
+  const exact = await prisma.location.findFirst({
+    where: { canonicalName: name, campaignId: null, softDeletedAt: null },
+  });
+  if (exact && !name.startsWith('__draft::')) return exact;
 
-  // Fuzzy path: scan aliases + existing canonical names
-  const candidates = await prisma.worldLocation.findMany({
-    where: { ...(region ? { region } : {}), softDeletedAt: null, NOT: { canonicalName: { startsWith: '__draft::' } } },
-    select: { id: true, canonicalName: true, aliases: true, region: true, description: true, embeddingText: true },
+  const candidates = await prisma.location.findMany({
+    where: {
+      campaignId: null,
+      softDeletedAt: null,
+      ...(region ? { region } : {}),
+      NOT: { canonicalName: { startsWith: '__draft::' } },
+    },
+    select: { id: true, canonicalName: true, displayName: true, aliases: true, region: true, description: true, embeddingText: true },
   });
   for (const rec of candidates) {
-    const recNorm = normalizeLocationName(rec.canonicalName);
-    if (recNorm === norm) return rec;
-    const aliases = Array.isArray(rec.aliases) ? rec.aliases : [];
-    if (aliases.some((a) => normalizeLocationName(a) === norm)) {
-      return rec;
-    }
-    if (recNorm && norm && recNorm.length >= 5 && norm.length >= 5) {
-      const shorter = Math.min(recNorm.length, norm.length);
-      const longer = Math.max(recNorm.length, norm.length);
-      if (shorter / longer < 0.6) continue;
-      if (!(recNorm.includes(norm) || norm.includes(recNorm))) continue;
+    if (matchesByNormName(rec.canonicalName || rec.displayName, rec.aliases, norm)) {
       return rec;
     }
   }
-
   return null;
 }
 
-// ──────────────────────────────────────────────────────────────────────
-// CampaignLocation (F5b — per-campaign sandbox; AI mid-play creates here)
-// ──────────────────────────────────────────────────────────────────────
-
 /**
- * F5b — fuzzy resolve a location name across BOTH canonical WorldLocation
- * and this-campaign CampaignLocation. Canonical takes priority (so AI saying
- * "Krynsk" hits the canonical Krynsk even if a campaign also has a same-name
- * sandbox row). Returns `{ kind, row }` or `null`. Pure lookup — never
- * creates. Pass `region` to narrow the canonical search.
+ * Resolve a location by name. Canonical takes priority over campaign sandbox.
+ * Returns { location, isCanonical } or null.
  */
 export async function resolveLocationByName(rawName, { campaignId = null, region = null } = {}) {
   if (!rawName || typeof rawName !== 'string') return null;
@@ -126,13 +88,20 @@ export async function resolveLocationByName(rawName, { campaignId = null, region
   const norm = normalizeLocationName(name);
   if (!norm) return null;
 
-  // Canonical — exact canonicalName hit (skip draft registry entries + soft-deleted)
-  const exact = await prisma.worldLocation.findUnique({ where: { canonicalName: name } });
-  if (exact && !exact.softDeletedAt && !name.startsWith('__draft::')) return { kind: LOCATION_KIND_WORLD, row: exact };
+  // Canonical — exact hit
+  const exact = await prisma.location.findFirst({
+    where: { canonicalName: name, campaignId: null, softDeletedAt: null },
+  });
+  if (exact && !name.startsWith('__draft::')) return { location: exact, isCanonical: true };
 
-  // Canonical — fuzzy via aliases / normalized name / substring
-  const wlCandidates = await prisma.worldLocation.findMany({
-    where: { ...(region ? { region } : {}), softDeletedAt: null, NOT: { canonicalName: { startsWith: '__draft::' } } },
+  // Canonical — fuzzy
+  const wlCandidates = await prisma.location.findMany({
+    where: {
+      campaignId: null,
+      softDeletedAt: null,
+      ...(region ? { region } : {}),
+      NOT: { canonicalName: { startsWith: '__draft::' } },
+    },
     select: {
       id: true, canonicalName: true, displayName: true, aliases: true,
       region: true, regionX: true, regionY: true, locationType: true,
@@ -142,8 +111,8 @@ export async function resolveLocationByName(rawName, { campaignId = null, region
     },
   });
   for (const rec of wlCandidates) {
-    if (matchesByNormName(rec.canonicalName, rec.aliases, norm)) {
-      return { kind: LOCATION_KIND_WORLD, row: rec };
+    if (matchesByNormName(rec.canonicalName || rec.displayName, rec.aliases, norm)) {
+      return { location: rec, isCanonical: true };
     }
   }
 
@@ -151,23 +120,22 @@ export async function resolveLocationByName(rawName, { campaignId = null, region
   if (campaignId) {
     const slug = slugifyLocationName(name);
     if (slug) {
-      const slugHit = await prisma.campaignLocation.findUnique({
-        where: { campaignId_canonicalSlug: { campaignId, canonicalSlug: slug } },
+      const slugHit = await prisma.location.findFirst({
+        where: { campaignId, canonicalName: slug },
       });
-      if (slugHit) return { kind: LOCATION_KIND_CAMPAIGN, row: slugHit };
+      if (slugHit) return { location: slugHit, isCanonical: false };
     }
-    const clCandidates = await prisma.campaignLocation.findMany({
+    const clCandidates = await prisma.location.findMany({
       where: { campaignId },
       select: {
-        id: true, name: true, canonicalSlug: true, aliases: true,
+        id: true, canonicalName: true, displayName: true, aliases: true,
         region: true, regionX: true, regionY: true, locationType: true,
-        parentLocationKind: true, parentLocationId: true,
-        description: true, embeddingText: true, dangerLevel: true,
+        parentLocationId: true, description: true, embeddingText: true, dangerLevel: true,
       },
     });
     for (const rec of clCandidates) {
-      if (matchesByNormName(rec.name, rec.aliases, norm)) {
-        return { kind: LOCATION_KIND_CAMPAIGN, row: rec };
+      if (matchesByNormName(rec.displayName || rec.canonicalName, rec.aliases, norm)) {
+        return { location: rec, isCanonical: false };
       }
     }
   }
@@ -180,10 +148,6 @@ function matchesByNormName(displayOrCanonical, aliases, queryNorm) {
   if (recNorm === queryNorm) return true;
   const aliasArr = Array.isArray(aliases) ? aliases : [];
   if (aliasArr.some((a) => normalizeLocationName(a) === queryNorm)) return true;
-  // Substring containment — bounded to avoid false positives from short
-  // tokens ("las" matching "Stary Las Wilczy") or NPC-like names matching
-  // partial location substrings. Both sides must be >= 5 chars and the
-  // shorter side must be at least 60% of the longer to count.
   if (recNorm && queryNorm && recNorm.length >= 5 && queryNorm.length >= 5) {
     const shorter = Math.min(recNorm.length, queryNorm.length);
     const longer = Math.max(recNorm.length, queryNorm.length);
@@ -195,12 +159,8 @@ function matchesByNormName(displayOrCanonical, aliases, queryNorm) {
 }
 
 /**
- * F5b — find OR create a CampaignLocation row in the per-campaign sandbox.
- * Caller must have already resolved against canonical via
- * `resolveLocationByName` if cross-table dedup is desired; this function
- * only dedupes against this-campaign CampaignLocations by `canonicalSlug`.
- *
- * Returns the CampaignLocation row. Idempotent on (campaignId, slug).
+ * Find or create a campaign-scoped location.
+ * Only dedupes within the campaign (by slug). Idempotent.
  */
 export async function findOrCreateCampaignLocation(rawName, {
   campaignId,
@@ -211,7 +171,6 @@ export async function findOrCreateCampaignLocation(rawName, {
   regionX = 0,
   regionY = 0,
   positionConfidence = 0.5,
-  parentLocationKind = null,
   parentLocationId = null,
   slotType = null,
   slotKind = 'custom',
@@ -226,23 +185,23 @@ export async function findOrCreateCampaignLocation(rawName, {
   const slug = slugifyLocationName(name);
   if (!slug) return null;
 
-  const existing = await prisma.campaignLocation.findUnique({
-    where: { campaignId_canonicalSlug: { campaignId, canonicalSlug: slug } },
+  const existing = await prisma.location.findFirst({
+    where: { campaignId, canonicalName: slug },
   });
   if (existing) return existing;
 
   const embText = description ? `${name}: ${description}` : name;
   const data = {
     campaignId,
-    name,
-    canonicalSlug: slug,
+    canonicalName: slug,
+    displayName: name,
     description,
     category: category || locationType || 'generic',
     locationType,
     region,
     aliases: aliases || [name],
     regionX, regionY, positionConfidence,
-    parentLocationKind, parentLocationId,
+    parentLocationId,
     slotType, slotKind, dangerLevel,
     embeddingText: embText,
   };
@@ -250,274 +209,148 @@ export async function findOrCreateCampaignLocation(rawName, {
   if (typeof maxSubLocations === 'number') data.maxSubLocations = maxSubLocations;
 
   try {
-    const created = await prisma.campaignLocation.create({ data });
-    ragService.index('campaign_location', created.id, embText).catch(() => {});
-    return created;
+    return await prisma.location.create({ data });
   } catch (err) {
     if (err?.code === 'P2002') {
-      return prisma.campaignLocation.findUnique({
-        where: { campaignId_canonicalSlug: { campaignId, canonicalSlug: slug } },
-      });
+      return prisma.location.findFirst({ where: { campaignId, canonicalName: slug } });
     }
-    throw err;
-  }
-}
-
-async function registerCampaignLocationInWorldRegistry(campaignLoc, campaignId) {
-  const registryName = `__draft::${campaignId}::${campaignLoc.canonicalSlug}`;
-  await prisma.worldLocation.upsert({
-    where: { canonicalName: registryName },
-    create: {
-      canonicalName: registryName,
-      displayName: campaignLoc.name,
-      description: campaignLoc.description || '',
-      category: campaignLoc.category || 'generic',
-      locationType: campaignLoc.locationType || 'generic',
-      region: campaignLoc.region,
-      regionX: campaignLoc.regionX ?? 0,
-      regionY: campaignLoc.regionY ?? 0,
-      positionConfidence: campaignLoc.positionConfidence ?? 0.5,
-      dangerLevel: campaignLoc.dangerLevel || 'safe',
-      embeddingText: campaignLoc.embeddingText || campaignLoc.name,
-      globallyActive: false,
-      originCampaignId: campaignId,
-    },
-    update: {},
-  });
-}
-
-// ──────────────────────────────────────────────────────────────────────
-// WorldNPC
-// ──────────────────────────────────────────────────────────────────────
-
-/**
- * Pure LOOKUP — find an existing canonical WorldNPC by exact case-insensitive
- * name match, alive only. Returns `null` when zero or multiple alive NPCs
- * share the name (ambiguity → caller falls through to ephemeral creation).
- *
- * `take: 2` detects ambiguity cheaply — if two or more share the name we
- * never link to the wrong person. Never creates.
- */
-export async function findCanonicalWorldNpcByName(name, { campaignId = null } = {}) {
-  if (!name || typeof name !== 'string') return null;
-  const trimmed = name.trim();
-  if (!trimmed) return null;
-  const where = {
-    name: { equals: trimmed, mode: 'insensitive' },
-    alive: true,
-    softDeletedAt: null,
-  };
-  if (campaignId) {
-    where.OR = [{ globallyActive: true }, { originCampaignId: campaignId }];
-  } else {
-    where.globallyActive = true;
-  }
-  const matches = await prisma.worldNPC.findMany({ where, take: 2 });
-  return matches.length === 1 ? matches[0] : null;
-}
-
-/**
- * Find (name-dedupe) or create a WorldNPC. Matches by case-insensitive name
- * + role, preferring alive entries. Loose enough to avoid proliferation on
- * name variants, strict enough to keep distinct NPCs separate.
- *
- * Semantic dedupe (cosine similarity on embeddings) is deferred — see
- * `knowledge/ideas/living-world-vector-search.md`.
- *
- * npcData shape: { name, role?, personality?, alignment?,
- *                  alive?, currentLocationId? }
- */
-export async function findOrCreateWorldNPC(npcData) {
-  if (!npcData?.name) return null;
-
-  const name = npcData.name.trim();
-  const role = npcData.role || null;
-
-  // Name-based dedupe. Prefer alive match on (name + role).
-  const existing = await prisma.worldNPC.findFirst({
-    where: {
-      name: { equals: name, mode: 'insensitive' },
-      role,
-      alive: true,
-    },
-  });
-  if (existing) return existing;
-
-  // Entity registry: callers pass `_registryDefaults` to create inactive
-  // entries that show up only in the origin campaign until admin activates.
-  const reg = npcData._registryDefaults || {};
-
-  // Embedding text populated for future backfill — no vector written now.
-  const embText = buildNPCEmbeddingText(npcData);
-  const canonicalId = buildNpcCanonicalId(npcData);
-  const created = await prisma.worldNPC.create({
-    data: {
-      canonicalId,
-      name,
-      role,
-      personality: npcData.personality || null,
-      alignment: npcData.alignment || 'neutral',
-      alive: npcData.alive !== false,
-      currentLocationId: npcData.currentLocationId || null,
-      embeddingText: embText,
-      globallyActive: reg.globallyActive ?? true,
-      originCampaignId: reg.originCampaignId ?? null,
-    },
-  });
-
-  // Round E Phase 9 — RAG index for world-scope retrieval.
-  ragService.index('npc', created.id, embText).catch(() => {});
-
-  return created;
-}
-
-/**
- * Update current location for a WorldNPC (canonical). Best-effort —
- * returns boolean. Used by npcLifecycle when NPC moves between locations.
- */
-export async function setWorldNpcLocation(worldNpcId, locationId) {
-  if (!worldNpcId) return false;
-  try {
-    await prisma.worldNPC.update({
-      where: { id: worldNpcId },
-      data: { currentLocationId: locationId || null },
-    });
-    return true;
-  } catch (err) {
-    log.warn({ err, worldNpcId }, 'Failed to update WorldNPC location');
-    return false;
-  }
-}
-
-/**
- * Mark a WorldNPC as dead (alive=false). Irreversible at the WorldNPC level —
- * Phase 3 adds first-write-wins atomic semantics for cross-user kills.
- */
-export async function killWorldNpc(worldNpcId) {
-  if (!worldNpcId) return false;
-  try {
-    await prisma.worldNPC.update({
-      where: { id: worldNpcId },
-      data: { alive: false },
-    });
-    return true;
-  } catch (err) {
-    log.warn({ err, worldNpcId }, 'Failed to mark WorldNPC dead');
-    return false;
-  }
-}
-
-/**
- * Create a sublocation under a named parent settlement. Idempotent:
- * re-emitting the same canonicalName upserts (so scene retry doesn't
- * double-materialize). Inherits parent position (sublocations share
- * overworld coords with their parent).
- *
- * Does NOT apply topology caps — caller is responsible for running
- * topologyGuard.decideSublocationAdmission first and passing slotType/
- * slotKind from the decision.
- *
- * Returns the WorldLocation row or null on failure.
- */
-export async function createSublocation({
-  name,
-  parent,
-  slotType = null,
-  slotKind = 'custom',
-  locationType = 'interior',
-  description = '',
-}) {
-  if (!name || !parent?.id) return null;
-  const cleanName = name.trim();
-  if (!cleanName) return null;
-  try {
-    const row = await prisma.worldLocation.upsert({
-      where: { canonicalName: cleanName },
-      update: {
-        parentLocationId: parent.id,
-        locationType,
-        slotType,
-        slotKind,
-        region: parent.region || null,
-        regionX: parent.regionX ?? 0,
-        regionY: parent.regionY ?? 0,
-        positionConfidence: parent.positionConfidence ?? 0.5,
-      },
-      create: {
-        canonicalName: cleanName,
-        aliases: [cleanName],
-        description,
-        category: slotType || 'custom',
-        locationType,
-        parentLocationId: parent.id,
-        slotType,
-        slotKind,
-        region: parent.region || null,
-        regionX: parent.regionX ?? 0,
-        regionY: parent.regionY ?? 0,
-        positionConfidence: parent.positionConfidence ?? 0.5,
-        embeddingText: description ? `${cleanName}: ${description}` : cleanName,
-      },
-    });
-    // Round E Phase 9 — fire-and-forget RAG indexing for sublocation.
-    ragService.index('location', row.id, buildLocationEmbeddingText(row)).catch(() => {});
-    return row;
-  } catch (err) {
-    log.warn({ err: err?.message, name: cleanName }, 'createSublocation failed');
+    log.warn({ err: err?.message, name, campaignId }, 'findOrCreateCampaignLocation failed');
     return null;
   }
 }
 
-/**
- * Fetch all WorldNPCs currently at a location. Includes paused NPCs so
- * scene assembly can surface "Bjorn jeszcze tu jest, tylko śpi" via
- * pauseSnapshot. Callers filter by pausedAt as needed.
- */
-export async function listNpcsAtLocation(locationId, { aliveOnly = true } = {}) {
-  if (!locationId) return [];
-  const where = { currentLocationId: locationId, softDeletedAt: null };
-  if (aliveOnly) where.alive = true;
-  return prisma.worldNPC.findMany({ where });
+// ──────────────────────────────────────────────────────────────────────
+// Canonical NPC helpers
+// ──────────────────────────────────────────────────────────────────────
+
+export async function findCanonicalWorldNpcByName(name, { campaignId = null } = {}) {
+  if (!name || typeof name !== 'string') return null;
+  const trimmed = name.trim();
+  if (!trimmed) return null;
+  return prisma.npc.findFirst({
+    where: {
+      campaignId: null,
+      name: { equals: trimmed, mode: 'insensitive' },
+      alive: true,
+    },
+  });
+}
+
+export async function findOrCreateWorldNPC(npcData) {
+  if (!npcData?.name) return null;
+  const { name, role, personality, category, race, creatureKind, level } = npcData;
+
+  const existing = await prisma.npc.findFirst({
+    where: {
+      campaignId: null,
+      name: { equals: name.trim(), mode: 'insensitive' },
+      ...(role ? { role: { equals: role, mode: 'insensitive' } } : {}),
+    },
+  });
+  if (existing) return existing;
+
+  const canonicalId = buildNpcCanonicalId({ name, role });
+  const embText = buildNPCEmbeddingText({ name, role, personality });
+  try {
+    const created = await prisma.npc.create({
+      data: {
+        campaignId: null,
+        canonicalId,
+        name: name.trim(),
+        role: role || null,
+        personality: personality || null,
+        category: category || 'commoner',
+        race: race || null,
+        creatureKind: creatureKind || null,
+        level: typeof level === 'number' ? level : 1,
+        embeddingText: embText,
+        globallyActive: true,
+      },
+    });
+    return created;
+  } catch (err) {
+    if (err?.code === 'P2002') {
+      return prisma.npc.findFirst({ where: { canonicalId, campaignId: null } });
+    }
+    log.warn({ err: err?.message, name }, 'findOrCreateWorldNPC failed');
+    return null;
+  }
+}
+
+export function setWorldNpcLocation(npcId, locationId) {
+  return prisma.npc.update({
+    where: { id: npcId },
+    data: { currentLocationId: locationId || null },
+  }).catch((err) => {
+    log.warn({ err: err?.message, npcId, locationId }, 'setWorldNpcLocation failed');
+    return false;
+  });
+}
+
+export function killWorldNpc(npcId) {
+  return prisma.npc.update({
+    where: { id: npcId },
+    data: { alive: false },
+  }).catch((err) => {
+    log.warn({ err: err?.message, npcId }, 'killWorldNpc failed');
+    return false;
+  });
+}
+
+export function listNpcsAtLocation(locationId, { aliveOnly = true } = {}) {
+  return prisma.npc.findMany({
+    where: {
+      campaignId: null,
+      currentLocationId: locationId,
+      ...(aliveOnly && { alive: true }),
+    },
+  });
 }
 
 /**
- * Walk up the parent chain of a polymorphic location ref. Returns the set
- * of `${kind}:${id}` strings encountered (incl. starting ref). Used by the
- * post-process auto-promote rule in processStateChanges to detect whether
- * a freshly-emitted sublocation belongs to the player's current ancestry.
+ * Create a canonical sublocation under a parent.
  */
-export async function walkUpAncestors({ kind, id }) {
-  const visited = new Set();
-  if (!kind || !id) return visited;
-  let curKind = kind;
-  let curId = id;
-  for (let i = 0; i < 10 && curId; i += 1) {
-    const refKey = `${curKind}:${curId}`;
-    if (visited.has(refKey)) break;
-    visited.add(refKey);
-    try {
-      if (curKind === LOCATION_KIND_WORLD) {
-        const row = await prisma.worldLocation.findUnique({
-          where: { id: curId },
-          select: { parentLocationId: true },
-        });
-        if (!row?.parentLocationId) break;
-        curId = row.parentLocationId;
-        curKind = LOCATION_KIND_WORLD;
-      } else if (curKind === LOCATION_KIND_CAMPAIGN) {
-        const row = await prisma.campaignLocation.findUnique({
-          where: { id: curId },
-          select: { parentLocationKind: true, parentLocationId: true },
-        });
-        if (!row?.parentLocationKind || !row?.parentLocationId) break;
-        curKind = row.parentLocationKind;
-        curId = row.parentLocationId;
-      } else {
-        break;
-      }
-    } catch {
-      break;
-    }
+export async function createSublocation({ name, parent, slotType, slotKind, locationType, description }) {
+  if (!name || !parent?.id) return null;
+  const slug = slugifyLocationName(name);
+  const existing = await prisma.location.findFirst({
+    where: { canonicalName: slug, campaignId: null },
+  });
+  if (existing) return existing;
+
+  return prisma.location.create({
+    data: {
+      campaignId: null,
+      canonicalName: slug,
+      displayName: name,
+      description: description || '',
+      locationType: locationType || 'site',
+      parentLocationId: parent.id,
+      regionX: parent.regionX || 0,
+      regionY: parent.regionY || 0,
+      region: parent.region || null,
+      slotType: slotType || null,
+      slotKind: slotKind || 'custom',
+    },
+  });
+}
+
+/**
+ * Walk up the parent chain from a location. Returns Set of ancestor IDs.
+ */
+export async function walkUpAncestors(locationId, { maxDepth = 10 } = {}) {
+  const ancestors = new Set();
+  let current = locationId;
+  let depth = 0;
+  while (current && depth < maxDepth) {
+    const loc = await prisma.location.findUnique({
+      where: { id: current },
+      select: { parentLocationId: true },
+    });
+    if (!loc?.parentLocationId) break;
+    ancestors.add(loc.parentLocationId);
+    current = loc.parentLocationId;
+    depth++;
   }
-  return visited;
+  return ancestors;
 }

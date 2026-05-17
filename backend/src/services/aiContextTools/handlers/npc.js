@@ -10,7 +10,7 @@ const log = childLogger({ module: 'aiContextTools' });
 export async function handleGetNPC(campaignId, npcName, { currentRef, campaignNpcId } = {}) {
   // 1. ID-based lookup (instant, exact — preferred when nano/heuristics supply UUID)
   if (campaignNpcId) {
-    const byId = await prisma.campaignNPC.findUnique({
+    const byId = await prisma.npc.findUnique({
       where: { id: campaignNpcId },
       include: { relationships: true },
     });
@@ -20,14 +20,14 @@ export async function handleGetNPC(campaignId, npcName, { currentRef, campaignNp
   }
 
   // 2. Exact name match (case-insensitive)
-  const exact = await prisma.campaignNPC.findFirst({
+  const exact = await prisma.npc.findFirst({
     where: { campaignId, name: { equals: npcName, mode: 'insensitive' } },
     include: { relationships: true },
   });
   if (exact) return formatNPC(exact, { currentRef });
 
   // 3. Substring fallback (legacy compat — catches partial matches)
-  const fuzzy = await prisma.campaignNPC.findFirst({
+  const fuzzy = await prisma.npc.findFirst({
     where: { campaignId, name: { contains: npcName, mode: 'insensitive' } },
     include: { relationships: true },
   });
@@ -54,13 +54,11 @@ export async function handleGetNPC(campaignId, npcName, { currentRef, campaignNp
 export function formatNPC(npc, { currentRef } = {}) {
   const relationships = Array.isArray(npc.relationships) ? npc.relationships : [];
 
-  // Location check — is this NPC at the player's current location?
   let awayWarning = null;
-  if (currentRef && npc.lastLocationKind && npc.lastLocationId) {
-    const sameLocation =
-      npc.lastLocationKind === currentRef.kind && npc.lastLocationId === currentRef.id;
+  if (currentRef && npc.currentLocationId) {
+    const sameLocation = npc.currentLocationId === currentRef.id;
     if (!sameLocation) {
-      const loc = npc.lastLocation || `${npc.lastLocationKind}:${npc.lastLocationId}`;
+      const loc = npc.lastLocation || npc.currentLocationId;
       awayWarning = `[AWAY — this NPC is NOT at the player's current location (last seen: ${loc}). They cannot speak in this scene unless contacted via letter/messenger/magic.]`;
     }
   }

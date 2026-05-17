@@ -142,7 +142,7 @@ export async function flushDeferred({ campaignId, worldNpcId, lockedSnapshot, us
     if (projected.alive !== undefined) updateData.alive = projected.alive;
     if (projected.companionLoyalty !== undefined) updateData.companionLoyalty = projected.companionLoyalty;
     if (Object.keys(updateData).length > 0) {
-      await prisma.worldNPC.update({ where: { id: worldNpcId }, data: updateData });
+      await prisma.npc.update({ where: { id: worldNpcId }, data: updateData });
     }
   } catch (err) {
     log.error({ err, worldNpcId }, 'Failed to write projected state during flush');

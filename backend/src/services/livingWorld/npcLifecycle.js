@@ -33,7 +33,7 @@ export async function pauseNpcsAtLocation(prevLocationName) {
   // Phase 2: skip companions (they travel with the player — pausing them would
   // defeat the point) and skip already-locked NPCs (some other campaign owns
   // them; their state is frozen for us anyway).
-  const npcs = await prisma.worldNPC.findMany({
+  const npcs = await prisma.npc.findMany({
     where: {
       currentLocationId: location.id,
       alive: true,
@@ -59,7 +59,7 @@ export async function pauseNpcsAtLocation(prevLocationName) {
         recentEventIds: recent.map((e) => e.id),
       };
 
-      await prisma.worldNPC.update({
+      await prisma.npc.update({
         where: { id: npc.id },
         data: {
           pausedAt,
@@ -109,7 +109,7 @@ export async function resumeNpcsAtLocation(newLocationName, campaign, { provider
 
   // Phase 2: also skip locked NPCs — they're owned by another campaign and
   // their state is invisible to global queries until leaveParty flushes.
-  const npcs = await prisma.worldNPC.findMany({
+  const npcs = await prisma.npc.findMany({
     where: {
       currentLocationId: location.id,
       alive: true,
@@ -150,7 +150,7 @@ export async function resumeNpcsAtLocation(newLocationName, campaign, { provider
         // NPC left — we don't know where (Phase 5 ticks would tell us). Mark location null.
         updateData.currentLocationId = null;
       }
-      await prisma.worldNPC.update({ where: { id: npc.id }, data: updateData });
+      await prisma.npc.update({ where: { id: npc.id }, data: updateData });
 
       // Emit resume event
       const duration = formatGameDuration(gameMs);

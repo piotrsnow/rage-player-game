@@ -11,49 +11,41 @@ const TILE_ID_SET = new Set(ALL_TILE_IDS);
 const MOVEMENT_CATEGORIES = new Set(['movement', 'access', 'structural']);
 
 async function loadNeighbors(campaignId, currentLocationRef) {
-  if (!currentLocationRef?.kind || !currentLocationRef?.id) return [];
+  if (!currentLocationRef?.id) return [];
 
-  const { kind, id } = currentLocationRef;
+  const { id } = currentLocationRef;
   const edges = await prisma.locationEdge.findMany({
     where: {
       isActive: true,
       OR: [
-        { fromKind: kind, fromId: id },
-        { toKind: kind, toId: id, bidirectional: true },
+        { fromLocationId: id },
+        { toLocationId: id, bidirectional: true },
       ],
     },
-    select: { fromKind: true, fromId: true, toKind: true, toId: true, category: true },
+    select: { fromLocationId: true, toLocationId: true, category: true },
   });
 
-  const neighborRefs = [];
+  const neighborIds = [];
   for (const e of edges) {
     if (!MOVEMENT_CATEGORIES.has(e.category)) continue;
-    const isFrom = e.fromKind === kind && e.fromId === id;
-    const nKind = isFrom ? e.toKind : e.fromKind;
-    const nId = isFrom ? e.toId : e.fromId;
-    neighborRefs.push({ kind: nKind, id: nId });
+    const isFrom = e.fromLocationId === id;
+    const nId = isFrom ? e.toLocationId : e.fromLocationId;
+    neighborIds.push({ id: nId });
   }
 
-  if (neighborRefs.length === 0) return [];
+  if (neighborIds.length === 0) return [];
 
-  const worldIds = neighborRefs.filter(r => r.kind === 'world').map(r => r.id);
-  const campaignIds = neighborRefs.filter(r => r.kind === 'campaign').map(r => r.id);
-
-  const [worldLocs, campaignLocs] = await Promise.all([
-    worldIds.length > 0
-      ? prisma.worldLocation.findMany({ where: { id: { in: worldIds } }, select: { id: true, canonicalName: true, displayName: true, name: true } })
-      : [],
-    campaignIds.length > 0
-      ? prisma.campaignLocation.findMany({ where: { id: { in: campaignIds } }, select: { id: true, name: true } })
-      : [],
-  ]);
+  const ids = neighborIds.map(r => r.id);
+  const locs = await prisma.location.findMany({
+    where: { id: { in: ids } },
+    select: { id: true, canonicalName: true, displayName: true, name: true },
+  });
 
   const nameMap = new Map();
-  for (const loc of worldLocs) nameMap.set(`world:${loc.id}`, loc.canonicalName || loc.displayName || loc.name);
-  for (const loc of campaignLocs) nameMap.set(`campaign:${loc.id}`, loc.name);
+  for (const loc of locs) nameMap.set(loc.id, loc.canonicalName || loc.displayName || loc.name);
 
-  return neighborRefs
-    .map(r => ({ name: nameMap.get(`${r.kind}:${r.id}`) || null, ref: r }))
+  return neighborIds
+    .map(r => ({ name: nameMap.get(r.id) || null, ref: r }))
     .filter(n => n.name)
     .slice(0, 4);
 }
@@ -137,13 +129,9 @@ function validateEntities(entities, tiles, gridW, gridH) {
 }
 
 async function resolveLocationScale(ref) {
-  if (!ref?.kind || !ref?.id) return 4;
+  if (!ref?.id) return 4;
   try {
-    if (ref.kind === 'world') {
-      const loc = await prisma.worldLocation.findUnique({ where: { id: ref.id }, select: { scale: true } });
-      return loc?.scale ?? 4;
-    }
-    const loc = await prisma.campaignLocation.findUnique({ where: { id: ref.id }, select: { scale: true } });
+    const loc = await prisma.location.findUnique({ where: { id: ref.id }, select: { scale: true } });
     return loc?.scale ?? 4;
   } catch { return 4; }
 }

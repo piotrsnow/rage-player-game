@@ -50,7 +50,7 @@ async function loadCampaignGraph(campaignId) {
   ] = await Promise.all([
     prisma.campaign.findUnique({ where: { id: campaignId } }),
     prisma.campaignParticipant.findMany({ where: { campaignId } }),
-    prisma.campaignNPC.findMany({
+    prisma.npc.findMany({
       where: { campaignId },
       include: { relationships: true, experiences: true },
     }),
@@ -65,14 +65,14 @@ async function loadCampaignGraph(campaignId) {
       where: { campaignId },
       orderBy: { sceneIndex: 'asc' },
     }),
-    prisma.campaignLocation.findMany({ where: { campaignId } }),
-    prisma.campaignLocationSummary.findMany({ where: { campaignId } }),
+    prisma.location.findMany({ where: { campaignId } }),
+    prisma.locationSummary.findMany({ where: { campaignId } }),
     prisma.locationEdge.findMany({ where: { campaignId } }),
     prisma.campaignEdge.findMany({ where: { campaignId } }),
     prisma.campaignKnowledge.findMany({ where: { campaignId } }),
     prisma.campaignCodex.findMany({ where: { campaignId } }),
     prisma.campaignIncident.findMany({ where: { campaignId } }),
-    prisma.campaignDiscoveredLocation.findMany({ where: { campaignId } }),
+    prisma.discoveredLocation.findMany({ where: { campaignId } }),
     prisma.campaignEdgeDiscovery.findMany({ where: { campaignId } }),
     prisma.campaignDmAgent.findUnique({ where: { campaignId } }).catch(() => null),
   ]);
@@ -96,25 +96,25 @@ async function loadCampaignGraph(campaignId) {
     new Set(npcs.map((n) => n.worldNpcId).filter(Boolean)),
   );
   const worldLocationIds = new Set();
-  if (campaign.currentLocationKind === 'world' && campaign.currentLocationId) {
+  if (campaign.currentLocationId) {
     worldLocationIds.add(campaign.currentLocationId);
   }
   for (const n of npcs) {
-    if (n.lastLocationKind === 'world' && n.lastLocationId) {
-      worldLocationIds.add(n.lastLocationId);
+    if (n.currentLocationId) {
+      worldLocationIds.add(n.currentLocationId);
     }
   }
   for (const q of quests) {
-    if (q.locationKind === 'world' && q.locationId) {
+    if (q.locationId) {
       worldLocationIds.add(q.locationId);
     }
   }
   const [worldNpcRefs, worldLocationRefs] = await Promise.all([
     worldNpcIds.length > 0
-      ? prisma.worldNPC.findMany({ where: { id: { in: worldNpcIds } } })
+      ? prisma.npc.findMany({ where: { id: { in: worldNpcIds } } })
       : Promise.resolve([]),
     worldLocationIds.size > 0
-      ? prisma.worldLocation.findMany({ where: { id: { in: Array.from(worldLocationIds) } } })
+      ? prisma.location.findMany({ where: { id: { in: Array.from(worldLocationIds) } } })
       : Promise.resolve([]),
   ]);
 
@@ -191,7 +191,7 @@ const CAMPAIGN_SCALARS_TO_RESTORE = [
   'rating', 'playCount', 'lastSaved', 'livingWorldEnabled',
   'questGraphEnabled', 'worldTimeRatio', 'worldTimeMaxGapDays',
   'difficultyTier', 'settlementCaps', 'boundsMinX', 'boundsMaxX',
-  'boundsMinY', 'boundsMaxY', 'currentLocationName', 'currentLocationKind',
+  'boundsMinY', 'boundsMaxY', 'currentLocationName',
   'currentLocationId', 'currentX', 'currentY', 'pendingSlip',
   'pendingProvidence',
 ];
@@ -418,7 +418,6 @@ export async function restoreSnapshot(snapshotId, { createdBy } = {}) {
     const coreState = fresh.coreState && typeof fresh.coreState === 'object' ? fresh.coreState : {};
     await reconstructFromNormalized(campaignId, coreState, {
       currentLocationName: fresh.currentLocationName,
-      currentLocationKind: fresh.currentLocationKind,
       currentLocationId: fresh.currentLocationId,
     });
     await prisma.campaign.update({

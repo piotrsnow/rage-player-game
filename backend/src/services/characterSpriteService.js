@@ -62,9 +62,9 @@ async function loadEntity(kind, id) {
     case 'character':
       return prisma.character.findUnique({ where: { id }, select: SELECT_CHARACTER });
     case 'campaign-npc':
-      return prisma.campaignNPC.findUnique({ where: { id }, select: SELECT_CAMPAIGN_NPC });
+      return prisma.npc.findUnique({ where: { id }, select: SELECT_CAMPAIGN_NPC });
     case 'world-npc':
-      return prisma.worldNPC.findUnique({ where: { id }, select: SELECT_WORLD_NPC });
+      return prisma.npc.findUnique({ where: { id }, select: SELECT_WORLD_NPC });
     default:
       return null;
   }
@@ -76,9 +76,9 @@ async function writeSheetFields(kind, id, data) {
     case 'character':
       return prisma.character.update({ where: { id }, ...update });
     case 'campaign-npc':
-      return prisma.campaignNPC.update({ where: { id }, ...update });
+      return prisma.npc.update({ where: { id }, ...update });
     case 'world-npc':
-      return prisma.worldNPC.update({ where: { id }, ...update });
+      return prisma.npc.update({ where: { id }, ...update });
     default:
       throw new Error(`unknown kind: ${kind}`);
   }

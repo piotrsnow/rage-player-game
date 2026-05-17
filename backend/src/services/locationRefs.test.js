@@ -152,54 +152,49 @@ describe('readLocationRef', () => {
   it('returns null when columns are missing', () => {
     expect(readLocationRef(null)).toBeNull();
     expect(readLocationRef({})).toBeNull();
-    expect(readLocationRef({ currentLocationKind: 'world' })).toBeNull();
-    expect(readLocationRef({ currentLocationId: 'abc' })).toBeNull();
+  });
+
+  it('returns null when id is not a string', () => {
+    expect(readLocationRef({ currentLocationId: 123 })).toBeNull();
   });
 
   it('reads the default currentLocation prefix', () => {
-    expect(readLocationRef({ currentLocationKind: 'world', currentLocationId: 'abc' }))
+    expect(readLocationRef({ currentLocationId: 'abc' }))
       .toEqual({ kind: 'world', id: 'abc' });
   });
 
   it('honours custom prefixes', () => {
-    expect(readLocationRef({ lastLocationKind: 'campaign', lastLocationId: 'xyz' }, 'lastLocation'))
-      .toEqual({ kind: 'campaign', id: 'xyz' });
-  });
-
-  it('rejects unknown kind values', () => {
-    expect(readLocationRef({ currentLocationKind: 'galaxy', currentLocationId: 'abc' })).toBeNull();
+    expect(readLocationRef({ lastLocationId: 'xyz' }, 'lastLocation'))
+      .toEqual({ kind: 'world', id: 'xyz' });
   });
 });
 
 describe('lookupLocationByKindId', () => {
   function makePrisma() {
     return {
-      worldLocation: { findUnique: vi.fn().mockResolvedValue({ id: 'w1', canonicalName: 'Krynsk' }) },
-      campaignLocation: { findUnique: vi.fn().mockResolvedValue({ id: 'c1', name: 'Karczma' }) },
+      location: { findUnique: vi.fn().mockResolvedValue({ id: 'w1', canonicalName: 'Krynsk' }) },
     };
   }
 
   it('returns null on bad input', async () => {
     const prisma = makePrisma();
-    expect(await lookupLocationByKindId({ prisma, kind: 'galaxy', id: 'a' })).toBeNull();
-    expect(await lookupLocationByKindId({ prisma, kind: null, id: 'a' })).toBeNull();
+    expect(await lookupLocationByKindId({ prisma, kind: null, id: null })).toBeNull();
     expect(await lookupLocationByKindId({ prisma, kind: 'world', id: null })).toBeNull();
   });
 
-  it('routes world kind to worldLocation', async () => {
+  it('queries unified location table', async () => {
     const prisma = makePrisma();
     const out = await lookupLocationByKindId({ prisma, kind: LOCATION_KIND_WORLD, id: 'w1' });
     expect(out).toEqual({ id: 'w1', canonicalName: 'Krynsk' });
-    expect(prisma.worldLocation.findUnique).toHaveBeenCalledWith({ where: { id: 'w1' } });
-    expect(prisma.campaignLocation.findUnique).not.toHaveBeenCalled();
+    expect(prisma.location.findUnique).toHaveBeenCalledWith({ where: { id: 'w1' } });
   });
 
-  it('routes campaign kind to campaignLocation', async () => {
+  it('works with campaign kind (same table)', async () => {
     const prisma = makePrisma();
+    prisma.location.findUnique.mockResolvedValue({ id: 'c1', name: 'Karczma' });
     const out = await lookupLocationByKindId({ prisma, kind: LOCATION_KIND_CAMPAIGN, id: 'c1' });
     expect(out).toEqual({ id: 'c1', name: 'Karczma' });
-    expect(prisma.campaignLocation.findUnique).toHaveBeenCalledWith({ where: { id: 'c1' } });
-    expect(prisma.worldLocation.findUnique).not.toHaveBeenCalled();
+    expect(prisma.location.findUnique).toHaveBeenCalledWith({ where: { id: 'c1' } });
   });
 
   it('forwards select to Prisma', async () => {
@@ -207,7 +202,7 @@ describe('lookupLocationByKindId', () => {
     await lookupLocationByKindId({
       prisma, kind: 'world', id: 'w1', select: { id: true, canonicalName: true },
     });
-    expect(prisma.worldLocation.findUnique).toHaveBeenCalledWith({
+    expect(prisma.location.findUnique).toHaveBeenCalledWith({
       where: { id: 'w1' }, select: { id: true, canonicalName: true },
     });
   });

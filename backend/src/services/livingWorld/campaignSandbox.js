@@ -1,36 +1,18 @@
-// Living World — Round B campaign sandbox.
+// Living World — campaign sandbox (unified Npc table version).
 //
-// Canonical rule: WorldNPC rows are IMMUTABLE during a playthrough. Every
-// mid-play mutation (location change, death, activeGoal update, dialog,
-// `pendingIntroHint`) writes to a per-campaign `CampaignNPC` shadow. A
-// concurrent playthrough sees the untouched canonical state; post-campaign
-// promotion (Round E) folds shadows back into canon with admin review.
+// With the unified Npc table:
+//   campaignId IS NULL → canonical NPC
+//   campaignId = uuid  → campaign shadow
+//   canonicalNpcId     → FK to the canonical row this shadow was cloned from
 //
-// This module owns the shadow helpers:
-//   - getOrCloneCampaignNpc(campaignId, worldNpcId)
-//       Lazy "clone on first encounter" — returns the CampaignNPC shadow,
-//       creating a snapshot from WorldNPC if the campaign hasn't met this
-//       NPC yet.
-//   - setCampaignNpcLocation(campaignId, worldNpcId, ref)
-//       Write CampaignNPC.lastLocation{Kind,Id}. Never touches WorldNPC.
-//   - listNpcsAtLocation(locationId, { campaignId, locationKind, aliveOnly })
-//       Campaign-aware enumerator: returns the union of CampaignNPC shadows
-//       whose lastLocation{Kind,Id} match AND canonical WorldNPCs currently
-//       at the same location (auto-cloning any not yet shadowed). Falls
-//       back to the canonical-only list if no campaignId is provided.
-//       When locationKind='campaign', skips canonical auto-clone (no
-//       WorldNPCs live at CampaignLocations).
-//
-// Back-compat note: `worldStateService.listNpcsAtLocation` still exists and
-// returns the raw canonical list. Scene-gen should migrate to the helper
-// here when a campaignId is in scope; callers that only care about the
-// canonical view (admin map, cross-campaign queries) keep the old one.
+// Core pattern:
+//   - getOrCloneCampaignNpc: lazy clone on first encounter (INSERT in same table)
+//   - setCampaignNpcLocation: UPDATE shadow row's currentLocationId
+//   - listNpcsAtLocation: campaign-scoped shadows + auto-clone canonical NPCs
 
 import { prisma } from '../../lib/prisma.js';
 import { childLogger } from '../../lib/logger.js';
-import { LOCATION_KIND_CAMPAIGN } from '../locationRefs.js';
 import { generateNpcSheet } from '../../../../shared/domain/npcCharacterSheet.js';
-import { listNpcsAtLocation as listWorldNpcsAtLocation } from './worldStateService.js';
 import { categorize } from './questGoalAssigner.js';
 
 const log = childLogger({ module: 'campaignSandbox' });
@@ -40,313 +22,258 @@ function slugifyName(value) {
 }
 
 /**
- * Resolve the CampaignNPC shadow for a WorldNPC in a given campaign. If no
- * shadow exists yet, clone one from the canonical WorldNPC (snapshot: name,
- * role, personality, category, currentLocationId → lastLocationId).
- * Canonical-only fields (alignment, keyNpc, homeLocationId, WorldNpcKnownLocation
- * grants) stay on WorldNPC and are merged into the campaign view by enrichedShape.
- *
- * Returns null when inputs are invalid or the WorldNPC has been deleted.
- * Never throws — callers can treat null as "skip this NPC for now".
+ * Get or create a campaign shadow of a canonical NPC.
+ * Returns the shadow Npc row, or null on invalid input / deleted canonical.
  */
-export async function getOrCloneCampaignNpc(campaignId, worldNpcId) {
-  if (!campaignId || !worldNpcId) return null;
+export async function getOrCloneCampaignNpc(campaignId, canonicalNpcId) {
+  if (!campaignId || !canonicalNpcId) return null;
   try {
-    const existing = await prisma.campaignNPC.findFirst({
-      where: { campaignId, worldNpcId },
+    const existing = await prisma.npc.findFirst({
+      where: { campaignId, canonicalNpcId },
     });
     if (existing) return existing;
 
-    const world = await prisma.worldNPC.findUnique({ where: { id: worldNpcId } });
-    if (!world) return null;
-    if (world.alive === false) return null;
+    const canonical = await prisma.npc.findFirst({
+      where: { id: canonicalNpcId, campaignId: null },
+    });
+    if (!canonical) return null;
+    if (canonical.alive === false) return null;
 
-    const npcIdSlug = slugifyName(world.name) || world.canonicalId || world.id;
-    const category = world.category || categorize(world.role);
-    // `@@unique([campaignId, npcId])` — if a prior ephemeral CampaignNPC
-    // happens to share the slug, we'd collide. Append the worldNpcId suffix
-    // to keep uniqueness without leaking the raw id into prompts.
+    const npcIdSlug = slugifyName(canonical.name) || canonical.canonicalId || canonical.id;
+    const category = canonical.category || categorize(canonical.role);
+
     const desiredNpcId = await (async () => {
-      const hit = await prisma.campaignNPC.findFirst({
+      const hit = await prisma.npc.findFirst({
         where: { campaignId, npcId: npcIdSlug },
         select: { id: true },
       });
-      return hit ? `${npcIdSlug}_${worldNpcId.slice(-6)}` : npcIdSlug;
+      return hit ? `${npcIdSlug}_${canonicalNpcId.slice(-6)}` : npcIdSlug;
     })();
 
     const sheet = generateNpcSheet({
-      name: world.name,
-      race: world.race || null,
-      creatureKind: world.creatureKind || null,
-      role: world.role || '',
+      name: canonical.name,
+      race: canonical.race || null,
+      creatureKind: canonical.creatureKind || null,
+      role: canonical.role || '',
       category,
-      personality: world.personality || '',
-      level: typeof world.level === 'number' ? world.level : null,
-      keyNpc: world.keyNpc === true,
+      personality: canonical.personality || '',
+      level: typeof canonical.level === 'number' ? canonical.level : null,
+      keyNpc: canonical.keyNpc === true,
     });
 
-    return await prisma.campaignNPC.create({
+    return await prisma.npc.create({
       data: {
         campaignId,
+        canonicalNpcId: canonical.id,
         npcId: desiredNpcId,
-        name: world.name,
-        role: world.role || null,
-        personality: world.personality || null,
-        appearance: world.appearance || null,
-        dialect: world.dialect || null,
-        alive: world.alive !== false,
-        lastLocation: null, // flavor string; authoritative FK is lastLocationKind+lastLocationId
-        // F5b — `world.currentLocationId` is canonical FK (WorldNPC →
-        // WorldLocation), so the clone's lastLocation pair is always kind=world.
-        lastLocationKind: world.currentLocationId ? 'world' : null,
-        lastLocationId: world.currentLocationId || null,
-        worldNpcId: world.id,
+        name: canonical.name,
+        role: canonical.role || null,
+        personality: canonical.personality || null,
+        appearance: canonical.appearance || null,
+        dialect: canonical.dialect || null,
+        alive: canonical.alive !== false,
+        alignment: canonical.alignment || 'neutral',
+        currentLocationId: canonical.currentLocationId || null,
+        homeLocationId: canonical.homeLocationId || null,
         isAgent: true,
         category,
         race: sheet.race,
         creatureKind: sheet.creatureKind,
         level: sheet.level,
         stats: sheet,
-        // Vestigial — campaign-side goal mechanic was archived to
-        // knowledge/ideas/npc-action-assignment.md. Columns stay so admin
-        // serializers / future redesigns have a place to hang things;
-        // nothing writes them today.
         activeGoal: null,
         goalProgress: null,
       },
     });
   } catch (err) {
-    log.warn({ err: err?.message, campaignId, worldNpcId }, 'getOrCloneCampaignNpc failed');
+    log.warn({ err: err?.message, campaignId, canonicalNpcId }, 'getOrCloneCampaignNpc failed');
     return null;
   }
 }
 
 /**
- * Set CampaignNPC.lastLocation (polymorphic FK pair) for a (campaignId,
- * worldNpcId) shadow. Auto-clones if the shadow doesn't exist yet. Silent on
- * failure.
- *
- * F5b — accepts either a `{ kind, id }` polymorphic ref OR (back-compat) a
- * bare locationId string which is treated as kind='world'.
+ * Set a campaign NPC shadow's current location. Auto-clones if needed.
+ * `locationId` is a plain UUID FK to the unified Location table.
  */
-export async function setCampaignNpcLocation(campaignId, worldNpcId, ref) {
-  if (!campaignId || !worldNpcId) return false;
-  // Coerce the back-compat bare-string call site into the polymorphic shape.
-  const { kind, id } = typeof ref === 'string' || ref == null
-    ? { kind: ref ? 'world' : null, id: ref || null }
-    : { kind: ref.kind || null, id: ref.id || null };
+export async function setCampaignNpcLocation(campaignId, canonicalNpcId, locationId) {
+  if (!campaignId || !canonicalNpcId) return false;
   try {
-    const shadow = await getOrCloneCampaignNpc(campaignId, worldNpcId);
+    const shadow = await getOrCloneCampaignNpc(campaignId, canonicalNpcId);
     if (!shadow) return false;
-    await prisma.campaignNPC.update({
+    await prisma.npc.update({
       where: { id: shadow.id },
-      data: {
-        lastLocationKind: id ? kind : null,
-        lastLocationId: id || null,
-      },
+      data: { currentLocationId: locationId || null },
     });
     return true;
   } catch (err) {
-    log.warn({ err: err?.message, campaignId, worldNpcId, kind, id }, 'setCampaignNpcLocation failed');
+    log.warn({ err: err?.message, campaignId, canonicalNpcId, locationId }, 'setCampaignNpcLocation failed');
     return false;
   }
 }
 
 /**
- * Set CampaignNPC.pendingIntroHint. Auto-clones. Used by the
- * `onComplete.moveNpcToPlayer` quest trigger (Phase 4) to leave a
- * one-shot "NPC just arrived with news" note for the next scene.
+ * Set pendingIntroHint on a campaign NPC shadow. Auto-clones.
  */
-export async function setCampaignNpcIntroHint(campaignId, worldNpcId, hint) {
-  if (!campaignId || !worldNpcId) return false;
+export async function setCampaignNpcIntroHint(campaignId, canonicalNpcId, hint) {
+  if (!campaignId || !canonicalNpcId) return false;
   try {
-    const shadow = await getOrCloneCampaignNpc(campaignId, worldNpcId);
+    const shadow = await getOrCloneCampaignNpc(campaignId, canonicalNpcId);
     if (!shadow) return false;
-    await prisma.campaignNPC.update({
+    await prisma.npc.update({
       where: { id: shadow.id },
       data: { pendingIntroHint: hint || null },
     });
     return true;
   } catch (err) {
-    log.warn({ err: err?.message, campaignId, worldNpcId }, 'setCampaignNpcIntroHint failed');
+    log.warn({ err: err?.message, campaignId, canonicalNpcId }, 'setCampaignNpcIntroHint failed');
     return false;
   }
 }
 
 /**
- * Clear a previously-set pendingIntroHint. Called by the scene prompt
- * assembler after the hint has been surfaced exactly once.
+ * Clear a previously-set pendingIntroHint after it's been surfaced once.
  */
-export async function clearCampaignNpcIntroHint(campaignNpcId) {
-  if (!campaignNpcId) return;
+export async function clearCampaignNpcIntroHint(npcId) {
+  if (!npcId) return;
   try {
-    await prisma.campaignNPC.update({
-      where: { id: campaignNpcId },
+    await prisma.npc.update({
+      where: { id: npcId },
       data: { pendingIntroHint: null },
     });
   } catch (err) {
-    log.warn({ err: err?.message, campaignNpcId }, 'clearCampaignNpcIntroHint failed');
+    log.warn({ err: err?.message, npcId }, 'clearCampaignNpcIntroHint failed');
   }
 }
 
 /**
- * Enrich a CampaignNPC shadow with selected WorldNPC fields so downstream
- * scene-gen can treat the merged shape like the old `listNpcsAtLocation`
- * canonical result.
- *
- * Rule: shadow fields ALWAYS win. WorldNPC values are fallbacks for
- * uncloned NPCs (which shouldn't happen in normal flow — the enumerator
- * auto-clones — but let's be defensive) and for fields that remain
- * canonical-only (keyNpc, homeLocationId, WorldNpcKnownLocation grants).
- *
- * Ephemeral shadows (no worldNpcId, no WorldNPC lookup) return their own
- * fields with defaults filled in.
+ * Enrich a campaign shadow with canonical NPC fields for scene-gen consumption.
  */
-function enrichedShape(shadow, world = null) {
+function enrichedShape(shadow, canonical = null) {
   if (!shadow) return null;
   return {
-    ...(world || {}),
+    ...(canonical || {}),
     ...shadow,
-    id: world?.id || shadow.id,
+    id: canonical?.id || shadow.id,
     campaignNpcId: shadow.id,
-    worldNpcId: shadow.worldNpcId || null,
-    name: shadow.name || world?.name || null,
-    role: shadow.role || world?.role || null,
-    personality: shadow.personality || world?.personality || null,
-    alignment: world?.alignment || 'neutral',
-    alive: shadow.alive !== false && (world?.alive !== false),
-    category: shadow.category || world?.category || 'commoner',
+    canonicalNpcId: shadow.canonicalNpcId || null,
+    name: shadow.name || canonical?.name || null,
+    role: shadow.role || canonical?.role || null,
+    personality: shadow.personality || canonical?.personality || null,
+    alignment: canonical?.alignment || shadow.alignment || 'neutral',
+    alive: shadow.alive !== false && (canonical?.alive !== false),
+    category: shadow.category || canonical?.category || 'commoner',
     pendingIntroHint: shadow.pendingIntroHint || null,
-    // Campaign-scoped goal state — shadow is AUTHORITATIVE for the
-    // campaign view. WorldNPC has its own independent activeGoal (world
-    // tick / background life); we deliberately do NOT fall back to it so
-    // canonical background drama never leaks into campaign narration.
     activeGoal: shadow.activeGoal || null,
     goalProgress: shadow.goalProgress || null,
-    // Pause / tick infra stays canonical (world-level lifecycle).
-    pausedAt: world?.pausedAt || null,
-    pauseSnapshot: world?.pauseSnapshot || null,
-    lastTickAt: world?.lastTickAt || null,
-    lastTickSceneIndex: world?.lastTickSceneIndex ?? null,
-    tickIntervalScenes: world?.tickIntervalScenes ?? 2,
-    // Canonical-only: keyNpc, homeLocationId.
-    keyNpc: world ? world.keyNpc !== false : true,
-    currentLocationId: shadow.lastLocationId || world?.currentLocationId || null,
-    homeLocationId: world?.homeLocationId || null,
+    pausedAt: canonical?.pausedAt || null,
+    pauseSnapshot: canonical?.pauseSnapshot || null,
+    lastTickAt: canonical?.lastTickAt || null,
+    lastTickSceneIndex: canonical?.lastTickSceneIndex ?? null,
+    tickIntervalScenes: canonical?.tickIntervalScenes ?? 2,
+    keyNpc: canonical ? canonical.keyNpc !== false : true,
+    currentLocationId: shadow.currentLocationId || canonical?.currentLocationId || null,
+    homeLocationId: canonical?.homeLocationId || shadow.homeLocationId || null,
   };
+}
+
+/**
+ * List canonical NPCs at a location.
+ */
+function listCanonicalNpcsAtLocation(locationId, { aliveOnly = true } = {}) {
+  return prisma.npc.findMany({
+    where: {
+      campaignId: null,
+      currentLocationId: locationId,
+      ...(aliveOnly && { alive: true }),
+    },
+  });
 }
 
 /**
  * Campaign-aware NPC enumerator for a location.
  *
- * Returns an array of enriched CampaignNPC shadows (`enrichedShape`):
- * CampaignNPC columns + WorldNPC fallback fields (activeGoal, goalProgress,
- * pausedAt, keyNpc, homeLocationId, knownLocations from join) so downstream
- * scene-gen code reads the same field names as it did with the old
- * canonical list.
+ * Returns enriched shadows: campaign NPC columns + canonical fallback fields.
  *
- * Enumeration:
- *   1. CampaignNPCs where `lastLocationId=locationId` — shadows explicitly
- *      at this tile (includes NPCs moved by quest triggers).
- *   2. Canonical WorldNPCs at this location without a shadow yet → clone
- *      (via `getOrCloneCampaignNpc`) so downstream writers mutate the
- *      shadow rather than canonical state.
+ * Logic:
+ *   1. Find campaign shadows with currentLocationId = locationId
+ *   2. Find canonical NPCs at this location without a shadow → auto-clone
+ *   3. Merge and return
  *
- * Shadows whose lastLocationId has been moved elsewhere in the campaign
- * are NOT re-added here, even if their canonical WorldNPC still points to
- * this tile — shadow is the source of truth once it exists.
- *
- * `campaignId=null` falls back to the canonical-only view (used by admin
- * map + cross-campaign queries).
+ * `campaignId=null` falls back to canonical-only view.
  */
-export async function listNpcsAtLocation(locationId, { campaignId = null, locationKind = null, aliveOnly = true } = {}) {
+export async function listNpcsAtLocation(locationId, { campaignId = null, aliveOnly = true } = {}) {
   if (!locationId) return [];
   if (!campaignId) {
-    return listWorldNpcsAtLocation(locationId, { aliveOnly });
+    return listCanonicalNpcsAtLocation(locationId, { aliveOnly });
   }
 
   try {
-    const shadowWhere = { campaignId, lastLocationId: locationId };
-    if (locationKind) shadowWhere.lastLocationKind = locationKind;
+    const shadowWhere = { campaignId, currentLocationId: locationId };
     if (aliveOnly) shadowWhere.alive = true;
-    const shadows = await prisma.campaignNPC.findMany({ where: shadowWhere });
+    const shadows = await prisma.npc.findMany({ where: shadowWhere });
 
-    // Pre-fetch WorldNPC rows for enrichment in one batch.
-    const worldNpcIds = shadows.map((s) => s.worldNpcId).filter(Boolean);
-    const worldRows = worldNpcIds.length
-      ? await prisma.worldNPC.findMany({ where: { id: { in: worldNpcIds } } })
+    const canonicalNpcIds = shadows.map((s) => s.canonicalNpcId).filter(Boolean);
+    const canonicalRows = canonicalNpcIds.length
+      ? await prisma.npc.findMany({ where: { id: { in: canonicalNpcIds }, campaignId: null } })
       : [];
-    const worldById = new Map(worldRows.map((w) => [w.id, w]));
+    const canonicalById = new Map(canonicalRows.map((c) => [c.id, c]));
 
     const enrichedShadows = shadows
-      .map((s) => enrichedShape(s, s.worldNpcId ? worldById.get(s.worldNpcId) || null : null))
+      .map((s) => enrichedShape(s, s.canonicalNpcId ? canonicalById.get(s.canonicalNpcId) || null : null))
       .filter(Boolean);
 
-    // Canonical WorldNPCs currently here — clone any not yet shadowed.
-    // Skip when the target is a CampaignLocation — canonical NPCs are only
-    // positioned at WorldLocations so there's nothing to auto-clone.
-    if (locationKind === LOCATION_KIND_CAMPAIGN) return enrichedShadows;
-    const canonicalHere = await listWorldNpcsAtLocation(locationId, { aliveOnly });
-    const shadowedWorldIds = new Set(shadows.map((s) => s.worldNpcId).filter(Boolean));
-    const toClone = canonicalHere.filter((w) => !shadowedWorldIds.has(w.id));
+    // Auto-clone canonical NPCs at this location not yet shadowed.
+    // Check if the location is campaign-scoped — if so, skip (canonical NPCs
+    // are only positioned at canonical locations).
+    const loc = await prisma.location.findUnique({
+      where: { id: locationId },
+      select: { campaignId: true },
+    });
+    if (loc?.campaignId) return enrichedShadows;
+
+    const canonicalHere = await listCanonicalNpcsAtLocation(locationId, { aliveOnly });
+    const shadowedIds = new Set(shadows.map((s) => s.canonicalNpcId).filter(Boolean));
+    const toClone = canonicalHere.filter((c) => !shadowedIds.has(c.id));
+
     const cloned = [];
-    for (const w of toClone) {
-      // Skip WorldNPCs that already have a shadow somewhere else in this
-      // campaign — the shadow's lastLocationId is authoritative, so don't
-      // double-count them at this tile.
-      const existingElsewhere = await prisma.campaignNPC.findFirst({
-        where: { campaignId, worldNpcId: w.id },
+    for (const c of toClone) {
+      const existingElsewhere = await prisma.npc.findFirst({
+        where: { campaignId, canonicalNpcId: c.id },
         select: { id: true },
       });
       if (existingElsewhere) continue;
-      const shadow = await getOrCloneCampaignNpc(campaignId, w.id);
+      const shadow = await getOrCloneCampaignNpc(campaignId, c.id);
       if (!shadow) continue;
       if (aliveOnly && shadow.alive === false) continue;
-      cloned.push(enrichedShape(shadow, w));
+      cloned.push(enrichedShape(shadow, c));
     }
 
     return [...enrichedShadows, ...cloned];
   } catch (err) {
     log.warn({ err: err?.message, campaignId, locationId }, 'listNpcsAtLocation (sandbox) failed');
-    return listWorldNpcsAtLocation(locationId, { aliveOnly });
+    return listCanonicalNpcsAtLocation(locationId, { aliveOnly });
   }
 }
 
 /**
- * Resolve the canonical + implicit (1-hop edge) + explicit location set
- * that a given NPC is allowed to reveal in dialog. Used by the hearsay
- * prompt block (Phase 4b) and the post-scene policy check in
- * processStateChanges (reject `locationMentioned` entries for locations
- * outside this set).
- *
- * Implicit knowledge:
- *   - the NPC's own location (lastLocationId / canonical currentLocationId)
- *
- * Explicit knowledge (WorldNpcKnownLocation rows, seed + admin authored)
- * is merged on top — that is the ONLY way an NPC reaches beyond their
- * own tile. Edge = stricte zbudowana droga (bezpieczne przejście) i nie
- * propaguje wiedzy: stojący w stolicy strażnik wie tylko o stolicy +
- * jawnie nadanych grantach, NIE o wszystkich miastach na końcu Roadów.
- *
- * Returns `Set<locationId>`. Empty if the NPC has no location AND no
- * explicit knowledge entries.
+ * Resolve the set of location IDs an NPC is "allowed to know about" (for hearsay).
+ * Includes: own location + explicit NpcKnownLocation grants.
  */
-export async function resolveNpcKnownLocations({ campaignNpc, worldNpc }) {
+export async function resolveNpcKnownLocations({ shadow, canonical }) {
   const known = new Set();
-  const anchorLocationId = campaignNpc?.lastLocationId
-    || worldNpc?.currentLocationId
-    || null;
+  const anchorLocationId = shadow?.currentLocationId || canonical?.currentLocationId || null;
   if (anchorLocationId) known.add(anchorLocationId);
-  // Explicit knowledge from WorldNpcKnownLocation rows (seed + admin authored).
-  if (worldNpc?.id) {
+
+  const canonicalId = canonical?.id || shadow?.canonicalNpcId;
+  if (canonicalId) {
     try {
-      const explicit = await prisma.worldNpcKnownLocation.findMany({
-        where: { npcId: worldNpc.id },
+      const explicit = await prisma.npcKnownLocation.findMany({
+        where: { npcId: canonicalId },
         select: { locationId: true },
       });
       for (const e of explicit) if (e.locationId) known.add(e.locationId);
     } catch (err) {
-      log.warn({ err: err?.message, worldNpcId: worldNpc.id }, 'resolveNpcKnownLocations explicit lookup failed');
+      log.warn({ err: err?.message, canonicalId }, 'resolveNpcKnownLocations explicit lookup failed');
     }
   }
   known.delete(null);

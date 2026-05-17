@@ -6,7 +6,6 @@ import {
 } from '../../livingWorld/campaignSandbox.js';
 import { resolveLocationByName } from '../../livingWorld/worldStateService.js';
 import { markQuestOpportunityMaterialized } from '../../livingWorld/worldEventLog.js';
-import { LOCATION_KIND_WORLD } from '../../locationRefs.js';
 import {
   unlockChildObjectives,
   closeSiblingBranches,
@@ -139,46 +138,40 @@ export async function fireMoveNpcToPlayerTrigger(campaignId, onComplete) {
   });
   if (!campaign) return;
 
-  // F5b — player's currentLocation may be canonical OR a CampaignLocation;
-  // resolve polymorphically so the moveNpcToPlayer trigger can pin the NPC
-  // shadow to the right kind+id pair.
-  let playerLocationKind = null;
   let playerLocationId = null;
   const locName = campaign.currentLocationName || campaign.coreState?.world?.currentLocation;
   if (locName) {
     const resolved = await resolveLocationByName(locName, { campaignId }).catch(() => null);
-    if (resolved) {
-      playerLocationKind = resolved.kind;
-      playerLocationId = resolved.row.id;
+    if (resolved?.location) {
+      playerLocationId = resolved.location.id;
     }
   }
   if (!playerLocationId) return;
 
-  // Resolve NPC: canonicalId → name → CampaignNPC.npcId
-  let worldNpcId = null;
-  const byCanonical = await prisma.worldNPC.findFirst({
-    where: { canonicalId: npcIdent },
+  let canonicalNpcId = null;
+  const byCanonical = await prisma.npc.findFirst({
+    where: { campaignId: null, canonicalId: npcIdent },
     select: { id: true },
   }).catch(() => null);
   if (byCanonical) {
-    worldNpcId = byCanonical.id;
+    canonicalNpcId = byCanonical.id;
   } else {
-    const byName = await prisma.worldNPC.findFirst({
-      where: { name: { equals: npcIdent, mode: 'insensitive' } },
+    const byName = await prisma.npc.findFirst({
+      where: { campaignId: null, name: { equals: npcIdent, mode: 'insensitive' } },
       select: { id: true },
     }).catch(() => null);
-    if (byName) worldNpcId = byName.id;
+    if (byName) canonicalNpcId = byName.id;
   }
 
-  if (worldNpcId) {
-    await setCampaignNpcLocation(campaignId, worldNpcId, { kind: playerLocationKind, id: playerLocationId });
-    await setCampaignNpcIntroHint(campaignId, worldNpcId, message || null);
+  if (canonicalNpcId) {
+    await setCampaignNpcLocation(campaignId, canonicalNpcId, playerLocationId);
+    await setCampaignNpcIntroHint(campaignId, canonicalNpcId, message || null);
     return;
   }
 
-  // Fallback: ephemeral CampaignNPC (no WorldNPC link). Name-match inside
+  // Fallback: ephemeral NPC (no canonical link). Name-match inside
   // the campaign and update in-place.
-  const ephemeral = await prisma.campaignNPC.findFirst({
+  const ephemeral = await prisma.npc.findFirst({
     where: {
       campaignId,
       OR: [
@@ -189,14 +182,13 @@ export async function fireMoveNpcToPlayerTrigger(campaignId, onComplete) {
     select: { id: true },
   }).catch(() => null);
   if (ephemeral) {
-    await prisma.campaignNPC.update({
+    await prisma.npc.update({
       where: { id: ephemeral.id },
       data: {
-        lastLocationKind: playerLocationKind || LOCATION_KIND_WORLD,
-        lastLocationId: playerLocationId,
+        currentLocationId: playerLocationId,
         pendingIntroHint: message || null,
       },
-    }).catch((err) => log.warn({ err: err?.message, campaignNpcId: ephemeral.id }, 'moveNpcToPlayer ephemeral update failed'));
+    }).catch((err) => log.warn({ err: err?.message, npcId: ephemeral.id }, 'moveNpcToPlayer ephemeral update failed'));
   }
 }
 

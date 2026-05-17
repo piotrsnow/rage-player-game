@@ -27,7 +27,7 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 export async function releaseStaleCampaignLocks({ staleDays = STALE_LOCK_DAYS } = {}) {
   const cutoff = new Date(Date.now() - staleDays * DAY_MS);
 
-  const candidates = await prisma.worldNPC.findMany({
+  const candidates = await prisma.npc.findMany({
     where: {
       lockedAt: { lt: cutoff },
       lockedByCampaignId: { not: null },

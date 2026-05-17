@@ -129,7 +129,7 @@ export function parseEventPayload(event) {
 // generator-a. Materializacja w `CampaignQuest` dzieje się przy emit
 // `questOffers` przez LLM (po widzeniu hook-a w prompcie).
 //
-// `forLocationOpportunities(locationKind, locationId, sinceDays)` zwraca
+// `forLocationOpportunities(locationId, sinceDays)` zwraca
 // hook-i powiązane z lokacją. Phase 1 — używamy `worldLocationId` (gdy
 // hook był wystawiony przy WorldNPC w canonical lokacji); CampaignLocation
 // hook-i mają campaignId+locationName w payloadzie i są filtrowane lokalnie.

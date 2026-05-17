@@ -130,6 +130,30 @@ export async function fetchOwnedCharacter(characterId, userId) {
   return loadCharacterSnapshot({ id: characterId, userId });
 }
 
+async function syncNpcStateToCampaign(campaignId, stateChanges) {
+  const npcChanges = stateChanges?.npcs;
+  if (!Array.isArray(npcChanges) || npcChanges.length === 0) return;
+
+  for (const npc of npcChanges) {
+    if (!npc.name) continue;
+    try {
+      const existing = await prisma.npc.findFirst({
+        where: { campaignId, name: { equals: npc.name, mode: 'insensitive' } },
+      });
+      if (!existing) continue;
+      const data = {};
+      if (npc.alive !== undefined) data.alive = npc.alive;
+      if (npc.role) data.role = npc.role;
+      if (npc.location) data.lastLocation = npc.location;
+      if (Object.keys(data).length > 0) {
+        await prisma.npc.update({ where: { id: existing.id }, data });
+      }
+    } catch (err) {
+      log.warn({ err: err?.message, npcName: npc.name }, 'NPC sync to CampaignNPC failed');
+    }
+  }
+}
+
 async function persistSceneToDb(campaignId, sceneResult, actions, gameState) {
   const sceneIndex = (gameState.scenes || []).length - 1;
   const playerAction = actions.map((a) => `${a.name}: ${a.action}`).join('\n');
@@ -219,7 +243,6 @@ export async function runMultiplayerSceneFlow({
       questGraphEnabled = loaded.questGraphEnabled;
       currentRef = loaded.currentRef;
 
-      // Merge MP-specific game state into coreState
       if (!coreState.world) coreState.world = {};
       coreState.world.currentLocation = coreState.world.currentLocation || room.gameState?.world?.currentLocation;
       coreState.campaign = coreState.campaign || room.gameState?.campaign || {};

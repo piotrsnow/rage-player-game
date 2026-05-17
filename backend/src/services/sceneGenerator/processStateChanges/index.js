@@ -5,7 +5,7 @@ import {
   resolveLocationByName,
   findOrCreateCampaignLocation,
 } from '../../livingWorld/worldStateService.js';
-import { LOCATION_KIND_WORLD, LOCATION_KIND_CAMPAIGN, lookupLocationByKindId } from '../../locationRefs.js';
+import { lookupLocationByKindId } from '../../locationRefs.js';
 
 import { generateSceneEmbedding } from './sceneEmbedding.js';
 import { processNpcChanges } from './npcs.js';
@@ -47,17 +47,15 @@ export { shouldPromoteToGlobal, generateSceneEmbedding, resolveCurrentLocationTa
 const log = childLogger({ module: 'sceneGenerator' });
 
 // Match-or-drop resolver for AI-emitted `stateChanges.currentLocation`.
-// Returns `{ kind, id, name }` when the target name resolves to an existing
-// canonical WorldLocation OR per-campaign CampaignLocation in this campaign's
-// fog. Returns null on miss — caller decides whether to create-on-miss
+// Returns `{ id, name }` when the target name resolves to an existing
+// canonical or campaign-scoped Location in this campaign's fog.
+// Returns null on miss — caller decides whether to create-on-miss
 // (with guards) or drop.
 async function resolveCurrentLocationTarget(campaignId, targetName) {
   const ref = await resolveLocationByName(targetName, { campaignId }).catch(() => null);
-  if (!ref?.row?.id) return null;
-  const name = ref.kind === LOCATION_KIND_WORLD
-    ? (ref.row.canonicalName || targetName)
-    : (ref.row.name || targetName);
-  return { kind: ref.kind, id: ref.row.id, name };
+  if (!ref?.location?.id) return null;
+  const name = ref.location.canonicalName || ref.location.displayName || targetName;
+  return { id: ref.location.id, name };
 }
 
 // Create the bidirectional movement edge between two location nodes if it
@@ -65,25 +63,20 @@ async function resolveCurrentLocationTarget(campaignId, targetName) {
 // Used by every code path that transitions the player between two resolved
 // nodes (anchor, retry-after-subloc-create, auto-promote, create-on-miss).
 async function ensureMovementEdge({ from, to, sceneIndex, campaignId }) {
-  if (!from?.kind || !from?.id || !to?.kind || !to?.id) return;
-  const fromKey = `${from.kind}:${from.id}`;
-  const toKey = `${to.kind}:${to.id}`;
-  if (fromKey === toKey) return;
+  if (!from || !to) return;
+  if (from === to) return;
   try {
     const existing = await prisma.locationEdge.findFirst({
       where: {
-        fromKind: from.kind, fromId: from.id,
-        toKind: to.kind, toId: to.id,
+        fromLocationId: from, toLocationId: to,
         category: 'movement', isActive: true,
         OR: [{ campaignId: null }, { campaignId }],
       },
     });
     if (!existing) {
       await createEdge({
-        fromKind: from.kind,
-        fromId: from.id,
-        toKind: to.kind,
-        toId: to.id,
+        fromLocationId: from,
+        toLocationId: to,
         edgeType: 'path_to',
         category: 'movement',
         bidirectional: true,
@@ -95,15 +88,13 @@ async function ensureMovementEdge({ from, to, sceneIndex, campaignId }) {
       });
     }
     await markLocationEdgeTraversed({
-      fromKind: from.kind,
-      fromId: from.id,
-      toKind: to.kind,
-      toId: to.id,
+      fromLocationId: from,
+      toLocationId: to,
       sceneIndex,
       campaignId,
     });
   } catch (edgeErr) {
-    log.debug({ err: edgeErr?.message, campaignId, fromKey, toKey }, 'ensureMovementEdge failed (non-fatal)');
+    log.debug({ err: edgeErr?.message, campaignId, from, to }, 'ensureMovementEdge failed (non-fatal)');
   }
 }
 
@@ -247,16 +238,15 @@ export async function processStateChanges(campaignId, stateChanges, { prevLoc = 
       // Prefer the composite ref if AI provided one.
       let resolved = null;
       if (aiLocRef) {
-        const refKind = aiLocRef[1].toLowerCase();
         const refId = aiLocRef[2];
         const row = await lookupLocationByKindId({
           prisma,
-          kind: refKind,
+          kind: null,
           id: refId,
-          select: { id: true, canonicalName: true, name: true, regionX: true, regionY: true },
+          select: { id: true, canonicalName: true, displayName: true, regionX: true, regionY: true },
         }).catch(() => null);
         if (row) {
-          resolved = { kind: refKind, id: refId, name: row.canonicalName || row.name || aiName || '' };
+          resolved = { id: refId, name: row.canonicalName || row.displayName || aiName || '' };
           log.info({ campaignId, ref: stateChanges.currentLocationRef }, 'currentLocation resolved via AI-emitted ref');
         }
       }
@@ -268,29 +258,28 @@ export async function processStateChanges(campaignId, stateChanges, { prevLoc = 
           aiNameResolved = true;
           const coords = await lookupLocationByKindId({
             prisma,
-            kind: resolved.kind,
+            kind: null,
             id: resolved.id,
             select: { regionX: true, regionY: true },
           }).catch(() => null);
           updates = {
             currentLocationName: resolved.name,
-            currentLocationKind: resolved.kind,
             currentLocationId: resolved.id,
             currentX: coords?.regionX ?? null,
             currentY: coords?.regionY ?? null,
           };
-          log.info({ campaignId, name: resolved.name, kind: resolved.kind, x: updates.currentX, y: updates.currentY }, 'currentLocation updated (anchored at POI)');
+          log.info({ campaignId, name: resolved.name, locId: resolved.id, x: updates.currentX, y: updates.currentY }, 'currentLocation updated (anchored at POI)');
         } else if (
           livingWorldEnabled
-          && currentRef?.kind && currentRef?.id
+          && currentRef
           && aiName.trim().split(/\s+/).length >= 2
           && !isGenericTerrainName(aiName)
           && !isNpcName(aiName, npcNames)
         ) {
           const anchorRow = await lookupLocationByKindId({
             prisma,
-            kind: currentRef.kind,
-            id: currentRef.id,
+            kind: null,
+            id: currentRef,
             select: { regionX: true, regionY: true, region: true },
           }).catch(() => null);
           const newRegionX = aiX ?? anchorRow?.regionX ?? 0;
@@ -312,15 +301,14 @@ export async function processStateChanges(campaignId, stateChanges, { prevLoc = 
           if (created) {
             aiNameResolved = true;
             updates = {
-              currentLocationName: created.name,
-              currentLocationKind: LOCATION_KIND_CAMPAIGN,
+              currentLocationName: created.displayName || created.canonicalName || aiName,
               currentLocationId: created.id,
               currentX: created.regionX ?? newRegionX,
               currentY: created.regionY ?? newRegionY,
             };
             log.info(
-              { campaignId, name: created.name, id: created.id, regionX: updates.currentX, regionY: updates.currentY },
-              'currentLocation create-on-miss — new CampaignLocation materialized',
+              { campaignId, name: updates.currentLocationName, id: created.id, regionX: updates.currentX, regionY: updates.currentY },
+              'currentLocation create-on-miss — new campaign Location materialized',
             );
             // Best-effort node image inheritance — same pattern as
             // processSublocationEntry.
@@ -332,7 +320,7 @@ export async function processStateChanges(campaignId, stateChanges, { prevLoc = 
                   tags: [],
                 });
                 if (matchedUrl) {
-                  await prisma.campaignLocation.update({ where: { id: created.id }, data: { nodeImageUrl: matchedUrl } });
+                  await prisma.location.update({ where: { id: created.id }, data: { nodeImageUrl: matchedUrl } });
                 }
               } catch { /* non-fatal */ }
             }
@@ -342,7 +330,6 @@ export async function processStateChanges(campaignId, stateChanges, { prevLoc = 
               try {
                 await markLocationDiscovered({
                   userId: ownerUserId,
-                  locationKind: LOCATION_KIND_CAMPAIGN,
                   locationId: created.id,
                   campaignId,
                 });
@@ -354,7 +341,6 @@ export async function processStateChanges(campaignId, stateChanges, { prevLoc = 
             // Fall back to wandering if creation failed.
             updates = {
               currentLocationName: aiName,
-              currentLocationKind: null,
               currentLocationId: null,
               currentX: aiX,
               currentY: aiY,
@@ -364,7 +350,6 @@ export async function processStateChanges(campaignId, stateChanges, { prevLoc = 
         } else if (hasCoords) {
           updates = {
             currentLocationName: aiName,
-            currentLocationKind: null,
             currentLocationId: null,
             currentX: aiX,
             currentY: aiY,
@@ -379,7 +364,6 @@ export async function processStateChanges(campaignId, stateChanges, { prevLoc = 
       } else {
         updates = {
           currentLocationName: null,
-          currentLocationKind: null,
           currentLocationId: null,
           currentX: aiX,
           currentY: aiY,
@@ -389,10 +373,10 @@ export async function processStateChanges(campaignId, stateChanges, { prevLoc = 
       if (updates) {
         await prisma.campaign.update({ where: { id: campaignId }, data: updates });
 
-        if (updates.currentLocationKind && updates.currentLocationId) {
+        if (updates.currentLocationId) {
           await ensureMovementEdge({
             from: currentRef,
-            to: { kind: updates.currentLocationKind, id: updates.currentLocationId },
+            to: updates.currentLocationId,
             sceneIndex,
             campaignId,
           });
@@ -416,7 +400,7 @@ export async function processStateChanges(campaignId, stateChanges, { prevLoc = 
       if (retryResolved) {
         const retryCoords = await lookupLocationByKindId({
           prisma,
-          kind: retryResolved.kind,
+          kind: null,
           id: retryResolved.id,
           select: { regionX: true, regionY: true },
         }).catch(() => null);
@@ -424,7 +408,6 @@ export async function processStateChanges(campaignId, stateChanges, { prevLoc = 
           where: { id: campaignId },
           data: {
             currentLocationName: retryResolved.name,
-            currentLocationKind: retryResolved.kind,
             currentLocationId: retryResolved.id,
             currentX: retryCoords?.regionX ?? null,
             currentY: retryCoords?.regionY ?? null,
@@ -432,12 +415,12 @@ export async function processStateChanges(campaignId, stateChanges, { prevLoc = 
         });
         aiNameResolved = true;
         log.info(
-          { campaignId, name: retryResolved.name, kind: retryResolved.kind },
+          { campaignId, name: retryResolved.name, locId: retryResolved.id },
           'currentLocation resolved on retry (sublocation created by newLocations in same scene)',
         );
         await ensureMovementEdge({
           from: currentRef,
-          to: { kind: retryResolved.kind, id: retryResolved.id },
+          to: retryResolved.id,
           sceneIndex,
           campaignId,
         });
@@ -461,10 +444,9 @@ export async function processStateChanges(campaignId, stateChanges, { prevLoc = 
       let shouldPromote = false;
 
       if (currentRef) {
-        // Normal path: verify parent is in the ancestor chain of current location.
-        const parentKey = `${created.row.parentLocationKind}:${created.row.parentLocationId}`;
+        const parentId = created.row.parentLocationId;
         const ancestors = await walkUpAncestors(currentRef);
-        shouldPromote = ancestors.has(parentKey);
+        shouldPromote = ancestors.has(parentId);
       } else {
         // Wandering: no currentRef — promote unconditionally. The player
         // explicitly walked into this sublocation (AI emitted exactly one).
@@ -475,21 +457,20 @@ export async function processStateChanges(campaignId, stateChanges, { prevLoc = 
         await prisma.campaign.update({
           where: { id: campaignId },
           data: {
-            currentLocationName: created.row.name,
-            currentLocationKind: created.kind,
+            currentLocationName: created.row.displayName || created.row.canonicalName,
             currentLocationId: created.row.id,
             currentX: typeof created.row.regionX === 'number' ? created.row.regionX : null,
             currentY: typeof created.row.regionY === 'number' ? created.row.regionY : null,
           },
         });
         log.info(
-          { campaignId, sublocId: created.row.id, sublocName: created.row.name, hadCurrentRef: !!currentRef },
+          { campaignId, sublocId: created.row.id, sublocName: created.row.displayName || created.row.canonicalName, hadCurrentRef: !!currentRef },
           'Auto-promoted new sublocation to currentLocation',
         );
 
         await ensureMovementEdge({
           from: currentRef,
-          to: { kind: created.kind, id: created.row.id },
+          to: created.row.id,
           sceneIndex,
           campaignId,
         });

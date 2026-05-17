@@ -169,15 +169,15 @@ Akcja gracza (mała akcja): ${wrapPlayerInput(playerAction)}`;
 
 /**
  * Pick top-N NPCs likely present in the current scene.
- * Prefers FK-based match (lastLocationKind + lastLocationId) from the
- * campaign row; falls back to legacy string `lastLocation` for old data.
+ * Prefers FK-based match (currentLocationId) from the campaign row;
+ * falls back to legacy string `lastLocation` for old data.
  */
-function pickPresentNpcs(dbNpcs, currentLocation, currentLocationKind, currentLocationId) {
+function pickPresentNpcs(dbNpcs, currentLocation, currentLocationId) {
   if (!Array.isArray(dbNpcs) || dbNpcs.length === 0) return [];
   const present = dbNpcs.filter((n) => {
     if (n.alive === false) return false;
-    if (currentLocationKind && currentLocationId && n.lastLocationKind && n.lastLocationId) {
-      return n.lastLocationKind === currentLocationKind && n.lastLocationId === currentLocationId;
+    if (currentLocationId && n.currentLocationId) {
+      return n.currentLocationId === currentLocationId;
     }
     const here = (currentLocation || '').toLowerCase().trim();
     return !here || (n.lastLocation || '').toLowerCase().trim() === here;
@@ -229,7 +229,6 @@ export async function runQuickBeat(campaignId, playerAction, options = {}, onEve
     const presentNpcs = pickPresentNpcs(
       dbNpcs,
       currentLocation,
-      currentRef?.kind || null,
       currentRef?.id || null,
     );
     const characterName = coreState.character?.name || null;
@@ -374,15 +373,14 @@ export async function runQuickBeat(campaignId, playerAction, options = {}, onEve
     }
 
     // Persist board mutations to location tacticalGrid
-    if (boardMutations && currentRef?.kind && currentRef?.id) {
+    if (boardMutations && currentRef?.id) {
       try {
-        const tblName = currentRef.kind === 'world' ? 'worldLocation' : 'campaignLocation';
-        const locRow = await prisma[tblName].findUnique({ where: { id: currentRef.id }, select: { tacticalGrid: true } });
+        const locRow = await prisma.location.findUnique({ where: { id: currentRef.id }, select: { tacticalGrid: true } });
         const v = locRow?.tacticalGrid?.version;
         if (v === 1 || v === 2) {
           const { applyBoardMutations } = await import('../../../../shared/domain/explorationBoard.js');
           const updated = applyBoardMutations({ ...locRow.tacticalGrid }, boardMutations);
-          await prisma[tblName].update({ where: { id: currentRef.id }, data: { tacticalGrid: updated } });
+          await prisma.location.update({ where: { id: currentRef.id }, data: { tacticalGrid: updated } });
         }
       } catch (err) {
         log.warn({ err: err?.message, campaignId }, 'Failed to persist board mutations from quick-beat (non-fatal)');

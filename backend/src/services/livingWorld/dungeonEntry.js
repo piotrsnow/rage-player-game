@@ -41,12 +41,11 @@ const log = childLogger({ module: 'dungeonEntry' });
  * entrance room).
  */
 export async function handleDungeonEntry({ campaignId, currentRef = null, prevLoc = null }) {
-  if (!currentRef?.kind || !currentRef?.id) return null;
-  if (currentRef.kind !== LOCATION_KIND_WORLD) return null;
+  if (!currentRef?.id) return null;
   if (currentRef.name && currentRef.name === prevLoc) return null;
 
   try {
-    const target = await prisma.worldLocation.findUnique({
+    const target = await prisma.location.findUnique({
       where: { id: currentRef.id },
       select: { id: true, canonicalName: true, locationType: true },
     });
@@ -63,7 +62,7 @@ export async function handleDungeonEntry({ campaignId, currentRef = null, prevLo
       return null;
     }
 
-    const entranceRoom = await prisma.worldLocation.findUnique({
+    const entranceRoom = await prisma.location.findUnique({
       where: { id: seed.entranceRoomId },
       select: { id: true, canonicalName: true },
     });
@@ -77,11 +76,10 @@ export async function handleDungeonEntry({ campaignId, currentRef = null, prevLo
       where: { id: campaignId },
       data: {
         currentLocationName: entranceRoom.canonicalName,
-        currentLocationKind: LOCATION_KIND_WORLD,
         currentLocationId: entranceRoom.id,
       },
     });
-    return { kind: LOCATION_KIND_WORLD, id: entranceRoom.id, name: entranceRoom.canonicalName };
+    return { id: entranceRoom.id, name: entranceRoom.canonicalName };
   } catch (err) {
     log.warn({ err: err?.message, currentRef }, 'handleDungeonEntry failed (non-fatal)');
     return null;
@@ -106,14 +104,14 @@ export async function applyDungeonRoomState({ campaignId, prevLoc, flags }) {
   if (Object.keys(touched).length === 0) return;
 
   try {
-    const room = await prisma.worldLocation.findUnique({
+    const room = await prisma.location.findUnique({
       where: { canonicalName: prevLoc },
     });
     if (!room || room.locationType !== 'dungeon_room') return;
 
     const meta = (room.roomMetadata && typeof room.roomMetadata === 'object') ? room.roomMetadata : {};
     const merged = { ...meta, ...touched };
-    await prisma.worldLocation.update({
+    await prisma.location.update({
       where: { id: room.id },
       data: { roomMetadata: merged },
     });

@@ -221,7 +221,7 @@ async function proposeAction({ npc, recentEvents = [], provider = 'openai', time
 export async function runNpcTick(npcId, { provider = 'openai', timeoutMs = 5000, now = new Date(), force = false, currentSceneIndex = null } = {}) {
   if (!npcId) return { status: 'failed', reason: 'missing_id' };
 
-  const npc = await prisma.worldNPC.findUnique({ where: { id: npcId } });
+  const npc = await prisma.npc.findUnique({ where: { id: npcId } });
   const eligibility = isEligibleForTick(npc, now, { force, currentSceneIndex });
   if (!eligibility.eligible) {
     return { status: 'skipped', reason: eligibility.reason };
@@ -251,7 +251,7 @@ export async function runNpcTick(npcId, { provider = 'openai', timeoutMs = 5000,
       payload: { reason: 'nano_empty' },
       gameTime: now,
     });
-    await prisma.worldNPC.update({ where: { id: npc.id }, data: { lastTickAt: now } });
+    await prisma.npc.update({ where: { id: npc.id }, data: { lastTickAt: now } });
     return { status: 'failed', reason: 'nano_empty' };
   }
 
@@ -302,7 +302,7 @@ export async function runNpcTick(npcId, { provider = 'openai', timeoutMs = 5000,
     }
   }
 
-  await prisma.worldNPC.update({ where: { id: npc.id }, data: updateData });
+  await prisma.npc.update({ where: { id: npc.id }, data: updateData });
 
   if (action.kind === 'needs_player_help') {
     // Hook do scene generator-a — pojawia się w `pendingHooks` w prompcie
@@ -361,7 +361,7 @@ function parseProgress(gp) {
 
 async function resolveLocationName(locationId) {
   if (!locationId) return null;
-  const loc = await prisma.worldLocation.findUnique({
+  const loc = await prisma.location.findUnique({
     where: { id: locationId },
     select: { canonicalName: true },
   });

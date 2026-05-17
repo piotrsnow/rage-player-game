@@ -61,7 +61,7 @@ export async function propagateRelationshipRipple(campaignId, sourceCampaignNpcI
   // 1. Fetch źródłowy NPC (potrzebny name dla memory entries jeśli nie podano).
   let resolvedSourceName = sourceName;
   if (!resolvedSourceName) {
-    const sourceRow = await prisma.campaignNPC.findUnique({
+    const sourceRow = await prisma.npc.findUnique({
       where: { id: sourceCampaignNpcId },
       select: { name: true },
     }).catch(() => null);
@@ -70,7 +70,7 @@ export async function propagateRelationshipRipple(campaignId, sourceCampaignNpcI
 
   // 2. Fetch relacje source → targets (`targetType: 'npc'` only — frakcyjne
   // relacje obsługujemy przez reputationService).
-  const relationships = await prisma.campaignNpcRelationship.findMany({
+  const relationships = await prisma.npcRelationship.findMany({
     where: { campaignNpcId: sourceCampaignNpcId, targetType: 'npc' },
   }).catch(() => []);
   if (relationships.length === 0) return { targets: 0, deltas: [] };
@@ -95,7 +95,7 @@ export async function propagateRelationshipRipple(campaignId, sourceCampaignNpcI
   // 4. Resolve target CampaignNPC po `targetRef` (npc name). Jeden batch
   // findMany — szybko + bezpiecznie dla braku targetu (pomijamy).
   const targetNames = [...new Set(top.map((c) => c.rel.targetRef))];
-  const targetRows = await prisma.campaignNPC.findMany({
+  const targetRows = await prisma.npc.findMany({
     where: { campaignId, name: { in: targetNames } },
     select: { id: true, name: true, disposition: true },
   }).catch(() => []);
@@ -111,11 +111,11 @@ export async function propagateRelationshipRipple(campaignId, sourceCampaignNpcI
 
     try {
       await prisma.$transaction([
-        prisma.campaignNPC.update({
+        prisma.npc.update({
           where: { id: targetRow.id },
           data: { disposition: newDisp },
         }),
-        prisma.campaignNpcExperience.create({
+        prisma.npcExperience.create({
           data: {
             campaignNpcId: targetRow.id,
             content: buildRippleMemory(resolvedSourceName, rel.relation, { delta, alive, actionType }),

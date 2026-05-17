@@ -274,7 +274,7 @@ async function persistSeed({ dungeon, rooms, theme, difficulty }) {
       : `Komnata ${room.id + 1}`;
     const name = `${dungeon.canonicalName} — ${nameSuffix} (${room.id})`;
     const meta = { ...room.contents, roomId: room.id, theme, difficulty };
-    const created = await prisma.worldLocation.upsert({
+    const created = await prisma.location.upsert({
       where: { canonicalName: name },
       update: {
         roomMetadata: meta,
@@ -361,7 +361,7 @@ export async function ensureDungeonSeeded({
   const resolvedDifficulty = DUNGEON_DIFFICULTIES.includes(difficulty) ? difficulty : 'medium';
 
   // Idempotency check — skip if already seeded
-  const existingRooms = await prisma.worldLocation.findMany({
+  const existingRooms = await prisma.location.findMany({
     where: { parentLocationId: dungeon.id, locationType: 'dungeon_room' },
     select: { id: true, slotType: true, roomMetadata: true, canonicalName: true },
   });

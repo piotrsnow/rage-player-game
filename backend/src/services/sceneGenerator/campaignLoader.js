@@ -20,21 +20,17 @@ export async function loadCampaignState(campaignId) {
     prisma.campaign.findUnique({
       where: { id: campaignId },
       // F5 — currentLocationName lifted from coreState.world.currentLocation; merged below.
-      // F5b — currentLocationKind/Id pair surfaced for the travel resolver
-      // (needs the polymorphic ref to load the row + its locationType +
-      // parent walk-up chain).
       select: {
         coreState: true,
         livingWorldEnabled: true,
         questGraphEnabled: true,
         currentLocationName: true,
-        currentLocationKind: true,
         currentLocationId: true,
         pendingSlip: true,
         pendingProvidence: true,
       },
     }),
-    prisma.campaignNPC.findMany({
+    prisma.npc.findMany({
       where: { campaignId },
       include: { relationships: true },
     }),
@@ -72,31 +68,21 @@ export async function loadCampaignState(campaignId) {
     if (!coreState.world.currentLocation) coreState.world.currentLocation = campaign.currentLocationName;
   }
 
-  if (campaign.currentLocationKind && campaign.currentLocationId) {
+  if (campaign.currentLocationId) {
     if (!coreState.world) coreState.world = {};
     if (!coreState.world.currentLocationRef) {
       coreState.world.currentLocationRef = {
-        kind: campaign.currentLocationKind,
         id: campaign.currentLocationId,
       };
     }
   }
 
-  // Load `currentLocationType` so the conditional prompt rules can decide
-  // whether to surface the sublocation-creation slot (in a settlement /
-  // canonical sublocation) or the dungeon-room navigation slot
-  // (currentLocationType='dungeon_room'). Wilderness/null = no slot offered.
-  if (campaign.currentLocationKind && campaign.currentLocationId) {
+  if (campaign.currentLocationId) {
     try {
-      const row = campaign.currentLocationKind === 'world'
-        ? await prisma.worldLocation.findUnique({
-            where: { id: campaign.currentLocationId },
-            select: { locationType: true },
-          })
-        : await prisma.campaignLocation.findUnique({
-            where: { id: campaign.currentLocationId },
-            select: { locationType: true },
-          });
+      const row = await prisma.location.findUnique({
+        where: { id: campaign.currentLocationId },
+        select: { locationType: true },
+      });
       if (row?.locationType) {
         if (!coreState.world) coreState.world = {};
         coreState.world.currentLocationType = row.locationType;
@@ -121,8 +107,8 @@ export async function loadCampaignState(campaignId) {
       name: n.name, gender: n.gender, role: n.role,
       personality: n.personality, attitude: n.attitude, disposition: n.disposition,
       alive: n.alive, lastLocation: n.lastLocation,
-      locationRef: (n.lastLocationKind && n.lastLocationId)
-        ? { kind: n.lastLocationKind, id: n.lastLocationId }
+      locationRef: n.currentLocationId
+        ? { id: n.currentLocationId }
         : null,
       notes: n.notes,
       race: n.race,
@@ -199,7 +185,7 @@ export async function loadCampaignState(campaignId) {
   // z włączonym livingWorld + questGraph (oba są zwykle on razem). Hook-i
   // wisi do 7 dni gry; LLM dostaje top-5 dla currentLocation. Best-effort —
   // brak hook-ów albo błąd query nic nie psuje.
-  if (campaign.livingWorldEnabled === true && campaign.questGraphEnabled === true && campaign.currentLocationKind === 'world' && campaign.currentLocationId) {
+  if (campaign.livingWorldEnabled === true && campaign.questGraphEnabled === true && campaign.currentLocationId) {
     try {
       const events = await forLocationOpportunities({
         campaignId,
@@ -243,8 +229,8 @@ export async function loadCampaignState(campaignId) {
     dbKnowledge,
     livingWorldEnabled: campaign.livingWorldEnabled === true,
     questGraphEnabled: campaign.questGraphEnabled === true,
-    currentRef: campaign.currentLocationKind && campaign.currentLocationId
-      ? { kind: campaign.currentLocationKind, id: campaign.currentLocationId, name: campaign.currentLocationName || null }
+    currentRef: campaign.currentLocationId
+      ? { id: campaign.currentLocationId, name: campaign.currentLocationName || null }
       : null,
     pendingSlip: campaign.pendingSlip || null,
     pendingProvidence: campaign.pendingProvidence || null,

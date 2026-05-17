@@ -1,6 +1,6 @@
 import { resolveLocationByName } from '../../livingWorld/worldStateService.js';
 import { loadCampaignFog, markLocationHeardAbout } from '../../livingWorld/userDiscoveryService.js';
-import { LOCATION_KIND_WORLD, unpackWorldBounds } from '../../locationRefs.js';
+import { unpackWorldBounds } from '../../locationRefs.js';
 import { scanPath } from '../../livingWorld/pathScan.js';
 import { lookupEdgeFamiliarity } from '../../locationGraph/graphService.js';
 import { applyMovementVector } from '../../../../../shared/domain/movementIntent.js';
@@ -60,8 +60,7 @@ export async function buildTravelBlock({
       return {
         kind: 'travel',
         fromName,
-        fromRef: startLocation.kind && startLocation.id
-          ? { kind: startLocation.kind, id: startLocation.id } : null,
+        fromRef: startLocation.id ? { id: startLocation.id } : null,
         targetName,
         targetInFog: false,
         unresolved: true,
@@ -70,10 +69,8 @@ export async function buildTravelBlock({
     if (targetRef.row.id === startLocation.id) return null;
     toX = targetRef.row.regionX;
     toY = targetRef.row.regionY;
-    resolvedTargetName = targetRef.kind === LOCATION_KIND_WORLD
-      ? (targetRef.row.canonicalName || targetName)
-      : (targetRef.row.name || targetName);
-    resolvedTargetRef = { kind: targetRef.kind, id: targetRef.row.id };
+    resolvedTargetName = targetRef.row.canonicalName || targetRef.row.name || targetName;
+    resolvedTargetRef = { id: targetRef.row.id };
     const fog = await loadCampaignFog({ userId, campaignId }).catch(() => ({
       visited: new Set(),
       heardAbout: new Set(),
@@ -110,24 +107,24 @@ export async function buildTravelBlock({
   }).catch(() => null);
 
   // Pass-by discovery: canonical POIs within scan radius become heard_about
-  // for this user. Sandbox CampaignLocations are already in scan output for
+  // for this user. Campaign-scoped locations are already in scan output for
   // the prompt; the canonical fog set is what fills in the cross-campaign
   // player map.
   if (scan && userId) {
     for (const p of scan.poisAlongPath) {
-      if (p.location.kind === 'world') {
+      if (!p.location.campaignId) {
         markLocationHeardAbout({ userId, locationId: p.location.id }).catch(() => {});
       }
     }
   }
 
   let routeFamiliarity = null;
-  if (targetName && startLocation.kind && startLocation.id) {
+  if (targetName && startLocation.id) {
     const targetRef2 = await resolveLocationByName(resolvedTargetName || targetName, { campaignId }).catch(() => null);
     if (targetRef2?.row?.id) {
       routeFamiliarity = await lookupEdgeFamiliarity(
-        startLocation.kind, startLocation.id,
-        targetRef2.kind, targetRef2.row.id,
+        startLocation.id,
+        targetRef2.row.id,
         { campaignId },
       ).catch(() => null);
     }
@@ -136,8 +133,7 @@ export async function buildTravelBlock({
   return {
     kind,
     fromName,
-    fromRef: startLocation.kind && startLocation.id
-      ? { kind: startLocation.kind, id: startLocation.id } : null,
+    fromRef: startLocation.id ? { id: startLocation.id } : null,
     fromX,
     fromY,
     toX,

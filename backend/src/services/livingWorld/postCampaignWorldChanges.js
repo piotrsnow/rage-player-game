@@ -321,12 +321,12 @@ export async function applyLocationKnowledgeChange({ change, resolved, campaignI
   }
   const entry = buildKnowledgeEntry({ change, resolved, campaignId });
   try {
-    const row = await prisma.worldLocation.findUnique({
+    const row = await prisma.location.findUnique({
       where: { id: resolved.entityId },
       select: { id: true },
     });
     if (!row) return { ok: false, reason: 'world_location_not_found' };
-    await prisma.worldLocationKnowledge.create({
+    await prisma.locationKnowledge.create({
       data: knowledgeEntryToInsertData(entry, row.id, 'location'),
     });
     return { ok: true, entry };
@@ -349,12 +349,12 @@ export async function applyNpcKnowledgeChange({ change, resolved, campaignId }) 
   }
   const entry = buildKnowledgeEntry({ change, resolved, campaignId });
   try {
-    const row = await prisma.worldNPC.findUnique({
+    const row = await prisma.npc.findUnique({
       where: { id: resolved.entityId },
       select: { id: true },
     });
     if (!row) return { ok: false, reason: 'world_npc_not_found' };
-    await prisma.worldNpcKnowledge.create({
+    await prisma.npcKnowledge.create({
       data: knowledgeEntryToInsertData(entry, row.id, 'npc'),
     });
     return { ok: true, entry };

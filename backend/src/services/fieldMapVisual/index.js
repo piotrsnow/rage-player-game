@@ -34,29 +34,23 @@ const log = childLogger({ module: 'fieldMapVisual' });
 const MAX_ASSETS = 40;
 const IMAGE_GEN_CONCURRENCY = 3;
 
-function locationTableFor(kind) {
-  return kind === 'world' ? 'worldLocation' : 'campaignLocation';
-}
-
-async function loadBoard({ locationKind, locationId }) {
-  const table = locationTableFor(locationKind);
-  const row = await prisma[table].findUnique({
+async function loadBoard({ locationId }) {
+  const row = await prisma.location.findUnique({
     where: { id: locationId },
     select: { id: true, tacticalGrid: true },
   });
   return row?.tacticalGrid || null;
 }
 
-async function writeBoard({ locationKind, locationId, board }) {
-  const table = locationTableFor(locationKind);
-  await prisma[table].update({
+async function writeBoard({ locationId, board }) {
+  await prisma.location.update({
     where: { id: locationId },
     data: { tacticalGrid: board },
   });
 }
 
-function packNameFor(campaignId, locationKind, locationId) {
-  return `campaign:${campaignId}:loc:${locationKind}:${locationId}`;
+function packNameFor(campaignId, locationId) {
+  return `campaign:${campaignId}:loc:${locationId}`;
 }
 
 function readDmSettings(coreState) {
@@ -79,20 +73,19 @@ function readDmSettings(coreState) {
  * @param {{
  *   campaignId: string,
  *   userId: string,
- *   locationKind: 'world' | 'campaign',
  *   locationId: string,
  *   requestId?: string,
  * }} payload
  */
 export async function runLocationBoardVisuals(payload) {
-  const { campaignId, userId, locationKind, locationId, requestId } = payload;
-  if (!campaignId || !userId || !locationKind || !locationId) {
+  const { campaignId, userId, locationId, requestId } = payload;
+  if (!campaignId || !userId || !locationId) {
     throw new Error('runLocationBoardVisuals: missing required payload fields');
   }
 
-  const board = await loadBoard({ locationKind, locationId });
+  const board = await loadBoard({ locationId });
   if (!board) {
-    log.warn({ locationKind, locationId, requestId }, 'No board found; skipping');
+    log.warn({ locationId, requestId }, 'No board found; skipping');
     return { skipped: true, reason: 'no-board' };
   }
   if (board.version !== 2) {
@@ -120,7 +113,7 @@ export async function runLocationBoardVisuals(payload) {
   const assets = board.assets.slice(0, MAX_ASSETS);
 
   log.info({
-    campaignId, locationKind, locationId, requestId,
+    campaignId, locationId, requestId,
     assetCount: assets.length, provider: dm.provider, baseTilePx: dm.baseTilePx,
   }, 'Visual pipeline start');
 
@@ -165,7 +158,7 @@ export async function runLocationBoardVisuals(payload) {
     });
 
     // Step 4: import (idempotent upsert by pack name).
-    const packName = packNameFor(campaignId, locationKind, locationId);
+    const packName = packNameFor(campaignId, locationId);
     const existingPack = await findPackByName(ownerId, packName);
 
     // Append-mode would normally accumulate tilesets; for visuals we want a
@@ -187,10 +180,10 @@ export async function runLocationBoardVisuals(payload) {
         name: packName,
         projectTilesize: dm.projectTilesize,
         scaleAlgo: 'nearest',
-        origin: { source: 'field-map-visual', campaignId, locationKind, locationId },
+        origin: { source: 'field-map-visual', campaignId, locationId },
       },
       tilesets: [{
-        name: `${locationKind}:${locationId}`,
+        name: `loc:${locationId}`,
         buffer: atlas.buffer,
         contentType: 'image/png',
         nativeTilesize: atlas.nativeTilesize,
@@ -244,10 +237,10 @@ export async function runLocationBoardVisuals(payload) {
       visualError: undefined,
     };
     delete updatedBoard.visualError;
-    await writeBoard({ locationKind, locationId, board: updatedBoard });
+    await writeBoard({ locationId, board: updatedBoard });
 
     log.info({
-      campaignId, locationKind, locationId,
+      campaignId, locationId,
       packId: pack.id, tilesetId: tileset.id,
       atlasSize: `${atlas.width}x${atlas.height}`,
     }, 'Visual pipeline ready');
@@ -255,10 +248,9 @@ export async function runLocationBoardVisuals(payload) {
     return { ok: true, packId: pack.id, tilesetId: tileset.id };
   } catch (err) {
     log.error({
-      err: err.message, campaignId, locationKind, locationId, requestId,
+      err: err.message, campaignId, locationId, requestId,
     }, 'Visual pipeline failed');
     await writeBoard({
-      locationKind,
       locationId,
       board: {
         ...board,

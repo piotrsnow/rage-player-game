@@ -47,7 +47,7 @@ export async function generate({
     return fallbackReply('[NPC milczy w zamyśleniu]');
   }
 
-  let npc = await prisma.worldNPC.findUnique({ where: { id: worldNpcId } });
+  let npc = await prisma.npc.findUnique({ where: { id: worldNpcId } });
   if (!npc) return fallbackReply('[Nie ma tu nikogo o takim imieniu]');
   if (npc.alive === false) return fallbackReply('[Cisza. Nie ma już z kim rozmawiać.]');
 
@@ -61,7 +61,7 @@ export async function generate({
   // generujemy i zapisujemy zanim zbudujemy system prompt. Zsynchronizuj też
   // z odpowiednim CampaignNPC shadow, jeśli istnieje.
   if (!npc.dialect || !npc.appearance) {
-    const shadow = await prisma.campaignNPC.findFirst({
+    const shadow = await prisma.npc.findFirst({
       where: { campaignId, worldNpcId },
       select: { id: true },
     }).catch(() => null);
@@ -204,7 +204,7 @@ function buildSystemPrompt({ npc, isCompanion, dialogHistory, knowledgeEntries, 
 // Load most-recent dialog turns ascending (oldest → newest) for prompt rendering.
 async function loadRecentDialogTurns(worldNpcId, campaignId, limit) {
   try {
-    const rows = await prisma.worldNpcDialogTurn.findMany({
+    const rows = await prisma.npcDialogTurn.findMany({
       where: { npcId: worldNpcId, campaignId },
       orderBy: { createdAt: 'desc' },
       take: limit,
@@ -219,7 +219,7 @@ async function loadRecentDialogTurns(worldNpcId, campaignId, limit) {
 
 async function loadKnowledgeEntries(worldNpcId, limit) {
   try {
-    return await prisma.worldNpcKnowledge.findMany({
+    return await prisma.npcKnowledge.findMany({
       where: { npcId: worldNpcId },
       orderBy: { addedAt: 'desc' },
       take: limit,
@@ -233,7 +233,7 @@ async function loadKnowledgeEntries(worldNpcId, limit) {
 
 async function appendDialogTurn({ worldNpcId, campaignId, playerMessage, reply }) {
   try {
-    await prisma.worldNpcDialogTurn.create({
+    await prisma.npcDialogTurn.create({
       data: {
         npcId: worldNpcId,
         campaignId,

@@ -1,14 +1,13 @@
 import { loadSubgraph } from './graphService.js';
 import { EDGE_TYPES, EDGE_TYPE_NAMES, EDGE_CATEGORY_NAMES } from '../../../../shared/domain/locationGraph.js';
 import { prisma } from '../../lib/prisma.js';
-import { LOCATION_KIND_WORLD } from '../locationRefs.js';
 import { listNpcsAtLocation } from '../livingWorld/campaignSandbox.js';
 import { childLogger } from '../../lib/logger.js';
 
 const log = childLogger({ module: 'graphContextBuilder' });
 
 /**
- * Walk `parentLocationId` upward from a WorldLocation to build a readable
+ * Walk `parentLocationId` upward from a Location to build a readable
  * hierarchy chain (e.g. "Karczma Pod Złotym Dzbanem (tavern) → Kamionka Stara (village)").
  * Stops after 5 hops to prevent accidental cycles.
  */
@@ -16,7 +15,7 @@ async function buildParentChain(locationId) {
   const chain = [];
   let currentId = locationId;
   for (let i = 0; i < 5 && currentId; i++) {
-    const loc = await prisma.worldLocation.findUnique({
+    const loc = await prisma.location.findUnique({
       where: { id: currentId },
       select: { id: true, canonicalName: true, locationType: true, parentLocationId: true },
     });
@@ -59,11 +58,10 @@ async function loadRoadNeighbors(settlementId) {
 }
 
 /**
- * Given a list of canonical WorldLocation IDs, return the subset that the
- * player has discovered (state heard_about, visited, or mapped). Merges
- * account-level `UserDiscoveredLocation` with per-campaign
- * `CampaignDiscoveredLocation` (locationKind='world') plus `knownByDefault`
- * locations (capital).
+ * Given a list of Location IDs, return the subset that the player has
+ * discovered (state heard_about, visited, or mapped). Merges account-level
+ * `UserDiscoveredLocation` with per-campaign `DiscoveredLocation` plus
+ * `knownByDefault` locations (capital).
  */
 async function loadDiscoveredNeighborIds(userId, campaignId, locationIds) {
   if (!locationIds.length) return new Set();
@@ -73,16 +71,15 @@ async function loadDiscoveredNeighborIds(userId, campaignId, locationIds) {
       select: { locationId: true },
     }),
     campaignId
-      ? prisma.campaignDiscoveredLocation.findMany({
+      ? prisma.discoveredLocation.findMany({
           where: {
             campaignId,
-            locationKind: LOCATION_KIND_WORLD,
             locationId: { in: locationIds },
           },
           select: { locationId: true },
         })
       : Promise.resolve([]),
-    prisma.worldLocation.findMany({
+    prisma.location.findMany({
       where: {
         id: { in: locationIds },
         OR: [{ locationType: 'capital' }, { knownByDefault: true }],
@@ -108,48 +105,46 @@ async function loadDiscoveredNeighborIds(userId, campaignId, locationIds) {
  *   through fog-of-war — only locations the player has discovered (heard_about/visited)
  *   are shown by name. Undiscovered neighbors appear as generic directional hints.
  */
-export async function buildNarrativeContext(locationId, locationKind, campaignId, { gmMode = false, userId = null } = {}) {
+export async function buildNarrativeContext(locationId, campaignId, { gmMode = false, userId = null } = {}) {
   try {
-    const { nodes, edges } = await loadSubgraph(locationKind, locationId, { campaignId, hops: 1 });
-    const currentNode = nodes.get(`${locationKind}:${locationId}`);
+    const { nodes, edges } = await loadSubgraph(locationId, { campaignId, hops: 1 });
+    const currentNode = nodes.get(`world:${locationId}`);
     if (!currentNode) return null;
 
     const lines = [];
     const name = currentNode.canonicalName || currentNode.displayName || currentNode.name || 'Unknown';
-    lines.push(`Current: ${name} [ref: ${locationKind}:${locationId}]${currentNode.atmosphere ? ` — ${currentNode.atmosphere}` : ''}`);
+    lines.push(`Current: ${name} [ref: world:${locationId}]${currentNode.atmosphere ? ` — ${currentNode.atmosphere}` : ''}`);
 
-    // Parent chain + nearby settlements (canonical WorldLocations only)
-    if (locationKind === LOCATION_KIND_WORLD) {
-      const chain = await buildParentChain(locationId);
-      if (chain.length > 1) {
-        lines.push(`Location hierarchy: ${chain.map((c) => `${c.name} [ref: world:${c.id}] (${c.type})`).join(' → ')}`);
-      }
-      const topLocation = chain[chain.length - 1];
-      if (topLocation?.id) {
-        const neighbors = await loadRoadNeighbors(topLocation.id);
-        if (neighbors.length > 0) {
-          const discoveredIds = (!gmMode && userId)
-            ? await loadDiscoveredNeighborIds(userId, campaignId, neighbors.map((n) => n.id))
-            : null;
+    // Parent chain + nearby settlements
+    const chain = await buildParentChain(locationId);
+    if (chain.length > 1) {
+      lines.push(`Location hierarchy: ${chain.map((c) => `${c.name} [ref: world:${c.id}] (${c.type})`).join(' → ')}`);
+    }
+    const topLocation = chain[chain.length - 1];
+    if (topLocation?.id) {
+      const neighbors = await loadRoadNeighbors(topLocation.id);
+      if (neighbors.length > 0) {
+        const discoveredIds = (!gmMode && userId)
+          ? await loadDiscoveredNeighborIds(userId, campaignId, neighbors.map((n) => n.id))
+          : null;
 
-          const parts = neighbors.map((n) => {
-            if (discoveredIds && !discoveredIds.has(n.id)) {
-              const dir = n.direction || '';
-              return dir
-                ? `nieznana droga prowadzi na ${dir}`
-                : 'nieznana droga';
-            }
-            const dist = n.distance ? `~${n.distance} km` : '';
+        const parts = neighbors.map((n) => {
+          if (discoveredIds && !discoveredIds.has(n.id)) {
             const dir = n.direction || '';
-            const suffix = [dist, dir].filter(Boolean).join(' ');
-            return `${n.name} [ref: world:${n.id}] (${n.type}${suffix ? ', ' + suffix : ''})`;
-          });
-          lines.push(`Nearby: ${parts.join(', ')}`);
-        }
+            return dir
+              ? `nieznana droga prowadzi na ${dir}`
+              : 'nieznana droga';
+          }
+          const dist = n.distance ? `~${n.distance} km` : '';
+          const dir = n.direction || '';
+          const suffix = [dist, dir].filter(Boolean).join(' ');
+          return `${n.name} [ref: world:${n.id}] (${n.type}${suffix ? ', ' + suffix : ''})`;
+        });
+        lines.push(`Nearby: ${parts.join(', ')}`);
       }
     }
 
-    const myKey = `${locationKind}:${locationId}`;
+    const myKey = `world:${locationId}`;
 
     // Filter: only show edges the character knows about (at least 'known')
     const isVisible = (e) => gmMode || !e.discoveryState || e.discoveryState !== 'unknown';
@@ -202,7 +197,7 @@ export async function buildNarrativeContext(locationId, locationKind, campaignId
     }
 
     // NPCs at current location (campaign-aware — includes auto-cloned canonical NPCs)
-    const npcs = await listNpcsAtLocation(locationId, { campaignId, locationKind, aliveOnly: true });
+    const npcs = await listNpcsAtLocation(locationId, { campaignId, aliveOnly: true });
     if (npcs.length > 0) {
       const npcList = npcs.slice(0, 6).map((n) => n.name).join(', ');
       lines.push(`NPCs here: ${npcList}`);
@@ -210,7 +205,7 @@ export async function buildNarrativeContext(locationId, locationKind, campaignId
 
     return lines.join('\n');
   } catch (err) {
-    log.warn({ err: err?.message, locationId, locationKind }, 'buildNarrativeContext failed');
+    log.warn({ err: err?.message, locationId }, 'buildNarrativeContext failed');
     return null;
   }
 }
@@ -226,9 +221,9 @@ const PERCEPTION_VERBS = {
  * Includes the full subgraph (3-4 hops), edge taxonomy reference, and
  * NPC positions so the extractor can identify spatial changes.
  */
-export async function buildExtractionContext(locationId, locationKind, campaignId) {
+export async function buildExtractionContext(locationId, campaignId) {
   try {
-    const { nodes, edges } = await loadSubgraph(locationKind, locationId, { campaignId, hops: 3 });
+    const { nodes, edges } = await loadSubgraph(locationId, { campaignId, hops: 3 });
 
     const lines = [];
     lines.push('## CURRENT LOCATION GRAPH');
@@ -249,8 +244,8 @@ export async function buildExtractionContext(locationId, locationKind, campaignI
     for (const e of edges) {
       const fromNode = nodes.get(keyOf(e, 'from'));
       const toNode = nodes.get(keyOf(e, 'to'));
-      const fromName = fromNode?.canonicalName || fromNode?.displayName || fromNode?.name || e.fromId;
-      const toName = toNode?.canonicalName || toNode?.displayName || toNode?.name || e.toId;
+      const fromName = fromNode?.canonicalName || fromNode?.displayName || fromNode?.name || e.fromLocationId;
+      const toName = toNode?.canonicalName || toNode?.displayName || toNode?.name || e.toLocationId;
       const dir = e.bidirectional ? '↔' : '→';
       lines.push(`- ${fromName} ${dir} ${toName} [${e.edgeType}] (${e.category})`);
     }
@@ -268,11 +263,11 @@ export async function buildExtractionContext(locationId, locationKind, campaignI
 
     return lines.join('\n');
   } catch (err) {
-    log.warn({ err: err?.message, locationId, locationKind }, 'buildExtractionContext failed');
+    log.warn({ err: err?.message, locationId }, 'buildExtractionContext failed');
     return '';
   }
 }
 
 function keyOf(edge, side) {
-  return side === 'from' ? `${edge.fromKind}:${edge.fromId}` : `${edge.toKind}:${edge.toId}`;
+  return side === 'from' ? `world:${edge.fromLocationId}` : `world:${edge.toLocationId}`;
 }

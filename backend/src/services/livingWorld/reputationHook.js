@@ -61,7 +61,7 @@ export async function handleNpcKills({
   for (const death of deaths) {
     try {
       const npcId = death.name.toLowerCase().replace(/\s+/g, '_');
-      const campaignNpc = await prisma.campaignNPC.findUnique({
+      const campaignNpc = await prisma.npc.findUnique({
         where: { campaignId_npcId: { campaignId: campaign.id, npcId } },
         select: { worldNpcId: true },
       });
@@ -70,7 +70,7 @@ export async function handleNpcKills({
         continue; // not a Living World NPC
       }
 
-      const worldNpc = await prisma.worldNPC.findUnique({ where: { id: campaignNpc.worldNpcId } });
+      const worldNpc = await prisma.npc.findUnique({ where: { id: campaignNpc.worldNpcId } });
       if (!worldNpc) {
         skipped += 1;
         continue;
@@ -80,7 +80,7 @@ export async function handleNpcKills({
       let region = null;
       let settlementKey = null;
       if (worldNpc.currentLocationId) {
-        const loc = await prisma.worldLocation.findUnique({
+        const loc = await prisma.location.findUnique({
           where: { id: worldNpc.currentLocationId },
           select: { region: true, canonicalName: true },
         });

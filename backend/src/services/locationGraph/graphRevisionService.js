@@ -77,8 +77,8 @@ function buildUserPrompt(nodes, edges) {
   const nodeNameById = new Map(nodes.map((n) => [n.id, n.name]));
 
   const edgeLines = edges.map((e) => {
-    const fromName = nodeNameById.get(e.fromId) || e.fromName || e.fromId;
-    const toName = nodeNameById.get(e.toId) || e.toName || e.toId;
+    const fromName = nodeNameById.get(e.fromLocationId) || e.fromName || e.fromLocationId;
+    const toName = nodeNameById.get(e.toLocationId) || e.toName || e.toLocationId;
     return [
       `id=${e.id}`,
       `"${fromName}" → "${toName}"`,

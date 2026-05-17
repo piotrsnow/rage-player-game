@@ -147,7 +147,7 @@ export async function syncNPCsToNormalized(campaignId, npcs) {
 
   let existing = [];
   try {
-    existing = await prisma.campaignNPC.findMany({
+    existing = await prisma.npc.findMany({
       where: { campaignId, npcId: { in: valid.map((v) => v.data.npcId) } },
       select: { id: true, npcId: true },
     });
@@ -171,7 +171,7 @@ export async function syncNPCsToNormalized(campaignId, npcs) {
 
   if (toCreate.length > 0) {
     try {
-      await prisma.campaignNPC.createMany({
+      await prisma.npc.createMany({
         data: toCreate.map(({ _npcKey, _relationships, ...row }) => row),
         skipDuplicates: true,
       });
@@ -181,7 +181,7 @@ export async function syncNPCsToNormalized(campaignId, npcs) {
   }
   for (const u of toUpdate) {
     try {
-      await prisma.campaignNPC.update({ where: { id: u.id }, data: u.data });
+      await prisma.npc.update({ where: { id: u.id }, data: u.data });
     } catch (err) {
       log.error({ err, id: u.id }, 'NPC update failed');
     }
@@ -193,7 +193,7 @@ export async function syncNPCsToNormalized(campaignId, npcs) {
     const allTouched = [...toUpdate, ...toCreate];
     if (allTouched.length === 0) return;
     const allNpcIds = allTouched.map((r) => r.npcId ?? r._npcKey);
-    const dbRows = await prisma.campaignNPC.findMany({
+    const dbRows = await prisma.npc.findMany({
       where: { campaignId, npcId: { in: allNpcIds } },
       select: { id: true, npcId: true },
     });
@@ -201,7 +201,7 @@ export async function syncNPCsToNormalized(campaignId, npcs) {
 
     const targetNpcDbIds = allTouched.map((r) => idByNpcKey.get(r.npcId ?? r._npcKey)).filter(Boolean);
     if (targetNpcDbIds.length > 0) {
-      await prisma.campaignNpcRelationship.deleteMany({
+      await prisma.npcRelationship.deleteMany({
         where: { campaignNpcId: { in: targetNpcDbIds } },
       });
     }
@@ -223,7 +223,7 @@ export async function syncNPCsToNormalized(campaignId, npcs) {
       }
     }
     if (relInserts.length > 0) {
-      await prisma.campaignNpcRelationship.createMany({
+      await prisma.npcRelationship.createMany({
         data: relInserts,
         skipDuplicates: true,
       });
@@ -430,25 +430,18 @@ export async function syncQuestsToNormalized(campaignId, quests) {
   }
 }
 
-export async function reconstructFromNormalized(campaignId, coreState, { currentLocationName = null, currentLocationKind = null, currentLocationId = null } = {}) {
+export async function reconstructFromNormalized(campaignId, coreState, { currentLocationName = null, currentLocationId = null } = {}) {
   if (!coreState.world) coreState.world = {};
 
-  // F5 — inject currentLocationName from the dedicated column. Doesn't clobber
-  // anything caller already merged in; first write wins.
   if (currentLocationName && !coreState.world.currentLocation) {
     coreState.world.currentLocation = currentLocationName;
   }
 
-  // Faza 3a — synthesize composite ref from the FK trio columns. The graph
-  // hook (useLocationGraph) subscribes to this so it can refetch when the
-  // player transitions to a new node (mid-scene auto-create-on-miss, incident
-  // correction, normal travel). coreState rarely carries this directly because
-  // it's a slim JSON blob; the FK trio is the source of truth.
-  if (currentLocationKind && currentLocationId && !coreState.world.currentLocationRef) {
-    coreState.world.currentLocationRef = { kind: currentLocationKind, id: currentLocationId };
+  if (currentLocationId && !coreState.world.currentLocationRef) {
+    coreState.world.currentLocationRef = { id: currentLocationId };
   }
 
-  const dbNpcs = await prisma.campaignNPC.findMany({
+  const dbNpcs = await prisma.npc.findMany({
     where: { campaignId },
     include: { relationships: true },
   });
@@ -466,8 +459,8 @@ export async function reconstructFromNormalized(campaignId, coreState, { current
       disposition: n.disposition,
       alive: n.alive,
       lastLocation: n.lastLocation,
-      locationRef: (n.lastLocationKind && n.lastLocationId)
-        ? { kind: n.lastLocationKind, id: n.lastLocationId }
+      locationRef: n.currentLocationId
+        ? { id: n.currentLocationId }
         : null,
       factionId: n.factionId,
       notes: n.notes,

@@ -15,7 +15,7 @@ export async function loadCampaignNpcNames(campaignId) {
   if (!campaignId) return new Set();
 
   const [shadows, participants] = await Promise.all([
-    prisma.campaignNPC.findMany({
+    prisma.npc.findMany({
       where: { campaignId },
       select: { name: true },
     }),

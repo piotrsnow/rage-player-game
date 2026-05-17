@@ -52,7 +52,7 @@ export async function pickStartSpawn() {
   try {
     // 1. Pick a top-level canonical settlement. F5b — every WorldLocation row
     // is canonical (the isCanonical flag was dropped); no extra filter needed.
-    const settlements = await prisma.worldLocation.findMany({
+    const settlements = await prisma.location.findMany({
       where: {
         parentLocationId: null,
         locationType: { in: TOP_LEVEL_TYPES },
@@ -72,7 +72,7 @@ export async function pickStartSpawn() {
     // 2. Candidate sublocations — must have ≥1 canonical NPC. Query both
     //    sides in one pass so we can reject sublocations with no people in
     //    them (nothing to bind the starter quest to).
-    const sublocations = await prisma.worldLocation.findMany({
+    const sublocations = await prisma.location.findMany({
       where: {
         parentLocationId: settlement.id,
       },
@@ -83,7 +83,7 @@ export async function pickStartSpawn() {
     if (!sublocations.length) return null;
 
     const sublocIds = sublocations.map((s) => s.id);
-    const npcs = await prisma.worldNPC.findMany({
+    const npcs = await prisma.npc.findMany({
       where: {
         alive: true,
         keyNpc: true,
@@ -119,13 +119,13 @@ export async function pickStartSpawn() {
     //    in-fiction perspective and by initialLocationsResolver to validate
     //    AI-emitted parent/anchor names against the NPC's allowed-knowledge set.
     const [npcBaselineKnowledgeRows, npcKnownLocationRows] = await Promise.all([
-      prisma.worldNpcKnowledge.findMany({
+      prisma.npcKnowledge.findMany({
         where: { npcId: npc.id, source: 'baseline' },
         orderBy: { addedAt: 'asc' },
         select: { content: true },
         take: 6,
       }),
-      prisma.worldNpcKnownLocation.findMany({
+      prisma.npcKnownLocation.findMany({
         where: { npcId: npc.id, grantedBy: 'seed' },
         select: { location: { select: { canonicalName: true, locationType: true } } },
       }),

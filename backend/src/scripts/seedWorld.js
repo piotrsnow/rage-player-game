@@ -274,7 +274,7 @@ function buildNearestNeighbourRoads(locations) {
 // ─────────────────────────────────────────────────────────────
 
 async function upsertCapital() {
-  return prisma.worldLocation.upsert({
+  return prisma.location.upsert({
     where: { canonicalName: CAPITAL_NAME },
     update: {
       category: 'capital',
@@ -314,7 +314,7 @@ async function upsertCapital() {
 async function upsertSublocation(parent, sub) {
   const parentX = parent?.regionX ?? 0;
   const parentY = parent?.regionY ?? 0;
-  return prisma.worldLocation.upsert({
+  return prisma.location.upsert({
     where: { canonicalName: sub.name },
     update: {
       parentLocationId: parent.id,
@@ -354,7 +354,7 @@ async function upsertSublocation(parent, sub) {
 
 async function upsertVillage(village) {
   const template = getTemplate('village');
-  return prisma.worldLocation.upsert({
+  return prisma.location.upsert({
     where: { canonicalName: village.canonicalName },
     update: {
       category: 'village',
@@ -391,7 +391,7 @@ async function upsertVillage(village) {
 }
 
 async function upsertWildLocation(loc) {
-  return prisma.worldLocation.upsert({
+  return prisma.location.upsert({
     where: { canonicalName: loc.canonicalName },
     update: {
       category: loc.category,
@@ -439,7 +439,7 @@ async function upsertNpc(npc, locationId) {
     ...(npc.appearance && { appearance: npc.appearance }),
     ...(npc.dialect && { dialect: npc.dialect }),
   };
-  const row = await prisma.worldNPC.upsert({
+  const row = await prisma.npc.upsert({
     where: { canonicalId: npc.canonicalId },
     update: shared,
     create: { canonicalId: npc.canonicalId, ...shared },
@@ -449,12 +449,12 @@ async function upsertNpc(npc, locationId) {
   // On re-seed, REPLACE the baseline slice only. Entries with any other
   // `source` (lived experience from campaigns) are preserved so seed reboot
   // doesn't wipe campaign-promoted memories. FIFO trigger caps at 50 per npc.
-  await prisma.worldNpcKnowledge.deleteMany({
+  await prisma.npcKnowledge.deleteMany({
     where: { npcId: row.id, source: 'baseline' },
   });
   const baselineContents = Array.isArray(npc.baselineKnowledge) ? npc.baselineKnowledge : [];
   if (baselineContents.length > 0) {
-    await prisma.worldNpcKnowledge.createMany({
+    await prisma.npcKnowledge.createMany({
       data: baselineContents.map((content) => ({
         npcId: row.id,
         content,
@@ -513,16 +513,16 @@ async function seedNpcKnowledge(locationByName) {
       .filter(Boolean);
     if (!ids.length) continue;
     try {
-      const npc = await prisma.worldNPC.findUnique({
+      const npc = await prisma.npc.findUnique({
         where: { canonicalId: entry.canonicalId },
         select: { id: true },
       });
       if (!npc) continue;
       // Replace seed-grant slice — preserve promotion/dialog grants.
-      await prisma.worldNpcKnownLocation.deleteMany({
+      await prisma.npcKnownLocation.deleteMany({
         where: { npcId: npc.id, grantedBy: 'seed' },
       });
-      await prisma.worldNpcKnownLocation.createMany({
+      await prisma.npcKnownLocation.createMany({
         data: ids.map((locationId) => ({ npcId: npc.id, locationId, grantedBy: 'seed' })),
         skipDuplicates: true,
       });
@@ -555,8 +555,8 @@ async function backfillRagEmbeddings(locationByName) {
   try {
     // Canonical NPCs — name+role+personality. Seed inserts are scoped by
     // canonicalId so fetching `alive=true` catches everything seeded.
-    const npcs = await prisma.worldNPC.findMany({
-      where: { alive: true },
+    const npcs = await prisma.npc.findMany({
+      where: { campaignId: null, alive: true },
       select: { id: true, name: true, role: true, personality: true },
     });
     const npcStats = await batchBackfillMissing('npc', npcs, buildNPCEmbeddingText);
@@ -564,7 +564,8 @@ async function backfillRagEmbeddings(locationByName) {
     // F5b — every WorldLocation row is canonical. CampaignLocation rows
     // (per-campaign sandbox) are indexed under the separate `campaign_location`
     // entityType at creation time in processStateChanges/locations.js.
-    const locations = await prisma.worldLocation.findMany({
+    const locations = await prisma.location.findMany({
+      where: { campaignId: null },
       select: {
         id: true,
         canonicalName: true,
@@ -599,15 +600,15 @@ async function cleanupStaleSeedEntities() {
   // Delete WorldNPCs that were part of a prior seed but not the current one.
   // Only deletes keyNpc rows — campaign-promoted NPCs (keyNpc=false or no
   // canonicalId match) are untouched.
-  const staleNpcs = await prisma.worldNPC.findMany({
-    where: { keyNpc: true, canonicalId: { notIn: [...SEED_NPC_IDS] } },
+  const staleNpcs = await prisma.npc.findMany({
+    where: { campaignId: null, keyNpc: true, canonicalId: { notIn: [...SEED_NPC_IDS] } },
     select: { id: true, canonicalId: true, name: true },
   });
   if (staleNpcs.length) {
     const ids = staleNpcs.map((n) => n.id);
-    await prisma.worldNpcKnowledge.deleteMany({ where: { npcId: { in: ids } } });
-    await prisma.worldNpcKnownLocation.deleteMany({ where: { npcId: { in: ids } } });
-    await prisma.worldNPC.deleteMany({ where: { id: { in: ids } } });
+    await prisma.npcKnowledge.deleteMany({ where: { npcId: { in: ids } } });
+    await prisma.npcKnownLocation.deleteMany({ where: { npcId: { in: ids } } });
+    await prisma.npc.deleteMany({ where: { id: { in: ids } } });
     log.info({ count: staleNpcs.length, names: staleNpcs.map((n) => n.name) }, 'Cleaned up stale seed NPCs');
   }
 
@@ -615,8 +616,8 @@ async function cleanupStaleSeedEntities() {
   // one. Children (sublocations) are deleted before parents. Only deletes
   // locations whose canonicalName is NOT in the current seed set AND that have
   // no campaign references (CampaignNPC.lastLocationId, etc.).
-  const allCanonical = await prisma.worldLocation.findMany({
-    where: { canonicalName: { notIn: [...SEED_CANONICAL_NAMES] } },
+  const allCanonical = await prisma.location.findMany({
+    where: { campaignId: null, canonicalName: { notIn: [...SEED_CANONICAL_NAMES] } },
     select: { id: true, canonicalName: true, parentLocationId: true },
   });
   // Delete children first, then parents.
@@ -626,9 +627,8 @@ async function cleanupStaleSeedEntities() {
     if (!batch.length) continue;
     const ids = batch.map((l) => l.id);
     await prisma.road.deleteMany({ where: { OR: [{ fromLocationId: { in: ids } }, { toLocationId: { in: ids } }] } });
-    await prisma.locationEdge.deleteMany({ where: { fromKind: 'world', fromId: { in: ids } } });
-    await prisma.locationEdge.deleteMany({ where: { toKind: 'world', toId: { in: ids } } });
-    await prisma.worldLocation.deleteMany({ where: { id: { in: ids } } });
+    await prisma.locationEdge.deleteMany({ where: { OR: [{ fromLocationId: { in: ids } }, { toLocationId: { in: ids } }] } });
+    await prisma.location.deleteMany({ where: { id: { in: ids } } });
     log.info({ count: batch.length, names: batch.map((l) => l.canonicalName) }, 'Cleaned up stale seed locations');
   }
 }

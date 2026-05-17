@@ -1,6 +1,6 @@
 // Living World — Companion mode (NPC travels with the party).
 //
-// joinParty does an atomic claim via `prisma.worldNPC.updateMany` with a
+// joinParty does an atomic claim via `prisma.npc.updateMany` with a
 // WHERE that includes `lockedByCampaignId: null` — Postgres serializes
 // concurrent updaters and only one rowcount comes back as 1. Once locked,
 // all WorldEvents for the (campaign, npc) pair are written via
@@ -30,7 +30,7 @@ export async function joinParty({ worldNpcId, campaignId, userId = null }) {
     return { success: false, reason: 'invalid_args' };
   }
 
-  const probe = await prisma.worldNPC.findUnique({
+  const probe = await prisma.npc.findUnique({
     where: { id: worldNpcId },
     select: {
       id: true, alive: true, lockedByCampaignId: true, currentLocationId: true,
@@ -53,7 +53,7 @@ export async function joinParty({ worldNpcId, campaignId, userId = null }) {
 
   // Atomic CAS — updateMany returns count; only the first writer wins because
   // Postgres serializes the WHERE check + UPDATE in the same row lock.
-  const claim = await prisma.worldNPC.updateMany({
+  const claim = await prisma.npc.updateMany({
     where: { id: worldNpcId, lockedByCampaignId: null, alive: true },
     data: {
       lockedByCampaignId: campaignId,
@@ -78,7 +78,7 @@ export async function joinParty({ worldNpcId, campaignId, userId = null }) {
     gameTime: now,
   });
 
-  const npc = await prisma.worldNPC.findUnique({ where: { id: worldNpcId } });
+  const npc = await prisma.npc.findUnique({ where: { id: worldNpcId } });
   return { success: true, npc };
 }
 
@@ -92,7 +92,7 @@ export async function leaveParty({ worldNpcId, campaignId, reason = 'manual', us
     return { success: false, reason: 'invalid_args' };
   }
 
-  const npc = await prisma.worldNPC.findUnique({ where: { id: worldNpcId } });
+  const npc = await prisma.npc.findUnique({ where: { id: worldNpcId } });
   if (!npc) return { success: false, reason: 'not_found' };
 
   if (!npc.lockedByCampaignId) {
@@ -129,7 +129,7 @@ export async function leaveParty({ worldNpcId, campaignId, reason = 'manual', us
   }
 
   try {
-    await prisma.worldNPC.updateMany({
+    await prisma.npc.updateMany({
       where: { id: worldNpcId, lockedByCampaignId: campaignId },
       data: {
         lockedByCampaignId: null,
@@ -159,7 +159,7 @@ export async function leaveParty({ worldNpcId, campaignId, reason = 'manual', us
 export async function applyCompanionTravel({ campaignId, newLocationName, userId = null }) {
   if (!campaignId || !newLocationName) return { moved: 0 };
 
-  const companions = await prisma.worldNPC.findMany({
+  const companions = await prisma.npc.findMany({
     where: { companionOfCampaignId: campaignId, alive: true },
   });
   if (companions.length === 0) return { moved: 0 };
@@ -191,7 +191,7 @@ export async function applyCompanionTravel({ campaignId, newLocationName, userId
       const snap = { ...(npc.lockedSnapshot || {}) };
       snap.currentLocationId = newLoc.id;
       snap.locationName = newLoc.canonicalName;
-      await prisma.worldNPC.update({
+      await prisma.npc.update({
         where: { id: npc.id },
         data: { lockedSnapshot: snap },
       });
@@ -214,7 +214,7 @@ export async function updateLoyalty({ worldNpcId, campaignId, delta, reason = ''
     return { success: false, reason: 'invalid_args' };
   }
 
-  const npc = await prisma.worldNPC.findUnique({ where: { id: worldNpcId } });
+  const npc = await prisma.npc.findUnique({ where: { id: worldNpcId } });
   if (!npc || npc.companionOfCampaignId !== campaignId) {
     return { success: false, reason: 'not_companion' };
   }
@@ -224,7 +224,7 @@ export async function updateLoyalty({ worldNpcId, campaignId, delta, reason = ''
   const snap = { ...(npc.lockedSnapshot || {}) };
   snap.companionLoyalty = newLoyalty;
 
-  await prisma.worldNPC.update({
+  await prisma.npc.update({
     where: { id: worldNpcId },
     data: {
       companionLoyalty: newLoyalty,
@@ -253,7 +253,7 @@ export async function updateLoyalty({ worldNpcId, campaignId, delta, reason = ''
  */
 export async function getCompanions(campaignId) {
   if (!campaignId) return [];
-  return prisma.worldNPC.findMany({
+  return prisma.npc.findMany({
     where: { companionOfCampaignId: campaignId, alive: true },
   });
 }

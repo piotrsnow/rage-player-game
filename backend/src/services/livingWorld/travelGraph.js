@@ -168,7 +168,7 @@ export async function loadCampaignGraph(campaignId) {
       ...(campaignId ? { OR: [{ campaignId: null }, { campaignId }] } : {}),
     },
     select: {
-      fromKind: true, fromId: true, toKind: true, toId: true,
+      fromLocationId: true, toLocationId: true,
       weight: true, bidirectional: true, edgeType: true,
     },
   });
@@ -180,23 +180,22 @@ export async function loadCampaignGraph(campaignId) {
 
 function mergeLocationEdgesIntoAdjacency(adj, locationEdges) {
   for (const e of locationEdges) {
-    if (e.fromKind !== 'world' || e.toKind !== 'world') continue;
     const entry = {
-      toId: e.toId,
+      toId: e.toLocationId,
       distance: e.weight || 1.0,
       difficulty: 'safe',
       terrainType: e.edgeType === 'road_to' ? 'road' : 'path',
       direction: null,
     };
-    const list = adj.get(e.fromId) || [];
+    const list = adj.get(e.fromLocationId) || [];
     list.push(entry);
-    adj.set(e.fromId, list);
+    adj.set(e.fromLocationId, list);
 
     if (e.bidirectional) {
-      const revEntry = { ...entry, toId: e.fromId };
-      const revList = adj.get(e.toId) || [];
+      const revEntry = { ...entry, toId: e.fromLocationId };
+      const revList = adj.get(e.toLocationId) || [];
       revList.push(revEntry);
-      adj.set(e.toId, revList);
+      adj.set(e.toLocationId, revList);
     }
   }
 }
@@ -316,7 +315,7 @@ export function classifyDetour({ pathDistance, start, end }) {
  */
 export async function expandPath(pathIds) {
   if (!Array.isArray(pathIds) || pathIds.length === 0) return [];
-  const rows = await prisma.worldLocation.findMany({
+  const rows = await prisma.location.findMany({
     where: { id: { in: pathIds } },
     select: {
       id: true, canonicalName: true, locationType: true,

@@ -6,11 +6,7 @@ import {
 } from '../../livingWorld/worldStateService.js';
 import { markLocationDiscovered, markLocationHeardAbout } from '../../livingWorld/userDiscoveryService.js';
 import { computeSmartPosition, findMergeCandidate } from '../../livingWorld/positionCalculator.js';
-import {
-  LOCATION_KIND_WORLD,
-  LOCATION_KIND_CAMPAIGN,
-  lookupLocationByKindId,
-} from '../../locationRefs.js';
+import { lookupLocationByKindId } from '../../locationRefs.js';
 import { createEdge } from '../../locationGraph/graphService.js';
 import { findSimilarNodeImage } from '../../locationGraph/imageMatcher.js';
 import { isNpcName } from '../../livingWorld/npcNameGuard.js';
@@ -99,91 +95,69 @@ export async function processLocationChanges(campaignId, newLocations, { prevLoc
  *
  * Canonical-only by design — anchoring AI-emitted standalone locations on
  * a CampaignLocation row would let one ephemeral run influence another's
- * placement. Returns `{ kind, row }` or `null` when the token doesn't
- * resolve.
+ * placement. Returns `{ row }` or `null` when the token doesn't resolve.
  */
 export async function resolveAnchorToken(token, campaignId, startSpawn = null) {
   if (typeof token !== 'string' || !token.trim()) return null;
   const t = token.trim();
 
   if (t === 'capital') {
-    const row = await prisma.worldLocation.findFirst({ where: { locationType: 'capital' } });
-    return row ? { kind: LOCATION_KIND_WORLD, row } : null;
+    const row = await prisma.location.findFirst({ where: { locationType: 'capital', campaignId: null } });
+    return row ? { row } : null;
   }
 
   if (t === 'questGiver') {
     if (!startSpawn?.npcCurrentLocationId) return null;
-    const row = await prisma.worldLocation.findUnique({ where: { id: startSpawn.npcCurrentLocationId } });
-    return row ? { kind: LOCATION_KIND_WORLD, row } : null;
+    const row = await prisma.location.findUnique({ where: { id: startSpawn.npcCurrentLocationId } });
+    return row ? { row } : null;
   }
 
-  // Exact canonicalName hit only — no fuzzy fallback. Caller validated `t`
-  // against the NPC's allowed-knowledge set before calling, so a miss here
-  // is real (canonical row deleted between seed-spawn pick and POST).
-  const row = await prisma.worldLocation.findUnique({ where: { canonicalName: t } });
-  return row ? { kind: LOCATION_KIND_WORLD, row } : null;
+  const row = await prisma.location.findFirst({ where: { canonicalName: t, campaignId: null } });
+  return row ? { row } : null;
 }
 
 export { processSublocationEntry, processTopLevelEntry };
 
-// Walk a polymorphic location ref up the parent chain until we hit a row with
+// Walk a location up the parent chain until we hit a row with
 // no parent (= top-level settlement). Bounded to 5 hops as a safety net for
 // pathological cycles. Returns the unchanged ref when already top-level.
-async function walkUpToTopLevel(startRef) {
-  let kind = startRef.kind;
-  let row = startRef.row;
+async function walkUpToTopLevel(startRow) {
+  let row = startRow;
   for (let depth = 0; depth < 5; depth += 1) {
-    if (kind === LOCATION_KIND_WORLD) {
-      if (!row.parentLocationId) return { kind, row };
-      const next = await prisma.worldLocation.findUnique({
-        where: { id: row.parentLocationId },
-      });
-      if (!next) return { kind, row };
-      row = next;
-      // WorldLocation.parentLocationId is FK to WorldLocation — kind stays 'world'.
-    } else {
-      if (!row.parentLocationKind || !row.parentLocationId) return { kind, row };
-      const next = await lookupLocationByKindId({
-        prisma,
-        kind: row.parentLocationKind,
-        id: row.parentLocationId,
-      });
-      if (!next) return { kind, row };
-      kind = row.parentLocationKind;
-      row = next;
-    }
+    if (!row.parentLocationId) return { row };
+    const next = await prisma.location.findUnique({
+      where: { id: row.parentLocationId },
+    });
+    if (!next) return { row };
+    row = next;
   }
-  return { kind, row };
+  return { row };
 }
 
 async function processSublocationEntry(campaignId, entry, { discoveryState = 'visited' } = {}) {
   const parentRef = await resolveLocationByName(entry.parentLocationName, { campaignId });
-  if (!parentRef) {
+  if (!parentRef?.location) {
     log.warn({ campaignId, parent: entry.parentLocationName, child: entry.name }, 'Parent location resolve failed');
     return null;
   }
 
-  // F5d — AI sometimes nominates a sublocation as the parent (e.g. "Akademia
-  // Yerieli", which is itself a sublocation of Yeralden). The new row would
-  // land under that sub, but SubLocationGrid only drills one level down — so
-  // sub-of-sub becomes invisible. Walk up to the top-level ancestor instead.
-  let effectiveParent = parentRef;
-  if (parentRef.row.parentLocationId) {
-    const topLevel = await walkUpToTopLevel(parentRef);
-    if (topLevel && topLevel.row.id !== parentRef.row.id) {
+  let effectiveParentRow = parentRef.location;
+  if (parentRef.location.parentLocationId) {
+    const topLevel = await walkUpToTopLevel(parentRef.location);
+    if (topLevel && topLevel.row.id !== parentRef.location.id) {
       log.info(
         {
           campaignId,
-          aiParent: parentRef.row.canonicalName || parentRef.row.name,
-          reparentedTo: topLevel.row.canonicalName || topLevel.row.name,
+          aiParent: parentRef.location.canonicalName || parentRef.location.displayName,
+          reparentedTo: topLevel.row.canonicalName || topLevel.row.displayName,
           child: entry.name,
         },
         'Sublocation reparented: AI-emitted parent was itself a sublocation, walking up to top-level',
       );
-      effectiveParent = topLevel;
+      effectiveParentRow = topLevel.row;
     }
   }
-  const parent = effectiveParent.row;
+  const parent = effectiveParentRow;
 
   const created = await findOrCreateCampaignLocation(entry.name, {
     campaignId,
@@ -194,7 +168,6 @@ async function processSublocationEntry(campaignId, entry, { discoveryState = 'vi
     regionX: parent.regionX ?? 0,
     regionY: parent.regionY ?? 0,
     positionConfidence: parent.positionConfidence ?? 0.5,
-    parentLocationKind: effectiveParent.kind,
     parentLocationId: parent.id,
     slotType: entry.slotType || null,
     slotKind: 'custom',
@@ -206,8 +179,8 @@ async function processSublocationEntry(campaignId, entry, { discoveryState = 'vi
     return null;
   }
   log.info(
-    { campaignId, parent: parent.canonicalName || parent.name, child: entry.name, parentKind: effectiveParent.kind },
-    'CampaignLocation sublocation materialized',
+    { campaignId, parent: parent.canonicalName || parent.displayName, child: entry.name },
+    'Location sublocation materialized',
   );
 
   if (!created.nodeImageUrl) {
@@ -217,18 +190,16 @@ async function processSublocationEntry(campaignId, entry, { discoveryState = 'vi
       tags: [],
     });
     if (matchedUrl) {
-      await prisma.campaignLocation.update({ where: { id: created.id }, data: { nodeImageUrl: matchedUrl } });
+      await prisma.location.update({ where: { id: created.id }, data: { nodeImageUrl: matchedUrl } });
     }
   }
 
-  await autoDiscoverCreated({ campaignId, kind: LOCATION_KIND_CAMPAIGN, id: created.id, state: discoveryState });
+  await autoDiscoverCreated({ campaignId, id: created.id, state: discoveryState });
 
   try {
     await createEdge({
-      fromKind: effectiveParent.kind,
-      fromId: parent.id,
-      toKind: LOCATION_KIND_CAMPAIGN,
-      toId: created.id,
+      fromLocationId: parent.id,
+      toLocationId: created.id,
       edgeType: 'contains',
       category: 'structural',
       bidirectional: false,
@@ -242,7 +213,7 @@ async function processSublocationEntry(campaignId, entry, { discoveryState = 'vi
     log.debug({ err: edgeErr?.message, campaignId, child: entry.name }, 'Sublocation contains-edge creation failed (non-fatal)');
   }
 
-  return { kind: LOCATION_KIND_CAMPAIGN, row: created };
+  return { row: created };
 }
 
 // Phase A/B — settlements are seeded at campaign creation; AI cannot invent
@@ -281,19 +252,19 @@ async function processTopLevelEntry(campaignId, entry, anchorRef, bounds = null,
   // WorldLocation and this-campaign CampaignLocation. Sublocations (parent
   // set) inherit parent coords so they're already represented by the
   // parent row's coords — exclude them to avoid double-collision.
-  const [worldRows, campaignRows] = await Promise.all([
-    prisma.worldLocation.findMany({
-      where: { parentLocationId: null, id: { not: anchor.id } },
+  const [canonicalRows, campaignRows] = await Promise.all([
+    prisma.location.findMany({
+      where: { campaignId: null, parentLocationId: null, id: { not: anchor.id } },
       select: { id: true, canonicalName: true, regionX: true, regionY: true, locationType: true },
     }),
-    prisma.campaignLocation.findMany({
+    prisma.location.findMany({
       where: { campaignId, parentLocationId: null, id: { not: anchor.id } },
-      select: { id: true, name: true, regionX: true, regionY: true, locationType: true },
+      select: { id: true, canonicalName: true, displayName: true, regionX: true, regionY: true, locationType: true },
     }),
   ]);
   const existing = [
-    ...worldRows.map((r) => ({ ...r, canonicalName: r.canonicalName, kind: LOCATION_KIND_WORLD })),
-    ...campaignRows.map((r) => ({ ...r, canonicalName: r.name, kind: LOCATION_KIND_CAMPAIGN })),
+    ...canonicalRows.map((r) => ({ ...r })),
+    ...campaignRows.map((r) => ({ ...r, canonicalName: r.canonicalName || r.displayName })),
   ];
 
   const placed = computeSmartPosition({
@@ -322,12 +293,12 @@ async function processTopLevelEntry(campaignId, entry, anchorRef, bounds = null,
   });
   if (mergeCandidate) {
     const cand = await resolveLocationByName(entry.name, { campaignId });
-    if (cand && cand.row.id === mergeCandidate.location.id) {
+    if (cand?.location && cand.location.id === mergeCandidate.location.id) {
       log.info(
-        { campaignId, name: entry.name, mergedInto: cand.row.canonicalName || cand.row.name, kind: cand.kind },
+        { campaignId, name: entry.name, mergedInto: cand.location.canonicalName || cand.location.displayName },
         'Top-level location merged into existing',
       );
-      createdRef = cand;
+      createdRef = { row: cand.location };
     }
   }
 
@@ -344,17 +315,17 @@ async function processTopLevelEntry(campaignId, entry, anchorRef, bounds = null,
       dangerLevel: entry.dangerLevel || 'safe',
     });
     if (!created) {
-      log.warn({ campaignId, name: entry.name }, 'CampaignLocation create failed');
+      log.warn({ campaignId, name: entry.name }, 'Location create failed');
       return;
     }
     log.info(
       { campaignId, name: entry.name, pos: position, locationType },
-      'Top-level CampaignLocation created',
+      'Top-level campaign Location created',
     );
-    createdRef = { kind: LOCATION_KIND_CAMPAIGN, row: created };
+    createdRef = { row: created };
   }
 
-  await autoDiscoverCreated({ campaignId, kind: createdRef.kind, id: createdRef.row.id, state: discoveryState });
+  await autoDiscoverCreated({ campaignId, id: createdRef.row.id, state: discoveryState });
 
   // F5b — `connectsTo` and bidirectional auto-Road both intentionally dropped.
   // Roads are canonical-only; the player will discover routes via map "travel
@@ -366,7 +337,7 @@ async function processTopLevelEntry(campaignId, entry, anchorRef, bounds = null,
 //   'visited'     — mid-play default (player just walked into the new place)
 //   'heard_about' — campaign-creation initialLocations that the questgiver mentioned
 //   null          — skip entirely (location exists in world but stays fully unknown)
-async function autoDiscoverCreated({ campaignId, kind, id, state = 'visited' }) {
+async function autoDiscoverCreated({ campaignId, id, state = 'visited' }) {
   if (state !== 'visited' && state !== 'heard_about') return;
   try {
     const campaignRow = await prisma.campaign.findUnique({
@@ -377,11 +348,10 @@ async function autoDiscoverCreated({ campaignId, kind, id, state = 'visited' }) 
     const fn = state === 'visited' ? markLocationDiscovered : markLocationHeardAbout;
     await fn({
       userId: campaignRow.userId,
-      locationKind: kind,
       locationId: id,
       campaignId,
     });
   } catch (err) {
-    log.warn({ err: err?.message, campaignId, kind, id, state }, 'auto-discover after create failed');
+    log.warn({ err: err?.message, campaignId, id, state }, 'auto-discover after create failed');
   }
 }

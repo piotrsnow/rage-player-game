@@ -1,17 +1,15 @@
 import { prisma } from '../../lib/prisma.js';
-import { LOCATION_KIND_WORLD, LOCATION_KIND_CAMPAIGN } from '../locationRefs.js';
 import { childLogger } from '../../lib/logger.js';
 
 const log = childLogger({ module: 'graphService' });
 
 /**
- * Load outgoing edges from a location (by kind + id). Includes both
+ * Load outgoing edges from a location. Includes both
  * canonical (campaignId IS NULL) and campaign-scoped edges.
  */
-export async function getOutgoingEdges(locationKind, locationId, { campaignId = null } = {}) {
+export async function getOutgoingEdges(locationId, { campaignId = null } = {}) {
   const where = {
-    fromKind: locationKind,
-    fromId: locationId,
+    fromLocationId: locationId,
     isActive: true,
   };
   if (campaignId) {
@@ -22,24 +20,23 @@ export async function getOutgoingEdges(locationKind, locationId, { campaignId = 
 
 /**
  * Load the N-hop subgraph from a starting location.
- * Returns { nodes: Map<kindId, row>, edges: LocationEdge[] }.
+ * Returns { nodes: Map<"world:<id>", row>, edges: LocationEdge[] }.
  */
-export async function loadSubgraph(locationKind, locationId, { campaignId = null, hops = 2 } = {}) {
+export async function loadSubgraph(locationId, { campaignId = null, hops = 2 } = {}) {
   const visited = new Set();
-  const frontier = [`${locationKind}:${locationId}`];
+  const frontier = [locationId];
   const allEdges = [];
 
   for (let depth = 0; depth < hops && frontier.length > 0; depth++) {
     const nextFrontier = [];
     const edgeBatches = await Promise.all(
-      frontier.map((key) => {
-        visited.add(key);
-        const [kind, id] = key.split(':');
+      frontier.map((id) => {
+        visited.add(id);
         const where = {
           isActive: true,
           OR: [
-            { fromKind: kind, fromId: id },
-            { toKind: kind, toId: id, bidirectional: true },
+            { fromLocationId: id },
+            { toLocationId: id, bidirectional: true },
           ],
         };
         if (campaignId) {
@@ -51,51 +48,37 @@ export async function loadSubgraph(locationKind, locationId, { campaignId = null
     for (const batch of edgeBatches) {
       for (const edge of batch) {
         allEdges.push(edge);
-        const fromKey = `${edge.fromKind}:${edge.fromId}`;
-        const toKey = `${edge.toKind}:${edge.toId}`;
-        if (!visited.has(fromKey)) nextFrontier.push(fromKey);
-        if (!visited.has(toKey)) nextFrontier.push(toKey);
+        if (!visited.has(edge.fromLocationId)) nextFrontier.push(edge.fromLocationId);
+        if (!visited.has(edge.toLocationId)) nextFrontier.push(edge.toLocationId);
       }
     }
     frontier.length = 0;
     frontier.push(...[...new Set(nextFrontier)]);
   }
 
-  const nodeKeys = new Set();
+  const nodeIds = new Set();
   for (const e of allEdges) {
-    nodeKeys.add(`${e.fromKind}:${e.fromId}`);
-    nodeKeys.add(`${e.toKind}:${e.toId}`);
+    nodeIds.add(e.fromLocationId);
+    nodeIds.add(e.toLocationId);
   }
-  nodeKeys.add(`${locationKind}:${locationId}`);
+  nodeIds.add(locationId);
 
-  const nodes = await resolveNodeKeys([...nodeKeys]);
+  const nodes = await resolveNodeIds([...nodeIds]);
   const deduped = deduplicateEdges(allEdges);
   return { nodes, edges: deduped };
 }
 
 /**
- * Resolve a list of `kind:id` strings into location rows.
- * Returns a Map<kindColonId, row>.
+ * Resolve a list of location UUIDs into location rows.
+ * Returns a Map<"world:<id>", row> for backward compat with consumers.
  */
-async function resolveNodeKeys(keys) {
-  const worldIds = [];
-  const campaignIds = [];
-  for (const k of keys) {
-    const [kind, id] = k.split(':');
-    if (kind === LOCATION_KIND_WORLD) worldIds.push(id);
-    else if (kind === LOCATION_KIND_CAMPAIGN) campaignIds.push(id);
-  }
-  const [worldRows, campaignRows] = await Promise.all([
-    worldIds.length > 0
-      ? prisma.worldLocation.findMany({ where: { id: { in: worldIds } } })
-      : [],
-    campaignIds.length > 0
-      ? prisma.campaignLocation.findMany({ where: { id: { in: campaignIds } } })
-      : [],
-  ]);
+async function resolveNodeIds(ids) {
+  if (ids.length === 0) return new Map();
+  const rows = await prisma.location.findMany({
+    where: { id: { in: ids } },
+  });
   const map = new Map();
-  for (const r of worldRows) map.set(`world:${r.id}`, { ...r, _kind: 'world' });
-  for (const r of campaignRows) map.set(`campaign:${r.id}`, { ...r, _kind: 'campaign' });
+  for (const r of rows) map.set(`world:${r.id}`, { ...r, _kind: 'world' });
   return map;
 }
 
@@ -144,14 +127,14 @@ export async function updateEdge(edgeId, data) {
  * Look up the traversalCount from the movement edge between two locations.
  * Returns `{ traversalCount, lastTraversedSceneIndex }` or null.
  */
-export async function lookupEdgeFamiliarity(fromKind, fromId, toKind, toId, { campaignId = null } = {}) {
-  if (!fromKind || !fromId || !toKind || !toId) return null;
+export async function lookupEdgeFamiliarity(fromLocationId, toLocationId, { campaignId = null } = {}) {
+  if (!fromLocationId || !toLocationId) return null;
   const where = {
     isActive: true,
     category: 'movement',
     OR: [
-      { fromKind, fromId, toKind, toId },
-      { fromKind: toKind, fromId: toId, toKind: fromKind, toId: fromId, bidirectional: true },
+      { fromLocationId, toLocationId },
+      { fromLocationId: toLocationId, toLocationId: fromLocationId, bidirectional: true },
     ],
   };
   if (campaignId) {
@@ -174,55 +157,35 @@ export async function lookupEdgeFamiliarity(fromKind, fromId, toKind, toId, { ca
   };
 }
 
-// ── Faza 0 — node metadata helpers ────────────────────────────────────
-//
-// Operacje typu "incrementuj visitCount" / "dopisz wpis do modificationsLog"
-// realizujemy w osobnych helperach by callsite (FE state changes, AI pipeline,
-// dungeonEntry) nie pisał ręcznie struktur Prisma.
+// ── Node metadata helpers ───────────────────────────────────────────────
 
 /**
- * Resolve node by composite ref. Returns row + _kind discriminator or null.
+ * Resolve node by ID. Returns row + _kind:'world' discriminator or null.
+ * Signature kept for backward compat (kind param ignored).
  */
 export async function getNodeByRef(kind, id) {
-  if (kind === LOCATION_KIND_WORLD) {
-    const row = await prisma.worldLocation.findUnique({ where: { id } });
-    return row ? { ...row, _kind: 'world' } : null;
-  }
-  if (kind === LOCATION_KIND_CAMPAIGN) {
-    const row = await prisma.campaignLocation.findUnique({ where: { id } });
-    return row ? { ...row, _kind: 'campaign' } : null;
-  }
-  return null;
+  const row = await prisma.location.findUnique({ where: { id } });
+  return row ? { ...row, _kind: 'world' } : null;
 }
 
 /**
- * Bump visitCount on a node (idempotent if scene already counted).
- * Use from scene apply when world.currentLocationRef changes.
+ * Bump visitCount on a location.
  */
 export async function bumpVisitCount(kind, id) {
-  if (kind === LOCATION_KIND_WORLD) {
-    return prisma.worldLocation.update({
-      where: { id },
-      data: { visitCount: { increment: 1 } },
-    });
-  }
-  if (kind === LOCATION_KIND_CAMPAIGN) {
-    return prisma.campaignLocation.update({
-      where: { id },
-      data: { visitCount: { increment: 1 } },
-    });
-  }
-  throw new Error(`bumpVisitCount: unknown kind ${kind}`);
+  return prisma.location.update({
+    where: { id },
+    data: { visitCount: { increment: 1 } },
+  });
 }
 
 /**
- * Append a modification log entry on a node.
- * @param {string} kind 'world' | 'campaign'
- * @param {string} id node UUID
+ * Append a modification log entry on a location.
+ * @param {string} kind — ignored (kept for backward compat)
+ * @param {string} id location UUID
  * @param {object} entry { timestamp, sceneId?, type, summary }
  */
 export async function appendModificationLog(kind, id, entry) {
-  const node = await getNodeByRef(kind, id);
+  const node = await prisma.location.findUnique({ where: { id } });
   if (!node) return null;
   const entries = Array.isArray(node.modificationsLog) ? [...node.modificationsLog] : [];
   entries.push({
@@ -231,73 +194,51 @@ export async function appendModificationLog(kind, id, entry) {
     type: entry.type,
     summary: entry.summary,
   });
-  // Cap at 50 entries per node (FIFO).
   while (entries.length > 50) entries.shift();
-  if (kind === LOCATION_KIND_WORLD) {
-    return prisma.worldLocation.update({ where: { id }, data: { modificationsLog: entries } });
-  }
-  return prisma.campaignLocation.update({ where: { id }, data: { modificationsLog: entries } });
+  return prisma.location.update({ where: { id }, data: { modificationsLog: entries } });
 }
 
 /**
- * Add NPC ID to npcsEncountered on a node (dedup).
+ * Add NPC ID to npcsEncountered on a location (dedup).
  */
 export async function recordNpcEncounter(kind, id, npcId) {
-  const node = await getNodeByRef(kind, id);
+  const node = await prisma.location.findUnique({ where: { id } });
   if (!node) return null;
   const list = Array.isArray(node.npcsEncountered) ? node.npcsEncountered : [];
   if (list.includes(npcId)) return node;
   const next = [...list, npcId];
-  if (kind === LOCATION_KIND_WORLD) {
-    return prisma.worldLocation.update({ where: { id }, data: { npcsEncountered: next } });
-  }
-  return prisma.campaignLocation.update({ where: { id }, data: { npcsEncountered: next } });
+  return prisma.location.update({ where: { id }, data: { npcsEncountered: next } });
 }
 
 /**
- * Mark node as liberated (sets liberatedAt timestamp). Triggered by
- * `locationLiberated: true` from AI scene apply.
+ * Mark location as liberated (sets liberatedAt timestamp).
  */
 export async function markLiberated(kind, id, when = new Date()) {
-  if (kind === LOCATION_KIND_WORLD) {
-    return prisma.worldLocation.update({ where: { id }, data: { liberatedAt: when } });
-  }
-  if (kind === LOCATION_KIND_CAMPAIGN) {
-    return prisma.campaignLocation.update({ where: { id }, data: { liberatedAt: when } });
-  }
-  throw new Error(`markLiberated: unknown kind ${kind}`);
+  return prisma.location.update({ where: { id }, data: { liberatedAt: when } });
 }
 
 /**
- * Set/clear dungeonState (entryCleared/trapSprung/lootTaken flags) on a node.
+ * Set/clear dungeonState on a location.
  */
 export async function setDungeonState(kind, id, state) {
-  if (kind === LOCATION_KIND_WORLD) {
-    return prisma.worldLocation.update({ where: { id }, data: { dungeonState: state } });
-  }
-  if (kind === LOCATION_KIND_CAMPAIGN) {
-    return prisma.campaignLocation.update({ where: { id }, data: { dungeonState: state } });
-  }
-  throw new Error(`setDungeonState: unknown kind ${kind}`);
+  return prisma.location.update({ where: { id }, data: { dungeonState: state } });
 }
 
 /**
- * Find NPCs at a specific location (CampaignNPC).
+ * Find NPCs at a specific location.
  */
-export async function getNpcsAtLocation(locationKind, locationId, campaignId) {
-  return prisma.campaignNPC.findMany({
+export async function getNpcsAtLocation(locationId, campaignId) {
+  return prisma.npc.findMany({
     where: {
       campaignId,
-      lastLocationKind: locationKind,
-      lastLocationId: locationId,
+      currentLocationId: locationId,
     },
     select: {
       id: true,
       name: true,
       role: true,
       category: true,
-      lastLocationKind: true,
-      lastLocationId: true,
+      currentLocationId: true,
     },
   });
 }
@@ -309,21 +250,21 @@ export async function loadWorldGraph() {
   const edges = await prisma.locationEdge.findMany({
     where: { isActive: true },
   });
-  const nodeKeys = new Set();
+  const nodeIds = new Set();
   for (const e of edges) {
-    nodeKeys.add(`${e.fromKind}:${e.fromId}`);
-    nodeKeys.add(`${e.toKind}:${e.toId}`);
+    nodeIds.add(e.fromLocationId);
+    nodeIds.add(e.toLocationId);
   }
-  const nodes = await resolveNodeKeys([...nodeKeys]);
+  const nodes = await resolveNodeIds([...nodeIds]);
   return { nodes, edges };
 }
 
 /**
  * Load full graph view for a campaign (used by the API endpoint).
  */
-export async function loadCampaignGraph(campaignId, { focusKind, focusId, hops = 2 } = {}) {
-  if (focusKind && focusId) {
-    return loadSubgraph(focusKind, focusId, { campaignId, hops });
+export async function loadCampaignGraph(campaignId, { focusId, hops = 2 } = {}) {
+  if (focusId) {
+    return loadSubgraph(focusId, { campaignId, hops });
   }
   const edges = await prisma.locationEdge.findMany({
     where: {
@@ -331,11 +272,11 @@ export async function loadCampaignGraph(campaignId, { focusKind, focusId, hops =
       OR: [{ campaignId: null }, { campaignId }],
     },
   });
-  const nodeKeys = new Set();
+  const nodeIds = new Set();
   for (const e of edges) {
-    nodeKeys.add(`${e.fromKind}:${e.fromId}`);
-    nodeKeys.add(`${e.toKind}:${e.toId}`);
+    nodeIds.add(e.fromLocationId);
+    nodeIds.add(e.toLocationId);
   }
-  const nodes = await resolveNodeKeys([...nodeKeys]);
+  const nodes = await resolveNodeIds([...nodeIds]);
   return { nodes, edges };
 }

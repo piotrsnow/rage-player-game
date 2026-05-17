@@ -16,48 +16,47 @@ const ACCESS_EDGE_TYPES = new Set([
  * Filters by knowledge state (if provided) and edge discovery state.
  */
 export async function getMovementOptions(characterId, campaignId) {
-  const npc = await prisma.campaignNPC.findFirst({
+  const npc = await prisma.npc.findFirst({
     where: { id: characterId, campaignId },
-    select: { lastLocationKind: true, lastLocationId: true },
+    select: { currentLocationId: true },
   });
 
-  let locationKind, locationId;
+  let locationId;
   if (npc) {
-    locationKind = npc.lastLocationKind;
-    locationId = npc.lastLocationId;
+    locationId = npc.currentLocationId;
   } else {
     const campaign = await prisma.campaign.findUnique({
       where: { id: campaignId },
-      select: { currentLocationKind: true, currentLocationId: true },
+      select: { currentLocationId: true },
     });
     if (!campaign) return [];
-    locationKind = campaign.currentLocationKind;
     locationId = campaign.currentLocationId;
   }
 
-  if (!locationKind || !locationId) return [];
+  if (!locationId) return [];
 
-  const edges = await getOutgoingEdges(locationKind, locationId, { campaignId });
-  const myKey = `${locationKind}:${locationId}`;
+  const edges = await getOutgoingEdges(locationId, { campaignId });
+  const myKey = `world:${locationId}`;
 
   const options = [];
   for (const edge of edges) {
     if (!MOVEMENT_CATEGORIES.has(edge.category)) continue;
     if (edge.discoveryState === 'unknown' || edge.discoveryState === 'hidden') continue;
 
-    const targetKey = `${edge.fromKind}:${edge.fromId}` === myKey
-      ? `${edge.toKind}:${edge.toId}`
-      : (edge.bidirectional ? `${edge.fromKind}:${edge.fromId}` : null);
+    const fromKey = `world:${edge.fromLocationId}`;
+    const toKey = `world:${edge.toLocationId}`;
+    const targetKey = fromKey === myKey
+      ? toKey
+      : (edge.bidirectional ? fromKey : null);
     if (!targetKey) continue;
 
-    const [targetKind, targetId] = targetKey.split(':');
+    const targetLocationId = fromKey === myKey ? edge.toLocationId : edge.fromLocationId;
     const blockers = getBlockersForEdge(edge);
 
     options.push({
       edgeId: edge.id,
       edgeType: edge.edgeType,
-      targetKind,
-      targetId,
+      targetLocationId,
       accessible: blockers.length === 0,
       blockers,
       travelTime: edge.metadata?.travelTime ?? edge.weight ?? 1,
@@ -71,10 +70,10 @@ export async function getMovementOptions(characterId, campaignId) {
 /**
  * Find a path between two locations using Dijkstra with preference-based cost.
  */
-export async function findPath(fromId, fromKind, toId, toKind, campaignId, preference = 'shortest') {
-  const { nodes, edges } = await loadSubgraph(fromKind, fromId, { campaignId, hops: 6 });
-  const targetKey = `${toKind}:${toId}`;
-  const startKey = `${fromKind}:${fromId}`;
+export async function findPath(fromLocationId, toLocationId, campaignId, preference = 'shortest') {
+  const { nodes, edges } = await loadSubgraph(fromLocationId, { campaignId, hops: 6 });
+  const targetKey = `world:${toLocationId}`;
+  const startKey = `world:${fromLocationId}`;
 
   if (startKey === targetKey) {
     return { allowed: true, path: [], totalDistance: 0, totalTravelTime: 0, blockers: [], scaleHint: 'instant' };
@@ -114,31 +113,29 @@ export async function findPath(fromId, fromKind, toId, toKind, campaignId, prefe
  * Check if a character can move to a target location.
  * Returns { allowed, blockers }.
  */
-export async function canMove(characterId, targetLocationId, targetKind, campaignId) {
-  const npc = await prisma.campaignNPC.findFirst({
+export async function canMove(characterId, targetLocationId, campaignId) {
+  const npc = await prisma.npc.findFirst({
     where: { id: characterId, campaignId },
-    select: { lastLocationKind: true, lastLocationId: true },
+    select: { currentLocationId: true },
   });
 
-  let fromKind, fromId;
+  let fromLocationId;
   if (npc) {
-    fromKind = npc.lastLocationKind;
-    fromId = npc.lastLocationId;
+    fromLocationId = npc.currentLocationId;
   } else {
     const campaign = await prisma.campaign.findUnique({
       where: { id: campaignId },
-      select: { currentLocationKind: true, currentLocationId: true },
+      select: { currentLocationId: true },
     });
     if (!campaign) return { allowed: false, blockers: [{ requirement: 'no_campaign', detail: 'Campaign not found' }] };
-    fromKind = campaign.currentLocationKind;
-    fromId = campaign.currentLocationId;
+    fromLocationId = campaign.currentLocationId;
   }
 
-  if (!fromKind || !fromId) {
+  if (!fromLocationId) {
     return { allowed: false, blockers: [{ requirement: 'no_position', detail: 'No current position' }] };
   }
 
-  const result = await findPath(fromId, fromKind, targetLocationId, targetKind, campaignId);
+  const result = await findPath(fromLocationId, targetLocationId, campaignId);
   return { allowed: result.allowed, blockers: result.blockers };
 }
 
@@ -207,7 +204,6 @@ function getBlockersForEdge(edge) {
     });
   }
 
-  // Check access edges linked via shared from/to pair
   if (edge.metadata?.requiresSkillCheck) {
     blockers.push({
       edgeId: edge.id,
@@ -262,8 +258,8 @@ function buildAdjacency(edges) {
     if (!MOVEMENT_CATEGORIES.has(edge.category)) continue;
     if (edge.discoveryState === 'unknown' || edge.discoveryState === 'hidden') continue;
 
-    const fromKey = `${edge.fromKind}:${edge.fromId}`;
-    const toKey = `${edge.toKind}:${edge.toId}`;
+    const fromKey = `world:${edge.fromLocationId}`;
+    const toKey = `world:${edge.toLocationId}`;
 
     if (!adj.has(fromKey)) adj.set(fromKey, []);
     adj.get(fromKey).push({ to: toKey, edge });

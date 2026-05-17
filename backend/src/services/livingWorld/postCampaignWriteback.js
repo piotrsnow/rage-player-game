@@ -48,10 +48,9 @@ const DEFAULT_AUTO_APPLY_FIELDS = ['alive', 'location'];
  * Only emits a change for fields where `clone` holds a NON-NULL newer value
  * (we don't promote "NPC forgot their personality" nulls back to canonical).
  *
- * F5b — `WorldNPC.currentLocationId` is a canonical FK, so a clone whose
- * `lastLocationKind='campaign'` (NPC roamed to an AI-created sandbox location)
- * is filtered out of the location diff. Pre-F5b clones with no kind column
- * default to canonical (`kind=null` treated as `world` for back-compat).
+ * With the unified Location table, all location IDs are plain UUIDs — no
+ * kind dispatch needed. A clone's `currentLocationId` is directly compared
+ * to the canonical's `currentLocationId`.
  */
 export function diffNpcFields(clone, canonical) {
   if (!clone || !canonical) return [];
@@ -59,10 +58,9 @@ export function diffNpcFields(clone, canonical) {
 
   for (const field of DIFFED_FIELDS) {
     if (field === 'location') {
-      const cloneLoc = clone.lastLocationId ?? null;
+      const cloneLoc = clone.currentLocationId ?? null;
       const canonLoc = canonical.currentLocationId ?? null;
-      const cloneKind = clone.lastLocationKind ?? 'world';
-      if (cloneLoc !== canonLoc && cloneLoc !== null && cloneKind === 'world') {
+      if (cloneLoc !== canonLoc && cloneLoc !== null) {
         changes.push({ field: 'location', oldValue: canonLoc, newValue: cloneLoc });
       }
       continue;
@@ -133,15 +131,14 @@ export function filterAutoApplyChanges(changes, autoApplyFields = DEFAULT_AUTO_A
 export async function collectCampaignShadowDiff(campaignId) {
   if (!campaignId) throw new Error('collectCampaignShadowDiff: campaignId is required');
 
-  const clones = await prisma.campaignNPC.findMany({
+  const clones = await prisma.npc.findMany({
     where: { campaignId, worldNpcId: { not: null } },
     select: {
       id: true,
       name: true,
       worldNpcId: true,
       alive: true,
-      lastLocationKind: true,
-      lastLocationId: true,
+      currentLocationId: true,
       role: true,
       personality: true,
     },
@@ -156,7 +153,7 @@ export async function collectCampaignShadowDiff(campaignId) {
   }
 
   const worldIds = clones.map((c) => c.worldNpcId);
-  const canonicals = await prisma.worldNPC.findMany({
+  const canonicals = await prisma.npc.findMany({
     where: { id: { in: worldIds } },
     select: {
       id: true,

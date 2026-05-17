@@ -19,13 +19,13 @@ const EDGE_PARAM = {
 };
 
 const LOCATION_EDGE_FIELDS = [
-  'fromKind', 'fromId', 'toKind', 'toId', 'edgeType', 'category',
+  'fromLocationId', 'toLocationId', 'edgeType', 'category',
   'bidirectional', 'weight', 'metadata', 'discoveryState',
   'confidence', 'createdBy', 'isActive',
 ];
 
 const CAMPAIGN_EDGE_FIELDS = [
-  'fromKind', 'fromId', 'toKind', 'toId', 'relationType',
+  'fromLocationId', 'toLocationId', 'relationType',
   'bidirectional', 'distance', 'difficulty', 'metadata',
   'visibility', 'risk', 'travelTime', 'edgeDescription', 'confidence',
 ];
@@ -53,7 +53,7 @@ export async function adminEdgeRoutes(fastify) {
       params: CAMPAIGN_PARAM,
       body: {
         type: 'object',
-        required: ['fromKind', 'fromId', 'toKind', 'toId', 'edgeType', 'category'],
+        required: ['fromLocationId', 'toLocationId', 'edgeType', 'category'],
         additionalProperties: true,
       },
     },
@@ -120,7 +120,7 @@ export async function adminEdgeRoutes(fastify) {
       params: CAMPAIGN_PARAM,
       body: {
         type: 'object',
-        required: ['fromKind', 'fromId', 'toKind', 'toId'],
+        required: ['fromLocationId', 'toLocationId'],
         additionalProperties: true,
       },
     },

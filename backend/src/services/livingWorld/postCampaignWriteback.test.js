@@ -29,9 +29,9 @@ import {
 } from './postCampaignWriteback.js';
 
 beforeEach(() => {
-  prisma.campaignNPC.findMany.mockReset();
-  prisma.worldNPC.findMany.mockReset();
-  prisma.worldNPC.update.mockReset();
+  prisma.npc.findMany.mockReset();
+  prisma.npc.findMany.mockReset();
+  prisma.npc.update.mockReset();
   prisma.campaign.findUnique.mockReset();
   extractWorldFacts.mockReset();
   runWorldStateChangePipeline.mockReset();
@@ -168,7 +168,7 @@ describe('applyShadowDiffToCanonical (dryRun semantics)', () => {
 
 describe('runPostCampaignWorldWriteback — Phase 11 extraction wiring', () => {
   it('propagates extracted changes into the return shape', async () => {
-    prisma.campaignNPC.findMany.mockResolvedValue([]);
+    prisma.npc.findMany.mockResolvedValue([]);
     prisma.campaign.findUnique.mockResolvedValue({
       coreState: { gameStateSummary: [{ fact: 'X died', sceneIndex: 1 }] },
     });
@@ -193,7 +193,7 @@ describe('runPostCampaignWorldWriteback — Phase 11 extraction wiring', () => {
   });
 
   it('skips extraction and marks `skipped: true` when skipExtraction=true', async () => {
-    prisma.campaignNPC.findMany.mockResolvedValue([]);
+    prisma.npc.findMany.mockResolvedValue([]);
 
     const result = await runPostCampaignWorldWriteback('c1', { dryRun: true, skipExtraction: true });
 
@@ -203,7 +203,7 @@ describe('runPostCampaignWorldWriteback — Phase 11 extraction wiring', () => {
   });
 
   it('tolerates missing coreState — extraction simply skipped, apply still runs', async () => {
-    prisma.campaignNPC.findMany.mockResolvedValue([]);
+    prisma.npc.findMany.mockResolvedValue([]);
     prisma.campaign.findUnique.mockResolvedValue(null);
 
     const result = await runPostCampaignWorldWriteback('c1', { dryRun: true });
@@ -214,7 +214,7 @@ describe('runPostCampaignWorldWriteback — Phase 11 extraction wiring', () => {
   });
 
   it('skips extraction when coreState is not an object (e.g. legacy malformed string)', async () => {
-    prisma.campaignNPC.findMany.mockResolvedValue([]);
+    prisma.npc.findMany.mockResolvedValue([]);
     prisma.campaign.findUnique.mockResolvedValue({ coreState: '{malformed' });
 
     const result = await runPostCampaignWorldWriteback('c1', { dryRun: true });
@@ -224,7 +224,7 @@ describe('runPostCampaignWorldWriteback — Phase 11 extraction wiring', () => {
   });
 
   it('forwards provider / modelTier / userApiKeys overrides', async () => {
-    prisma.campaignNPC.findMany.mockResolvedValue([]);
+    prisma.npc.findMany.mockResolvedValue([]);
     prisma.campaign.findUnique.mockResolvedValue({
       coreState: { gameStateSummary: [{ fact: 'x', sceneIndex: 0 }] },
     });
@@ -250,7 +250,7 @@ describe('runPostCampaignWorldWriteback — Phase 12 world state change wiring',
   const coreState = { gameStateSummary: [{ fact: 'fact', sceneIndex: 1 }] };
 
   it('runs Phase 12 pipeline when extraction produced changes', async () => {
-    prisma.campaignNPC.findMany.mockResolvedValue([]);
+    prisma.npc.findMany.mockResolvedValue([]);
     prisma.campaign.findUnique.mockResolvedValue({ coreState });
     extractWorldFacts.mockResolvedValue({ changes: [baseChange] });
     runWorldStateChangePipeline.mockResolvedValue({
@@ -272,7 +272,7 @@ describe('runPostCampaignWorldWriteback — Phase 12 world state change wiring',
   });
 
   it('auto-skips Phase 12 when extraction produced no changes', async () => {
-    prisma.campaignNPC.findMany.mockResolvedValue([]);
+    prisma.npc.findMany.mockResolvedValue([]);
     prisma.campaign.findUnique.mockResolvedValue({ coreState });
     extractWorldFacts.mockResolvedValue({ changes: [] });
 
@@ -285,7 +285,7 @@ describe('runPostCampaignWorldWriteback — Phase 12 world state change wiring',
   });
 
   it('skipWorldChangePipeline=true bypasses Phase 12 even when changes exist', async () => {
-    prisma.campaignNPC.findMany.mockResolvedValue([]);
+    prisma.npc.findMany.mockResolvedValue([]);
     prisma.campaign.findUnique.mockResolvedValue({ coreState });
     extractWorldFacts.mockResolvedValue({ changes: [baseChange] });
 
@@ -298,10 +298,10 @@ describe('runPostCampaignWorldWriteback — Phase 12 world state change wiring',
   });
 
   it('passes the full shadow diff object to the pipeline (for correlation)', async () => {
-    prisma.campaignNPC.findMany.mockResolvedValue([
+    prisma.npc.findMany.mockResolvedValue([
       { id: 'c-n1', name: 'Gerent', worldNpcId: 'w1', alive: false, lastLocationId: 'l1', role: 'guard', personality: 'stern' },
     ]);
-    prisma.worldNPC.findMany.mockResolvedValue([
+    prisma.npc.findMany.mockResolvedValue([
       { id: 'w1', name: 'Gerent', alive: true, currentLocationId: 'l1', role: 'guard', personality: 'stern' },
     ]);
     prisma.campaign.findUnique.mockResolvedValue({ coreState });
@@ -320,7 +320,7 @@ describe('runPostCampaignWorldWriteback — Phase 12 world state change wiring',
 
 describe('runPostCampaignWorldWriteback — Phase 12b promotion wiring', () => {
   it('runs the promotion pipeline by default and propagates its output', async () => {
-    prisma.campaignNPC.findMany.mockResolvedValue([]);
+    prisma.npc.findMany.mockResolvedValue([]);
     runNpcPromotionPipeline.mockResolvedValue({
       collected: [{ npc: { id: 'cn1' }, stats: { score: 12 } }],
       persisted: [{ campaignId: 'c1', campaignNpcId: 'cn1' }],
@@ -337,7 +337,7 @@ describe('runPostCampaignWorldWriteback — Phase 12b promotion wiring', () => {
   });
 
   it('skipPromotion=true bypasses the pipeline entirely', async () => {
-    prisma.campaignNPC.findMany.mockResolvedValue([]);
+    prisma.npc.findMany.mockResolvedValue([]);
     const result = await runPostCampaignWorldWriteback('c1', {
       dryRun: true, skipExtraction: true, skipPromotion: true,
     });
@@ -346,7 +346,7 @@ describe('runPostCampaignWorldWriteback — Phase 12b promotion wiring', () => {
   });
 
   it('forwards promotionTopN override', async () => {
-    prisma.campaignNPC.findMany.mockResolvedValue([]);
+    prisma.npc.findMany.mockResolvedValue([]);
     await runPostCampaignWorldWriteback('c1', {
       dryRun: true, skipExtraction: true, promotionTopN: 10,
     });
@@ -354,7 +354,7 @@ describe('runPostCampaignWorldWriteback — Phase 12b promotion wiring', () => {
   });
 
   it('forwards Slice B verdict opts (provider / modelTier / userApiKeys)', async () => {
-    prisma.campaignNPC.findMany.mockResolvedValue([]);
+    prisma.npc.findMany.mockResolvedValue([]);
     await runPostCampaignWorldWriteback('c1', {
       dryRun: true,
       skipExtraction: true,
@@ -371,7 +371,7 @@ describe('runPostCampaignWorldWriteback — Phase 12b promotion wiring', () => {
   });
 
   it('skipPromotionVerdict=true propagates to pipeline', async () => {
-    prisma.campaignNPC.findMany.mockResolvedValue([]);
+    prisma.npc.findMany.mockResolvedValue([]);
     await runPostCampaignWorldWriteback('c1', {
       dryRun: true, skipExtraction: true, skipPromotionVerdict: true,
     });

@@ -129,7 +129,6 @@ export async function crudCampaignRoutes(app) {
     const coreState = campaign.coreState || {};
     await reconstructFromNormalized(campaign.id, coreState, {
       currentLocationName: campaign.currentLocationName || null,
-      currentLocationKind: campaign.currentLocationKind || null,
       currentLocationId: campaign.currentLocationId || null,
     });
 
@@ -312,7 +311,6 @@ export async function crudCampaignRoutes(app) {
             where: { id: campaign.id },
             data: {
               currentLocationName: seededStartingLocation,
-              currentLocationKind: seedResult.startingLocationKind || null,
               currentLocationId: seedResult.startingLocationId || null,
             },
           }).catch((err) => log.warn({ err, campaignId: campaign.id }, 'Failed to persist seeded currentLocation'));
@@ -400,14 +398,12 @@ export async function crudCampaignRoutes(app) {
       if (!slim.world) slim.world = {};
       slim.world.currentLocation = startSpawn.sublocationName;
       const resolved = await resolveLocationByName(startSpawn.sublocationName, { campaignId: campaign.id }).catch(() => null);
-      const spawnUpdate = { currentLocationName: startSpawn.sublocationName };
-      if (resolved?.kind && resolved?.row?.id) {
-        spawnUpdate.currentLocationKind = resolved.kind;
-        spawnUpdate.currentLocationId = resolved.row.id;
-      }
       await prisma.campaign.update({
         where: { id: campaign.id },
-        data: spawnUpdate,
+        data: {
+          currentLocationName: startSpawn.sublocationName,
+          currentLocationId: resolved?.location?.id || null,
+        },
       }).catch((err) => log.warn({ err, campaignId: campaign.id }, 'Failed to override currentLocation for startSpawn'));
     }
     if (startSpawn?.npcName && Array.isArray(quests?.active)) {
@@ -426,7 +422,7 @@ export async function crudCampaignRoutes(app) {
 
     if (startSpawn?.npcCanonicalId) {
       try {
-        const canonical = await prisma.worldNPC.findUnique({
+        const canonical = await prisma.npc.findUnique({
           where: { canonicalId: startSpawn.npcCanonicalId },
           select: { id: true, name: true, currentLocationId: true },
         });
@@ -436,13 +432,13 @@ export async function crudCampaignRoutes(app) {
           // here it would create a SECOND row with a slug suffix, leaving the
           // quest pointing at the unlinked ephemeral one. Relink the existing
           // shadow instead — same npcId slug, just sets worldNpcId+isAgent.
-          const existing = await prisma.campaignNPC.findFirst({
+          const existing = await prisma.npc.findFirst({
             where: { campaignId: campaign.id, name: { equals: canonical.name, mode: 'insensitive' } },
             select: { id: true, worldNpcId: true },
           });
           if (existing) {
             if (!existing.worldNpcId) {
-              await prisma.campaignNPC.update({
+              await prisma.npc.update({
                 where: { id: existing.id },
                 data: { worldNpcId: canonical.id, isAgent: true },
               });
@@ -464,13 +460,12 @@ export async function crudCampaignRoutes(app) {
     // startSpawn override's canonical sublocation, or null (LLM-only path).
     const finalStart = await prisma.campaign.findUnique({
       where: { id: campaign.id },
-      select: { currentLocationKind: true, currentLocationId: true },
+      select: { currentLocationId: true },
     }).catch(() => null);
-    if (finalStart?.currentLocationKind && finalStart?.currentLocationId) {
+    if (finalStart?.currentLocationId) {
       await markStartLocationVisible({
         userId: request.user.id,
         campaignId: campaign.id,
-        locationKind: finalStart.currentLocationKind,
         locationId: finalStart.currentLocationId,
       });
     }
@@ -485,33 +480,29 @@ export async function crudCampaignRoutes(app) {
       where: { id: campaign.id },
       select: {
         currentLocationName: true,
-        currentLocationKind: true,
         currentLocationId: true,
       },
     }).catch(() => null);
 
     // NPCs at the start sublocation often only have a string lastLocation from
-    // campaign-gen; backfill kind/id so the field map can match by ref.
+    // campaign-gen; backfill currentLocationId so the field map can match by ref.
     if (
-      freshLocation?.currentLocationKind
-      && freshLocation?.currentLocationId
+      freshLocation?.currentLocationId
       && freshLocation?.currentLocationName
     ) {
-      await prisma.campaignNPC.updateMany({
+      await prisma.npc.updateMany({
         where: {
           campaignId: campaign.id,
           lastLocation: { equals: freshLocation.currentLocationName, mode: 'insensitive' },
         },
         data: {
-          lastLocationKind: freshLocation.currentLocationKind,
-          lastLocationId: freshLocation.currentLocationId,
+          currentLocationId: freshLocation.currentLocationId,
         },
       }).catch((err) => log.warn({ err: err?.message, campaignId: campaign.id }, 'start NPC location ref backfill failed'));
     }
 
     await reconstructFromNormalized(campaign.id, fullState, {
       currentLocationName: freshLocation?.currentLocationName ?? null,
-      currentLocationKind: freshLocation?.currentLocationKind ?? null,
       currentLocationId: freshLocation?.currentLocationId ?? null,
     });
 
@@ -519,7 +510,6 @@ export async function crudCampaignRoutes(app) {
     return {
       ...campaign,
       currentLocationName: freshLocation?.currentLocationName ?? campaign.currentLocationName,
-      currentLocationKind: freshLocation?.currentLocationKind ?? campaign.currentLocationKind,
       currentLocationId: freshLocation?.currentLocationId ?? campaign.currentLocationId,
       coreState: fullState,
       characterIds,

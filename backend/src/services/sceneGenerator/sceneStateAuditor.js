@@ -140,8 +140,7 @@ export async function applyAndPushCorrections(campaignId, sceneId, corrections) 
           where: { id: campaignId },
           data: {
             currentLocationName: correctedLocation,
-            currentLocationKind: ref.kind,
-            currentLocationId: ref.row.id,
+            currentLocationId: ref.location.id,
             currentX: null,
             currentY: null,
           },
@@ -149,8 +148,7 @@ export async function applyAndPushCorrections(campaignId, sceneId, corrections) 
         appliedCorrections.location = {
           correctedLocation,
           locationReason,
-          kind: ref.kind,
-          id: ref.row.id,
+          id: ref.location.id,
         };
         log.info(
           { campaignId, sceneId, correctedLocation, locationReason },
@@ -170,7 +168,7 @@ export async function applyAndPushCorrections(campaignId, sceneId, corrections) 
   // NPC corrections
   for (const c of npcCorrections) {
     try {
-      const npc = await prisma.campaignNPC.findFirst({
+      const npc = await prisma.npc.findFirst({
         where: { campaignId, name: c.name },
         select: { id: true },
       });
@@ -187,7 +185,7 @@ export async function applyAndPushCorrections(campaignId, sceneId, corrections) 
         continue;
       }
 
-      await prisma.campaignNPC.update({ where: { id: npc.id }, data });
+      await prisma.npc.update({ where: { id: npc.id }, data });
       appliedCorrections.npcs.push({ name: c.name, field: c.field, correctedValue: c.correctedValue, reason: c.reason });
       log.info({ campaignId, sceneId, npc: c.name, field: c.field, correctedValue: c.correctedValue }, 'Auditor corrected NPC');
     } catch (err) {
