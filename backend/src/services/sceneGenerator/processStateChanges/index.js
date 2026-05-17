@@ -457,21 +457,20 @@ export async function processStateChanges(campaignId, stateChanges, { prevLoc = 
         await prisma.campaign.update({
           where: { id: campaignId },
           data: {
-            currentLocationName: created.row.name,
-            currentLocationKind: created.kind,
+            currentLocationName: created.row.displayName || created.row.canonicalName,
             currentLocationId: created.row.id,
             currentX: typeof created.row.regionX === 'number' ? created.row.regionX : null,
             currentY: typeof created.row.regionY === 'number' ? created.row.regionY : null,
           },
         });
         log.info(
-          { campaignId, sublocId: created.row.id, sublocName: created.row.name, hadCurrentRef: !!currentRef },
+          { campaignId, sublocId: created.row.id, sublocName: created.row.displayName || created.row.canonicalName, hadCurrentRef: !!currentRef },
           'Auto-promoted new sublocation to currentLocation',
         );
 
         await ensureMovementEdge({
           from: currentRef,
-          to: { kind: created.kind, id: created.row.id },
+          to: created.row.id,
           sceneIndex,
           campaignId,
         });

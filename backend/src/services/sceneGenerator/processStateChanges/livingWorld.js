@@ -2,7 +2,6 @@ import { prisma } from '../../../lib/prisma.js';
 import { childLogger } from '../../../lib/logger.js';
 import { resolveLocationByName } from '../../livingWorld/worldStateService.js';
 import { markLocationHeardAbout } from '../../livingWorld/userDiscoveryService.js';
-import { LOCATION_KIND_WORLD, LOCATION_KIND_CAMPAIGN } from '../../locationRefs.js';
 import {
   parseLocationMentions,
   parseCampaignComplete,
@@ -109,27 +108,18 @@ export async function processLocationMentions(campaignId, mentions) {
   // a per-ref `resolveLocationByName` for the unresolved tail (covers the
   // common case where the LLM emits the human-readable name straight from
   // Key NPCs / Active Quests prompt blocks).
-  const [wlByUuid, clByUuid] = await Promise.all([
-    prisma.location.findMany({
-      where: { id: { in: uniqLocationRefs } },
-      select: { id: true },
-    }).catch(() => []),
-    prisma.location.findMany({
-      where: { id: { in: uniqLocationRefs }, campaignId },
-      select: { id: true },
-    }).catch(() => []),
-  ]);
+  const locByUuid = await prisma.location.findMany({
+    where: { id: { in: uniqLocationRefs } },
+    select: { id: true, campaignId: true },
+  }).catch(() => []);
   const resolvedByRef = new Map();
-  for (const r of wlByUuid) resolvedByRef.set(r.id, { kind: LOCATION_KIND_WORLD, id: r.id });
-  for (const r of clByUuid) {
-    if (!resolvedByRef.has(r.id)) {
-      resolvedByRef.set(r.id, { kind: LOCATION_KIND_CAMPAIGN, id: r.id });
-    }
+  for (const r of locByUuid) {
+    resolvedByRef.set(r.id, { isCanonical: r.campaignId === null, id: r.id });
   }
   for (const ref of uniqLocationRefs) {
     if (resolvedByRef.has(ref)) continue;
     const r = await resolveLocationByName(ref, { campaignId }).catch(() => null);
-    if (r?.row?.id) resolvedByRef.set(ref, { kind: r.kind, id: r.row.id });
+    if (r?.location?.id) resolvedByRef.set(ref, { isCanonical: r.isCanonical, id: r.location.id });
   }
 
   // 2. All candidate CampaignNPCs in one query. `mode: 'insensitive'` isn't
@@ -155,48 +145,41 @@ export async function processLocationMentions(campaignId, mentions) {
     if (exact || byName) campaignNpcByIdent.set(ident, exact || byName);
   }
 
-  // 3. WorldNPCs — pull via campaignNpc.worldNpcId OR fallback name match in
-  // a single query. Idents that resolved via CampaignNPC take the FK path;
-  // the rest fall back to a canonical-name lookup.
-  const worldNpcIdsFromCampaign = [...new Set(
+  // 3. Canonical NPCs — pull via npc.canonicalNpcId OR fallback name match.
+  const canonicalNpcIdsFromCampaign = [...new Set(
     [...campaignNpcByIdent.values()]
-      .map((c) => c?.worldNpcId)
+      .map((c) => c?.canonicalNpcId)
       .filter(Boolean),
   )];
   const fallbackNameIdents = uniqIdents.filter((ident) => !campaignNpcByIdent.has(ident));
-  const worldNpcOrClauses = [
-    ...(worldNpcIdsFromCampaign.length > 0
-      ? [{ id: { in: worldNpcIdsFromCampaign } }]
+  const canonicalNpcOrClauses = [
+    ...(canonicalNpcIdsFromCampaign.length > 0
+      ? [{ id: { in: canonicalNpcIdsFromCampaign } }]
       : []),
     ...fallbackNameIdents.map((ident) => ({ name: { equals: ident, mode: 'insensitive' } })),
   ];
-  const worldNpcRows = worldNpcOrClauses.length > 0
-    ? await prisma.npc.findMany({ where: { OR: worldNpcOrClauses } }).catch(() => [])
+  const canonicalNpcRows = canonicalNpcOrClauses.length > 0
+    ? await prisma.npc.findMany({ where: { campaignId: null, OR: canonicalNpcOrClauses } }).catch(() => [])
     : [];
-  const worldNpcById = new Map(worldNpcRows.map((n) => [n.id, n]));
+  const canonicalNpcById = new Map(canonicalNpcRows.map((n) => [n.id, n]));
 
-  // 4. All edges touching any NPC's anchor location, in a single query.
-  // Track { kind, id } per anchor so we can skip Road adjacency for
-  // CampaignLocation anchors (Roads only connect canonical WorldLocations).
+  // 4. All edges touching any NPC's anchor location.
   const anchorByIdent = new Map();
   const canonicalAnchorIds = new Set();
   for (const ident of uniqIdents) {
     const cNpc = campaignNpcByIdent.get(ident);
-    const wNpc = cNpc?.worldNpcId
-      ? worldNpcById.get(cNpc.worldNpcId)
-      : worldNpcRows.find((n) => n.name && n.name.toLowerCase() === ident.toLowerCase());
-    let anchorKind = null;
+    const wNpc = cNpc?.canonicalNpcId
+      ? canonicalNpcById.get(cNpc.canonicalNpcId)
+      : canonicalNpcRows.find((n) => n.name && n.name.toLowerCase() === ident.toLowerCase());
     let anchorId = null;
-    if (cNpc?.lastLocationId) {
-      anchorKind = cNpc.lastLocationKind || LOCATION_KIND_WORLD;
-      anchorId = cNpc.lastLocationId;
+    if (cNpc?.currentLocationId) {
+      anchorId = cNpc.currentLocationId;
     } else if (wNpc?.currentLocationId) {
-      anchorKind = LOCATION_KIND_WORLD;
       anchorId = wNpc.currentLocationId;
     }
     if (anchorId) {
-      anchorByIdent.set(ident, { kind: anchorKind, id: anchorId });
-      if (anchorKind === LOCATION_KIND_WORLD) canonicalAnchorIds.add(anchorId);
+      anchorByIdent.set(ident, anchorId);
+      canonicalAnchorIds.add(anchorId);
     }
   }
   const edgeRows = canonicalAnchorIds.size > 0
@@ -221,9 +204,9 @@ export async function processLocationMentions(campaignId, mentions) {
 
   // Pre-fetch explicit known-location entries for all WorldNPCs in scope.
   const explicitKnownByNpcId = new Map();
-  if (worldNpcRows.length > 0) {
+  if (canonicalNpcRows.length > 0) {
     const explicitRows = await prisma.npcKnownLocation.findMany({
-      where: { npcId: { in: worldNpcRows.map((n) => n.id) } },
+      where: { npcId: { in: canonicalNpcRows.map((n) => n.id) } },
       select: { npcId: true, locationId: true },
     }).catch(() => []);
     for (const r of explicitRows) {
@@ -237,21 +220,17 @@ export async function processLocationMentions(campaignId, mentions) {
   const knownByIdent = new Map();
   for (const ident of uniqIdents) {
     const cNpc = campaignNpcByIdent.get(ident);
-    const wNpc = cNpc?.worldNpcId
-      ? worldNpcById.get(cNpc.worldNpcId)
-      : worldNpcRows.find((n) => n.name && n.name.toLowerCase() === ident.toLowerCase());
+    const wNpc = cNpc?.canonicalNpcId
+      ? canonicalNpcById.get(cNpc.canonicalNpcId)
+      : canonicalNpcRows.find((n) => n.name && n.name.toLowerCase() === ident.toLowerCase());
     if (!cNpc && !wNpc) continue;
 
-    const anchor = anchorByIdent.get(ident) || null;
+    const anchorId = anchorByIdent.get(ident) || null;
     const known = new Set();
-    if (anchor) {
-      if (anchor.kind === LOCATION_KIND_WORLD) {
-        const adj = adjacencyByAnchor.get(anchor.id);
-        if (adj) for (const id of adj) known.add(id);
-        else known.add(anchor.id);
-      } else {
-        known.add(anchor.id);
-      }
+    if (anchorId) {
+      const adj = adjacencyByAnchor.get(anchorId);
+      if (adj) for (const id of adj) known.add(id);
+      else known.add(anchorId);
     }
     const explicit = wNpc?.id ? explicitKnownByNpcId.get(wNpc.id) : null;
     if (explicit) for (const id of explicit) known.add(id);
@@ -276,7 +255,7 @@ export async function processLocationMentions(campaignId, mentions) {
       // Canonical hits run the full knowledge-scope policy. Sandbox hits
       // are scoped to this campaign already (CampaignLocation rows aren't
       // visible across users) — let them through unconditionally.
-      if (resolved.kind === LOCATION_KIND_WORLD && !known.has(resolved.id)) {
+      if (resolved.isCanonical && !known.has(resolved.id)) {
         log.warn(
           { campaignId, locationRef, byNpcIdent, knownCount: known.size },
           'locationMentioned: location outside NPC knowledge scope — policy violation, skipping',
@@ -285,7 +264,6 @@ export async function processLocationMentions(campaignId, mentions) {
       }
       await markLocationHeardAbout({
         userId: campaign.userId,
-        locationKind: resolved.kind,
         locationId: resolved.id,
         campaignId,
       });

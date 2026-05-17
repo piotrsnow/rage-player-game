@@ -21,27 +21,26 @@ export function parseBoardUpdates(raw) {
 }
 
 export async function processBoardUpdates(campaignId, mutations, { currentRef = null } = {}) {
-  if (!currentRef?.kind || !currentRef?.id) {
+  if (!currentRef) {
     log.debug({ campaignId }, 'boardUpdates: no currentRef — skipped');
     return;
   }
   if (!Array.isArray(mutations) || mutations.length === 0) return;
 
   try {
-    const tblName = currentRef.kind === 'world' ? 'worldLocation' : 'campaignLocation';
-    const locRow = await prisma[tblName].findUnique({
-      where: { id: currentRef.id },
+    const locRow = await prisma.location.findUnique({
+      where: { id: currentRef },
       select: { tacticalGrid: true },
     });
 
     if (!locRow?.tacticalGrid?.version) {
-      log.debug({ campaignId, ref: `${currentRef.kind}:${currentRef.id}` }, 'boardUpdates: no tacticalGrid on location — skipped');
+      log.debug({ campaignId, ref: currentRef }, 'boardUpdates: no tacticalGrid on location — skipped');
       return;
     }
 
     const updated = applyBoardMutations({ ...locRow.tacticalGrid }, mutations);
-    await prisma[tblName].update({
-      where: { id: currentRef.id },
+    await prisma.location.update({
+      where: { id: currentRef },
       data: { tacticalGrid: updated },
     });
 

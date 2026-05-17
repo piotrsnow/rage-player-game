@@ -64,20 +64,18 @@ export function initialInteractionFields(sceneIndex, now = new Date()) {
  * F4 — replace the relationship slice for a single CampaignNPC. Pure
  * delete-then-insert; relationships are flavor metadata, no audit need.
  */
-async function replaceNpcRelationships(campaignNpcId, relationships, prismaClient = prisma) {
-  if (!campaignNpcId) return;
-  await prismaClient.campaignNpcRelationship.deleteMany({ where: { campaignNpcId } });
+async function replaceNpcRelationships(npcId, relationships, prismaClient = prisma) {
+  if (!npcId) return;
+  await prismaClient.npcRelationship.deleteMany({ where: { npcId } });
   const inserts = (relationships || [])
     .filter((r) => r && r.npcName)
     .map((r) => {
       const strength = typeof r.strength === 'number' ? r.strength : 0;
-      // rippleStrength (oś 2): jeśli LLM podał, użyj; inaczej heurystyka
-      // |strength| clamp 0..100 (mocniejsza relacja → mocniejszy ripple).
       const ripple = typeof r.rippleStrength === 'number'
         ? Math.max(0, Math.min(100, Math.round(r.rippleStrength)))
         : Math.max(0, Math.min(100, Math.abs(strength)));
       return {
-        campaignNpcId,
+        npcId,
         targetType: 'npc',
         targetRef: r.npcName,
         relation: r.type || 'unknown',
@@ -86,7 +84,7 @@ async function replaceNpcRelationships(campaignNpcId, relationships, prismaClien
       };
     });
   if (inserts.length > 0) {
-    await prismaClient.campaignNpcRelationship.createMany({ data: inserts, skipDuplicates: true });
+    await prismaClient.npcRelationship.createMany({ data: inserts, skipDuplicates: true });
   }
 }
 
@@ -94,17 +92,15 @@ export async function processNpcChanges(campaignId, npcs, { livingWorldEnabled =
   const affectedNpcIds = [];
 
   // Lazy-loaded campaign location ref for NPC location enforcement.
-  let _campaignLocRef = undefined;
-  async function getCampaignLocationRef() {
-    if (_campaignLocRef !== undefined) return _campaignLocRef;
+  let _campaignLocId = undefined;
+  async function getCampaignLocationId() {
+    if (_campaignLocId !== undefined) return _campaignLocId;
     const row = await prisma.campaign.findUnique({
       where: { id: campaignId },
-      select: { currentLocationKind: true, currentLocationId: true },
+      select: { currentLocationId: true },
     });
-    _campaignLocRef = (row?.currentLocationKind && row?.currentLocationId)
-      ? { kind: row.currentLocationKind, id: row.currentLocationId }
-      : null;
-    return _campaignLocRef;
+    _campaignLocId = row?.currentLocationId || null;
+    return _campaignLocId;
   }
 
   // Per-scene cache — identical free-text location strings across multiple
@@ -145,33 +141,28 @@ export async function processNpcChanges(campaignId, npcs, { livingWorldEnabled =
         if (npcChange.alive != null) contentUpdate.alive = npcChange.alive;
         if (npcChange.lastLocation) contentUpdate.lastLocation = npcChange.lastLocation;
 
-        // Refresh lastLocationKind/Id so the location-graph inspector tracks
+        // Refresh currentLocationId so the location-graph inspector tracks
         // NPC movement. Skip when NPC is being killed/removed.
-        /** @type {{ kind: string, id: string } | null} */
-        let newLocRefForLog = null;
+        let newLocIdForLog = null;
         if (npcChange.alive !== false) {
-          let resolvedLocRef = null;
+          let resolvedLocId = null;
           if (npcChange.lastLocation) {
             const resolved = await resolveLocationCached(npcChange.lastLocation);
-            if (resolved) resolvedLocRef = { kind: resolved.kind, id: resolved.row.id };
+            if (resolved) resolvedLocId = resolved.location.id;
           }
-          if (!resolvedLocRef && !existing.lastLocationKind) {
-            const campRef = await getCampaignLocationRef();
-            if (campRef) resolvedLocRef = campRef;
+          if (!resolvedLocId && !existing.currentLocationId) {
+            const campLocId = await getCampaignLocationId();
+            if (campLocId) resolvedLocId = campLocId;
           }
-          if (resolvedLocRef &&
-              (resolvedLocRef.kind !== existing.lastLocationKind || resolvedLocRef.id !== existing.lastLocationId)) {
-            contentUpdate.lastLocationKind = resolvedLocRef.kind;
-            contentUpdate.lastLocationId = resolvedLocRef.id;
-            newLocRefForLog = resolvedLocRef;
+          if (resolvedLocId && resolvedLocId !== existing.currentLocationId) {
+            contentUpdate.currentLocationId = resolvedLocId;
+            newLocIdForLog = resolvedLocId;
           }
         }
 
-        // Opportunistically link orphaned ephemeral shadows to their
-        // canonical WorldNPC so post-campaign promotion dedup works.
-        if (!existing.worldNpcId) {
+        if (!existing.canonicalNpcId) {
           const canonical = await findCanonicalWorldNpcByName(npcChange.name);
-          if (canonical) contentUpdate.worldNpcId = canonical.id;
+          if (canonical) contentUpdate.canonicalNpcId = canonical.id;
         }
 
         if (npcChange.acknowledgedFame === true) contentUpdate.hasAcknowledgedFame = true;
@@ -232,8 +223,8 @@ export async function processNpcChanges(campaignId, npcs, { livingWorldEnabled =
         }
 
         if (npcChange.alive === false && livingWorldEnabled) {
-          const effectiveWorldNpcId = contentUpdate.worldNpcId || existing.worldNpcId;
-          if (effectiveWorldNpcId) {
+          const effectiveCanonicalNpcId = contentUpdate.canonicalNpcId || existing.canonicalNpcId;
+          if (effectiveCanonicalNpcId) {
             try {
               await upsertPendingChange({
                 change: {
@@ -242,7 +233,7 @@ export async function processNpcChanges(campaignId, npcs, { livingWorldEnabled =
                   newValue: 'dead',
                   confidence: 1.0,
                 },
-                resolved: { entityId: effectiveWorldNpcId, entityType: 'npc', similarity: 1.0 },
+                resolved: { entityId: effectiveCanonicalNpcId, entityType: 'npc', similarity: 1.0 },
                 reason: 'scene_npc_killed',
                 campaignId,
               });
@@ -258,13 +249,11 @@ export async function processNpcChanges(campaignId, npcs, { livingWorldEnabled =
           where: { id: existing.id },
           data: { ...statsDelta, ...contentUpdate },
         });
-        if (newLocRefForLog) {
+        if (newLocIdForLog) {
           await appendCampaignNpcLocationMovement(prisma, {
             campaignNpcId: existing.id,
-            fromKind: existing.lastLocationKind,
-            fromId: existing.lastLocationId,
-            toKind: newLocRefForLog.kind,
-            toId: newLocRefForLog.id,
+            fromId: existing.currentLocationId,
+            toId: newLocIdForLog,
             source: NPC_LOCATION_MOVE_SOURCE_SCENE,
             sceneIndex,
           });
@@ -277,7 +266,7 @@ export async function processNpcChanges(campaignId, npcs, { livingWorldEnabled =
         if (hasContentUpdate) {
           const embText = buildNPCEmbeddingText(updated);
           const emb = await embedText(embText);
-          if (emb) writeEmbedding('CampaignNPC', updated.id, emb, embText);
+          if (emb) writeEmbedding('Npc', updated.id, emb, embText);
           affectedNpcIds.push(updated.id);
         }
       } else {
@@ -303,22 +292,17 @@ export async function processNpcChanges(campaignId, npcs, { livingWorldEnabled =
         const stats = npcChange.statsOverride ? mergeSheetOverride(baseline, npcChange.statsOverride) : baseline;
 
         try {
-          const locRef = await getCampaignLocationRef();
+          const locId = await getCampaignLocationId();
           const trimmedAppearance = typeof npcChange.appearance === 'string' && npcChange.appearance.trim() ? npcChange.appearance.trim() : null;
           const trimmedDialect = typeof npcChange.dialect === 'string' && npcChange.dialect.trim() ? npcChange.dialect.trim() : null;
 
-          // Check if the LLM is mentioning a canonical WorldNPC the player
-          // hasn't physically met yet. If so, route through the sandbox
-          // cloner to get a properly-linked shadow instead of an ephemeral.
           const canonicalMatch = await findCanonicalWorldNpcByName(npcChange.name);
           let created;
           if (canonicalMatch) {
             const cloned = await getOrCloneCampaignNpc(campaignId, canonicalMatch.id);
             if (cloned) {
-              const prevKind = cloned.lastLocationKind;
-              const prevId = cloned.lastLocationId;
-              const nextKind = locRef?.kind || cloned.lastLocationKind || null;
-              const nextId = locRef?.id || cloned.lastLocationId || null;
+              const prevLocId = cloned.currentLocationId;
+              const nextLocId = locId || cloned.currentLocationId || null;
               created = await prisma.npc.update({
                 where: { id: cloned.id },
                 data: {
@@ -333,18 +317,15 @@ export async function processNpcChanges(campaignId, npcs, { livingWorldEnabled =
                   creatureKind: stats.creatureKind,
                   level: stats.level,
                   stats,
-                  lastLocationKind: nextKind,
-                  lastLocationId: nextId,
+                  currentLocationId: nextLocId,
                   ...initialInteractionFields(sceneIndex),
                 },
               });
-              if (nextKind && nextId && (prevKind !== nextKind || prevId !== nextId)) {
+              if (nextLocId && nextLocId !== prevLocId) {
                 await appendCampaignNpcLocationMovement(prisma, {
                   campaignNpcId: created.id,
-                  fromKind: prevKind,
-                  fromId: prevId,
-                  toKind: nextKind,
-                  toId: nextId,
+                  fromId: prevLocId,
+                  toId: nextLocId,
                   source: NPC_LOCATION_MOVE_SOURCE_SCENE,
                   sceneIndex,
                 });
@@ -369,18 +350,15 @@ export async function processNpcChanges(campaignId, npcs, { livingWorldEnabled =
                 creatureKind: stats.creatureKind,
                 level: stats.level,
                 stats,
-                lastLocationKind: locRef?.kind || null,
-                lastLocationId: locRef?.id || null,
+                currentLocationId: locId || null,
                 ...initialInteractionFields(sceneIndex),
               },
             });
-            if (created.lastLocationKind && created.lastLocationId) {
+            if (created.currentLocationId) {
               await appendCampaignNpcLocationMovement(prisma, {
                 campaignNpcId: created.id,
-                fromKind: null,
                 fromId: null,
-                toKind: created.lastLocationKind,
-                toId: created.lastLocationId,
+                toId: created.currentLocationId,
                 source: NPC_LOCATION_MOVE_SOURCE_SCENE,
                 sceneIndex,
               });
@@ -392,7 +370,7 @@ export async function processNpcChanges(campaignId, npcs, { livingWorldEnabled =
           }
           const embText = buildNPCEmbeddingText(created);
           const emb = await embedText(embText);
-          if (emb) writeEmbedding('CampaignNPC', created.id, emb, embText);
+          if (emb) writeEmbedding('Npc', created.id, emb, embText);
           affectedNpcIds.push(created.id);
 
         } catch (createErr) {
