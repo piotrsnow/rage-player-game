@@ -204,7 +204,7 @@ function buildSystemPrompt({ npc, isCompanion, dialogHistory, knowledgeEntries, 
 // Load most-recent dialog turns ascending (oldest → newest) for prompt rendering.
 async function loadRecentDialogTurns(worldNpcId, campaignId, limit) {
   try {
-    const rows = await prisma.worldNpcDialogTurn.findMany({
+    const rows = await prisma.npcDialogTurn.findMany({
       where: { npcId: worldNpcId, campaignId },
       orderBy: { createdAt: 'desc' },
       take: limit,
@@ -219,7 +219,7 @@ async function loadRecentDialogTurns(worldNpcId, campaignId, limit) {
 
 async function loadKnowledgeEntries(worldNpcId, limit) {
   try {
-    return await prisma.worldNpcKnowledge.findMany({
+    return await prisma.npcKnowledge.findMany({
       where: { npcId: worldNpcId },
       orderBy: { addedAt: 'desc' },
       take: limit,
@@ -233,7 +233,7 @@ async function loadKnowledgeEntries(worldNpcId, limit) {
 
 async function appendDialogTurn({ worldNpcId, campaignId, playerMessage, reply }) {
   try {
-    await prisma.worldNpcDialogTurn.create({
+    await prisma.npcDialogTurn.create({
       data: {
         npcId: worldNpcId,
         campaignId,

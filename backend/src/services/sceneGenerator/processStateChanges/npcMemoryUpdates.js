@@ -250,7 +250,7 @@ export async function processNpcMemoryUpdates(campaignId, rawUpdates) {
 
       // INSERT into CampaignNpcExperience — FIFO trigger trims at 20.
       // `addedAt` set explicitly so we can compose deterministic RAG ids.
-      await prisma.campaignNpcExperience.createMany({
+      await prisma.npcExperience.createMany({
         data: newEntries.map((entry) => ({
           campaignNpcId: row.id,
           content: entry.content,

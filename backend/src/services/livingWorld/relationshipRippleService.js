@@ -70,7 +70,7 @@ export async function propagateRelationshipRipple(campaignId, sourceCampaignNpcI
 
   // 2. Fetch relacje source → targets (`targetType: 'npc'` only — frakcyjne
   // relacje obsługujemy przez reputationService).
-  const relationships = await prisma.campaignNpcRelationship.findMany({
+  const relationships = await prisma.npcRelationship.findMany({
     where: { campaignNpcId: sourceCampaignNpcId, targetType: 'npc' },
   }).catch(() => []);
   if (relationships.length === 0) return { targets: 0, deltas: [] };
@@ -115,7 +115,7 @@ export async function propagateRelationshipRipple(campaignId, sourceCampaignNpcI
           where: { id: targetRow.id },
           data: { disposition: newDisp },
         }),
-        prisma.campaignNpcExperience.create({
+        prisma.npcExperience.create({
           data: {
             campaignNpcId: targetRow.id,
             content: buildRippleMemory(resolvedSourceName, rel.relation, { delta, alive, actionType }),

@@ -110,10 +110,10 @@ export async function promoteExperienceLogsToCanonical(campaignId, { dryRun = fa
       }
 
       // Idempotent replace: drop prior promotions from this campaign before inserting fresh.
-      await prisma.worldNpcKnowledge.deleteMany({
+      await prisma.npcKnowledge.deleteMany({
         where: { npcId: canonical.id, source: sourceTag },
       });
-      await prisma.worldNpcKnowledge.createMany({
+      await prisma.npcKnowledge.createMany({
         data: entries.map((e) => ({
           npcId: canonical.id,
           content: e.content,

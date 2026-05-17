@@ -119,13 +119,13 @@ export async function pickStartSpawn() {
     //    in-fiction perspective and by initialLocationsResolver to validate
     //    AI-emitted parent/anchor names against the NPC's allowed-knowledge set.
     const [npcBaselineKnowledgeRows, npcKnownLocationRows] = await Promise.all([
-      prisma.worldNpcKnowledge.findMany({
+      prisma.npcKnowledge.findMany({
         where: { npcId: npc.id, source: 'baseline' },
         orderBy: { addedAt: 'asc' },
         select: { content: true },
         take: 6,
       }),
-      prisma.worldNpcKnownLocation.findMany({
+      prisma.npcKnownLocation.findMany({
         where: { npcId: npc.id, grantedBy: 'seed' },
         select: { location: { select: { canonicalName: true, locationType: true } } },
       }),

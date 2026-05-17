@@ -177,22 +177,22 @@ export async function adminLivingWorldRoutes(fastify) {
         orderBy: { createdAt: 'desc' },
         take: 50,
       }),
-      prisma.worldNpcAttribution.findMany({
+      prisma.npcAttribution.findMany({
         where: { worldNpcId: id },
         orderBy: { createdAt: 'desc' },
         take: 50,
       }),
-      prisma.worldNpcKnowledge.findMany({
+      prisma.npcKnowledge.findMany({
         where: { npcId: id },
         orderBy: { addedAt: 'desc' },
         take: 50,
       }),
-      prisma.worldNpcDialogTurn.findMany({
+      prisma.npcDialogTurn.findMany({
         where: { npcId: id },
         orderBy: { createdAt: 'desc' },
         take: 50,
       }),
-      prisma.worldNpcKnownLocation.findMany({
+      prisma.npcKnownLocation.findMany({
         where: { npcId: id },
         include: { location: { select: { id: true, canonicalName: true } } },
       }),
@@ -260,7 +260,7 @@ export async function adminLivingWorldRoutes(fastify) {
     const where = {};
     if (region) where.region = region;
     if (campaignId) {
-      const discovered = await prisma.campaignDiscoveredLocation.findMany({
+      const discovered = await prisma.discoveredLocation.findMany({
         where: { campaignId, locationKind: 'world' },
         select: { locationId: true },
       });
@@ -306,7 +306,7 @@ export async function adminLivingWorldRoutes(fastify) {
         orderBy: { createdAt: 'desc' },
         take: 50,
       }),
-      prisma.worldLocationKnowledge.findMany({
+      prisma.locationKnowledge.findMany({
         where: { locationId: id },
         orderBy: { addedAt: 'desc' },
         take: 50,
@@ -324,7 +324,7 @@ export async function adminLivingWorldRoutes(fastify) {
         },
         take: 50,
       }),
-      prisma.campaignDiscoveredLocation.count({
+      prisma.discoveredLocation.count({
         where: { locationKind: 'world', locationId: id },
       }),
       prisma.campaignQuest.findMany({
@@ -813,7 +813,7 @@ export async function adminLivingWorldRoutes(fastify) {
       });
     }
     const discoveries = discoveryWhereOr.length > 0
-      ? await prisma.campaignDiscoveredLocation.findMany({
+      ? await prisma.discoveredLocation.findMany({
           where: { OR: discoveryWhereOr },
           include: { campaign: { select: { id: true, name: true } } },
         })
@@ -2011,7 +2011,7 @@ export async function adminLivingWorldRoutes(fastify) {
 
     const needsWorldLocFilter = campaignId && (typesToQuery.includes('WorldLocation'));
     const campaignWorldLocIds = needsWorldLocFilter
-      ? (await prisma.campaignDiscoveredLocation.findMany({
+      ? (await prisma.discoveredLocation.findMany({
           where: { campaignId, locationKind: 'world' },
           select: { locationId: true },
         })).map((d) => d.locationId)

@@ -90,7 +90,7 @@ export async function mutateQuest({ campaignId, questRow, mutation, reason, scen
           const verb = mutation === 'fail'
             ? 'nie powiodło się — jest zamknięte'
             : 'utknęło w martwym punkcie';
-          await prisma.campaignNpcExperience.create({
+          await prisma.npcExperience.create({
             data: {
               campaignNpcId: giverNpc.id,
               content: `Zadanie "${questRow.name}" ${verb}. Powód: ${reason || 'nieznany'}.`,

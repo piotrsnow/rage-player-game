@@ -217,7 +217,7 @@ export async function applyAttribution({
   const now = gameTime ? new Date(gameTime) : new Date();
 
   // Ledger row
-  const attribution = await prisma.worldNpcAttribution.create({
+  const attribution = await prisma.npcAttribution.create({
     data: {
       actorCharacterId,
       actorCampaignId,

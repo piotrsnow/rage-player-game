@@ -47,17 +47,15 @@ export { shouldPromoteToGlobal, generateSceneEmbedding };
 const log = childLogger({ module: 'sceneGenerator' });
 
 // Match-or-drop resolver for AI-emitted `stateChanges.currentLocation`.
-// Returns `{ kind, id, name }` when the target name resolves to an existing
-// canonical WorldLocation OR per-campaign CampaignLocation in this campaign's
-// fog. Returns null on miss — caller decides whether to create-on-miss
+// Returns `{ id, name }` when the target name resolves to an existing
+// canonical or campaign-scoped Location in this campaign's fog.
+// Returns null on miss — caller decides whether to create-on-miss
 // (with guards) or drop.
 async function resolveCurrentLocationTarget(campaignId, targetName) {
   const ref = await resolveLocationByName(targetName, { campaignId }).catch(() => null);
-  if (!ref?.row?.id) return null;
-  const name = ref.kind === LOCATION_KIND_WORLD
-    ? (ref.row.canonicalName || targetName)
-    : (ref.row.name || targetName);
-  return { kind: ref.kind, id: ref.row.id, name };
+  if (!ref?.location?.id) return null;
+  const name = ref.location.canonicalName || ref.location.displayName || targetName;
+  return { id: ref.location.id, name };
 }
 
 // Create the bidirectional movement edge between two location nodes if it
@@ -65,25 +63,20 @@ async function resolveCurrentLocationTarget(campaignId, targetName) {
 // Used by every code path that transitions the player between two resolved
 // nodes (anchor, retry-after-subloc-create, auto-promote, create-on-miss).
 async function ensureMovementEdge({ from, to, sceneIndex, campaignId }) {
-  if (!from?.kind || !from?.id || !to?.kind || !to?.id) return;
-  const fromKey = `${from.kind}:${from.id}`;
-  const toKey = `${to.kind}:${to.id}`;
-  if (fromKey === toKey) return;
+  if (!from || !to) return;
+  if (from === to) return;
   try {
     const existing = await prisma.locationEdge.findFirst({
       where: {
-        fromKind: from.kind, fromId: from.id,
-        toKind: to.kind, toId: to.id,
+        fromLocationId: from, toLocationId: to,
         category: 'movement', isActive: true,
         OR: [{ campaignId: null }, { campaignId }],
       },
     });
     if (!existing) {
       await createEdge({
-        fromKind: from.kind,
-        fromId: from.id,
-        toKind: to.kind,
-        toId: to.id,
+        fromLocationId: from,
+        toLocationId: to,
         edgeType: 'path_to',
         category: 'movement',
         bidirectional: true,
@@ -95,15 +88,13 @@ async function ensureMovementEdge({ from, to, sceneIndex, campaignId }) {
       });
     }
     await markLocationEdgeTraversed({
-      fromKind: from.kind,
-      fromId: from.id,
-      toKind: to.kind,
-      toId: to.id,
+      fromLocationId: from,
+      toLocationId: to,
       sceneIndex,
       campaignId,
     });
   } catch (edgeErr) {
-    log.debug({ err: edgeErr?.message, campaignId, fromKey, toKey }, 'ensureMovementEdge failed (non-fatal)');
+    log.debug({ err: edgeErr?.message, campaignId, from, to }, 'ensureMovementEdge failed (non-fatal)');
   }
 }
 

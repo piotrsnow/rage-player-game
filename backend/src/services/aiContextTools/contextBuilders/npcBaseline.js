@@ -213,14 +213,14 @@ export async function buildNpcMemory({ ambientNpcs, ambientNpcsWithGoals, sceneQ
 
   const [knowledgeRows, experienceRows] = await Promise.all([
     worldNpcIds.length > 0
-      ? prisma.worldNpcKnowledge.findMany({
+      ? prisma.npcKnowledge.findMany({
           where: { npcId: { in: worldNpcIds } },
           orderBy: { addedAt: 'asc' },
           select: { npcId: true, content: true, source: true, addedAt: true, importance: true, sensitivity: true },
         }).catch(() => [])
       : Promise.resolve([]),
     campaignNpcIds.length > 0
-      ? prisma.campaignNpcExperience.findMany({
+      ? prisma.npcExperience.findMany({
           where: { campaignNpcId: { in: campaignNpcIds } },
           orderBy: { addedAt: 'asc' },
           select: { campaignNpcId: true, content: true, importance: true, addedAt: true },

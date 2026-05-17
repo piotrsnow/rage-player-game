@@ -201,7 +201,7 @@ export async function syncNPCsToNormalized(campaignId, npcs) {
 
     const targetNpcDbIds = allTouched.map((r) => idByNpcKey.get(r.npcId ?? r._npcKey)).filter(Boolean);
     if (targetNpcDbIds.length > 0) {
-      await prisma.campaignNpcRelationship.deleteMany({
+      await prisma.npcRelationship.deleteMany({
         where: { campaignNpcId: { in: targetNpcDbIds } },
       });
     }
@@ -223,7 +223,7 @@ export async function syncNPCsToNormalized(campaignId, npcs) {
       }
     }
     if (relInserts.length > 0) {
-      await prisma.campaignNpcRelationship.createMany({
+      await prisma.npcRelationship.createMany({
         data: relInserts,
         skipDuplicates: true,
       });

@@ -222,7 +222,7 @@ export async function processLocationMentions(campaignId, mentions) {
   // Pre-fetch explicit known-location entries for all WorldNPCs in scope.
   const explicitKnownByNpcId = new Map();
   if (worldNpcRows.length > 0) {
-    const explicitRows = await prisma.worldNpcKnownLocation.findMany({
+    const explicitRows = await prisma.npcKnownLocation.findMany({
       where: { npcId: { in: worldNpcRows.map((n) => n.id) } },
       select: { npcId: true, locationId: true },
     }).catch(() => []);

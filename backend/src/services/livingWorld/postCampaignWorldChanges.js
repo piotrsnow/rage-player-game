@@ -326,7 +326,7 @@ export async function applyLocationKnowledgeChange({ change, resolved, campaignI
       select: { id: true },
     });
     if (!row) return { ok: false, reason: 'world_location_not_found' };
-    await prisma.worldLocationKnowledge.create({
+    await prisma.locationKnowledge.create({
       data: knowledgeEntryToInsertData(entry, row.id, 'location'),
     });
     return { ok: true, entry };
@@ -354,7 +354,7 @@ export async function applyNpcKnowledgeChange({ change, resolved, campaignId }) 
       select: { id: true },
     });
     if (!row) return { ok: false, reason: 'world_npc_not_found' };
-    await prisma.worldNpcKnowledge.create({
+    await prisma.npcKnowledge.create({
       data: knowledgeEntryToInsertData(entry, row.id, 'npc'),
     });
     return { ok: true, entry };

@@ -733,7 +733,7 @@ export async function livingWorldRoutes(fastify) {
     }
 
     const [movements, experienceRows] = await Promise.all([
-      prisma.campaignNpcLocationMovement.findMany({
+      prisma.npcLocationMovement.findMany({
         where: { campaignNpcId: npcId },
         orderBy: { movedAt: 'desc' },
         take: limit,
@@ -748,7 +748,7 @@ export async function livingWorldRoutes(fastify) {
           movedAt: true,
         },
       }),
-      prisma.campaignNpcExperience.findMany({
+      prisma.npcExperience.findMany({
         where: { campaignNpcId: npcId },
         orderBy: { addedAt: 'desc' },
         take: limit,

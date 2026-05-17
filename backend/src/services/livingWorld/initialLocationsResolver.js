@@ -142,7 +142,7 @@ export async function applyInitialLocations({
       created += 1;
 
       if (entry.knownByQuestGiver === true && questGiverShadow?.id) {
-        await prisma.campaignNpcExperience.create({
+        await prisma.npcExperience.create({
           data: {
             campaignNpcId: questGiverShadow.id,
             content: `Zna miejsce: ${entry.name}`,

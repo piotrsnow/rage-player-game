@@ -86,7 +86,7 @@ export async function processNpcRenames(campaignId, renames) {
       // Sweep relationships pointing at the old name. CampaignNpcRelationship
       // is a flavor join table keyed by free-text targetRef (see npcs.js:64),
       // so an in-place updateMany keeps the relationship graph consistent.
-      const swept = await prisma.campaignNpcRelationship.updateMany({
+      const swept = await prisma.npcRelationship.updateMany({
         where: { targetRef: from, campaignNpc: { campaignId } },
         data: { targetRef: to },
       });

@@ -73,7 +73,7 @@ async function loadDiscoveredNeighborIds(userId, campaignId, locationIds) {
       select: { locationId: true },
     }),
     campaignId
-      ? prisma.campaignDiscoveredLocation.findMany({
+      ? prisma.discoveredLocation.findMany({
           where: {
             campaignId,
             locationKind: LOCATION_KIND_WORLD,

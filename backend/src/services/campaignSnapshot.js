@@ -72,7 +72,7 @@ async function loadCampaignGraph(campaignId) {
     prisma.campaignKnowledge.findMany({ where: { campaignId } }),
     prisma.campaignCodex.findMany({ where: { campaignId } }),
     prisma.campaignIncident.findMany({ where: { campaignId } }),
-    prisma.campaignDiscoveredLocation.findMany({ where: { campaignId } }),
+    prisma.discoveredLocation.findMany({ where: { campaignId } }),
     prisma.campaignEdgeDiscovery.findMany({ where: { campaignId } }),
     prisma.campaignDmAgent.findUnique({ where: { campaignId } }).catch(() => null),
   ]);

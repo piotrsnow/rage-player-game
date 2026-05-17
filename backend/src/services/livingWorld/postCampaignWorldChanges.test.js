@@ -32,10 +32,10 @@ import {
 beforeEach(() => {
   prisma.worldNPC.findUnique.mockReset();
   prisma.worldLocation.findUnique.mockReset();
-  prisma.worldNpcKnowledge.create.mockReset();
-  prisma.worldNpcKnowledge.create.mockResolvedValue({});
-  prisma.worldLocationKnowledge.create.mockReset();
-  prisma.worldLocationKnowledge.create.mockResolvedValue({});
+  prisma.npcKnowledge.create.mockReset();
+  prisma.npcKnowledge.create.mockResolvedValue({});
+  prisma.locationKnowledge.create.mockReset();
+  prisma.locationKnowledge.create.mockResolvedValue({});
   prisma.pendingWorldStateChange.upsert.mockReset();
   prisma.pendingWorldStateChange.upsert.mockResolvedValue({});
 });
@@ -337,7 +337,7 @@ describe('applyWorldStateChanges', () => {
       classifications: [basePipeline(npcDeathChange, resolved, 'high')],
       campaignId: 'c1',
     });
-    expect(prisma.worldNpcKnowledge.create).not.toHaveBeenCalled();
+    expect(prisma.npcKnowledge.create).not.toHaveBeenCalled();
     expect(prisma.pendingWorldStateChange.upsert).toHaveBeenCalledTimes(1);
     expect(result.pending).toHaveLength(1);
     expect(result.pending[0]).toMatchObject({ campaignId: 'c1', kind: 'npcDeath', reason: 'high_npc_pending_review' });
@@ -456,8 +456,8 @@ describe('applyLocationKnowledgeChange (Phase 12 closeout)', () => {
     });
 
     expect(result.ok).toBe(true);
-    expect(prisma.worldLocationKnowledge.create).toHaveBeenCalledTimes(1);
-    const data = prisma.worldLocationKnowledge.create.mock.calls[0][0].data;
+    expect(prisma.locationKnowledge.create).toHaveBeenCalledTimes(1);
+    const data = prisma.locationKnowledge.create.mock.calls[0][0].data;
     expect(data).toMatchObject({
       locationId: 'loc1',
       source: 'llm_extraction:c1',
@@ -486,7 +486,7 @@ describe('applyLocationKnowledgeChange (Phase 12 closeout)', () => {
 
   it('returns reason=write_failed when create throws', async () => {
     prisma.worldLocation.findUnique.mockResolvedValue({ id: 'loc1' });
-    prisma.worldLocationKnowledge.create.mockRejectedValue(new Error('db down'));
+    prisma.locationKnowledge.create.mockRejectedValue(new Error('db down'));
     const resolved = { entityId: 'loc1', entityType: 'location', similarity: 0.9 };
     const result = await applyLocationKnowledgeChange({
       change: locBurnedChange, resolved, campaignId: 'c1',
