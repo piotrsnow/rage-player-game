@@ -5,7 +5,7 @@ import {
   resolveLocationByName,
   findOrCreateCampaignLocation,
 } from '../../livingWorld/worldStateService.js';
-import { LOCATION_KIND_WORLD, LOCATION_KIND_CAMPAIGN, lookupLocationByKindId } from '../../locationRefs.js';
+import { lookupLocationByKindId } from '../../locationRefs.js';
 
 import { generateSceneEmbedding } from './sceneEmbedding.js';
 import { processNpcChanges } from './npcs.js';
