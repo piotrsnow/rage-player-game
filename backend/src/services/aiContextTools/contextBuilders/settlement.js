@@ -37,7 +37,7 @@ export async function buildSettlementBlock(currentLocation, _difficultyTier = nu
   const template = getTemplate(type);
 
   const children = await prisma.location.findMany({
-    where: { parentLocationId: settlement.id },
+    where: { parentLocationId: settlement.id, campaignId: null },
     select: {
       id: true, canonicalName: true, slotType: true, slotKind: true, description: true,
     },

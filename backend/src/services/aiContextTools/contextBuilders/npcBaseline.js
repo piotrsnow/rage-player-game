@@ -194,8 +194,8 @@ function selectRagTopEntries(entries, entityIdsByIdx, ragResultIds) {
  * Build the merged memory surface for every ambient key NPC.
  *
  * Two DB round-trips regardless of NPC count:
- *   1. WorldNPC batch for `knowledgeBase` (only NPCs with worldNpcId).
- *   2. CampaignNPC batch for `experienceLog` (all selected).
+ *   1. NpcKnowledge batch for baseline (only NPCs with canonicalNpcId).
+ *   2. NpcExperience batch for lived experience (all selected).
  *
  * Stage 3: when a single NPC's pool of RAG-eligible entries (experienceLog
  * + cross-campaign knowledgeBase slice) exceeds RAG_RECALL_THRESHOLD, we
@@ -207,26 +207,25 @@ export async function buildNpcMemory({ ambientNpcs, ambientNpcsWithGoals, sceneQ
   const selection = selectKeyNpcsForMemory(ambientNpcs, ambientNpcsWithGoals);
   if (selection.length === 0) return [];
 
-  const worldNpcIds = [...new Set(selection.map((e) => e.worldNpcId).filter(Boolean))];
+  const canonicalNpcIds = [...new Set(selection.map((e) => e.canonicalNpcId).filter(Boolean))];
   const campaignNpcIds = [...new Set(selection.map((e) => e.campaignNpcId).filter(Boolean))];
 
   const [knowledgeRows, experienceRows] = await Promise.all([
-    worldNpcIds.length > 0
+    canonicalNpcIds.length > 0
       ? prisma.npcKnowledge.findMany({
-          where: { npcId: { in: worldNpcIds } },
+          where: { npcId: { in: canonicalNpcIds } },
           orderBy: { addedAt: 'asc' },
           select: { npcId: true, content: true, source: true, addedAt: true, importance: true, sensitivity: true },
         }).catch(() => [])
       : Promise.resolve([]),
     campaignNpcIds.length > 0
       ? prisma.npcExperience.findMany({
-          where: { campaignNpcId: { in: campaignNpcIds } },
+          where: { npcId: { in: campaignNpcIds } },
           orderBy: { addedAt: 'asc' },
-          select: { campaignNpcId: true, content: true, importance: true, addedAt: true },
+          select: { npcId: true, content: true, importance: true, addedAt: true },
         }).catch(() => [])
       : Promise.resolve([]),
   ]);
-  // Group rows by parent id so per-NPC pure helpers see a flat list each.
   const baselineById = new Map();
   for (const row of knowledgeRows) {
     if (!baselineById.has(row.npcId)) baselineById.set(row.npcId, []);
@@ -234,17 +233,17 @@ export async function buildNpcMemory({ ambientNpcs, ambientNpcsWithGoals, sceneQ
   }
   const experienceById = new Map();
   for (const row of experienceRows) {
-    if (!experienceById.has(row.campaignNpcId)) experienceById.set(row.campaignNpcId, []);
-    experienceById.get(row.campaignNpcId).push(row);
+    if (!experienceById.has(row.npcId)) experienceById.set(row.npcId, []);
+    experienceById.get(row.npcId).push(row);
   }
 
   const result = [];
   const hasSceneQuery = typeof sceneQueryText === 'string' && sceneQueryText.trim().length > 0;
 
-  for (const { worldNpcId, campaignNpcId, npcName } of selection) {
-    const baseline = worldNpcId ? formatBaselineEntries(baselineById.get(worldNpcId)) : [];
+  for (const { canonicalNpcId, campaignNpcId, npcName } of selection) {
+    const baseline = canonicalNpcId ? formatBaselineEntries(baselineById.get(canonicalNpcId)) : [];
 
-    const crossCampaignRaw = worldNpcId ? formatCrossCampaignEntries(baselineById.get(worldNpcId)) : [];
+    const crossCampaignRaw = canonicalNpcId ? formatCrossCampaignEntries(baselineById.get(canonicalNpcId)) : [];
     const experienceRaw = campaignNpcId ? parseExperienceEntries(experienceById.get(campaignNpcId)) : [];
 
     // Eligible RAG pool is experience (cexp) + cross-campaign (wknw). Baseline
@@ -261,7 +260,7 @@ export async function buildNpcMemory({ ambientNpcs, ambientNpcsWithGoals, sceneQ
       const entityIdsByIdx = new Map();
 
       for (const entry of crossCampaignRaw) {
-        const eid = worldNpcId ? memoryEntityId('wknw', worldNpcId, entry) : null;
+        const eid = canonicalNpcId ? memoryEntityId('wknw', canonicalNpcId, entry) : null;
         if (!eid) continue;
         combined.push({ content: entry.content, source: entry.source });
         entityIdsByIdx.set(combined.length - 1, eid);
@@ -292,7 +291,7 @@ export async function buildNpcMemory({ ambientNpcs, ambientNpcsWithGoals, sceneQ
             usedRag = true;
           }
         } catch (err) {
-          log.warn({ err: err?.message, worldNpcId, campaignNpcId },
+          log.warn({ err: err?.message, canonicalNpcId, campaignNpcId },
             'Stage 3 RAG recall failed — falling back to static slice');
         }
       }

@@ -1,7 +1,7 @@
 import { clearCampaignNpcIntroHint } from '../../livingWorld/campaignSandbox.js';
 
 /**
- * Pure map: enriched CampaignNPC shadows → prompt-shaped NPC entries.
+ * Pure map: enriched campaign-scoped Npc shadows → prompt-shaped NPC entries.
  *
  * File name is vestigial — the BE-driven goal/radiant-offer mechanic was
  * archived to `knowledge/ideas/npc-action-assignment.md`. What stays is the

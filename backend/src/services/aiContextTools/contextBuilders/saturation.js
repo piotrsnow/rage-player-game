@@ -28,6 +28,7 @@ export async function buildSaturationHint({ campaign, location, ambientNpcCount 
     if (capTotal > 0) {
       const existing = await prisma.location.count({
         where: {
+          campaignId: null,
           parentLocationId: null,
           locationType: { in: ['hamlet', 'village', 'town', 'city'] },
           regionX: { gte: bounds.minX, lte: bounds.maxX },
@@ -51,7 +52,7 @@ export async function buildSaturationHint({ campaign, location, ambientNpcCount 
   const npcCap = Number(settlementForNpcs?.maxKeyNpcs) || 0;
   if (npcCap > 0) {
     const keyNpcCount = await prisma.npc.count({
-      where: { currentLocationId: settlementForNpcs.id, keyNpc: true, alive: true },
+      where: { currentLocationId: settlementForNpcs.id, campaignId: null, keyNpc: true, alive: true },
     }).catch(() => ambientNpcCount);
     npcBudget = Math.max(0, Math.min(1, (npcCap - keyNpcCount) / npcCap));
   }

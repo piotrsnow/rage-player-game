@@ -9,8 +9,6 @@ import { getReputationProfile, maybeClearVendetta } from '../../livingWorld/repu
 import { suggestEncounterMode } from '../../livingWorld/encounterEscalator.js';
 import { readDmAgentState } from '../../livingWorld/dmMemoryService.js';
 import { normalizeLanguage } from '../../livingWorld/contentLocalizer.js';
-import { LOCATION_KIND_CAMPAIGN } from '../../locationRefs.js';
-
 import { buildSettlementBlock } from './settlement.js';
 import { buildSeededSettlementsBlock } from './seededSettlements.js';
 import { buildSaturationHint } from './saturation.js';
@@ -66,10 +64,8 @@ export async function buildLivingWorldContext(campaignId, currentLocation, { tra
 
   const resolved = await resolveLocationByName(currentLocation, { campaignId });
   if (!resolved) return null;
-  const locationKind = resolved.kind;
   const location = resolved.row;
-  // CampaignLocation uses `name` instead of `canonicalName` — normalize for downstream consumers.
-  if (locationKind === LOCATION_KIND_CAMPAIGN && !location.canonicalName) {
+  if (!location.canonicalName) {
     location.canonicalName = location.name;
   }
 
@@ -77,11 +73,11 @@ export async function buildLivingWorldContext(campaignId, currentLocation, { tra
   const actorCharacterId = characterIds[0] || null;
 
   // Parallel: NPCs at this location (campaign-sandbox aware — returns
-  // CampaignNPC shadows, auto-cloning canonical WorldNPCs at first encounter)
+  // campaign-scoped Npc shadows, auto-cloning canonical NPCs at first encounter)
   // + recent world events + any companions travelling with the party
   // (Phase 2) + lazy vendetta clear + Phase 4 DM agent memory.
   const [npcs, events, companions, , dmState] = await Promise.all([
-    listNpcsAtLocation(location.id, { campaignId, locationKind, aliveOnly: true }).catch(() => []),
+    listNpcsAtLocation(location.id, { campaignId, aliveOnly: true }).catch(() => []),
     worldEventsForLocation({
       locationId: location.id,
       campaignId,
@@ -159,7 +155,7 @@ export async function buildLivingWorldContext(campaignId, currentLocation, { tra
       campaignId,
       userId: campaign.userId,
       campaign,
-      startLocation: { ...location, kind: locationKind },
+      startLocation: location,
       targetName: travelTarget,
       directionalMove,
     }).catch((err) => {
@@ -212,8 +208,8 @@ export async function buildLivingWorldContext(campaignId, currentLocation, { tra
   // Round B (Phase 4b) — NPC hearsay. Scene prompt renders this as a
   // [NPC_KNOWLEDGE] section so premium respects scope. Builder batches
   // all DB reads (previously N+1 per NPC).
-  // Stage 1+2 — NPC memory: merges hand-authored baseline (WorldNPC.knowledgeBase)
-  // with in-campaign lived experience (CampaignNPC.experienceLog). Rendered
+  // Stage 1+2 — NPC memory: merges canonical NpcKnowledge baseline
+  // with in-campaign lived experience (NpcExperience). Rendered
   // as a `[NPC_MEMORY]` block — flavor, NOT policy-enforced (that's hearsay's job).
   // Stage 3 — build scene query text for RAG-powered memory recall. Kept
   // short (single embed per scene, shared across all NPCs present): the
@@ -231,7 +227,7 @@ export async function buildLivingWorldContext(campaignId, currentLocation, { tra
   ]);
 
   // Background NPC label + key-vs-background split — Phase 7. Key NPCs are
-  // WorldNPCs with keyNpc=true; everyone else in `npcs` stays as ambient
+  // canonical NPCs with keyNpc=true; everyone else in `npcs` stays as ambient
   // generic flavor that premium should describe without naming.
   const keyAmbient = ambientNpcsWithGoals.filter((_n, i) => ambientNpcs[i]?.keyNpc !== false);
   const backgroundCount = ambientNpcs.length - keyAmbient.length;
@@ -245,7 +241,7 @@ export async function buildLivingWorldContext(campaignId, currentLocation, { tra
 
   return {
     locationName: location.canonicalName,
-    locationRef: `${locationKind}:${location.id}`,
+    locationRef: location.id,
     locationType: location.locationType || 'generic',
     npcs: keyAmbient,
     hearsayByNpc,

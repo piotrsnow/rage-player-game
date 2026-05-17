@@ -3,7 +3,7 @@ import { unpackWorldBounds } from '../../locationRefs.js';
 
 /**
  * Phase A — build SEEDED SETTLEMENTS block for a campaign. Lists every
- * settlement-type WorldLocation inside the campaign's worldBounds (or loosely
+ * settlement-type canonical Location inside the campaign's worldBounds (or loosely
  * anchored via discovered edges if bounds are unset) plus the global capital
  * Yeralden. Returns null when bounds are unset OR no settlements exist yet.
  *
@@ -18,7 +18,7 @@ export async function buildSeededSettlementsBlock(campaign, currentLocation) {
 
   // Fetch capital (always visible) + in-bounds settlements.
   const capital = await prisma.location.findFirst({
-    where: { locationType: 'capital', regionX: 0, regionY: 0 },
+    where: { locationType: 'capital', regionX: 0, regionY: 0, campaignId: null },
     select: { id: true, canonicalName: true, locationType: true, regionX: true, regionY: true, description: true },
   });
 
@@ -26,6 +26,7 @@ export async function buildSeededSettlementsBlock(campaign, currentLocation) {
   if (bounds) {
     settlementsInBounds = await prisma.location.findMany({
       where: {
+        campaignId: null,
         parentLocationId: null,
         locationType: { in: SETTLEMENT_TYPES.filter((t) => t !== 'capital') },
         regionX: { gte: bounds.minX, lte: bounds.maxX },

@@ -6,7 +6,7 @@ import { resolveNpcKnownLocations } from '../../livingWorld/campaignSandbox.js';
  *
  * For each key NPC at the location, resolve the set of locations they're
  * authorized to reveal in dialog: own location + 1-hop edge neighbours +
- * explicit WorldNpcKnownLocation grants. Scene prompt renders this as
+ * explicit NpcKnownLocation grants. Scene prompt renders this as
  * [NPC_KNOWLEDGE] blocks so premium respects scope ("ask the commoner about
  * the far dungeon → NPC says I don't know"). Post-scene policy in
  * `processStateChanges.processLocationMentions` rejects `locationMentioned`
@@ -14,7 +14,7 @@ import { resolveNpcKnownLocations } from '../../livingWorld/campaignSandbox.js';
  * past intent).
  *
  * Batched:
- *   - ONE `findMany` collects all WorldNPC fallbacks for the ambient roster
+ *   - ONE `findMany` collects all canonical Npc fallbacks for the ambient roster
  *     (previously: N-per-NPC findUnique in a loop = quadratic DB roundtrips)
  *   - ONE `findMany` resolves the union of known-location ids (previously:
  *     per-NPC findMany; still capped per-NPC at 12 in the render)
@@ -32,32 +32,32 @@ export async function buildHearsayByNpc({ ambientNpcs, ambientNpcsWithGoals }) {
   }
   if (keyNpcEntries.length === 0) return [];
 
-  // Batch 1 — collect all WorldNPC fallbacks in one roundtrip.
-  const worldNpcIds = [...new Set(
+  // Batch 1 — collect all canonical Npc fallbacks in one roundtrip.
+  const canonicalNpcIds = [...new Set(
     keyNpcEntries
-      .map((e) => e.nEnriched.worldNpcId)
+      .map((e) => e.nEnriched.canonicalNpcId)
       .filter(Boolean),
   )];
-  const worldNpcById = new Map();
-  if (worldNpcIds.length > 0) {
+  const canonicalNpcById = new Map();
+  if (canonicalNpcIds.length > 0) {
     const rows = await prisma.npc.findMany({
-      where: { id: { in: worldNpcIds } },
+      where: { id: { in: canonicalNpcIds }, campaignId: null },
     }).catch(() => []);
-    for (const row of rows) worldNpcById.set(row.id, row);
+    for (const row of rows) canonicalNpcById.set(row.id, row);
   }
 
   // First pass — per NPC resolve the known-location id set. This still
   // calls resolveNpcKnownLocations per NPC (it has its own logic for
   // 1-hop edges + explicit grants) but no longer hits the DB N times
-  // for the WorldNPC fallback.
+  // for the canonical Npc fallback.
   const perNpc = [];
   for (const { nEnriched, goalEntry } of keyNpcEntries) {
-    const worldFallback = nEnriched.worldNpcId
-      ? worldNpcById.get(nEnriched.worldNpcId) || null
+    const canonicalFallback = nEnriched.canonicalNpcId
+      ? canonicalNpcById.get(nEnriched.canonicalNpcId) || null
       : null;
     const known = await resolveNpcKnownLocations({
       campaignNpc: nEnriched,
-      worldNpc: worldFallback,
+      worldNpc: canonicalFallback,
     });
     if (known.size === 0) continue;
     // Cap at 12 per NPC so the prompt block doesn't bloat — 1-hop neighbours
@@ -85,7 +85,6 @@ export async function buildHearsayByNpc({ ambientNpcs, ambientNpcsWithGoals }) {
       .filter(Boolean)
       .map((r) => ({
         id: r.id,
-        ref: `world:${r.id}`,
         name: r.canonicalName,
         type: r.locationType,
         danger: r.dangerLevel || null,
