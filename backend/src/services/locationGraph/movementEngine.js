@@ -16,7 +16,7 @@ const ACCESS_EDGE_TYPES = new Set([
  * Filters by knowledge state (if provided) and edge discovery state.
  */
 export async function getMovementOptions(characterId, campaignId) {
-  const npc = await prisma.campaignNPC.findFirst({
+  const npc = await prisma.npc.findFirst({
     where: { id: characterId, campaignId },
     select: { lastLocationKind: true, lastLocationId: true },
   });
@@ -115,7 +115,7 @@ export async function findPath(fromId, fromKind, toId, toKind, campaignId, prefe
  * Returns { allowed, blockers }.
  */
 export async function canMove(characterId, targetLocationId, targetKind, campaignId) {
-  const npc = await prisma.campaignNPC.findFirst({
+  const npc = await prisma.npc.findFirst({
     where: { id: characterId, campaignId },
     select: { lastLocationKind: true, lastLocationId: true },
   });

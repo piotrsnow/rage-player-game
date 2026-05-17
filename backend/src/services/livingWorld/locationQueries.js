@@ -48,12 +48,12 @@ export async function listLocationsForCampaign(campaignId, opts = {}) {
   }
 
   const [wlRows, clRows] = await Promise.all([
-    prisma.worldLocation.findMany({
+    prisma.location.findMany({
       where: wlWhere,
       ...(select ? { select } : {}),
       orderBy: [{ parentLocationId: 'asc' }, { regionX: 'asc' }, { regionY: 'asc' }],
     }),
-    prisma.campaignLocation.findMany({
+    prisma.location.findMany({
       where: clWhere,
       ...(select ? { select } : {}),
       orderBy: [{ parentLocationId: 'asc' }, { regionX: 'asc' }, { regionY: 'asc' }],

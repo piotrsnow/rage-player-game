@@ -105,7 +105,7 @@ export async function ensureAppearanceAndDialect(npc, fieldsToFill, { campaignNp
 
   // Persist to CampaignNPC only — WorldNPC writes gated by admin (strict world-write gate).
   if (campaignNpcId) {
-    await prisma.campaignNPC.update({ where: { id: campaignNpcId }, data: persistData }).catch((err) => {
+    await prisma.npc.update({ where: { id: campaignNpcId }, data: persistData }).catch((err) => {
       log.warn({ err: err?.message, campaignNpcId }, 'CampaignNPC backfill write failed');
     });
   }

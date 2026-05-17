@@ -220,7 +220,7 @@ export async function handlePostSceneWork({
   // with the actual transcript. Corrections are applied to DB and written as
   // a one-shot JSONB payload (pendingStateCorrection) for FE polling.
   try {
-    const auditNpcs = await prisma.campaignNPC.findMany({
+    const auditNpcs = await prisma.npc.findMany({
       where: { campaignId, alive: true },
       select: { name: true, attitude: true, alive: true, disposition: true },
       orderBy: { updatedAt: 'desc' },

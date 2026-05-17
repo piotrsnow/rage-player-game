@@ -57,7 +57,7 @@ export async function processNpcRenames(campaignId, renames) {
     const toId = slugifyNpcName(to);
 
     try {
-      const existing = await prisma.campaignNPC.findUnique({
+      const existing = await prisma.npc.findUnique({
         where: { campaignId_npcId: { campaignId, npcId: fromId } },
       });
       if (!existing) {
@@ -66,7 +66,7 @@ export async function processNpcRenames(campaignId, renames) {
       }
 
       if (toId !== fromId) {
-        const collision = await prisma.campaignNPC.findUnique({
+        const collision = await prisma.npc.findUnique({
           where: { campaignId_npcId: { campaignId, npcId: toId } },
         });
         if (collision) {
@@ -78,7 +78,7 @@ export async function processNpcRenames(campaignId, renames) {
         }
       }
 
-      await prisma.campaignNPC.update({
+      await prisma.npc.update({
         where: { id: existing.id },
         data: { name: to, npcId: toId },
       });

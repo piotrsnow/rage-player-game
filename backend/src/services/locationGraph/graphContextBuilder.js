@@ -16,7 +16,7 @@ async function buildParentChain(locationId) {
   const chain = [];
   let currentId = locationId;
   for (let i = 0; i < 5 && currentId; i++) {
-    const loc = await prisma.worldLocation.findUnique({
+    const loc = await prisma.location.findUnique({
       where: { id: currentId },
       select: { id: true, canonicalName: true, locationType: true, parentLocationId: true },
     });
@@ -82,7 +82,7 @@ async function loadDiscoveredNeighborIds(userId, campaignId, locationIds) {
           select: { locationId: true },
         })
       : Promise.resolve([]),
-    prisma.worldLocation.findMany({
+    prisma.location.findMany({
       where: {
         id: { in: locationIds },
         OR: [{ locationType: 'capital' }, { knownByDefault: true }],

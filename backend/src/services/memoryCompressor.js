@@ -530,7 +530,7 @@ async function findExistingLocationRecord(campaignId, locationName, locationCach
   if (locationCache && locationCache.has(campaignId)) {
     all = locationCache.get(campaignId);
   } else {
-    all = await prisma.campaignLocationSummary.findMany({
+    all = await prisma.locationSummary.findMany({
       where: { campaignId },
       select: { id: true, locationName: true, summary: true, keyNpcs: true, unresolvedHooks: true, sceneDigests: true, sceneCount: true, lastVisitScene: true },
     });
@@ -620,12 +620,12 @@ ${scenesAtLocation.join('\n\n')}`;
     };
 
     if (existing) {
-      await prisma.campaignLocationSummary.update({
+      await prisma.locationSummary.update({
         where: { id: existing.id },
         data,
       });
     } else {
-      await prisma.campaignLocationSummary.create({
+      await prisma.locationSummary.create({
         data: {
           campaignId,
           locationName: previousLocation,
@@ -682,12 +682,12 @@ export async function appendSceneDigest(campaignId, locationName, sceneIndex, di
       const digests = Array.isArray(existing.sceneDigests) ? existing.sceneDigests : [];
       digests.push(entry);
       if (digests.length > SCENE_DIGEST_MAX) digests.splice(0, digests.length - SCENE_DIGEST_MAX);
-      await prisma.campaignLocationSummary.update({
+      await prisma.locationSummary.update({
         where: { id: existing.id },
         data: { sceneDigests: digests, lastVisitScene: sceneIndex },
       });
     } else {
-      await prisma.campaignLocationSummary.create({
+      await prisma.locationSummary.create({
         data: {
           campaignId,
           locationName,

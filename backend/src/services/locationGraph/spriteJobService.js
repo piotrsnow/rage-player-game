@@ -11,7 +11,7 @@ const activeJobs = new Map();
 
 async function loadNodeRow(kind, id) {
   if (kind === 'world') {
-    const row = await prisma.worldLocation.findUnique({
+    const row = await prisma.location.findUnique({
       where: { id },
       select: {
         id: true, canonicalName: true, description: true, locationType: true,
@@ -21,7 +21,7 @@ async function loadNodeRow(kind, id) {
     if (row) row.name = row.canonicalName;
     return row;
   }
-  return prisma.campaignLocation.findFirst({
+  return prisma.location.findFirst({
     where: { id },
     select: {
       id: true, name: true, description: true, locationType: true,
@@ -76,9 +76,9 @@ export async function generateSpriteForNode(kind, nodeId) {
 
   const nodeImageUrl = storeResult.url;
   if (kind === 'world') {
-    await prisma.worldLocation.update({ where: { id: loc.id }, data: { nodeImageUrl } });
+    await prisma.location.update({ where: { id: loc.id }, data: { nodeImageUrl } });
   } else {
-    await prisma.campaignLocation.update({ where: { id: loc.id }, data: { nodeImageUrl } });
+    await prisma.location.update({ where: { id: loc.id }, data: { nodeImageUrl } });
   }
 
   return nodeImageUrl;

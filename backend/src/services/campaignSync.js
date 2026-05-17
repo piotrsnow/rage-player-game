@@ -147,7 +147,7 @@ export async function syncNPCsToNormalized(campaignId, npcs) {
 
   let existing = [];
   try {
-    existing = await prisma.campaignNPC.findMany({
+    existing = await prisma.npc.findMany({
       where: { campaignId, npcId: { in: valid.map((v) => v.data.npcId) } },
       select: { id: true, npcId: true },
     });
@@ -171,7 +171,7 @@ export async function syncNPCsToNormalized(campaignId, npcs) {
 
   if (toCreate.length > 0) {
     try {
-      await prisma.campaignNPC.createMany({
+      await prisma.npc.createMany({
         data: toCreate.map(({ _npcKey, _relationships, ...row }) => row),
         skipDuplicates: true,
       });
@@ -181,7 +181,7 @@ export async function syncNPCsToNormalized(campaignId, npcs) {
   }
   for (const u of toUpdate) {
     try {
-      await prisma.campaignNPC.update({ where: { id: u.id }, data: u.data });
+      await prisma.npc.update({ where: { id: u.id }, data: u.data });
     } catch (err) {
       log.error({ err, id: u.id }, 'NPC update failed');
     }
@@ -193,7 +193,7 @@ export async function syncNPCsToNormalized(campaignId, npcs) {
     const allTouched = [...toUpdate, ...toCreate];
     if (allTouched.length === 0) return;
     const allNpcIds = allTouched.map((r) => r.npcId ?? r._npcKey);
-    const dbRows = await prisma.campaignNPC.findMany({
+    const dbRows = await prisma.npc.findMany({
       where: { campaignId, npcId: { in: allNpcIds } },
       select: { id: true, npcId: true },
     });
@@ -448,7 +448,7 @@ export async function reconstructFromNormalized(campaignId, coreState, { current
     coreState.world.currentLocationRef = { kind: currentLocationKind, id: currentLocationId };
   }
 
-  const dbNpcs = await prisma.campaignNPC.findMany({
+  const dbNpcs = await prisma.npc.findMany({
     where: { campaignId },
     include: { relationships: true },
   });

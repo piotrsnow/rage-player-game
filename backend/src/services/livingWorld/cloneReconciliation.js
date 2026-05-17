@@ -56,19 +56,19 @@ export function classifyDivergence(clone, global) {
  */
 export async function reconcileCloneWithGlobal(campaignNpcId, { emitRevealEvent = null } = {}) {
   try {
-    const clone = await prisma.campaignNPC.findUnique({
+    const clone = await prisma.npc.findUnique({
       where: { id: campaignNpcId },
       select: { id: true, campaignId: true, name: true, alive: true, worldNpcId: true },
     });
     if (!clone || !clone.worldNpcId) return { verdict: 'none', reason: 'no_global_link' };
 
-    const global = await prisma.worldNPC.findUnique({
+    const global = await prisma.npc.findUnique({
       where: { id: clone.worldNpcId },
       select: { id: true, alive: true, currentLocationId: true },
     });
     if (!global) {
       // Dangling worldNpcId — detach to avoid future lookups
-      await prisma.campaignNPC.update({ where: { id: clone.id }, data: { worldNpcId: null } });
+      await prisma.npc.update({ where: { id: clone.id }, data: { worldNpcId: null } });
       return { verdict: 'detach_clone', reason: 'global_not_found' };
     }
 
@@ -85,7 +85,7 @@ export async function reconcileCloneWithGlobal(campaignNpcId, { emitRevealEvent 
         log.warn({ err, cloneId: clone.id }, 'emitRevealEvent callback failed');
       }
       // Mirror death into the clone — future context won't pretend they're alive
-      await prisma.campaignNPC.update({ where: { id: clone.id }, data: { alive: false } });
+      await prisma.npc.update({ where: { id: clone.id }, data: { alive: false } });
     }
     return decision;
   } catch (err) {
@@ -102,7 +102,7 @@ export async function reconcileCloneWithGlobal(campaignNpcId, { emitRevealEvent 
 export async function reconcileCloneBatch({ campaignId, emitRevealEvent = null } = {}) {
   if (!campaignId) return { processed: 0, revealed: 0 };
   try {
-    const clones = await prisma.campaignNPC.findMany({
+    const clones = await prisma.npc.findMany({
       where: { campaignId, worldNpcId: { not: null }, alive: true },
       select: { id: true },
     });

@@ -27,7 +27,7 @@ export async function buildSettlementBlock(currentLocation, _difficultyTier = nu
   // If current is a sublocation, walk up to the parent settlement.
   let settlement = currentLocation;
   if (currentLocation.parentLocationId) {
-    const parent = await prisma.worldLocation.findUnique({
+    const parent = await prisma.location.findUnique({
       where: { id: currentLocation.parentLocationId },
     });
     if (parent) settlement = parent;
@@ -36,7 +36,7 @@ export async function buildSettlementBlock(currentLocation, _difficultyTier = nu
   if (isGeneratedLocationType(type)) return null; // dungeons handled elsewhere
   const template = getTemplate(type);
 
-  const children = await prisma.worldLocation.findMany({
+  const children = await prisma.location.findMany({
     where: { parentLocationId: settlement.id },
     select: {
       id: true, canonicalName: true, slotType: true, slotKind: true, description: true,

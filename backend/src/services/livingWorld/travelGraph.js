@@ -316,7 +316,7 @@ export function classifyDetour({ pathDistance, start, end }) {
  */
 export async function expandPath(pathIds) {
   if (!Array.isArray(pathIds) || pathIds.length === 0) return [];
-  const rows = await prisma.worldLocation.findMany({
+  const rows = await prisma.location.findMany({
     where: { id: { in: pathIds } },
     select: {
       id: true, canonicalName: true, locationType: true,

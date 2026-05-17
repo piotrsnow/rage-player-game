@@ -114,7 +114,7 @@ async function seedFromRoads() {
  * Create structural `contains` edges from parentLocationId relationships.
  */
 async function seedFromParentHierarchy() {
-  const locations = await prisma.worldLocation.findMany({
+  const locations = await prisma.location.findMany({
     where: { parentLocationId: { not: null } },
     select: { id: true, parentLocationId: true },
   });

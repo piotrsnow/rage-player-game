@@ -68,7 +68,7 @@ export async function applyInitialLocations({
   // different uniqueness scope). The collision we're guarding against is the
   // regression where a freshly-seeded `Modrzejów` ate the AI's intended new
   // top-level entry and re-rendered it at (0,0).
-  const existingCampaignRows = await prisma.campaignLocation.findMany({
+  const existingCampaignRows = await prisma.location.findMany({
     where: { campaignId },
     select: { canonicalSlug: true },
   });
@@ -79,7 +79,7 @@ export async function applyInitialLocations({
   // shape, same case-insensitive normalization. Cache miss → skip the
   // experience write per entry, the location still materializes.
   const questGiverShadow = startSpawn.npcName
-    ? await prisma.campaignNPC.findFirst({
+    ? await prisma.npc.findFirst({
         where: { campaignId, name: { equals: startSpawn.npcName, mode: 'insensitive' } },
         select: { id: true },
       })

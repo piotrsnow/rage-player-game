@@ -105,7 +105,7 @@ async function syncNpcStateToCampaign(campaignId, stateChanges) {
   for (const npc of npcChanges) {
     if (!npc.name) continue;
     try {
-      const existing = await prisma.campaignNPC.findFirst({
+      const existing = await prisma.npc.findFirst({
         where: { campaignId, name: { equals: npc.name, mode: 'insensitive' } },
       });
       if (!existing) continue;
@@ -114,7 +114,7 @@ async function syncNpcStateToCampaign(campaignId, stateChanges) {
       if (npc.role) data.role = npc.role;
       if (npc.location) data.lastLocation = npc.location;
       if (Object.keys(data).length > 0) {
-        await prisma.campaignNPC.update({ where: { id: existing.id }, data });
+        await prisma.npc.update({ where: { id: existing.id }, data });
       }
     } catch (err) {
       log.warn({ err: err?.message, npcName: npc.name }, 'NPC sync to CampaignNPC failed');
@@ -180,7 +180,7 @@ export async function runMultiplayerSceneFlow({
   let campaignNpcs = null;
   if (room.campaignId) {
     try {
-      const rawNpcs = await prisma.campaignNPC.findMany({
+      const rawNpcs = await prisma.npc.findMany({
         where: { campaignId: room.campaignId, alive: true },
         select: {
           name: true, role: true, activeGoal: true,

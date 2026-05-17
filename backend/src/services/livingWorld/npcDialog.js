@@ -47,7 +47,7 @@ export async function generate({
     return fallbackReply('[NPC milczy w zamyśleniu]');
   }
 
-  let npc = await prisma.worldNPC.findUnique({ where: { id: worldNpcId } });
+  let npc = await prisma.npc.findUnique({ where: { id: worldNpcId } });
   if (!npc) return fallbackReply('[Nie ma tu nikogo o takim imieniu]');
   if (npc.alive === false) return fallbackReply('[Cisza. Nie ma już z kim rozmawiać.]');
 
@@ -61,7 +61,7 @@ export async function generate({
   // generujemy i zapisujemy zanim zbudujemy system prompt. Zsynchronizuj też
   // z odpowiednim CampaignNPC shadow, jeśli istnieje.
   if (!npc.dialect || !npc.appearance) {
-    const shadow = await prisma.campaignNPC.findFirst({
+    const shadow = await prisma.npc.findFirst({
       where: { campaignId, worldNpcId },
       select: { id: true },
     }).catch(() => null);

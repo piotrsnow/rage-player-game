@@ -69,7 +69,7 @@ export async function adminLocationRoutes(fastify) {
     },
   }, async (request) => {
     const { search, limit = 50 } = request.query;
-    return prisma.worldLocation.findMany({
+    return prisma.location.findMany({
       where: search
         ? {
             OR: [
@@ -85,7 +85,7 @@ export async function adminLocationRoutes(fastify) {
 
   fastify.get('/world-locations/:locId', { schema: { params: WORLD_LOC_PARAM } }, async (request, reply) => {
     const { locId } = request.params;
-    const loc = await prisma.worldLocation.findUnique({ where: { id: locId } });
+    const loc = await prisma.location.findUnique({ where: { id: locId } });
     if (!loc) return reply.code(404).send({ error: 'WorldLocation not found' });
     return loc;
   });
@@ -101,15 +101,15 @@ export async function adminLocationRoutes(fastify) {
     if (Object.keys(data).length === 0) {
       return reply.code(400).send({ error: 'No editable fields provided' });
     }
-    const exists = await prisma.worldLocation.findUnique({ where: { id: locId }, select: { id: true } });
+    const exists = await prisma.location.findUnique({ where: { id: locId }, select: { id: true } });
     if (!exists) return reply.code(404).send({ error: 'WorldLocation not found' });
-    return prisma.worldLocation.update({ where: { id: locId }, data });
+    return prisma.location.update({ where: { id: locId }, data });
   });
 
   // ── Campaign-scoped locations ──
   fastify.get('/:id/locations', { schema: { params: CAMPAIGN_PARAM } }, async (request) => {
     const { id } = request.params;
-    return prisma.campaignLocation.findMany({
+    return prisma.location.findMany({
       where: { campaignId: id },
       orderBy: { name: 'asc' },
     });
@@ -117,7 +117,7 @@ export async function adminLocationRoutes(fastify) {
 
   fastify.get('/:id/locations/:locId', { schema: { params: CAMPAIGN_LOC_PARAM } }, async (request, reply) => {
     const { id, locId } = request.params;
-    const loc = await prisma.campaignLocation.findFirst({
+    const loc = await prisma.location.findFirst({
       where: { id: locId, campaignId: id },
     });
     if (!loc) return reply.code(404).send({ error: 'CampaignLocation not found' });
@@ -138,7 +138,7 @@ export async function adminLocationRoutes(fastify) {
     const created = await withSnapshot(
       id,
       { reason: 'admin-create-location', createdBy: request.user.id },
-      () => prisma.campaignLocation.create({ data: { ...data, campaignId: id } }),
+      () => prisma.location.create({ data: { ...data, campaignId: id } }),
     );
     return created;
   });
@@ -154,7 +154,7 @@ export async function adminLocationRoutes(fastify) {
     if (Object.keys(data).length === 0) {
       return reply.code(400).send({ error: 'No editable fields provided' });
     }
-    const exists = await prisma.campaignLocation.findFirst({
+    const exists = await prisma.location.findFirst({
       where: { id: locId, campaignId: id }, select: { id: true },
     });
     if (!exists) return reply.code(404).send({ error: 'CampaignLocation not found' });
@@ -162,14 +162,14 @@ export async function adminLocationRoutes(fastify) {
     const updated = await withSnapshot(
       id,
       { reason: 'admin-edit-location', createdBy: request.user.id },
-      () => prisma.campaignLocation.update({ where: { id: locId }, data }),
+      () => prisma.location.update({ where: { id: locId }, data }),
     );
     return updated;
   });
 
   fastify.delete('/:id/locations/:locId', { schema: { params: CAMPAIGN_LOC_PARAM } }, async (request, reply) => {
     const { id, locId } = request.params;
-    const exists = await prisma.campaignLocation.findFirst({
+    const exists = await prisma.location.findFirst({
       where: { id: locId, campaignId: id }, select: { id: true },
     });
     if (!exists) return reply.code(404).send({ error: 'CampaignLocation not found' });
@@ -177,7 +177,7 @@ export async function adminLocationRoutes(fastify) {
     await withSnapshot(
       id,
       { reason: 'admin-delete-location', createdBy: request.user.id },
-      () => prisma.campaignLocation.delete({ where: { id: locId } }),
+      () => prisma.location.delete({ where: { id: locId } }),
     );
     return { ok: true };
   });

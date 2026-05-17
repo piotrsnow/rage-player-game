@@ -104,7 +104,7 @@ export async function applyGraphUpdate(update, { campaignId }) {
         const r = safeValidateTacticalGrid(node.tacticalGrid);
         if (r.success) data.tacticalGrid = node.tacticalGrid;
       }
-      const row = await prisma.campaignLocation.create({ data });
+      const row = await prisma.location.create({ data });
       nameIndex.set(slug, { kind: LOCATION_KIND_CAMPAIGN, id: row.id });
       applied.nodes++;
 
@@ -114,7 +114,7 @@ export async function applyGraphUpdate(update, { campaignId }) {
         tags: data.tags || [],
       });
       if (matchedUrl) {
-        await prisma.campaignLocation.update({ where: { id: row.id }, data: { nodeImageUrl: matchedUrl } });
+        await prisma.location.update({ where: { id: row.id }, data: { nodeImageUrl: matchedUrl } });
       }
     } catch (err) {
       log.warn({ err: err?.message, node: node.name }, 'Failed to create graph node');
@@ -181,7 +181,7 @@ export async function applyGraphUpdate(update, { campaignId }) {
     const target = nameIndex.get(normalize(move.toLocationName));
     if (!target) continue;
     try {
-      await prisma.campaignNPC.updateMany({
+      await prisma.npc.updateMany({
         where: { campaignId, name: move.npcName },
         data: { lastLocationKind: target.kind, lastLocationId: target.id },
       });
@@ -200,8 +200,8 @@ export async function applyGraphUpdate(update, { campaignId }) {
  */
 async function buildNameIndex(campaignId) {
   const [worldLocs, campaignLocs] = await Promise.all([
-    prisma.worldLocation.findMany({ select: { id: true, canonicalName: true, displayName: true } }),
-    prisma.campaignLocation.findMany({ where: { campaignId }, select: { id: true, name: true, canonicalSlug: true } }),
+    prisma.location.findMany({ select: { id: true, canonicalName: true, displayName: true } }),
+    prisma.location.findMany({ where: { campaignId }, select: { id: true, name: true, canonicalSlug: true } }),
   ]);
   const index = new Map();
   for (const r of worldLocs) {
@@ -273,12 +273,12 @@ export async function runGraphConsistencyCheck(campaignId) {
       where: { isActive: true, OR: [{ campaignId: null }, { campaignId }] },
       select: { id: true, fromKind: true, fromId: true, toKind: true, toId: true, edgeType: true, category: true, bidirectional: true },
     }),
-    prisma.campaignNPC.findMany({
+    prisma.npc.findMany({
       where: { campaignId },
       select: { id: true, name: true, lastLocationKind: true, lastLocationId: true },
     }),
-    prisma.worldLocation.findMany({ select: { id: true } }),
-    prisma.campaignLocation.findMany({ where: { campaignId }, select: { id: true } }),
+    prisma.location.findMany({ select: { id: true } }),
+    prisma.location.findMany({ where: { campaignId }, select: { id: true } }),
   ]);
 
   const validNodes = new Set();

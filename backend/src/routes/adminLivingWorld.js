@@ -76,8 +76,8 @@ export async function adminLivingWorldRoutes(fastify) {
     if (campaignId) where.campaignShadows = { some: { campaignId } };
 
     const [total, rows] = await Promise.all([
-      prisma.worldNPC.count({ where }),
-      prisma.worldNPC.findMany({
+      prisma.npc.count({ where }),
+      prisma.npc.findMany({
         where,
         orderBy: { updatedAt: 'desc' },
         take: limit,
@@ -141,10 +141,10 @@ export async function adminLivingWorldRoutes(fastify) {
     const validated = [];
     for (const item of items) {
       if (item.kind === 'world-npc') {
-        const row = await prisma.worldNPC.findUnique({ where: { id: item.id }, select: { id: true } });
+        const row = await prisma.npc.findUnique({ where: { id: item.id }, select: { id: true } });
         if (row) validated.push(item);
       } else if (item.kind === 'campaign-npc') {
-        const row = await prisma.campaignNPC.findUnique({ where: { id: item.id }, select: { id: true } });
+        const row = await prisma.npc.findUnique({ where: { id: item.id }, select: { id: true } });
         if (row) validated.push(item);
       } else if (item.kind === 'character') {
         const row = await prisma.character.findUnique({ where: { id: item.id }, select: { id: true } });
@@ -163,7 +163,7 @@ export async function adminLivingWorldRoutes(fastify) {
 
   fastify.get('/npcs/:id', guard(), async (request, reply) => {
     const { id } = request.params;
-    const npc = await prisma.worldNPC.findUnique({
+    const npc = await prisma.npc.findUnique({
       where: { id },
       include: {
         currentLocation: { select: { id: true, canonicalName: true } },
@@ -196,7 +196,7 @@ export async function adminLivingWorldRoutes(fastify) {
         where: { npcId: id },
         include: { location: { select: { id: true, canonicalName: true } } },
       }),
-      prisma.campaignNPC.findMany({
+      prisma.npc.findMany({
         where: { worldNpcId: id },
         select: {
           id: true, npcId: true, name: true, alive: true, disposition: true,
@@ -266,7 +266,7 @@ export async function adminLivingWorldRoutes(fastify) {
       });
       where.id = { in: discovered.map((d) => d.locationId) };
     }
-    const rows = await prisma.worldLocation.findMany({
+    const rows = await prisma.location.findMany({
       where,
       orderBy: { updatedAt: 'desc' },
       take: limit,
@@ -285,7 +285,7 @@ export async function adminLivingWorldRoutes(fastify) {
 
   fastify.get('/locations/:id', guard(), async (request, reply) => {
     const { id } = request.params;
-    const location = await prisma.worldLocation.findUnique({
+    const location = await prisma.location.findUnique({
       where: { id },
       include: {
         parent: { select: { id: true, canonicalName: true } },
@@ -293,11 +293,11 @@ export async function adminLivingWorldRoutes(fastify) {
     });
     if (!location) return reply.code(404).send({ error: 'Not found' });
     const [npcs, homeNpcs, events, knowledge, sublocations, roads, discoveryCount, relatedQuests, locationSummaries] = await Promise.all([
-      prisma.worldNPC.findMany({
+      prisma.npc.findMany({
         where: { currentLocationId: id, alive: true },
         select: { id: true, name: true, role: true, category: true, companionOfCampaignId: true, pausedAt: true },
       }),
-      prisma.worldNPC.findMany({
+      prisma.npc.findMany({
         where: { homeLocationId: id },
         select: { id: true, name: true, role: true, alive: true, category: true },
       }),
@@ -311,7 +311,7 @@ export async function adminLivingWorldRoutes(fastify) {
         orderBy: { addedAt: 'desc' },
         take: 50,
       }),
-      prisma.worldLocation.findMany({
+      prisma.location.findMany({
         where: { parentLocationId: id },
         select: { id: true, canonicalName: true, locationType: true, dangerLevel: true },
         orderBy: { canonicalName: 'asc' },
@@ -336,7 +336,7 @@ export async function adminLivingWorldRoutes(fastify) {
         orderBy: { updatedAt: 'desc' },
         take: 50,
       }),
-      prisma.campaignLocationSummary.findMany({
+      prisma.locationSummary.findMany({
         where: { locationName: location.canonicalName },
         include: { campaign: { select: { id: true, name: true } } },
         orderBy: { updatedAt: 'desc' },
@@ -425,7 +425,7 @@ export async function adminLivingWorldRoutes(fastify) {
   fastify.post('/npcs/:id/release-lock', guard(), async (request, reply) => {
     const { id } = request.params;
     try {
-      const npc = await prisma.worldNPC.findUnique({
+      const npc = await prisma.npc.findUnique({
         where: { id },
         select: { lockedByCampaignId: true },
       });
@@ -448,7 +448,7 @@ export async function adminLivingWorldRoutes(fastify) {
   fastify.post('/npcs/:id/force-unpause', guard(), async (request, reply) => {
     const { id } = request.params;
     try {
-      const updated = await prisma.worldNPC.update({
+      const updated = await prisma.npc.update({
         where: { id },
         data: { pausedAt: null, pauseSnapshot: null },
       });
@@ -506,7 +506,7 @@ export async function adminLivingWorldRoutes(fastify) {
   // edges are aggregated as a `roomCount` on the node (not rendered).
   fastify.get('/graph', guard(), async () => {
     const [locations, edges] = await Promise.all([
-      prisma.worldLocation.findMany({
+      prisma.location.findMany({
         where: { parentLocationId: null },
         select: {
           id: true,
@@ -549,7 +549,7 @@ export async function adminLivingWorldRoutes(fastify) {
       .map((l) => l.id);
     let roomCounts = new Map();
     if (dungeonIds.length > 0) {
-      const roomsGrouped = await prisma.worldLocation.groupBy({
+      const roomsGrouped = await prisma.location.groupBy({
         by: ['parentLocationId'],
         where: { parentLocationId: { in: dungeonIds }, locationType: 'dungeon_room' },
         _count: true,
@@ -563,7 +563,7 @@ export async function adminLivingWorldRoutes(fastify) {
     const topLevelIds = locations.map((l) => l.id);
     let childCounts = new Map();
     if (topLevelIds.length > 0) {
-      const grouped = await prisma.worldLocation.groupBy({
+      const grouped = await prisma.location.groupBy({
         by: ['parentLocationId'],
         where: { parentLocationId: { in: topLevelIds }, locationType: { not: 'dungeon_room' } },
         _count: true,
@@ -619,7 +619,7 @@ export async function adminLivingWorldRoutes(fastify) {
   // separate from `/graph` so the existing map tab stays unchanged.
   fastify.get('/canon-graph', guard(), async () => {
     const [locations, edges, npcs] = await Promise.all([
-      prisma.worldLocation.findMany({
+      prisma.location.findMany({
         where: { parentLocationId: null },
         select: {
           id: true, canonicalName: true, displayName: true, locationType: true,
@@ -635,7 +635,7 @@ export async function adminLivingWorldRoutes(fastify) {
           direction: true, gated: true,
         },
       }),
-      prisma.worldNPC.findMany({
+      prisma.npc.findMany({
         where: { alive: true },
         select: {
           id: true, canonicalId: true, name: true, role: true, category: true,
@@ -724,7 +724,7 @@ export async function adminLivingWorldRoutes(fastify) {
         NOT: { canonicalName: { startsWith: '__draft::' } },
       } : {}),
     };
-    const orphanWorldRows = await prisma.worldLocation.findMany({ where: orphanWorldWhere });
+    const orphanWorldRows = await prisma.location.findMany({ where: orphanWorldWhere });
 
     for (const r of orphanWorldRows) {
       nodeMap.set(`${LOCATION_KIND_WORLD}:${r.id}`, { ...r, _kind: LOCATION_KIND_WORLD });
@@ -734,7 +734,7 @@ export async function adminLivingWorldRoutes(fastify) {
       const orphanCampaignWhere = seenCampaignLocIds.size > 0
         ? { id: { notIn: [...seenCampaignLocIds] } }
         : {};
-      const orphanCampaignRows = await prisma.campaignLocation.findMany({ where: orphanCampaignWhere });
+      const orphanCampaignRows = await prisma.location.findMany({ where: orphanCampaignWhere });
       for (const r of orphanCampaignRows) {
         nodeMap.set(`${LOCATION_KIND_CAMPAIGN}:${r.id}`, { ...r, _kind: LOCATION_KIND_CAMPAIGN });
       }
@@ -955,7 +955,7 @@ export async function adminLivingWorldRoutes(fastify) {
       }))
       .filter((f) => f.factionId);
 
-    const worldNpcs = await prisma.worldNPC.findMany({
+    const worldNpcs = await prisma.npc.findMany({
       where: {
         alive: true,
         OR: [{ currentLocationId: { not: null } }, { homeLocationId: { not: null } }],
@@ -1080,13 +1080,13 @@ export async function adminLivingWorldRoutes(fastify) {
     if (nodeImageUrl === undefined) return reply.code(400).send({ error: 'nodeImageUrl required' });
 
     if (kind === 'world') {
-      const row = await prisma.worldLocation.findUnique({ where: { id: nodeId }, select: { id: true } });
+      const row = await prisma.location.findUnique({ where: { id: nodeId }, select: { id: true } });
       if (!row) return reply.code(404).send({ error: 'WorldLocation not found' });
-      await prisma.worldLocation.update({ where: { id: nodeId }, data: { nodeImageUrl: nodeImageUrl || null } });
+      await prisma.location.update({ where: { id: nodeId }, data: { nodeImageUrl: nodeImageUrl || null } });
     } else {
-      const row = await prisma.campaignLocation.findFirst({ where: { id: nodeId }, select: { id: true } });
+      const row = await prisma.location.findFirst({ where: { id: nodeId }, select: { id: true } });
       if (!row) return reply.code(404).send({ error: 'CampaignLocation not found' });
-      await prisma.campaignLocation.update({ where: { id: nodeId }, data: { nodeImageUrl: nodeImageUrl || null } });
+      await prisma.location.update({ where: { id: nodeId }, data: { nodeImageUrl: nodeImageUrl || null } });
     }
 
     return { ok: true, nodeImageUrl: nodeImageUrl || null };
@@ -1138,7 +1138,7 @@ export async function adminLivingWorldRoutes(fastify) {
       (await prisma.campaign.findMany({ select: { id: true } })).map((c) => c.id),
     );
 
-    const drafts = await prisma.worldLocation.findMany({
+    const drafts = await prisma.location.findMany({
       where: {
         canonicalName: { startsWith: '__draft::' },
         createdAt: { lt: cutoff },
@@ -1153,7 +1153,7 @@ export async function adminLivingWorldRoutes(fastify) {
     });
 
     if (toDelete.length > 0) {
-      await prisma.worldLocation.deleteMany({
+      await prisma.location.deleteMany({
         where: { id: { in: toDelete.map((d) => d.id) } },
       });
     }
@@ -1253,7 +1253,7 @@ export async function adminLivingWorldRoutes(fastify) {
     },
   }), async (request, reply) => {
     const { parentId } = request.params;
-    const parent = await prisma.worldLocation.findUnique({
+    const parent = await prisma.location.findUnique({
       where: { id: parentId },
       select: {
         id: true, canonicalName: true, displayName: true, locationType: true,
@@ -1262,7 +1262,7 @@ export async function adminLivingWorldRoutes(fastify) {
     if (!parent) {
       return reply.code(404).send({ error: 'parent not found' });
     }
-    const children = await prisma.worldLocation.findMany({
+    const children = await prisma.location.findMany({
       where: {
         parentLocationId: parentId,
         locationType: { not: 'dungeon_room' },
@@ -1808,7 +1808,7 @@ export async function adminLivingWorldRoutes(fastify) {
       if (!campaign) return reply.code(404).send({ error: 'campaign not found' });
 
       const { nodes, edges } = await loadCampaignGraph(id);
-      const npcs = await prisma.campaignNPC.findMany({
+      const npcs = await prisma.npc.findMany({
         where: { campaignId: id },
         select: { id: true, name: true, lastLocationKind: true, lastLocationId: true },
       });
@@ -1895,13 +1895,13 @@ export async function adminLivingWorldRoutes(fastify) {
           continue;
         }
         try {
-          const existing = await prisma.campaignLocation.findFirst({
+          const existing = await prisma.location.findFirst({
             where: { campaignId: id, name: node.name },
           });
           if (existing) {
             nameToId.set(node.id, { kind: LOCATION_KIND_CAMPAIGN, id: existing.id });
           } else {
-            const row = await prisma.campaignLocation.create({
+            const row = await prisma.location.create({
               data: {
                 campaignId: id,
                 name: node.name,
@@ -1959,7 +1959,7 @@ export async function adminLivingWorldRoutes(fastify) {
       for (const pos of npcPositions) {
         if (!pos.npcId || !pos.locationId) continue;
         try {
-          await prisma.campaignNPC.updateMany({
+          await prisma.npc.updateMany({
             where: { id: pos.npcId, campaignId: id },
             data: { lastLocationKind: pos.locationKind || LOCATION_KIND_WORLD, lastLocationId: pos.locationId },
           });
@@ -2021,7 +2021,7 @@ export async function adminLivingWorldRoutes(fastify) {
       const where = {};
       if (searchFilter) where.name = searchFilter;
       if (campaignId) where.campaignShadows = { some: { campaignId } };
-      queries.WorldNPC = prisma.worldNPC.findMany({
+      queries.WorldNPC = prisma.npc.findMany({
         where, take: limit, skip, orderBy: { updatedAt: 'desc' },
         select: { id: true, name: true, role: true, alive: true, category: true, currentLocationId: true, updatedAt: true, globallyActive: true, softDeletedAt: true, originCampaignId: true },
       });
@@ -2030,7 +2030,7 @@ export async function adminLivingWorldRoutes(fastify) {
       const where = {};
       if (searchFilter) where.canonicalName = searchFilter;
       if (campaignWorldLocIds) where.id = { in: campaignWorldLocIds };
-      queries.WorldLocation = prisma.worldLocation.findMany({
+      queries.WorldLocation = prisma.location.findMany({
         where, take: limit, skip, orderBy: { updatedAt: 'desc' },
         select: { id: true, canonicalName: true, locationType: true, region: true, parentLocationId: true, updatedAt: true, globallyActive: true, softDeletedAt: true, originCampaignId: true },
       });
@@ -2051,7 +2051,7 @@ export async function adminLivingWorldRoutes(fastify) {
       const where = {};
       if (searchFilter) where.name = searchFilter;
       if (campaignId) where.campaignId = campaignId;
-      queries.CampaignNPC = prisma.campaignNPC.findMany({
+      queries.CampaignNPC = prisma.npc.findMany({
         where, take: limit, skip, orderBy: { updatedAt: 'desc' },
         select: {
           id: true, name: true, campaignId: true, alive: true, worldNpcId: true,
@@ -2064,7 +2064,7 @@ export async function adminLivingWorldRoutes(fastify) {
       const where = {};
       if (searchFilter) where.name = searchFilter;
       if (campaignId) where.campaignId = campaignId;
-      queries.CampaignLocation = prisma.campaignLocation.findMany({
+      queries.CampaignLocation = prisma.location.findMany({
         where, take: limit, skip, orderBy: { createdAt: 'desc' },
         select: {
           id: true, name: true, locationType: true, campaignId: true,

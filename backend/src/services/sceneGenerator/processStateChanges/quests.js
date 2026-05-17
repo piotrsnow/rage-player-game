@@ -156,14 +156,14 @@ export async function fireMoveNpcToPlayerTrigger(campaignId, onComplete) {
 
   // Resolve NPC: canonicalId → name → CampaignNPC.npcId
   let worldNpcId = null;
-  const byCanonical = await prisma.worldNPC.findFirst({
+  const byCanonical = await prisma.npc.findFirst({
     where: { canonicalId: npcIdent },
     select: { id: true },
   }).catch(() => null);
   if (byCanonical) {
     worldNpcId = byCanonical.id;
   } else {
-    const byName = await prisma.worldNPC.findFirst({
+    const byName = await prisma.npc.findFirst({
       where: { name: { equals: npcIdent, mode: 'insensitive' } },
       select: { id: true },
     }).catch(() => null);
@@ -178,7 +178,7 @@ export async function fireMoveNpcToPlayerTrigger(campaignId, onComplete) {
 
   // Fallback: ephemeral CampaignNPC (no WorldNPC link). Name-match inside
   // the campaign and update in-place.
-  const ephemeral = await prisma.campaignNPC.findFirst({
+  const ephemeral = await prisma.npc.findFirst({
     where: {
       campaignId,
       OR: [
@@ -189,7 +189,7 @@ export async function fireMoveNpcToPlayerTrigger(campaignId, onComplete) {
     select: { id: true },
   }).catch(() => null);
   if (ephemeral) {
-    await prisma.campaignNPC.update({
+    await prisma.npc.update({
       where: { id: ephemeral.id },
       data: {
         lastLocationKind: playerLocationKind || LOCATION_KIND_WORLD,

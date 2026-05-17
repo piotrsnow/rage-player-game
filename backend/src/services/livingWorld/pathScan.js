@@ -119,7 +119,7 @@ export function computePathScan(fromX, fromY, toX, toY, locations, { radiusKm = 
  */
 export async function scanPath(campaignId, fromX, fromY, toX, toY, options = {}) {
   const [worldLocs, campaignLocs] = await Promise.all([
-    prisma.worldLocation.findMany({
+    prisma.location.findMany({
       where: { parentLocationId: null },
       select: {
         id: true,
@@ -132,7 +132,7 @@ export async function scanPath(campaignId, fromX, fromY, toX, toY, options = {})
       },
     }),
     campaignId
-      ? prisma.campaignLocation.findMany({
+      ? prisma.location.findMany({
           where: { campaignId, parentLocationId: null },
           select: {
             id: true,

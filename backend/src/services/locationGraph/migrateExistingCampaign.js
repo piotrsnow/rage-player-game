@@ -31,8 +31,8 @@ export async function migrateExistingCampaignGraph(campaignId) {
 
   // Build name→ref index for existing locations
   const [worldLocs, campaignLocs] = await Promise.all([
-    prisma.worldLocation.findMany({ select: { id: true, canonicalName: true, displayName: true } }),
-    prisma.campaignLocation.findMany({ where: { campaignId }, select: { id: true, name: true } }),
+    prisma.location.findMany({ select: { id: true, canonicalName: true, displayName: true } }),
+    prisma.location.findMany({ where: { campaignId }, select: { id: true, name: true } }),
   ]);
   const nameIndex = new Map();
   for (const r of worldLocs) {
@@ -49,7 +49,7 @@ export async function migrateExistingCampaignGraph(campaignId) {
     if (nameIndex.has(normalize(name))) continue;
 
     try {
-      const row = await prisma.campaignLocation.create({
+      const row = await prisma.location.create({
         data: {
           campaignId,
           name,

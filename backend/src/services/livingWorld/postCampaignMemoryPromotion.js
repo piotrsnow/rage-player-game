@@ -68,7 +68,7 @@ export async function promoteExperienceLogsToCanonical(campaignId, { dryRun = fa
 
   let shadows = [];
   try {
-    shadows = await prisma.campaignNPC.findMany({
+    shadows = await prisma.npc.findMany({
       where: { campaignId, worldNpcId: { not: null } },
       select: {
         id: true,
@@ -100,7 +100,7 @@ export async function promoteExperienceLogsToCanonical(campaignId, { dryRun = fa
     }
 
     try {
-      const canonical = await prisma.worldNPC.findUnique({
+      const canonical = await prisma.npc.findUnique({
         where: { id: shadow.worldNpcId },
         select: { id: true },
       });

@@ -15,11 +15,11 @@ export async function findSimilarNodeImage({ locationType, biome, tags }) {
   const normalizedBiome = biome?.toLowerCase().trim() || null;
 
   const [worldRows, campaignRows] = await Promise.all([
-    prisma.worldLocation.findMany({
+    prisma.location.findMany({
       where: { nodeImageUrl: { not: null }, locationType },
       select: { nodeImageUrl: true, biome: true, tags: true },
     }),
-    prisma.campaignLocation.findMany({
+    prisma.location.findMany({
       where: { nodeImageUrl: { not: null }, locationType },
       select: { nodeImageUrl: true, biome: true, tags: true },
     }),

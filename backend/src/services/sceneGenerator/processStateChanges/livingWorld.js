@@ -110,11 +110,11 @@ export async function processLocationMentions(campaignId, mentions) {
   // common case where the LLM emits the human-readable name straight from
   // Key NPCs / Active Quests prompt blocks).
   const [wlByUuid, clByUuid] = await Promise.all([
-    prisma.worldLocation.findMany({
+    prisma.location.findMany({
       where: { id: { in: uniqLocationRefs } },
       select: { id: true },
     }).catch(() => []),
-    prisma.campaignLocation.findMany({
+    prisma.location.findMany({
       where: { id: { in: uniqLocationRefs }, campaignId },
       select: { id: true },
     }).catch(() => []),
@@ -140,7 +140,7 @@ export async function processLocationMentions(campaignId, mentions) {
     { name: { equals: ident, mode: 'insensitive' } },
   ]);
   const campaignNpcRows = identOrClauses.length > 0
-    ? await prisma.campaignNPC.findMany({
+    ? await prisma.npc.findMany({
       where: { campaignId, OR: identOrClauses },
     }).catch(() => [])
     : [];
@@ -171,7 +171,7 @@ export async function processLocationMentions(campaignId, mentions) {
     ...fallbackNameIdents.map((ident) => ({ name: { equals: ident, mode: 'insensitive' } })),
   ];
   const worldNpcRows = worldNpcOrClauses.length > 0
-    ? await prisma.worldNPC.findMany({ where: { OR: worldNpcOrClauses } }).catch(() => [])
+    ? await prisma.npc.findMany({ where: { OR: worldNpcOrClauses } }).catch(() => [])
     : [];
   const worldNpcById = new Map(worldNpcRows.map((n) => [n.id, n]));
 

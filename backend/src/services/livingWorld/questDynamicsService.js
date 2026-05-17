@@ -82,7 +82,7 @@ export async function mutateQuest({ campaignId, questRow, mutation, reason, scen
     // their dialog in future scenes reflects the changed quest state.
     if ((mutation === 'stall' || mutation === 'fail') && questRow.questGiverId && campaignId) {
       try {
-        const giverNpc = await prisma.campaignNPC.findFirst({
+        const giverNpc = await prisma.npc.findFirst({
           where: { campaignId, name: questRow.questGiverId },
           select: { id: true },
         });
@@ -215,7 +215,7 @@ export async function evaluateQuestImpactFromTick(worldNpcId, action) {
   if (!worldNpcId || !action?.kind) return { affected: 0 };
 
   // Resolve WorldNPC name + linked CampaignNPCs (które mogą być questGivers)
-  const worldNpc = await prisma.worldNPC.findUnique({
+  const worldNpc = await prisma.npc.findUnique({
     where: { id: worldNpcId },
     select: { id: true, name: true, alive: true },
   });

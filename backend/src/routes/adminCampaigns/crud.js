@@ -104,11 +104,11 @@ export async function adminCrudRoutes(fastify) {
     ] = await Promise.all([
       prisma.campaign.findUnique({ where: { id } }),
       prisma.campaignParticipant.findMany({ where: { campaignId: id } }),
-      prisma.campaignNPC.findMany({ where: { campaignId: id }, orderBy: { name: 'asc' } }),
+      prisma.npc.findMany({ where: { campaignId: id }, orderBy: { name: 'asc' } }),
       prisma.campaignQuest.findMany({ where: { campaignId: id }, orderBy: { name: 'asc' } }),
       prisma.campaignQuestObjective.findMany({ where: { quest: { campaignId: id } } }),
       prisma.campaignQuestPrerequisite.findMany({ where: { quest: { campaignId: id } } }),
-      prisma.campaignLocation.findMany({ where: { campaignId: id }, orderBy: { name: 'asc' } }),
+      prisma.location.findMany({ where: { campaignId: id }, orderBy: { name: 'asc' } }),
       prisma.locationEdge.findMany({ where: { campaignId: id } }),
       prisma.campaignEdge.findMany({ where: { campaignId: id } }),
       prisma.campaignScene.findMany({

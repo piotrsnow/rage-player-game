@@ -37,12 +37,12 @@ async function loadCampaignSnapshot(campaignId) {
     participants,
   ] = await Promise.all([
     prisma.campaign.findUnique({ where: { id: campaignId } }),
-    prisma.campaignNPC.findMany({ where: { campaignId } }),
+    prisma.npc.findMany({ where: { campaignId } }),
     prisma.campaignQuest.findMany({ where: { campaignId } }),
     prisma.campaignQuestObjective.findMany({ where: { quest: { campaignId } } }),
     prisma.campaignQuestPrerequisite.findMany({ where: { quest: { campaignId } } }),
     prisma.locationEdge.findMany({ where: { campaignId } }),
-    prisma.campaignLocation.findMany({ where: { campaignId } }),
+    prisma.location.findMany({ where: { campaignId } }),
     prisma.campaignParticipant.findMany({ where: { campaignId } }),
   ]);
 
@@ -73,7 +73,7 @@ async function loadCampaignSnapshot(campaignId) {
   }
 
   const worldLocations = worldLocIds.size > 0
-    ? await prisma.worldLocation.findMany({
+    ? await prisma.location.findMany({
         where: { id: { in: Array.from(worldLocIds) } },
         select: { id: true },
       })
@@ -85,7 +85,7 @@ async function loadCampaignSnapshot(campaignId) {
     new Set(npcs.map((n) => n.worldNpcId).filter(Boolean)),
   );
   const worldNpcs = worldNpcIds.length > 0
-    ? await prisma.worldNPC.findMany({
+    ? await prisma.npc.findMany({
         where: { id: { in: worldNpcIds } },
         select: { id: true, alive: true, name: true },
       })

@@ -79,10 +79,10 @@ async function loadNeighborNames(campaignId, ref) {
 
   const [worldLocs, campLocs] = await Promise.all([
     worldIds.length > 0
-      ? prisma.worldLocation.findMany({ where: { id: { in: worldIds } }, select: { id: true, canonicalName: true, displayName: true, name: true } })
+      ? prisma.location.findMany({ where: { id: { in: worldIds } }, select: { id: true, canonicalName: true, displayName: true, name: true } })
       : [],
     campIds.length > 0
-      ? prisma.campaignLocation.findMany({ where: { id: { in: campIds } }, select: { id: true, name: true } })
+      ? prisma.location.findMany({ where: { id: { in: campIds } }, select: { id: true, name: true } })
       : [],
   ]);
 
@@ -102,7 +102,7 @@ async function loadNeighborNames(campaignId, ref) {
 
 async function loadNpcsAtLocation(campaignId, ref) {
   if (!ref?.kind || !ref?.id) return [];
-  const npcs = await prisma.campaignNPC.findMany({
+  const npcs = await prisma.npc.findMany({
     where: {
       campaignId,
       lastLocationKind: ref.kind,

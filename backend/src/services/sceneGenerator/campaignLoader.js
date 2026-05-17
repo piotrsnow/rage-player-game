@@ -34,7 +34,7 @@ export async function loadCampaignState(campaignId) {
         pendingProvidence: true,
       },
     }),
-    prisma.campaignNPC.findMany({
+    prisma.npc.findMany({
       where: { campaignId },
       include: { relationships: true },
     }),
@@ -89,11 +89,11 @@ export async function loadCampaignState(campaignId) {
   if (campaign.currentLocationKind && campaign.currentLocationId) {
     try {
       const row = campaign.currentLocationKind === 'world'
-        ? await prisma.worldLocation.findUnique({
+        ? await prisma.location.findUnique({
             where: { id: campaign.currentLocationId },
             select: { locationType: true },
           })
-        : await prisma.campaignLocation.findUnique({
+        : await prisma.location.findUnique({
             where: { id: campaign.currentLocationId },
             select: { locationType: true },
           });

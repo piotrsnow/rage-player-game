@@ -26,7 +26,7 @@ const log = childLogger({ module: 'sceneGenerator' });
 const RETURN_VISIT_SCENE_GAP = 2;
 
 /**
- * Pure — compute the `prisma.campaignNPC.update` payload that captures this
+ * Pure — compute the `prisma.npc.update` payload that captures this
  * scene's interaction with an existing CampaignNPC. Always increments
  * `interactionCount` and stamps the scene cursor. Conditionally increments
  * `questInvolvementCount` when the sceneIndex gap since last interaction
@@ -127,13 +127,13 @@ export async function processNpcChanges(campaignId, npcs, { livingWorldEnabled =
       // Fallback: slug-based lookup (legacy name-based identity).
       let existing = null;
       if (npcChange.campaignNpcId) {
-        existing = await prisma.campaignNPC.findUnique({
+        existing = await prisma.npc.findUnique({
           where: { id: npcChange.campaignNpcId },
         });
         if (existing && existing.campaignId !== campaignId) existing = null;
       }
       if (!existing) {
-        existing = await prisma.campaignNPC.findUnique({
+        existing = await prisma.npc.findUnique({
           where: { campaignId_npcId: { campaignId, npcId } },
         });
       }
@@ -254,7 +254,7 @@ export async function processNpcChanges(campaignId, npcs, { livingWorldEnabled =
 
         const hasContentUpdate = Object.keys(contentUpdate).length > 0 || Array.isArray(npcChange.relationships);
         const statsDelta = computeInteractionDelta(existing, sceneIndex);
-        const updated = await prisma.campaignNPC.update({
+        const updated = await prisma.npc.update({
           where: { id: existing.id },
           data: { ...statsDelta, ...contentUpdate },
         });
@@ -319,7 +319,7 @@ export async function processNpcChanges(campaignId, npcs, { livingWorldEnabled =
               const prevId = cloned.lastLocationId;
               const nextKind = locRef?.kind || cloned.lastLocationKind || null;
               const nextId = locRef?.id || cloned.lastLocationId || null;
-              created = await prisma.campaignNPC.update({
+              created = await prisma.npc.update({
                 where: { id: cloned.id },
                 data: {
                   gender: coerceGender(npcChange.gender, npcChange.name),
@@ -353,7 +353,7 @@ export async function processNpcChanges(campaignId, npcs, { livingWorldEnabled =
           }
 
           if (!created) {
-            created = await prisma.campaignNPC.create({
+            created = await prisma.npc.create({
               data: {
                 campaignId,
                 npcId,
@@ -419,7 +419,7 @@ export async function processNpcChanges(campaignId, npcs, { livingWorldEnabled =
     .map(async (change) => {
       try {
         const npcId = change.name.toLowerCase().replace(/\s+/g, '_');
-        const cn = await prisma.campaignNPC.findUnique({
+        const cn = await prisma.npc.findUnique({
           where: { campaignId_npcId: { campaignId, npcId } },
           select: { id: true, name: true },
         });

@@ -52,7 +52,7 @@ export async function adminNpcRoutes(fastify) {
   // ── Campaign NPCs ──
   fastify.get('/:id/npcs', { schema: { params: CAMPAIGN_PARAM } }, async (request) => {
     const { id } = request.params;
-    return prisma.campaignNPC.findMany({
+    return prisma.npc.findMany({
       where: { campaignId: id },
       orderBy: { name: 'asc' },
     });
@@ -60,7 +60,7 @@ export async function adminNpcRoutes(fastify) {
 
   fastify.get('/:id/npcs/:npcId', { schema: { params: NPC_PARAM } }, async (request, reply) => {
     const { id, npcId } = request.params;
-    const npc = await prisma.campaignNPC.findFirst({
+    const npc = await prisma.npc.findFirst({
       where: { id: npcId, campaignId: id },
       include: { relationships: true, experiences: { orderBy: { addedAt: 'desc' }, take: 20 } },
     });
@@ -84,7 +84,7 @@ export async function adminNpcRoutes(fastify) {
     const created = await withSnapshot(
       id,
       { reason: 'admin-create-npc', createdBy: request.user.id },
-      () => prisma.campaignNPC.create({ data: { ...data, campaignId: id, npcId } }),
+      () => prisma.npc.create({ data: { ...data, campaignId: id, npcId } }),
     );
     return created;
   });
@@ -100,7 +100,7 @@ export async function adminNpcRoutes(fastify) {
     if (Object.keys(data).length === 0) {
       return reply.code(400).send({ error: 'No editable fields provided' });
     }
-    const exists = await prisma.campaignNPC.findFirst({
+    const exists = await prisma.npc.findFirst({
       where: { id: npcId, campaignId: id }, select: { id: true },
     });
     if (!exists) return reply.code(404).send({ error: 'NPC not found' });
@@ -108,14 +108,14 @@ export async function adminNpcRoutes(fastify) {
     const updated = await withSnapshot(
       id,
       { reason: 'admin-edit-npc', createdBy: request.user.id },
-      () => prisma.campaignNPC.update({ where: { id: npcId }, data }),
+      () => prisma.npc.update({ where: { id: npcId }, data }),
     );
     return updated;
   });
 
   fastify.delete('/:id/npcs/:npcId', { schema: { params: NPC_PARAM } }, async (request, reply) => {
     const { id, npcId } = request.params;
-    const exists = await prisma.campaignNPC.findFirst({
+    const exists = await prisma.npc.findFirst({
       where: { id: npcId, campaignId: id }, select: { id: true },
     });
     if (!exists) return reply.code(404).send({ error: 'NPC not found' });
@@ -123,7 +123,7 @@ export async function adminNpcRoutes(fastify) {
     await withSnapshot(
       id,
       { reason: 'admin-delete-npc', createdBy: request.user.id },
-      () => prisma.campaignNPC.delete({ where: { id: npcId } }),
+      () => prisma.npc.delete({ where: { id: npcId } }),
     );
     return { ok: true };
   });
@@ -142,7 +142,7 @@ export async function adminNpcRoutes(fastify) {
     },
   }, async (request) => {
     const { search, limit = 50 } = request.query;
-    return prisma.worldNPC.findMany({
+    return prisma.npc.findMany({
       where: search ? { name: { contains: search, mode: 'insensitive' } } : {},
       orderBy: { name: 'asc' },
       take: limit,
@@ -151,7 +151,7 @@ export async function adminNpcRoutes(fastify) {
 
   fastify.get('/world-npcs/:npcId', { schema: { params: WORLD_NPC_PARAM } }, async (request, reply) => {
     const { npcId } = request.params;
-    const npc = await prisma.worldNPC.findUnique({ where: { id: npcId } });
+    const npc = await prisma.npc.findUnique({ where: { id: npcId } });
     if (!npc) return reply.code(404).send({ error: 'WorldNPC not found' });
     return npc;
   });
@@ -167,11 +167,11 @@ export async function adminNpcRoutes(fastify) {
     if (Object.keys(data).length === 0) {
       return reply.code(400).send({ error: 'No editable fields provided' });
     }
-    const exists = await prisma.worldNPC.findUnique({ where: { id: npcId }, select: { id: true } });
+    const exists = await prisma.npc.findUnique({ where: { id: npcId }, select: { id: true } });
     if (!exists) return reply.code(404).send({ error: 'WorldNPC not found' });
 
     // No snapshot — WorldNPC is not scoped to a single campaign. Edit lands
     // in living-world audit log via WorldNpcAttribution if needed (out of scope).
-    return prisma.worldNPC.update({ where: { id: npcId }, data });
+    return prisma.npc.update({ where: { id: npcId }, data });
   });
 }

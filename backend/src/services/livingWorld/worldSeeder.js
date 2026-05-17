@@ -72,7 +72,7 @@ export async function seedInitialWorld(campaignId, { length } = {}) {
   const plan = planFor(length);
   const bounds = { minX: -plan.boundsKm, maxX: plan.boundsKm, minY: -plan.boundsKm, maxY: plan.boundsKm };
 
-  const capital = await prisma.worldLocation.findFirst({
+  const capital = await prisma.location.findFirst({
     where: { locationType: 'capital', regionX: 0, regionY: 0 },
     select: { id: true, canonicalName: true },
   });

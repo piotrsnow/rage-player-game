@@ -423,7 +423,7 @@ export async function crudCampaignRoutes(app) {
 
     if (startSpawn?.npcCanonicalId) {
       try {
-        const canonical = await prisma.worldNPC.findUnique({
+        const canonical = await prisma.npc.findUnique({
           where: { canonicalId: startSpawn.npcCanonicalId },
           select: { id: true, name: true, currentLocationId: true },
         });
@@ -433,13 +433,13 @@ export async function crudCampaignRoutes(app) {
           // here it would create a SECOND row with a slug suffix, leaving the
           // quest pointing at the unlinked ephemeral one. Relink the existing
           // shadow instead — same npcId slug, just sets worldNpcId+isAgent.
-          const existing = await prisma.campaignNPC.findFirst({
+          const existing = await prisma.npc.findFirst({
             where: { campaignId: campaign.id, name: { equals: canonical.name, mode: 'insensitive' } },
             select: { id: true, worldNpcId: true },
           });
           if (existing) {
             if (!existing.worldNpcId) {
-              await prisma.campaignNPC.update({
+              await prisma.npc.update({
                 where: { id: existing.id },
                 data: { worldNpcId: canonical.id, isAgent: true },
               });
@@ -494,7 +494,7 @@ export async function crudCampaignRoutes(app) {
       && freshLocation?.currentLocationId
       && freshLocation?.currentLocationName
     ) {
-      await prisma.campaignNPC.updateMany({
+      await prisma.npc.updateMany({
         where: {
           campaignId: campaign.id,
           lastLocation: { equals: freshLocation.currentLocationName, mode: 'insensitive' },

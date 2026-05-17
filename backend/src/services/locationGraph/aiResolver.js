@@ -29,10 +29,10 @@ const COMPOSITE_REF_REGEX = /^(world|campaign):([0-9a-f-]{36})$/i;
 /** Build a fast lookup index: normalized-name → { kind, id }. */
 async function buildNameIndex(campaignId) {
   const [worldLocs, campaignLocs] = await Promise.all([
-    prisma.worldLocation.findMany({
+    prisma.location.findMany({
       select: { id: true, canonicalName: true, displayName: true, aliases: true },
     }),
-    prisma.campaignLocation.findMany({
+    prisma.location.findMany({
       where: { campaignId },
       select: { id: true, name: true, canonicalSlug: true, aliases: true },
     }),
@@ -123,13 +123,13 @@ export async function resolveLocationRef(input, campaignId) {
  */
 export async function nodeExists(kind, id, campaignId = null) {
   if (kind === LOCATION_KIND_WORLD) {
-    const row = await prisma.worldLocation.findUnique({ where: { id }, select: { id: true } });
+    const row = await prisma.location.findUnique({ where: { id }, select: { id: true } });
     return !!row;
   }
   if (kind === LOCATION_KIND_CAMPAIGN) {
     const where = { id };
     if (campaignId) where.campaignId = campaignId;
-    const row = await prisma.campaignLocation.findFirst({ where, select: { id: true } });
+    const row = await prisma.location.findFirst({ where, select: { id: true } });
     return !!row;
   }
   return false;
@@ -148,7 +148,7 @@ export async function createNodeFromAIProposal(entry, campaignId) {
   const slug = slugifyLocationName(entry.name);
 
   // Idempotency: if already exists in this campaign, just return its ref.
-  const existing = await prisma.campaignLocation.findFirst({
+  const existing = await prisma.location.findFirst({
     where: { campaignId, canonicalSlug: slug },
     select: { id: true },
   });
@@ -177,7 +177,7 @@ export async function createNodeFromAIProposal(entry, campaignId) {
 
   let row;
   try {
-    row = await prisma.campaignLocation.create({
+    row = await prisma.location.create({
       data: {
         campaignId,
         name: entry.name,

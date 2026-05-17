@@ -321,7 +321,7 @@ export async function applyLocationKnowledgeChange({ change, resolved, campaignI
   }
   const entry = buildKnowledgeEntry({ change, resolved, campaignId });
   try {
-    const row = await prisma.worldLocation.findUnique({
+    const row = await prisma.location.findUnique({
       where: { id: resolved.entityId },
       select: { id: true },
     });
@@ -349,7 +349,7 @@ export async function applyNpcKnowledgeChange({ change, resolved, campaignId }) 
   }
   const entry = buildKnowledgeEntry({ change, resolved, campaignId });
   try {
-    const row = await prisma.worldNPC.findUnique({
+    const row = await prisma.npc.findUnique({
       where: { id: resolved.entityId },
       select: { id: true },
     });

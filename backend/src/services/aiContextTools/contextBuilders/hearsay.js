@@ -40,7 +40,7 @@ export async function buildHearsayByNpc({ ambientNpcs, ambientNpcsWithGoals }) {
   )];
   const worldNpcById = new Map();
   if (worldNpcIds.length > 0) {
-    const rows = await prisma.worldNPC.findMany({
+    const rows = await prisma.npc.findMany({
       where: { id: { in: worldNpcIds } },
     }).catch(() => []);
     for (const row of rows) worldNpcById.set(row.id, row);
@@ -71,7 +71,7 @@ export async function buildHearsayByNpc({ ambientNpcs, ambientNpcsWithGoals }) {
   // via a map lookup.
   const allLocIds = [...new Set(perNpc.flatMap((e) => e.ids))];
   const locRows = allLocIds.length > 0
-    ? await prisma.worldLocation.findMany({
+    ? await prisma.location.findMany({
         where: { id: { in: allLocIds } },
         select: { id: true, canonicalName: true, locationType: true, dangerLevel: true },
       }).catch(() => [])

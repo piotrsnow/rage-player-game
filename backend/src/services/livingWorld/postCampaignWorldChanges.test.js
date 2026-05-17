@@ -30,8 +30,8 @@ import {
 } from './postCampaignWorldChanges.js';
 
 beforeEach(() => {
-  prisma.worldNPC.findUnique.mockReset();
-  prisma.worldLocation.findUnique.mockReset();
+  prisma.npc.findUnique.mockReset();
+  prisma.location.findUnique.mockReset();
   prisma.npcKnowledge.create.mockReset();
   prisma.npcKnowledge.create.mockResolvedValue({});
   prisma.locationKnowledge.create.mockReset();
@@ -284,7 +284,7 @@ describe('applyWorldStateChanges', () => {
     expect(result.pending).toHaveLength(1);
     expect(result.pending[0]).toMatchObject({ campaignId: 'c1', kind: 'npcDeath', dryRun: true });
     expect(result.appliedKnowledge).toHaveLength(0);
-    expect(prisma.worldNPC.findUnique).not.toHaveBeenCalled();
+    expect(prisma.npc.findUnique).not.toHaveBeenCalled();
   });
 
   it('HIGH tier with location entity routes to pending with location_requires_review', async () => {
@@ -448,7 +448,7 @@ describe('computeIdempotencyKey (Phase 12 closeout)', () => {
 
 describe('applyLocationKnowledgeChange (Phase 12 closeout)', () => {
   it('inserts into WorldLocationKnowledge on happy path', async () => {
-    prisma.worldLocation.findUnique.mockResolvedValue({ id: 'loc1' });
+    prisma.location.findUnique.mockResolvedValue({ id: 'loc1' });
 
     const resolved = { entityId: 'loc1', entityType: 'location', similarity: 0.9 };
     const result = await applyLocationKnowledgeChange({
@@ -472,11 +472,11 @@ describe('applyLocationKnowledgeChange (Phase 12 closeout)', () => {
       change: locBurnedChange, resolved, campaignId: 'c1',
     });
     expect(result).toEqual({ ok: false, reason: 'not_a_location_change' });
-    expect(prisma.worldLocation.findUnique).not.toHaveBeenCalled();
+    expect(prisma.location.findUnique).not.toHaveBeenCalled();
   });
 
   it('returns reason=world_location_not_found when the row is missing', async () => {
-    prisma.worldLocation.findUnique.mockResolvedValue(null);
+    prisma.location.findUnique.mockResolvedValue(null);
     const resolved = { entityId: 'gone', entityType: 'location', similarity: 0.9 };
     const result = await applyLocationKnowledgeChange({
       change: locBurnedChange, resolved, campaignId: 'c1',
@@ -485,7 +485,7 @@ describe('applyLocationKnowledgeChange (Phase 12 closeout)', () => {
   });
 
   it('returns reason=write_failed when create throws', async () => {
-    prisma.worldLocation.findUnique.mockResolvedValue({ id: 'loc1' });
+    prisma.location.findUnique.mockResolvedValue({ id: 'loc1' });
     prisma.locationKnowledge.create.mockRejectedValue(new Error('db down'));
     const resolved = { entityId: 'loc1', entityType: 'location', similarity: 0.9 };
     const result = await applyLocationKnowledgeChange({

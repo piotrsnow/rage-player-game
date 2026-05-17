@@ -40,7 +40,7 @@ import {
 } from './postCampaignPromotion.js';
 
 beforeEach(() => {
-  prisma.campaignNPC.findMany.mockReset();
+  prisma.npc.findMany.mockReset();
   prisma.campaignQuest.findMany.mockReset();
   prisma.campaignScene.findMany.mockReset();
   prisma.campaign.findUnique.mockReset();
@@ -290,11 +290,11 @@ describe('findDuplicateCandidate (Slice B)', () => {
 describe('collectPromotionCandidates', () => {
   it('returns [] when campaignId is missing', async () => {
     expect(await collectPromotionCandidates(null)).toEqual([]);
-    expect(prisma.campaignNPC.findMany).not.toHaveBeenCalled();
+    expect(prisma.npc.findMany).not.toHaveBeenCalled();
   });
 
   it('joins ephemerals with structural quest counts and returns scored top-N', async () => {
-    prisma.campaignNPC.findMany.mockResolvedValue([
+    prisma.npc.findMany.mockResolvedValue([
       {
         id: 'cn1', npcId: 'gerent', name: 'Gerent', role: 'guard', personality: 'stern',
         interactionCount: 5, questInvolvementCount: 1, dialogCharCount: 0,
@@ -312,17 +312,17 @@ describe('collectPromotionCandidates', () => {
   });
 
   it('tolerates DB errors and returns empty array', async () => {
-    prisma.campaignNPC.findMany.mockRejectedValue(new Error('db down'));
+    prisma.npc.findMany.mockRejectedValue(new Error('db down'));
     prisma.campaignQuest.findMany.mockResolvedValue([]);
     const result = await collectPromotionCandidates('c1');
     expect(result).toEqual([]);
   });
 
   it('skips canonical-linked NPCs (worldNpcId filter is where=null)', async () => {
-    prisma.campaignNPC.findMany.mockResolvedValue([]);
+    prisma.npc.findMany.mockResolvedValue([]);
     prisma.campaignQuest.findMany.mockResolvedValue([]);
     await collectPromotionCandidates('c1');
-    expect(prisma.campaignNPC.findMany).toHaveBeenCalledWith(expect.objectContaining({
+    expect(prisma.npc.findMany).toHaveBeenCalledWith(expect.objectContaining({
       where: { campaignId: 'c1', worldNpcId: null },
     }));
   });
@@ -508,7 +508,7 @@ describe('persistPromotionCandidates', () => {
 
 describe('runNpcPromotionPipeline', () => {
   it('threads collect → harvest → verdict → persist end-to-end (dryRun)', async () => {
-    prisma.campaignNPC.findMany.mockResolvedValue([
+    prisma.npc.findMany.mockResolvedValue([
       {
         id: 'cn1', npcId: 'gerent', name: 'Gerent', role: 'guard', personality: 'stern',
         interactionCount: 3, questInvolvementCount: 1, dialogCharCount: 0,
@@ -536,7 +536,7 @@ describe('runNpcPromotionPipeline', () => {
   });
 
   it('skipVerdict=true bypasses the LLM call', async () => {
-    prisma.campaignNPC.findMany.mockResolvedValue([
+    prisma.npc.findMany.mockResolvedValue([
       {
         id: 'cn1', npcId: 'x', name: 'X', role: 'x', personality: 'x',
         interactionCount: 5, questInvolvementCount: 0, dialogCharCount: 0,
@@ -552,7 +552,7 @@ describe('runNpcPromotionPipeline', () => {
   });
 
   it('forwards verdict provider / modelTier / userApiKeys', async () => {
-    prisma.campaignNPC.findMany.mockResolvedValue([
+    prisma.npc.findMany.mockResolvedValue([
       {
         id: 'cn1', npcId: 'x', name: 'X', role: 'x', personality: 'x',
         interactionCount: 5, questInvolvementCount: 0, dialogCharCount: 0,
@@ -579,7 +579,7 @@ describe('runNpcPromotionPipeline', () => {
   });
 
   it('returns empty structures when no candidates qualify', async () => {
-    prisma.campaignNPC.findMany.mockResolvedValue([]);
+    prisma.npc.findMany.mockResolvedValue([]);
     prisma.campaignQuest.findMany.mockResolvedValue([]);
     const result = await runNpcPromotionPipeline({ campaignId: 'c1', dryRun: true });
     expect(result.collected).toEqual([]);

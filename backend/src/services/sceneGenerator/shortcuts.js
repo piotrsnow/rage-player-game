@@ -158,7 +158,7 @@ export async function tryCombatFastPath(intentResult, playerAction, dbNpcs, prov
   const targetNpc = await findCombatTargetNpc(playerAction, dbNpcs);
   if (targetNpc && targetNpc.disposition > 0) {
     const newDisposition = Math.max(-100, targetNpc.disposition - 30);
-    await prisma.campaignNPC.update({
+    await prisma.npc.update({
       where: { id: targetNpc.id },
       data: { disposition: newDisposition },
     });

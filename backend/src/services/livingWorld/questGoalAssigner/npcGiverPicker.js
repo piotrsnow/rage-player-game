@@ -20,7 +20,7 @@ const STORY_FLAGS = /story[-_]critical|lock(?:ed)?[-_]campaign|main[-_]only/i;
 async function resolveLocationName(locationId) {
   if (!locationId) return null;
   try {
-    const loc = await prisma.worldLocation.findUnique({
+    const loc = await prisma.location.findUnique({
       where: { id: locationId },
       select: { canonicalName: true },
     });
@@ -42,7 +42,7 @@ export async function pickQuestGiver(campaignId, currentLocationName, { questTyp
   if (!campaignId) return null;
 
   const [npcs, quests] = await Promise.all([
-    prisma.campaignNPC.findMany({
+    prisma.npc.findMany({
       where: { campaignId },
       select: {
         id: true, name: true, role: true, personality: true, alive: true,
@@ -76,7 +76,7 @@ export async function pickQuestGiver(campaignId, currentLocationName, { questTyp
   const worldMap = new Map();
   if (worldNpcIds.length > 0) {
     try {
-      const rows = await prisma.worldNPC.findMany({
+      const rows = await prisma.npc.findMany({
         where: { id: { in: worldNpcIds } },
         select: { id: true, keyNpc: true, currentLocationId: true, activeGoal: true },
       });
@@ -102,7 +102,7 @@ export async function pickQuestGiver(campaignId, currentLocationName, { questTyp
   let localLocationIds = new Set();
   try {
     if (currentLocationName) {
-      const currentLoc = await prisma.worldLocation.findFirst({
+      const currentLoc = await prisma.location.findFirst({
         where: { canonicalName: currentLocationName },
         select: { id: true },
       });

@@ -257,12 +257,12 @@ export async function singleShotRoutes(fastify) {
       let resolvedWorldNpcId = worldNpcId;
       let resolvedCampaignNpcId = campaignNpcId;
       if (worldNpcId) {
-        npcRecord = await prisma.worldNPC.findUnique({ where: { id: worldNpcId } });
+        npcRecord = await prisma.npc.findUnique({ where: { id: worldNpcId } });
         if (npcRecord && !campaignNpcId) {
           // best-effort companion: no campaign context here, only update WorldNPC
         }
       } else {
-        npcRecord = await prisma.campaignNPC.findUnique({ where: { id: campaignNpcId } });
+        npcRecord = await prisma.npc.findUnique({ where: { id: campaignNpcId } });
         if (npcRecord?.worldNpcId) resolvedWorldNpcId = npcRecord.worldNpcId;
       }
       if (!npcRecord) return reply.code(404).send({ error: 'npc not found' });

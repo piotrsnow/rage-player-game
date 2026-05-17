@@ -133,7 +133,7 @@ export function filterAutoApplyChanges(changes, autoApplyFields = DEFAULT_AUTO_A
 export async function collectCampaignShadowDiff(campaignId) {
   if (!campaignId) throw new Error('collectCampaignShadowDiff: campaignId is required');
 
-  const clones = await prisma.campaignNPC.findMany({
+  const clones = await prisma.npc.findMany({
     where: { campaignId, worldNpcId: { not: null } },
     select: {
       id: true,
@@ -156,7 +156,7 @@ export async function collectCampaignShadowDiff(campaignId) {
   }
 
   const worldIds = clones.map((c) => c.worldNpcId);
-  const canonicals = await prisma.worldNPC.findMany({
+  const canonicals = await prisma.npc.findMany({
     where: { id: { in: worldIds } },
     select: {
       id: true,

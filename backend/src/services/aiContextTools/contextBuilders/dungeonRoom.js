@@ -31,7 +31,7 @@ export async function buildDungeonRoomBlock(roomLocation, contentLanguage = 'pl'
   });
   const exitIds = exitEdges.map((e) => e.toLocationId).filter(Boolean);
   const exitRooms = exitIds.length
-    ? await prisma.worldLocation.findMany({
+    ? await prisma.location.findMany({
         where: { id: { in: exitIds } },
         select: { id: true, canonicalName: true, slotType: true, roomMetadata: true },
       })
@@ -56,7 +56,7 @@ export async function buildDungeonRoomBlock(roomLocation, contentLanguage = 'pl'
 
   // Parent dungeon — for total room count + theme summary
   const parent = roomLocation.parentLocationId
-    ? await prisma.worldLocation.findUnique({
+    ? await prisma.location.findUnique({
         where: { id: roomLocation.parentLocationId },
         select: { id: true, canonicalName: true },
       })

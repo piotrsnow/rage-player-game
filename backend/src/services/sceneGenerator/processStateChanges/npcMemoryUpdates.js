@@ -153,7 +153,7 @@ export async function processNpcMemoryUpdates(campaignId, rawUpdates) {
   // Prefetch all CampaignNPCs in this campaign once — needed both for the
   // primary write path (no functional change) and for Stage 2a.2 mirror
   // detection (scanning memory text for OTHER NPC mentions).
-  const campaignNpcs = await prisma.campaignNPC.findMany({
+  const campaignNpcs = await prisma.npc.findMany({
     where: { campaignId },
     select: { id: true, npcId: true, name: true },
   }).catch(() => []);

@@ -323,7 +323,7 @@ export async function processStateChanges(campaignId, stateChanges, { prevLoc = 
                   tags: [],
                 });
                 if (matchedUrl) {
-                  await prisma.campaignLocation.update({ where: { id: created.id }, data: { nodeImageUrl: matchedUrl } });
+                  await prisma.location.update({ where: { id: created.id }, data: { nodeImageUrl: matchedUrl } });
                 }
               } catch { /* non-fatal */ }
             }

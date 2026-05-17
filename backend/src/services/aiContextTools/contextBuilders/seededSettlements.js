@@ -17,14 +17,14 @@ export async function buildSeededSettlementsBlock(campaign, currentLocation) {
   const bounds = unpackWorldBounds(campaign);
 
   // Fetch capital (always visible) + in-bounds settlements.
-  const capital = await prisma.worldLocation.findFirst({
+  const capital = await prisma.location.findFirst({
     where: { locationType: 'capital', regionX: 0, regionY: 0 },
     select: { id: true, canonicalName: true, locationType: true, regionX: true, regionY: true, description: true },
   });
 
   let settlementsInBounds = [];
   if (bounds) {
-    settlementsInBounds = await prisma.worldLocation.findMany({
+    settlementsInBounds = await prisma.location.findMany({
       where: {
         parentLocationId: null,
         locationType: { in: SETTLEMENT_TYPES.filter((t) => t !== 'capital') },

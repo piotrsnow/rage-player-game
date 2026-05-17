@@ -65,7 +65,7 @@ export async function runTickBatch({
       lockedByCampaignId: null,
       pausedAt: null,
     };
-    const candidates = await prisma.worldNPC.findMany({
+    const candidates = await prisma.npc.findMany({
       where,
       // overfetch so selectEligibleNpcs has room to filter by interval
       take: limit * 4,

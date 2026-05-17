@@ -190,16 +190,16 @@ describe('lookupLocationByKindId', () => {
     const prisma = makePrisma();
     const out = await lookupLocationByKindId({ prisma, kind: LOCATION_KIND_WORLD, id: 'w1' });
     expect(out).toEqual({ id: 'w1', canonicalName: 'Krynsk' });
-    expect(prisma.worldLocation.findUnique).toHaveBeenCalledWith({ where: { id: 'w1' } });
-    expect(prisma.campaignLocation.findUnique).not.toHaveBeenCalled();
+    expect(prisma.location.findUnique).toHaveBeenCalledWith({ where: { id: 'w1' } });
+    expect(prisma.location.findUnique).not.toHaveBeenCalled();
   });
 
   it('routes campaign kind to campaignLocation', async () => {
     const prisma = makePrisma();
     const out = await lookupLocationByKindId({ prisma, kind: LOCATION_KIND_CAMPAIGN, id: 'c1' });
     expect(out).toEqual({ id: 'c1', name: 'Karczma' });
-    expect(prisma.campaignLocation.findUnique).toHaveBeenCalledWith({ where: { id: 'c1' } });
-    expect(prisma.worldLocation.findUnique).not.toHaveBeenCalled();
+    expect(prisma.location.findUnique).toHaveBeenCalledWith({ where: { id: 'c1' } });
+    expect(prisma.location.findUnique).not.toHaveBeenCalled();
   });
 
   it('forwards select to Prisma', async () => {
@@ -207,7 +207,7 @@ describe('lookupLocationByKindId', () => {
     await lookupLocationByKindId({
       prisma, kind: 'world', id: 'w1', select: { id: true, canonicalName: true },
     });
-    expect(prisma.worldLocation.findUnique).toHaveBeenCalledWith({
+    expect(prisma.location.findUnique).toHaveBeenCalledWith({
       where: { id: 'w1' }, select: { id: true, canonicalName: true },
     });
   });

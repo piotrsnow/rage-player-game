@@ -50,7 +50,7 @@ async function loadCampaignGraph(campaignId) {
   ] = await Promise.all([
     prisma.campaign.findUnique({ where: { id: campaignId } }),
     prisma.campaignParticipant.findMany({ where: { campaignId } }),
-    prisma.campaignNPC.findMany({
+    prisma.npc.findMany({
       where: { campaignId },
       include: { relationships: true, experiences: true },
     }),
@@ -65,8 +65,8 @@ async function loadCampaignGraph(campaignId) {
       where: { campaignId },
       orderBy: { sceneIndex: 'asc' },
     }),
-    prisma.campaignLocation.findMany({ where: { campaignId } }),
-    prisma.campaignLocationSummary.findMany({ where: { campaignId } }),
+    prisma.location.findMany({ where: { campaignId } }),
+    prisma.locationSummary.findMany({ where: { campaignId } }),
     prisma.locationEdge.findMany({ where: { campaignId } }),
     prisma.campaignEdge.findMany({ where: { campaignId } }),
     prisma.campaignKnowledge.findMany({ where: { campaignId } }),
@@ -111,10 +111,10 @@ async function loadCampaignGraph(campaignId) {
   }
   const [worldNpcRefs, worldLocationRefs] = await Promise.all([
     worldNpcIds.length > 0
-      ? prisma.worldNPC.findMany({ where: { id: { in: worldNpcIds } } })
+      ? prisma.npc.findMany({ where: { id: { in: worldNpcIds } } })
       : Promise.resolve([]),
     worldLocationIds.size > 0
-      ? prisma.worldLocation.findMany({ where: { id: { in: Array.from(worldLocationIds) } } })
+      ? prisma.location.findMany({ where: { id: { in: Array.from(worldLocationIds) } } })
       : Promise.resolve([]),
   ]);
 

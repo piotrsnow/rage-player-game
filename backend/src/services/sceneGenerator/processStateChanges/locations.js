@@ -107,20 +107,20 @@ export async function resolveAnchorToken(token, campaignId, startSpawn = null) {
   const t = token.trim();
 
   if (t === 'capital') {
-    const row = await prisma.worldLocation.findFirst({ where: { locationType: 'capital' } });
+    const row = await prisma.location.findFirst({ where: { locationType: 'capital' } });
     return row ? { kind: LOCATION_KIND_WORLD, row } : null;
   }
 
   if (t === 'questGiver') {
     if (!startSpawn?.npcCurrentLocationId) return null;
-    const row = await prisma.worldLocation.findUnique({ where: { id: startSpawn.npcCurrentLocationId } });
+    const row = await prisma.location.findUnique({ where: { id: startSpawn.npcCurrentLocationId } });
     return row ? { kind: LOCATION_KIND_WORLD, row } : null;
   }
 
   // Exact canonicalName hit only — no fuzzy fallback. Caller validated `t`
   // against the NPC's allowed-knowledge set before calling, so a miss here
   // is real (canonical row deleted between seed-spawn pick and POST).
-  const row = await prisma.worldLocation.findUnique({ where: { canonicalName: t } });
+  const row = await prisma.location.findUnique({ where: { canonicalName: t } });
   return row ? { kind: LOCATION_KIND_WORLD, row } : null;
 }
 
@@ -135,7 +135,7 @@ async function walkUpToTopLevel(startRef) {
   for (let depth = 0; depth < 5; depth += 1) {
     if (kind === LOCATION_KIND_WORLD) {
       if (!row.parentLocationId) return { kind, row };
-      const next = await prisma.worldLocation.findUnique({
+      const next = await prisma.location.findUnique({
         where: { id: row.parentLocationId },
       });
       if (!next) return { kind, row };
@@ -217,7 +217,7 @@ async function processSublocationEntry(campaignId, entry, { discoveryState = 'vi
       tags: [],
     });
     if (matchedUrl) {
-      await prisma.campaignLocation.update({ where: { id: created.id }, data: { nodeImageUrl: matchedUrl } });
+      await prisma.location.update({ where: { id: created.id }, data: { nodeImageUrl: matchedUrl } });
     }
   }
 
@@ -282,11 +282,11 @@ async function processTopLevelEntry(campaignId, entry, anchorRef, bounds = null,
   // set) inherit parent coords so they're already represented by the
   // parent row's coords — exclude them to avoid double-collision.
   const [worldRows, campaignRows] = await Promise.all([
-    prisma.worldLocation.findMany({
+    prisma.location.findMany({
       where: { parentLocationId: null, id: { not: anchor.id } },
       select: { id: true, canonicalName: true, regionX: true, regionY: true, locationType: true },
     }),
-    prisma.campaignLocation.findMany({
+    prisma.location.findMany({
       where: { campaignId, parentLocationId: null, id: { not: anchor.id } },
       select: { id: true, name: true, regionX: true, regionY: true, locationType: true },
     }),

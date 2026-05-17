@@ -310,7 +310,7 @@ export async function livingWorldRoutes(fastify) {
     const campaign = await assertCampaignOwnership(request, reply, campaignId);
     if (!campaign) return;
 
-    const rows = await prisma.campaignLocationSummary.findMany({
+    const rows = await prisma.locationSummary.findMany({
       where: { campaignId },
       select: {
         locationName: true,
@@ -355,7 +355,7 @@ export async function livingWorldRoutes(fastify) {
 
     const { locationName } = request.query;
 
-    const summary = await prisma.campaignLocationSummary.findUnique({
+    const summary = await prisma.locationSummary.findUnique({
       where: { campaignId_locationName: { campaignId, locationName } },
       select: {
         locationName: true,
@@ -552,7 +552,7 @@ export async function livingWorldRoutes(fastify) {
     // Surface CampaignLocations that aren't reached by the focused subgraph
     // traversal — newly-created nodes have no edges yet, so without this they
     // would be invisible in the modal even though they exist in DB.
-    const orphanCampaignLocs = await prisma.campaignLocation.findMany({
+    const orphanCampaignLocs = await prisma.location.findMany({
       where: { campaignId: request.params.id, id: { notIn: [...seenNodeIds] } },
       select: {
         id: true, name: true, locationType: true, scale: true, tags: true,
@@ -616,7 +616,7 @@ export async function livingWorldRoutes(fastify) {
     // Occupants overlay — NPCs + player characters positioned at graph nodes
     const campaignId = request.params.id;
     const [campaignNpcs, campaignFull, latestScene] = await Promise.all([
-      prisma.campaignNPC.findMany({
+      prisma.npc.findMany({
         where: { campaignId, lastLocationKind: { not: null }, lastLocationId: { not: null } },
         select: {
           id: true, name: true, role: true, category: true,
@@ -716,7 +716,7 @@ export async function livingWorldRoutes(fastify) {
     if (!campaign) return;
     const limit = request.query.limit ?? 100;
 
-    const npcRow = await prisma.campaignNPC.findFirst({
+    const npcRow = await prisma.npc.findFirst({
       where: { id: npcId, campaignId },
       select: {
         id: true, name: true, npcId: true,
@@ -772,13 +772,13 @@ export async function livingWorldRoutes(fastify) {
     }
     const [worldRows, campRows] = await Promise.all([
       worldIds.size > 0
-        ? prisma.worldLocation.findMany({
+        ? prisma.location.findMany({
           where: { id: { in: [...worldIds] } },
           select: { id: true, canonicalName: true, displayName: true },
         })
         : [],
       campaignLocIds.size > 0
-        ? prisma.campaignLocation.findMany({
+        ? prisma.location.findMany({
           where: { campaignId, id: { in: [...campaignLocIds] } },
           select: { id: true, name: true },
         })
@@ -860,7 +860,7 @@ export async function livingWorldRoutes(fastify) {
     const validated = [];
     for (const item of items) {
       if (item.kind === 'campaign-npc') {
-        const row = await prisma.campaignNPC.findFirst({
+        const row = await prisma.npc.findFirst({
           where: { id: item.id, campaignId },
           select: { id: true },
         });
@@ -925,7 +925,7 @@ export async function livingWorldRoutes(fastify) {
     const b = request.body;
     let node;
     try {
-      node = await prisma.campaignLocation.create({
+      node = await prisma.location.create({
         data: {
           campaignId: request.params.id,
           name: b.name,
@@ -1003,7 +1003,7 @@ export async function livingWorldRoutes(fastify) {
         tags: b.tags || [],
       });
       if (url) {
-        await prisma.campaignLocation.update({
+        await prisma.location.update({
           where: { id: node.id },
           data: { nodeImageUrl: url },
         });
@@ -1055,7 +1055,7 @@ export async function livingWorldRoutes(fastify) {
     const b = request.body;
 
     let updated = null;
-    const campaignLoc = await prisma.campaignLocation.findFirst({
+    const campaignLoc = await prisma.location.findFirst({
       where: { id: nodeId, campaignId: request.params.id },
     });
     if (campaignLoc) {
@@ -1086,17 +1086,17 @@ export async function livingWorldRoutes(fastify) {
       if (b.regionX !== undefined) data.regionX = b.regionX;
       if (b.regionY !== undefined) data.regionY = b.regionY;
       if (Object.keys(data).length > 0) {
-        updated = await prisma.campaignLocation.update({ where: { id: nodeId }, data });
+        updated = await prisma.location.update({ where: { id: nodeId }, data });
       }
     }
     if (!updated) {
-      const worldLoc = await prisma.worldLocation.findFirst({
+      const worldLoc = await prisma.location.findFirst({
         where: { id: nodeId },
       });
       if (worldLoc) {
         const data = buildWorldLocationPatch(b);
         if (Object.keys(data).length > 0) {
-          updated = await prisma.worldLocation.update({ where: { id: nodeId }, data });
+          updated = await prisma.location.update({ where: { id: nodeId }, data });
         }
       }
     }
@@ -1134,11 +1134,11 @@ export async function livingWorldRoutes(fastify) {
     });
 
     // Mark the CampaignLocation as inactive if it exists
-    const cl = await prisma.campaignLocation.findFirst({
+    const cl = await prisma.location.findFirst({
       where: { id: nodeId, campaignId: request.params.id },
     });
     if (cl) {
-      await prisma.campaignLocation.update({
+      await prisma.location.update({
         where: { id: nodeId },
         data: { description: `[DEACTIVATED] ${cl.description || ''}` },
       });
@@ -1153,7 +1153,7 @@ export async function livingWorldRoutes(fastify) {
     const campaign = await assertCampaignOwnership(request, reply, request.params.id);
     if (!campaign) return;
 
-    const rows = await prisma.campaignLocation.findMany({
+    const rows = await prisma.location.findMany({
       where: { campaignId: request.params.id, nodeImageUrl: { not: null } },
       select: { id: true, name: true, nodeImageUrl: true },
       orderBy: { updatedAt: 'desc' },
@@ -1208,7 +1208,7 @@ export async function livingWorldRoutes(fastify) {
     const campaign = await assertCampaignOwnership(request, reply, request.params.id);
     if (!campaign) return;
 
-    let loc = await prisma.campaignLocation.findFirst({
+    let loc = await prisma.location.findFirst({
       where: { id: request.params.nodeId, campaignId: request.params.id },
       select: {
         id: true, name: true, description: true, locationType: true,
@@ -1217,7 +1217,7 @@ export async function livingWorldRoutes(fastify) {
     });
     let isWorldNode = false;
     if (!loc) {
-      loc = await prisma.worldLocation.findFirst({
+      loc = await prisma.location.findFirst({
         where: { id: request.params.nodeId },
         select: {
           id: true, canonicalName: true, description: true, locationType: true,
@@ -1271,12 +1271,12 @@ export async function livingWorldRoutes(fastify) {
 
     const nodeImageUrl = storeResult.url;
     if (isWorldNode) {
-      await prisma.worldLocation.update({
+      await prisma.location.update({
         where: { id: loc.id },
         data: { nodeImageUrl },
       });
     } else {
-      await prisma.campaignLocation.update({
+      await prisma.location.update({
         where: { id: loc.id },
         data: { nodeImageUrl },
       });
@@ -1443,7 +1443,7 @@ export async function livingWorldRoutes(fastify) {
     const campaign = await assertCampaignOwnership(request, reply, campaignId);
     if (!campaign) return;
     const { npcId, toKind, toId } = request.body;
-    const before = await prisma.campaignNPC.findFirst({
+    const before = await prisma.npc.findFirst({
       where: { id: npcId, campaignId },
       select: { id: true, lastLocationKind: true, lastLocationId: true },
     });
@@ -1453,7 +1453,7 @@ export async function livingWorldRoutes(fastify) {
     if (before.lastLocationKind === toKind && before.lastLocationId === toId) {
       return reply.send({ ok: true });
     }
-    await prisma.campaignNPC.update({
+    await prisma.npc.update({
       where: { id: npcId },
       data: { lastLocationKind: toKind, lastLocationId: toId },
     });
@@ -1487,7 +1487,7 @@ export async function livingWorldRoutes(fastify) {
     const q = request.query.q.toLowerCase();
 
     const [worldLocs, campaignLocs] = await Promise.all([
-      prisma.worldLocation.findMany({
+      prisma.location.findMany({
         where: {
           OR: [
             { canonicalName: { contains: q, mode: 'insensitive' } },
@@ -1497,7 +1497,7 @@ export async function livingWorldRoutes(fastify) {
         select: { id: true, canonicalName: true, displayName: true, locationType: true, scale: true },
         take: 20,
       }),
-      prisma.campaignLocation.findMany({
+      prisma.location.findMany({
         where: {
           campaignId: request.params.id,
           name: { contains: q, mode: 'insensitive' },
@@ -1524,7 +1524,7 @@ export async function livingWorldRoutes(fastify) {
     const warnings = [];
 
     // Check for NPCs without valid location refs
-    const npcsNoLoc = await prisma.campaignNPC.findMany({
+    const npcsNoLoc = await prisma.npc.findMany({
       where: { campaignId, OR: [{ lastLocationId: null }, { lastLocationKind: null }] },
       select: { id: true, name: true },
     });
@@ -1545,8 +1545,8 @@ export async function livingWorldRoutes(fastify) {
       if (e.toKind === 'world') worldIds.add(e.toId); else campIds.add(e.toId);
     }
     const [existingWorld, existingCamp] = await Promise.all([
-      worldIds.size > 0 ? prisma.worldLocation.findMany({ where: { id: { in: [...worldIds] } }, select: { id: true } }) : [],
-      campIds.size > 0 ? prisma.campaignLocation.findMany({ where: { id: { in: [...campIds] } }, select: { id: true } }) : [],
+      worldIds.size > 0 ? prisma.location.findMany({ where: { id: { in: [...worldIds] } }, select: { id: true } }) : [],
+      campIds.size > 0 ? prisma.location.findMany({ where: { id: { in: [...campIds] } }, select: { id: true } }) : [],
     ]);
     const validIds = new Set([...existingWorld.map((r) => r.id), ...existingCamp.map((r) => r.id)]);
     for (const e of edges) {

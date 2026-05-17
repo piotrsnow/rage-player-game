@@ -41,10 +41,10 @@ async function loadNeighbors(campaignId, currentLocationRef) {
 
   const [worldLocs, campaignLocs] = await Promise.all([
     worldIds.length > 0
-      ? prisma.worldLocation.findMany({ where: { id: { in: worldIds } }, select: { id: true, canonicalName: true, displayName: true, name: true } })
+      ? prisma.location.findMany({ where: { id: { in: worldIds } }, select: { id: true, canonicalName: true, displayName: true, name: true } })
       : [],
     campaignIds.length > 0
-      ? prisma.campaignLocation.findMany({ where: { id: { in: campaignIds } }, select: { id: true, name: true } })
+      ? prisma.location.findMany({ where: { id: { in: campaignIds } }, select: { id: true, name: true } })
       : [],
   ]);
 
@@ -140,10 +140,10 @@ async function resolveLocationScale(ref) {
   if (!ref?.kind || !ref?.id) return 4;
   try {
     if (ref.kind === 'world') {
-      const loc = await prisma.worldLocation.findUnique({ where: { id: ref.id }, select: { scale: true } });
+      const loc = await prisma.location.findUnique({ where: { id: ref.id }, select: { scale: true } });
       return loc?.scale ?? 4;
     }
-    const loc = await prisma.campaignLocation.findUnique({ where: { id: ref.id }, select: { scale: true } });
+    const loc = await prisma.location.findUnique({ where: { id: ref.id }, select: { scale: true } });
     return loc?.scale ?? 4;
   } catch { return 4; }
 }

@@ -46,7 +46,7 @@ export async function handleDungeonEntry({ campaignId, currentRef = null, prevLo
   if (currentRef.name && currentRef.name === prevLoc) return null;
 
   try {
-    const target = await prisma.worldLocation.findUnique({
+    const target = await prisma.location.findUnique({
       where: { id: currentRef.id },
       select: { id: true, canonicalName: true, locationType: true },
     });
@@ -63,7 +63,7 @@ export async function handleDungeonEntry({ campaignId, currentRef = null, prevLo
       return null;
     }
 
-    const entranceRoom = await prisma.worldLocation.findUnique({
+    const entranceRoom = await prisma.location.findUnique({
       where: { id: seed.entranceRoomId },
       select: { id: true, canonicalName: true },
     });
@@ -106,14 +106,14 @@ export async function applyDungeonRoomState({ campaignId, prevLoc, flags }) {
   if (Object.keys(touched).length === 0) return;
 
   try {
-    const room = await prisma.worldLocation.findUnique({
+    const room = await prisma.location.findUnique({
       where: { canonicalName: prevLoc },
     });
     if (!room || room.locationType !== 'dungeon_room') return;
 
     const meta = (room.roomMetadata && typeof room.roomMetadata === 'object') ? room.roomMetadata : {};
     const merged = { ...meta, ...touched };
-    await prisma.worldLocation.update({
+    await prisma.location.update({
       where: { id: room.id },
       data: { roomMetadata: merged },
     });
