@@ -140,8 +140,7 @@ export async function applyAndPushCorrections(campaignId, sceneId, corrections) 
           where: { id: campaignId },
           data: {
             currentLocationName: correctedLocation,
-            currentLocationKind: ref.kind,
-            currentLocationId: ref.row.id,
+            currentLocationId: ref.location.id,
             currentX: null,
             currentY: null,
           },
@@ -149,8 +148,7 @@ export async function applyAndPushCorrections(campaignId, sceneId, corrections) 
         appliedCorrections.location = {
           correctedLocation,
           locationReason,
-          kind: ref.kind,
-          id: ref.row.id,
+          id: ref.location.id,
         };
         log.info(
           { campaignId, sceneId, correctedLocation, locationReason },

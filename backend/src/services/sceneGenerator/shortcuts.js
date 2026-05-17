@@ -118,8 +118,8 @@ export function tryTradeShortcut(intentResult, coreState, dbNpcs) {
     const curRef = coreState.world?.currentLocationRef;
     matchedNpc = dbNpcs.find(n => {
       if (n.alive === false) return false;
-      if (curRef && n.lastLocationKind && n.lastLocationId) {
-        return n.lastLocationKind === curRef.kind && n.lastLocationId === curRef.id;
+      if (curRef && n.currentLocationId) {
+        return n.currentLocationId === curRef.id;
       }
       return !currentLoc || n.lastLocation === currentLoc;
     }) || dbNpcs.find(n => n.alive !== false);

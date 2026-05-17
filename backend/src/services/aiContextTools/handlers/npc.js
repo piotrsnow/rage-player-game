@@ -54,13 +54,11 @@ export async function handleGetNPC(campaignId, npcName, { currentRef, campaignNp
 export function formatNPC(npc, { currentRef } = {}) {
   const relationships = Array.isArray(npc.relationships) ? npc.relationships : [];
 
-  // Location check — is this NPC at the player's current location?
   let awayWarning = null;
-  if (currentRef && npc.lastLocationKind && npc.lastLocationId) {
-    const sameLocation =
-      npc.lastLocationKind === currentRef.kind && npc.lastLocationId === currentRef.id;
+  if (currentRef && npc.currentLocationId) {
+    const sameLocation = npc.currentLocationId === currentRef.id;
     if (!sameLocation) {
-      const loc = npc.lastLocation || `${npc.lastLocationKind}:${npc.lastLocationId}`;
+      const loc = npc.lastLocation || npc.currentLocationId;
       awayWarning = `[AWAY — this NPC is NOT at the player's current location (last seen: ${loc}). They cannot speak in this scene unless contacted via letter/messenger/magic.]`;
     }
   }

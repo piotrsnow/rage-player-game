@@ -11,7 +11,6 @@ import { markLocationDiscovered, markLocationHeardAbout, markEdgeDiscoveredByUse
 import { resolveLocationByName } from './livingWorld/worldStateService.js';
 import { markEdgeDiscovered } from './livingWorld/travelGraph.js';
 import { listLocationsForCampaign } from './livingWorld/locationQueries.js';
-import { LOCATION_KIND_WORLD } from './locationRefs.js';
 import { extractGraphUpdate, validateGraphUpdate, applyGraphUpdate } from './locationGraph/index.js';
 import { setLlmCallUserId } from './llmCallLogger.js';
 import { checkQuestProgress } from './questProgressChecker.js';
@@ -109,8 +108,8 @@ export async function handlePostSceneWork({
     // parent chain. Travel resolver already wrote `Campaign.currentLocation*`
     // before this call, so the loaded `campaign` row carries the post-travel
     // ref — exactly the ancestor anchor we want.
-    const currentRef = campaign?.currentLocationKind && campaign?.currentLocationId
-      ? { kind: campaign.currentLocationKind, id: campaign.currentLocationId, name: campaign.currentLocationName || null }
+    const currentRef = campaign?.currentLocationId
+      ? { id: campaign.currentLocationId, name: campaign.currentLocationName || null }
       : null;
     // Oś 3 — questOffers żyją na top-level scene-a (zgodnie z response
     // template), ale processStateChanges materializuje quest grafy z
@@ -148,33 +147,24 @@ export async function handlePostSceneWork({
               resolveLocationByName(prevLoc, { campaignId }),
               resolveLocationByName(newLoc, { campaignId }),
             ]);
-            if (!prevRef?.row?.id || !newRef?.row?.id) return;
+            if (!prevRef?.location?.id || !newRef?.location?.id) return;
             const tasks = [
               markLocationDiscovered({
                 userId: campaign.userId,
-                locationKind: newRef.kind,
-                locationId: newRef.row.id,
+                locationId: newRef.location.id,
                 campaignId,
               }),
               markLocationDiscovered({
                 userId: campaign.userId,
-                locationKind: prevRef.kind,
-                locationId: prevRef.row.id,
+                locationId: prevRef.location.id,
+                campaignId,
+              }),
+              markEdgeDiscovered({
+                fromLocationId: prevRef.location.id,
+                toLocationId: newRef.location.id,
                 campaignId,
               }),
             ];
-            if (prevRef.kind === LOCATION_KIND_WORLD && newRef.kind === LOCATION_KIND_WORLD) {
-              tasks.push(markEdgeDiscoveredByUser({
-                userId: campaign.userId,
-                fromLocationId: prevRef.row.id,
-                toLocationId: newRef.row.id,
-              }));
-              tasks.push(markEdgeDiscovered({
-                fromLocationId: prevRef.row.id,
-                toLocationId: newRef.row.id,
-                campaignId,
-              }));
-            }
             await Promise.allSettled(tasks);
           } catch (err) {
             log.warn({ err: err?.message, prevLoc, newLoc }, 'discovery marking failed (non-fatal)');
@@ -281,12 +271,11 @@ export async function handlePostSceneWork({
   try {
     const updatedCampaign = await prisma.campaign.findUnique({
       where: { id: campaignId },
-      select: { currentLocationName: true, currentLocationKind: true, currentLocationId: true },
+      select: { currentLocationName: true, currentLocationId: true },
     });
     const snapName = updatedCampaign?.currentLocationName ?? null;
     const snapshot = {
       name: snapName,
-      kind: updatedCampaign?.currentLocationKind ?? (snapName ? 'wandering' : null),
       id: updatedCampaign?.currentLocationId ?? null,
       sceneIndex: scene.sceneIndex,
     };
@@ -305,16 +294,14 @@ export async function handlePostSceneWork({
   // is already set on the campaign row.
   if (campaign?.livingWorldEnabled && sceneTranscript) {
     try {
-      const locKind = campaign.currentLocationKind || null;
       const locId = campaign.currentLocationId || null;
-      if (locKind && locId) {
+      if (locId) {
         const graphUpdate = await extractGraphUpdate({
           sceneText: sceneTranscript,
           playerAction,
           stateChanges,
           campaignId,
           locationId: locId,
-          locationKind: locKind,
           provider,
           timeoutMs: llmNanoTimeoutMs,
         });
@@ -375,14 +362,13 @@ export async function handlePostSceneWork({
     if (mentions.length > 0 && campaign?.livingWorldEnabled && campaign?.userId) {
       const flipResults = await Promise.allSettled(mentions.map(async (name) => {
         const ref = await resolveLocationByName(name, { campaignId });
-        if (!ref?.row?.id) return { name, flipped: false, reason: 'unresolved' };
+        if (!ref?.location?.id) return { name, flipped: false, reason: 'unresolved' };
         await markLocationHeardAbout({
           userId: campaign.userId,
-          locationKind: ref.kind,
-          locationId: ref.row.id,
+          locationId: ref.location.id,
           campaignId,
         });
-        return { name, flipped: true, kind: ref.kind, id: ref.row.id };
+        return { name, flipped: true, id: ref.location.id };
       }));
       const flipped = flipResults
         .map((r) => (r.status === 'fulfilled' ? r.value : null))

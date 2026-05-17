@@ -62,8 +62,7 @@ export async function enqueuePostSceneWork(payload) {
  * Enqueue field-map visual generation. Same dual-mode dispatch as
  * post-scene-work — Cloud Tasks in prod, inline in dev.
  *
- * Payload: { campaignId, userId, locationKind: 'world'|'campaign',
- *            locationId, requestId? }.
+ * Payload: { campaignId, userId, locationId, requestId? }.
  */
 export async function enqueuePostLocationBoardVisuals(payload) {
   if (!config.cloudTasksEnabled) {

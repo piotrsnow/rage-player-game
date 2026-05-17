@@ -41,8 +41,7 @@ const log = childLogger({ module: 'dungeonEntry' });
  * entrance room).
  */
 export async function handleDungeonEntry({ campaignId, currentRef = null, prevLoc = null }) {
-  if (!currentRef?.kind || !currentRef?.id) return null;
-  if (currentRef.kind !== LOCATION_KIND_WORLD) return null;
+  if (!currentRef?.id) return null;
   if (currentRef.name && currentRef.name === prevLoc) return null;
 
   try {
@@ -77,11 +76,10 @@ export async function handleDungeonEntry({ campaignId, currentRef = null, prevLo
       where: { id: campaignId },
       data: {
         currentLocationName: entranceRoom.canonicalName,
-        currentLocationKind: LOCATION_KIND_WORLD,
         currentLocationId: entranceRoom.id,
       },
     });
-    return { kind: LOCATION_KIND_WORLD, id: entranceRoom.id, name: entranceRoom.canonicalName };
+    return { id: entranceRoom.id, name: entranceRoom.canonicalName };
   } catch (err) {
     log.warn({ err: err?.message, currentRef }, 'handleDungeonEntry failed (non-fatal)');
     return null;

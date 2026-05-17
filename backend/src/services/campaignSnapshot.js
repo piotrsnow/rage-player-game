@@ -96,16 +96,16 @@ async function loadCampaignGraph(campaignId) {
     new Set(npcs.map((n) => n.worldNpcId).filter(Boolean)),
   );
   const worldLocationIds = new Set();
-  if (campaign.currentLocationKind === 'world' && campaign.currentLocationId) {
+  if (campaign.currentLocationId) {
     worldLocationIds.add(campaign.currentLocationId);
   }
   for (const n of npcs) {
-    if (n.lastLocationKind === 'world' && n.lastLocationId) {
-      worldLocationIds.add(n.lastLocationId);
+    if (n.currentLocationId) {
+      worldLocationIds.add(n.currentLocationId);
     }
   }
   for (const q of quests) {
-    if (q.locationKind === 'world' && q.locationId) {
+    if (q.locationId) {
       worldLocationIds.add(q.locationId);
     }
   }
@@ -191,7 +191,7 @@ const CAMPAIGN_SCALARS_TO_RESTORE = [
   'rating', 'playCount', 'lastSaved', 'livingWorldEnabled',
   'questGraphEnabled', 'worldTimeRatio', 'worldTimeMaxGapDays',
   'difficultyTier', 'settlementCaps', 'boundsMinX', 'boundsMaxX',
-  'boundsMinY', 'boundsMaxY', 'currentLocationName', 'currentLocationKind',
+  'boundsMinY', 'boundsMaxY', 'currentLocationName',
   'currentLocationId', 'currentX', 'currentY', 'pendingSlip',
   'pendingProvidence',
 ];
@@ -418,7 +418,6 @@ export async function restoreSnapshot(snapshotId, { createdBy } = {}) {
     const coreState = fresh.coreState && typeof fresh.coreState === 'object' ? fresh.coreState : {};
     await reconstructFromNormalized(campaignId, coreState, {
       currentLocationName: fresh.currentLocationName,
-      currentLocationKind: fresh.currentLocationKind,
       currentLocationId: fresh.currentLocationId,
     });
     await prisma.campaign.update({

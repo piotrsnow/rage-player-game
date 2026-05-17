@@ -56,29 +56,23 @@ async function loadCampaignSnapshot(campaignId) {
       })
     : [];
 
-  // Resolve location targets across both kinds in a single round-trip per side.
-  const worldLocIds = new Set();
-  const campaignLocIdSet = new Set(campaignLocations.map((l) => l.id));
-
-  function recordRef(kind, id) {
-    if (!kind || !id) return;
-    if (kind === 'world') worldLocIds.add(id);
-  }
-  recordRef(campaign.currentLocationKind, campaign.currentLocationId);
-  for (const n of npcs) recordRef(n.lastLocationKind, n.lastLocationId);
-  for (const q of quests) recordRef(q.locationKind, q.locationId);
+  // Collect all referenced location IDs for existence check.
+  const allLocIds = new Set(campaignLocations.map((l) => l.id));
+  if (campaign.currentLocationId) allLocIds.add(campaign.currentLocationId);
+  for (const n of npcs) if (n.currentLocationId) allLocIds.add(n.currentLocationId);
+  for (const q of quests) if (q.locationId) allLocIds.add(q.locationId);
   for (const e of edges) {
-    if (e.fromKind === 'world') worldLocIds.add(e.fromId);
-    if (e.toKind === 'world') worldLocIds.add(e.toId);
+    if (e.fromLocationId) allLocIds.add(e.fromLocationId);
+    if (e.toLocationId) allLocIds.add(e.toLocationId);
   }
 
-  const worldLocations = worldLocIds.size > 0
+  const existingLocations = allLocIds.size > 0
     ? await prisma.location.findMany({
-        where: { id: { in: Array.from(worldLocIds) } },
+        where: { id: { in: Array.from(allLocIds) } },
         select: { id: true },
       })
     : [];
-  const worldLocIdSet = new Set(worldLocations.map((l) => l.id));
+  const existingLocIdSet = new Set(existingLocations.map((l) => l.id));
 
   // Cross-campaign WorldNPC sync check needs the canonical alive flag.
   const worldNpcIds = Array.from(
@@ -101,17 +95,14 @@ async function loadCampaignSnapshot(campaignId) {
     edges,
     campaignLocations,
     characters,
-    worldLocIdSet,
-    campaignLocIdSet,
+    existingLocIdSet,
     worldNpcById,
   };
 }
 
-function locationExists({ kind, id }, snap) {
-  if (!kind || !id) return true;
-  if (kind === 'world') return snap.worldLocIdSet.has(id);
-  if (kind === 'campaign') return snap.campaignLocIdSet.has(id);
-  return false;
+function locationExists(id, snap) {
+  if (!id) return true;
+  return snap.existingLocIdSet.has(id);
 }
 
 // ── Rules ──
@@ -216,28 +207,26 @@ function ruleEquippedItemsExist(snap, campaignId) {
   return issues;
 }
 
-function rulePolymorphicRefs(snap) {
+function ruleLocationRefs(snap) {
   const issues = [];
-  function check(kind, id, owner) {
-    if (!kind && !id) return;
-    if (kind && id && locationExists({ kind, id }, snap)) return;
-    if (kind || id) {
-      issues.push({
-        severity: 'error',
-        ruleId: 'polymorphicRefs',
-        entity: owner.entity,
-        entityId: owner.id,
-        message: `${owner.label} points at ${kind || '?'}/${id || '?'} which doesn't exist.`,
-      });
-    }
+  function check(id, owner) {
+    if (!id) return;
+    if (locationExists(id, snap)) return;
+    issues.push({
+      severity: 'error',
+      ruleId: 'locationRefs',
+      entity: owner.entity,
+      entityId: owner.id,
+      message: `${owner.label} points at ${id} which doesn't exist.`,
+    });
   }
   for (const n of snap.npcs) {
-    check(n.lastLocationKind, n.lastLocationId, {
-      entity: 'CampaignNPC', id: n.id, label: `NPC "${n.name}" lastLocation`,
+    check(n.currentLocationId, {
+      entity: 'Npc', id: n.id, label: `NPC "${n.name}" currentLocation`,
     });
   }
   for (const q of snap.quests) {
-    check(q.locationKind, q.locationId, {
+    check(q.locationId, {
       entity: 'CampaignQuest', id: q.id, label: `Quest "${q.name}" location`,
     });
   }
@@ -272,23 +261,21 @@ function ruleQuestGiverExists(snap) {
 
 function ruleBidirectionalMovementEdges(snap, campaignId) {
   const issues = [];
-  // Build a key for each edge, then look up the reverse.
-  function key(kind, id) { return `${kind}:${id}`; }
   const fwdSet = new Set();
   for (const e of snap.edges) {
-    fwdSet.add(`${key(e.fromKind, e.fromId)}->${key(e.toKind, e.toId)}:${e.edgeType}`);
+    fwdSet.add(`${e.fromLocationId}->${e.toLocationId}:${e.edgeType}`);
   }
   for (const e of snap.edges) {
     if (!MOVEMENT_EDGE_TYPES.has(e.edgeType)) continue;
     if (e.bidirectional) continue;
-    const reverseKey = `${key(e.toKind, e.toId)}->${key(e.fromKind, e.fromId)}:${e.edgeType}`;
+    const reverseKey = `${e.toLocationId}->${e.fromLocationId}:${e.edgeType}`;
     if (!fwdSet.has(reverseKey)) {
       issues.push({
         severity: 'warning',
         ruleId: 'bidirectionalMovementEdges',
         entity: 'LocationEdge',
         entityId: e.id,
-        message: `Movement edge ${e.edgeType} from ${e.fromKind}/${e.fromId} → ${e.toKind}/${e.toId} has no reverse and is not bidirectional.`,
+        message: `Movement edge ${e.edgeType} from ${e.fromLocationId} → ${e.toLocationId} has no reverse and is not bidirectional.`,
         autoFix: {
           method: 'PATCH',
           path: `/v1/admin/campaigns/${campaignId}/edges/${e.id}`,
@@ -322,14 +309,14 @@ function ruleWorldNpcAliveSync(snap) {
 function ruleCurrentLocationExists(snap) {
   const issues = [];
   const c = snap.campaign;
-  if (!c.currentLocationKind && !c.currentLocationId) return issues;
-  if (!locationExists({ kind: c.currentLocationKind, id: c.currentLocationId }, snap)) {
+  if (!c.currentLocationId) return issues;
+  if (!locationExists(c.currentLocationId, snap)) {
     issues.push({
       severity: 'error',
       ruleId: 'currentLocationExists',
       entity: 'Campaign',
       entityId: c.id,
-      message: `Campaign currentLocation ${c.currentLocationKind}/${c.currentLocationId} doesn't resolve.`,
+      message: `Campaign currentLocationId ${c.currentLocationId} doesn't resolve.`,
     });
   }
   return issues;
@@ -360,7 +347,7 @@ const RULES = [
   ruleDagPrerequisites,
   ruleNpcDeadQuestStatus,
   ruleEquippedItemsExist,
-  rulePolymorphicRefs,
+  ruleLocationRefs,
   ruleQuestGiverExists,
   ruleBidirectionalMovementEdges,
   ruleWorldNpcAliveSync,

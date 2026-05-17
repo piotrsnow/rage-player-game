@@ -7,7 +7,6 @@
  */
 
 import { prisma } from '../lib/prisma.js';
-import { LOCATION_KIND_WORLD } from '../services/locationRefs.js';
 import { childLogger } from '../lib/logger.js';
 
 const log = childLogger({ module: 'seedWorldEdges' });
@@ -24,10 +23,8 @@ export async function seedCanonicalEdges(locationByName) {
 
     const exists = await prisma.locationEdge.findFirst({
       where: {
-        fromKind: LOCATION_KIND_WORLD,
-        fromId: fromLoc.id,
-        toKind: LOCATION_KIND_WORLD,
-        toId: toLoc.id,
+        fromLocationId: fromLoc.id,
+        toLocationId: toLoc.id,
         edgeType: edgeDef.edgeType,
         createdBy: 'system',
       },
@@ -37,10 +34,8 @@ export async function seedCanonicalEdges(locationByName) {
     try {
       await prisma.locationEdge.create({
         data: {
-          fromKind: LOCATION_KIND_WORLD,
-          fromId: fromLoc.id,
-          toKind: LOCATION_KIND_WORLD,
-          toId: toLoc.id,
+          fromLocationId: fromLoc.id,
+          toLocationId: toLoc.id,
           edgeType: edgeDef.edgeType,
           category: edgeDef.category,
           bidirectional: edgeDef.bidirectional ?? true,
