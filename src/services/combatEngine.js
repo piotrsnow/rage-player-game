@@ -3,7 +3,8 @@ import { rollLuckCheck } from '../../shared/domain/luck.js';
 import { computeEffectiveMods, tickEffects, isRestricted, addEffect } from '../../shared/domain/statusEffects.js';
 import { isTilePassable, getDestructibleHp, isPushable, RUBBLE_TILE, getTileDef } from '../../shared/domain/battlefieldTiles.js';
 import { gameData } from './gameDataService';
-import { DIFFICULTY_THRESHOLDS, COMBAT_SKILL_XP, WEAPON_SKILL_MAP } from '../data/rpgSystem';
+import { DIFFICULTY_THRESHOLDS, COMBAT_SKILL_XP, WEAPON_SKILL_MAP, getAdjustedThresholds } from '../data/rpgSystem';
+import { tierXpMultiplier } from '../../shared/domain/difficultyTier.js';
 import { SPELL_EFFECTS, findSpell } from '../data/rpgMagic.js';
 import { calculateCreativityBonus } from './mechanics/creativityBonus';
 import { resolveD50Test } from './mechanics/d50Test';
@@ -766,6 +767,7 @@ export function computeAttackPreview(combat, actorId, manoeuvreKey, targetId, op
   const manoeuvre = gameData.manoeuvres[manoeuvreKey];
   if (!actor || !manoeuvre) return null;
 
+  const DT = getAdjustedThresholds(options.campaignTier);
   const customDescription = sanitizeCombatDescription(options.customDescription);
 
   // Flee
@@ -775,7 +777,7 @@ export function computeAttackPreview(combat, actorId, manoeuvreKey, targetId, op
     const mods = computeEffectiveMods(actor.activeEffects);
     const effectBonus = Object.values(mods.attributeMods).reduce((s, v) => s + v, 0) + mods.testMod;
     const luck = getLuck(actor);
-    const baseThreshold = DIFFICULTY_THRESHOLDS.medium;
+    const baseThreshold = DT.medium;
 
     const totalBonus = zrecznosc + effectBonus + skillLevel + luck;
     const minRoll = Math.max(1, baseThreshold - totalBonus);
@@ -807,7 +809,7 @@ export function computeAttackPreview(combat, actorId, manoeuvreKey, targetId, op
     const mods = computeEffectiveMods(actor.activeEffects);
     const effectBonus = Object.values(mods.attributeMods).reduce((s, v) => s + v, 0) + mods.testMod;
     const luck = getLuck(actor);
-    const baseThreshold = DIFFICULTY_THRESHOLDS.easy;
+    const baseThreshold = DT.easy;
     const finalThreshold = baseThreshold + targetTough;
 
     const totalBonus = actorStr + effectBonus + skillLevel + luck;
@@ -844,7 +846,7 @@ export function computeAttackPreview(combat, actorId, manoeuvreKey, targetId, op
     const mods = computeEffectiveMods(actor.activeEffects);
     const effectBonus = Object.values(mods.attributeMods).reduce((s, v) => s + v, 0) + mods.testMod;
     const luck = getLuck(actor);
-    const baseThreshold = DIFFICULTY_THRESHOLDS.medium;
+    const baseThreshold = DT.medium;
 
     const totalBonus = inteligencja + effectBonus + luck;
     const minRoll = Math.max(1, baseThreshold - totalBonus);
@@ -885,7 +887,7 @@ export function computeAttackPreview(combat, actorId, manoeuvreKey, targetId, op
     const defenseAttr = getDefenseAttribute(target);
     const dodgePenalty = getArmourDodgePenalty(target) + (getShieldDataWithRarity(target)?.shield?.dodgePenalty ?? 0);
     const defenseSkillLevel = dodging ? Math.max(0, getCombatSkillLevel(target, 'Uniki') + dodgePenalty) : 0;
-    const baseThreshold = DIFFICULTY_THRESHOLDS.medium;
+    const baseThreshold = DT.medium;
     const finalThreshold = baseThreshold + defendBonus + defenseAttr + defenseSkillLevel;
 
     const actorPos = normalizePos(actor.position);
@@ -1122,6 +1124,8 @@ export function moveCombatant(combat, actorId, targetPosition) {
 // --- Manoeuvre resolution ---
 
 export function resolveManoeuvre(combat, actorId, manoeuvreKey, targetId, options = {}) {
+  const DT = getAdjustedThresholds(options.campaignTier);
+  const xpMul = tierXpMultiplier(options.campaignTier);
   // Deep-clone the subtrees we mutate below. `combat` may be frozen by Immer
   // (the game store uses `produce`), so a shallow `{...combat}` would still
   // hand us read-only nested objects (playerStats, skillXpAccumulator entries,
@@ -1257,14 +1261,14 @@ export function resolveManoeuvre(combat, actorId, manoeuvreKey, targetId, option
   if (manoeuvre.modifiers.flee) {
     const zrecznosc = getDefenseAttribute(actor);
     const skillLevel = getCombatSkillLevel(actor, 'Atletyka');
-    const test = resolveCombatTest(actor, zrecznosc, skillLevel, 0, DIFFICULTY_THRESHOLDS.medium);
+    const test = resolveCombatTest(actor, zrecznosc, skillLevel, 0, DT.medium);
 
     result.rolls.push({ skill: 'Atletyka', ...test, attributeKey: 'zrecznosc', attributeValue: zrecznosc, side: 'actor' });
     result.checkBreakdown = {
       attribute: zrecznosc,
       skillLevel,
-      baseTarget: DIFFICULTY_THRESHOLDS.medium,
-      target: DIFFICULTY_THRESHOLDS.medium,
+      baseTarget: DT.medium,
+      target: DT.medium,
     };
 
     if (test.success) {
@@ -1306,15 +1310,15 @@ export function resolveManoeuvre(combat, actorId, manoeuvreKey, targetId, option
     const inteligencja = actor.attributes?.inteligencja || 10;
     const castEffectMods = computeEffectiveMods(actor.activeEffects || []);
     const castEffectBonus = Object.values(castEffectMods.attributeMods).reduce((s, v) => s + v, 0) + castEffectMods.testMod;
-    const test = resolveCombatTest(actor, inteligencja, 0, 0, DIFFICULTY_THRESHOLDS.medium);
+    const test = resolveCombatTest(actor, inteligencja, 0, 0, DT.medium);
     result.rolls.push({ skill: 'Inteligencja', ...test, attributeKey: 'inteligencja', attributeValue: inteligencja, side: 'caster' });
     result.castBreakdown = {
       attribute: inteligencja,
       attributeKey: 'inteligencja',
       effectBonus: castEffectBonus,
       spellName: spellName || null,
-      baseTarget: DIFFICULTY_THRESHOLDS.medium,
-      target: DIFFICULTY_THRESHOLDS.medium,
+      baseTarget: DT.medium,
+      target: DT.medium,
     };
 
     if (test.success) {
@@ -1501,7 +1505,7 @@ export function resolveManoeuvre(combat, actorId, manoeuvreKey, targetId, option
     const actorStr = getAttackAttribute(actor);
     const targetTough = getToughness(target);
     const skillLevel = getCombatSkillLevel(actor, 'Walka bronia jednoręczna');
-    const threshold = DIFFICULTY_THRESHOLDS.easy + targetTough;
+    const threshold = DT.easy + targetTough;
     const test = resolveCombatTest(actor, actorStr, skillLevel, 0, threshold);
 
     result.rolls.push({ skill: 'Walka bronia jednoręczna', ...test, attributeKey: 'sila', attributeValue: actorStr, side: 'attacker' });
@@ -1564,7 +1568,7 @@ export function resolveManoeuvre(combat, actorId, manoeuvreKey, targetId, option
     const defenseAttr = getDefenseAttribute(target);
     const dodgePenalty = getArmourDodgePenalty(target) + (getShieldDataWithRarity(target)?.shield?.dodgePenalty ?? 0);
     const defenseSkillLevel = dodging ? Math.max(0, getCombatSkillLevel(target, 'Uniki') + dodgePenalty) : 0;
-    const effectiveThreshold = DIFFICULTY_THRESHOLDS.medium + defendBonus + defenseAttr + defenseSkillLevel;
+    const effectiveThreshold = DT.medium + defendBonus + defenseAttr + defenseSkillLevel;
 
     const actorPos = normalizePos(actor.position);
     const actorTile = getTileAt(state.terrainTiles, actorPos.x, actorPos.y);
@@ -1598,7 +1602,7 @@ export function resolveManoeuvre(combat, actorId, manoeuvreKey, targetId, option
       skillLevel: attackSkillLevel,
       creativityBonus,
       effectBonus,
-      baseTarget: DIFFICULTY_THRESHOLDS.medium,
+      baseTarget: DT.medium,
       target: effectiveThreshold,
       sureHit: isSureHit,
     };
@@ -1609,8 +1613,8 @@ export function resolveManoeuvre(combat, actorId, manoeuvreKey, targetId, option
       skillLevel: defenseSkillLevel,
       defendBonus,
       dodging,
-      baseTarget: DIFFICULTY_THRESHOLDS.medium,
-      target: DIFFICULTY_THRESHOLDS.medium + defendBonus + defenseAttr + defenseSkillLevel,
+      baseTarget: DT.medium,
+      target: DT.medium + defendBonus + defenseAttr + defenseSkillLevel,
     };
 
     if (test.success) {
@@ -1720,9 +1724,9 @@ export function resolveManoeuvre(combat, actorId, manoeuvreKey, targetId, option
       }
       if (result.outcome === 'hit') {
         const tier = getEnemyTier(target);
-        const xp = result.targetDefeated
+        const xp = (result.targetDefeated
           ? COMBAT_SKILL_XP.kill[tier] || COMBAT_SKILL_XP.kill.medium
-          : COMBAT_SKILL_XP.hit;
+          : COMBAT_SKILL_XP.hit) * xpMul;
         addCombatSkillXp(state, actor.id, weaponSkill, xp);
         state.playerStats.hits += 1;
         state.playerStats.damageDealt += result.damage || 0;
@@ -1731,7 +1735,7 @@ export function resolveManoeuvre(combat, actorId, manoeuvreKey, targetId, option
           state.playerStats.killsByTier[tier] = (state.playerStats.killsByTier[tier] || 0) + 1;
         }
       } else {
-        addCombatSkillXp(state, actor.id, weaponSkill, COMBAT_SKILL_XP.miss);
+        addCombatSkillXp(state, actor.id, weaponSkill, COMBAT_SKILL_XP.miss * xpMul);
         state.playerStats.misses += 1;
       }
     }
@@ -1744,7 +1748,7 @@ export function resolveManoeuvre(combat, actorId, manoeuvreKey, targetId, option
         state.playerStats.damageTaken += result.damage || 0;
       } else if (target.conditions.includes('dodging') && result.outcome === 'miss') {
         state.playerStats.dodges += 1;
-        addCombatSkillXp(state, target.id, 'Uniki', COMBAT_SKILL_XP.dodge);
+        addCombatSkillXp(state, target.id, 'Uniki', COMBAT_SKILL_XP.dodge * xpMul);
       }
     }
   }
@@ -1770,7 +1774,8 @@ export function destroyTile(state, x, y) {
  * Attack a destructible tile. Returns the updated state + result.
  * Uses Strength test vs medium difficulty.
  */
-export function attackObstacle(combat, actorId, targetX, targetY) {
+export function attackObstacle(combat, actorId, targetX, targetY, options = {}) {
+  const DT = getAdjustedThresholds(options.campaignTier);
   const state = {
     ...combat,
     combatants: combat.combatants.map(c => ({ ...c, conditions: [...(c.conditions || [])], activeEffects: [...(c.activeEffects || [])] })),
@@ -1795,7 +1800,7 @@ export function attackObstacle(combat, actorId, targetX, targetY) {
   }
 
   const str = getAttackAttribute(actor);
-  const test = resolveCombatTest(actor, str, 0, 0, DIFFICULTY_THRESHOLDS.medium);
+  const test = resolveCombatTest(actor, str, 0, 0, DT.medium);
   const result = {
     actor: actor.name, actorId: actor.id, actorType: actor.type,
     manoeuvre: 'Attack Obstacle', manoeuvreKey: 'attackObstacle',

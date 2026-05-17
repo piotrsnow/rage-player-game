@@ -181,7 +181,7 @@ function sanitizeModifiers(rawModifiers) {
     }));
 }
 
-export function resolveBackendDiceRollWithPreRoll(character, skillName, difficulty, preD50, luckySuccess, creativityBonus = 0, rawModifiers = []) {
+export function resolveBackendDiceRollWithPreRoll(character, skillName, difficulty, preD50, luckySuccess, creativityBonus = 0, rawModifiers = [], thresholdBonus = 0) {
   if (!character?.attributes) return null;
 
   const skillDef = SKILL_BY_NAME[skillName];
@@ -194,7 +194,7 @@ export function resolveBackendDiceRollWithPreRoll(character, skillName, difficul
   const clampedCreativity = clamp(Number(creativityBonus) || 0, 0, CREATIVITY_BONUS_MAX);
 
   const difficultyKey = difficulty || 'medium';
-  const baseThreshold = DIFFICULTY_THRESHOLDS[difficultyKey] || DIFFICULTY_THRESHOLDS.medium;
+  const baseThreshold = (DIFFICULTY_THRESHOLDS[difficultyKey] || DIFFICULTY_THRESHOLDS.medium) + (Number(thresholdBonus) || 0);
 
   const modifiers = sanitizeModifiers(rawModifiers);
   const modifierSum = clamp(

@@ -5,8 +5,13 @@ import { wrapPlayerInput, sanitizeForPrompt } from '../../../../shared/domain/pl
 const BESTIARY_RACES_STR = BESTIARY_RACES.join(', ');
 const BESTIARY_LOCATIONS_STR = BESTIARY_LOCATIONS.join(', ');
 
-function buildPreRollInstructions() {
-  return `Resolve per CORE RULES. Thresholds: easy=20, medium=35, hard=50, veryHard=65, extreme=80. Lucky success → auto-success. Include in TOP-LEVEL diceRolls [{skill, difficulty, success}].`;
+const BASE_THRESHOLDS = { easy: 20, medium: 35, hard: 50, veryHard: 65, extreme: 80 };
+
+function buildPreRollInstructions(thresholdBonus = 0) {
+  const t = thresholdBonus
+    ? Object.fromEntries(Object.entries(BASE_THRESHOLDS).map(([k, v]) => [k, v + thresholdBonus]))
+    : BASE_THRESHOLDS;
+  return `Resolve per CORE RULES. Thresholds: easy=${t.easy}, medium=${t.medium}, hard=${t.hard}, veryHard=${t.veryHard}, extreme=${t.extreme}. Lucky success → auto-success. Include in TOP-LEVEL diceRolls [{skill, difficulty, success}].`;
 }
 
 export function buildUserPrompt(playerAction, {
@@ -21,6 +26,7 @@ export function buildUserPrompt(playerAction, {
   pendingProvidence = null,
   entityTags = null,
   recentQuickBeats = null,
+  thresholdBonus = 0,
 } = {}) {
   if (isFirstScene) {
     return `Generate the opening scene. Set the stage with an atmospheric description. Introduce the setting, hint at adventure hooks, and include at least one NPC who speaks in direct dialogue. This is scene 1 — keep it concise (1-2 short paragraphs).
@@ -233,7 +239,7 @@ Scale intensity with the final margin (after creativityBonus${forceRoll?.enabled
       parts.push(`If the action involves ADDITIONAL sub-actions needing separate checks (max ${extraRolls.length} more):
 ${rollLines.join('\n')}
 Each ADDITIONAL roll MUST be on a DIFFERENT skill than the engine-resolved one (${r.skill}). Never roll twice for the same skill in one scene — collapse multiple uses of ${r.skill} into the resolved check above.
-${buildPreRollInstructions()}`);
+${buildPreRollInstructions(thresholdBonus)}`);
     }
   } else if (!isPostCombat && !isIdleWorldEvent && !isProvidenceAfterIncident) {
     if (preRolls && preRolls.length > 0) {
@@ -244,7 +250,7 @@ ${buildPreRollInstructions()}`);
       parts.push(`No skill check was pre-resolved.
 If you determine this action requires skill checks (genuine risk/uncertainty), use IN ORDER:
 ${rollLines.join('\n')}
-${buildPreRollInstructions()}`);
+${buildPreRollInstructions(thresholdBonus)}`);
     } else {
       parts.push('No skill check for this action.');
     }
@@ -254,6 +260,93 @@ ${buildPreRollInstructions()}`);
   if (sceneCount > 0 && sceneCount % 7 === 0) {
     parts.push('Consider presenting a moral dilemma if the narrative supports it — include "dilemma" field with 2-4 choices.');
   }
+
+  return parts.join('\n\n');
+}
+
+// ---------------------------------------------------------------------------
+// Multiplayer user prompt
+// ---------------------------------------------------------------------------
+
+const NEEDS_LABELS = {
+  hunger: { low: 'hungry', critical: 'weak, dizzy' },
+  thirst: { low: 'thirsty', critical: 'parched, fading' },
+  bladder: { low: 'uncomfortable', critical: 'desperate' },
+  rest: { low: 'tired, slower', critical: 'stumbling, can barely stand' },
+};
+
+function buildMultiplayerNeedsReminder(characters) {
+  if (!characters?.length) return '';
+  const charLines = [];
+  for (const c of characters) {
+    if (!c.needs) continue;
+    const parts = [];
+    for (const [key, labels] of Object.entries(NEEDS_LABELS)) {
+      const val = c.needs[key] ?? 100;
+      if (val < 15) parts.push(`${key} ${val}/100 [CRITICAL]`);
+      else if (val < 30) parts.push(`${key} ${val}/100 [LOW]`);
+    }
+    if (parts.length > 0) charLines.push(`- ${c.name}: ${parts.join(', ')}`);
+  }
+  if (charLines.length === 0) return '';
+  return `UNMET CHARACTER NEEDS:\n${charLines.join('\n')}`;
+}
+
+export function buildMultiplayerUserPrompt(actions, {
+  isFirstScene = false,
+  language = 'pl',
+  preRolledDice = null,
+  skipDiceRolls = null,
+  characterMomentum = null,
+  dmSettings = null,
+  needsSystemEnabled = false,
+  characters = [],
+} = {}) {
+  if (isFirstScene) {
+    return `Generate the opening scene of this multiplayer campaign. Introduce all player characters and set the stage.
+Include stateChanges: timeAdvance, currentLocation, npcs (introduce at least 1), journalEntries.`;
+  }
+
+  const parts = [];
+  const testsFrequency = dmSettings?.testsFrequency ?? 50;
+
+  if (needsSystemEnabled && characters?.length) {
+    const needsBlock = buildMultiplayerNeedsReminder(characters);
+    if (needsBlock) parts.push(needsBlock);
+  }
+
+  const hasWait = actions.some(a => a.action === '[WAIT]');
+  const hasContinue = actions.some(a => a.action === '[CONTINUE]');
+  if (hasWait) parts.push('[WAIT] — Player(s) chose passive waiting: no initiative, no dice roll for them. World advances around them.');
+  if (hasContinue) parts.push('[CONTINUE] — Player(s) want the story to move forward. You drive the next beat.');
+
+  const actionLines = actions.map(a => {
+    const skipRoll = skipDiceRolls?.[a.name];
+    const diceInfo = !skipRoll && preRolledDice?.[a.name] ? ` [PRE-ROLLED d50: ${preRolledDice[a.name]}]` : '';
+    const skipInfo = skipRoll ? ' [NO DICE ROLL]' : '';
+    const momInfo = !skipRoll && characterMomentum?.[a.name] != null && characterMomentum[a.name] !== 0
+      ? ` [MOMENTUM ${characterMomentum[a.name] > 0 ? '+' : ''}${characterMomentum[a.name]}]`
+      : '';
+    return `- ${a.name} (${a.gender}): ${a.action}${a.isCustom ? ' [CUSTOM ACTION]' : ''}${diceInfo}${skipInfo}${momInfo}`;
+  }).join('\n');
+
+  parts.push(`The players' actions this round:\n${actionLines}`);
+
+  if (preRolledDice && Object.keys(preRolledDice).length > 0) {
+    parts.push('PRE-ROLLED DICE: Use the exact d50 values shown above. Determine skill/target FIRST, then check if the pre-rolled value succeeds or fails, THEN write narrative matching outcomes.');
+  }
+  if (skipDiceRolls && Object.keys(skipDiceRolls).length > 0) {
+    parts.push('Characters marked [NO DICE ROLL] do NOT get a diceRolls entry. Resolve their actions narratively.');
+  }
+
+  const hasCustom = actions.some(a => a.isCustom);
+  if (hasCustom) {
+    parts.push('CUSTOM ACTIONS: Actions marked [CUSTOM ACTION] were typed by the player. Award creativityBonus 10-40. Include in diceRoll entry. COMBINED BONUS CAP: creativityBonus + momentumBonus + dispositionBonus capped at +30.');
+  }
+
+  parts.push(`Dice roll frequency: ~${testsFrequency}%. Resolve all dice checks FIRST, then write narrative consistent with ALL outcomes.`);
+
+  parts.push(`LANGUAGE: Write narrative, dialogueSegments, suggestedActions in ${language === 'pl' ? 'Polish' : 'English'}. soundEffect, musicPrompt, imagePrompt in English.`);
 
   return parts.join('\n\n');
 }

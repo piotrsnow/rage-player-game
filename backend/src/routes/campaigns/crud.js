@@ -332,9 +332,11 @@ export async function crudCampaignRoutes(app) {
       // graph is traversable from scene 1.
       const peeked = peekStartSpawn(request.user.id);
       if (peeked?.sublocationId && peeked?.settlementId) {
-        ensureContainsEdge(peeked.settlementId, peeked.sublocationId).catch((err) =>
-          log.warn({ err: err?.message, campaignId: campaign.id }, 'ensureContainsEdge failed (non-fatal)'),
-        );
+        try {
+          await ensureContainsEdge(peeked.settlementId, peeked.sublocationId);
+        } catch (err) {
+          log.warn({ err: err?.message, campaignId: campaign.id }, 'ensureContainsEdge failed (non-fatal)');
+        }
       }
     }
 
@@ -398,13 +400,14 @@ export async function crudCampaignRoutes(app) {
       if (!slim.world) slim.world = {};
       slim.world.currentLocation = startSpawn.sublocationName;
       const resolved = await resolveLocationByName(startSpawn.sublocationName, { campaignId: campaign.id }).catch(() => null);
+      const spawnUpdate = { currentLocationName: startSpawn.sublocationName };
+      if (resolved?.kind && resolved?.row?.id) {
+        spawnUpdate.currentLocationKind = resolved.kind;
+        spawnUpdate.currentLocationId = resolved.row.id;
+      }
       await prisma.campaign.update({
         where: { id: campaign.id },
-        data: {
-          currentLocationName: startSpawn.sublocationName,
-          currentLocationKind: resolved?.kind || null,
-          currentLocationId: resolved?.row?.id || null,
-        },
+        data: spawnUpdate,
       }).catch((err) => log.warn({ err, campaignId: campaign.id }, 'Failed to override currentLocation for startSpawn'));
     }
     if (startSpawn?.npcName && Array.isArray(quests?.active)) {

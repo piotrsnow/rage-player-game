@@ -42,7 +42,7 @@ import { loadCampaignNpcNames, isNpcName } from '../../livingWorld/npcNameGuard.
 
 // Re-exported so existing test file processStateChanges.test.js keeps
 // working via `import { shouldPromoteToGlobal } from './processStateChanges.js'`.
-export { shouldPromoteToGlobal, generateSceneEmbedding };
+export { shouldPromoteToGlobal, generateSceneEmbedding, resolveCurrentLocationTarget };
 
 const log = childLogger({ module: 'sceneGenerator' });
 

@@ -22,15 +22,17 @@ export const COMBAT_CHAR_XP_BY_TIER = {
 /**
  * Compute bonus character XP for a resolved combat.
  * @param {Object} combatResult - { outcome, combatStats: { killsByTier } }
+ * @param {number} [xpMultiplier=1] - campaign tier XP multiplier
  * @returns {number} bonus char XP, or 0 when outcome is not a victory
  */
-export function computeCombatCharXp(combatResult) {
+export function computeCombatCharXp(combatResult, xpMultiplier = 1) {
   if (!combatResult || combatResult.outcome !== 'victory') return 0;
   const killsByTier = combatResult.combatStats?.killsByTier || {};
+  const mul = xpMultiplier > 1 ? xpMultiplier : 1;
   let total = 0;
   for (const [tier, count] of Object.entries(killsByTier)) {
     const perKill = COMBAT_CHAR_XP_BY_TIER[tier] ?? COMBAT_CHAR_XP_BY_TIER.medium;
     total += perKill * (count || 0);
   }
-  return total;
+  return total * mul;
 }

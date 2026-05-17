@@ -13,9 +13,10 @@ import PortraitGenerator from './PortraitGenerator';
 import CharacterHistoryPanel from './CharacterHistoryPanel';
 import CustomSelect from '../ui/CustomSelect';
 import { translateSkill, translateAttribute } from '../../utils/rpgTranslate';
-import { SKILLS, DIFFICULTY_THRESHOLDS, SKILL_CAPS, xpForSkillLevel } from '../../data/rpgSystem';
+import { SKILLS, DIFFICULTY_THRESHOLDS, SKILL_CAPS, xpForSkillLevel, getAdjustedThresholds } from '../../data/rpgSystem';
 import { SPELL_TREES } from '../../data/rpgMagic';
 import { resolveKnownSpellDisplay } from '../../services/magicEngine';
+import { useGameStore } from '../../stores/gameStore';
 import { gameData } from '../../services/gameDataService';
 import SkillGainHistory from './SkillGainHistory';
 import FavoriteScenesList from './FavoriteScenesList';
@@ -192,6 +193,8 @@ function getSkillXpProgress(skillName, skillsMap) {
 }
 
 function SkillDetailPanel({ skillName, level, character, t }) {
+  const campaignTier = useGameStore((s) => s.state.campaign?.difficultyTier || null);
+  const DT = getAdjustedThresholds(campaignTier);
   const attrKey = getSkillAttribute(skillName);
   const attrValue = attrKey ? (character.attributes?.[attrKey] || 0) : 0;
   const attrLabel = attrKey ? translateAttribute(attrKey, t) : '—';
@@ -228,7 +231,7 @@ function SkillDetailPanel({ skillName, level, character, t }) {
           {' vs próg trudności'}
         </p>
         <div className="flex flex-wrap gap-2 mt-3">
-          {Object.entries(DIFFICULTY_THRESHOLDS).map(([key, val]) => (
+          {Object.entries(DT).map(([key, val]) => (
             <span key={key} className="text-xs px-2.5 py-1 rounded-sm bg-surface-container-highest/80 text-on-surface-variant border border-outline-variant/10">
               {DIFFICULTY_LABELS[key] || key}: <span className="text-tertiary font-headline">{val}</span>
             </span>
@@ -401,9 +404,6 @@ function SpellsGrid({
   selectedSpellName,
   onSelectSpell,
   spellImages,
-  currentMana,
-  onRegenerateImage,
-  regeneratingSpellName,
   viewMode,
   onViewModeChange,
   t,
@@ -430,11 +430,6 @@ function SpellsGrid({
     }
     return entries;
   }, [customSpellsBySchool]);
-  const selectedSpell = selectedSpellName ? knownSpellByName.get(selectedSpellName) : null;
-  const selectedSpellImageUrl = selectedSpell && spellImages?.[selectedSpell.name]
-    ? apiClient.resolveMediaUrl(spellImages[selectedSpell.name])
-    : null;
-  const selectedSpellHasEnoughMana = selectedSpell ? currentMana >= selectedSpell.manaCost : false;
   const toggleTreeCollapsed = (treeId) => {
     setCollapsedTrees((prev) => ({ ...prev, [treeId]: !prev[treeId] }));
   };
@@ -475,105 +470,16 @@ function SpellsGrid({
       </div>
 
       {viewMode === 'list' ? (
-        selectedSpell ? (
-          <div
-            className="relative min-h-[22rem] overflow-hidden rounded-sm border border-tertiary/20 bg-surface-container-high animate-slide-in-right cursor-pointer"
-            style={selectedSpellImageUrl ? { backgroundImage: `url(${selectedSpellImageUrl})`, backgroundSize: 'cover', backgroundPosition: 'center' } : undefined}
-            onClick={() => onSelectSpell(null)}
-            role="button"
-            tabIndex={0}
-            onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') onSelectSpell(null); }}
-          >
-            <div className="absolute inset-0 bg-gradient-to-t from-surface-dim via-surface-dim/85 to-surface-dim/35" />
-            <div className="absolute inset-0 backdrop-blur-[1px]" />
-            <div className="relative p-4 sm:p-5 min-h-[22rem] flex flex-col justify-between">
-              <div className="flex items-start justify-between gap-3">
-                <div className="min-w-0">
-                  <p className="text-[10px] font-label uppercase tracking-[0.18em] text-tertiary/80 mb-1">
-                    {selectedSpell.isCustom
-                      ? selectedSpell.treeName
-                      : `${selectedSpell.treeName} · ${t('magic.level', { level: selectedSpell.level, defaultValue: `Poziom ${selectedSpell.level}` })}`}
-                  </p>
-                  <h4 className="font-headline text-2xl text-tertiary leading-tight drop-shadow">
-                    {selectedSpell.name}
-                  </h4>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => onSelectSpell(null)}
-                  aria-label={t('common.back', { defaultValue: 'Wróć' })}
-                  className="shrink-0 inline-flex items-center gap-1 px-2.5 py-1 rounded-sm bg-black/55 text-on-surface-variant hover:text-tertiary border border-outline-variant/25 transition-colors backdrop-blur-sm"
-                >
-                  <span className="material-symbols-outlined text-sm">arrow_back</span>
-                  <span className="text-[10px] font-label uppercase tracking-wider">
-                    {t('common.back', { defaultValue: 'Wróć' })}
-                  </span>
-                </button>
-              </div>
-
-              {!selectedSpellImageUrl && (
-                <div className="flex-1 flex items-center justify-center py-8">
-                  <span className="material-symbols-outlined text-7xl text-tertiary/35">{selectedSpell.icon}</span>
-                </div>
-              )}
-
-              <div className="space-y-4">
-                <div className="grid grid-cols-2 gap-2">
-                  <div className="rounded-sm bg-black/55 border border-outline-variant/20 px-3 py-2 backdrop-blur-sm">
-                    <div className="text-[9px] font-label uppercase tracking-widest text-on-surface-variant/70">
-                      {t('magic.manaCost', 'Koszt many')}
-                    </div>
-                    <div className={`font-headline text-lg ${selectedSpellHasEnoughMana ? 'text-tertiary' : 'text-error-light'}`}>
-                      {selectedSpell.manaCost}
-                    </div>
-                  </div>
-                  <div className="rounded-sm bg-black/55 border border-outline-variant/20 px-3 py-2 backdrop-blur-sm">
-                    <div className="text-[9px] font-label uppercase tracking-widest text-on-surface-variant/70">
-                      {t('magic.usesLabel', 'Uzycia')}
-                    </div>
-                    <div className="font-headline text-lg text-primary">{selectedSpell.uses}</div>
-                  </div>
-                </div>
-
-                <div className="rounded-sm bg-black/60 border border-outline-variant/20 p-3 backdrop-blur-sm">
-                  <p className="text-on-surface-variant text-sm leading-relaxed">
-                    {selectedSpell.description || t('magic.customSpellDescription', { defaultValue: 'Zaklęcie z fabuły lub wymyślone — nie należy do standardowego drzewka w grze.' })}
-                  </p>
-                  {!selectedSpellHasEnoughMana && (
-                    <p className="text-error-light/80 text-xs mt-3">
-                      {t('magic.notEnoughMana', { defaultValue: 'Za malo many na rzucenie tego zaklecia.' })}
-                    </p>
-                  )}
-                </div>
-
-                {onRegenerateImage && (
-                  <button
-                    type="button"
-                    onClick={(e) => { e.stopPropagation(); onRegenerateImage(selectedSpell.name); }}
-                    disabled={regeneratingSpellName === selectedSpell.name}
-                    className="flex items-center gap-1.5 text-xs font-label text-on-surface-variant/80 hover:text-tertiary transition-colors disabled:opacity-50"
-                  >
-                    <span className={`material-symbols-outlined text-sm ${regeneratingSpellName === selectedSpell.name ? 'animate-spin' : ''}`}>
-                      {regeneratingSpellName === selectedSpell.name ? 'progress_activity' : 'refresh'}
-                    </span>
-                    {regeneratingSpellName === selectedSpell.name
-                      ? t('magic.regeneratingImage', { defaultValue: 'Generowanie...' })
-                      : t('magic.regenerateImage', { defaultValue: 'Regeneruj obraz' })}
-                  </button>
-                )}
-              </div>
-            </div>
-          </div>
-        ) : (
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5 animate-fade-in">
             {spells.map((spell) => {
               const imageUrl = spellImages?.[spell.name];
+              const isSelected = selectedSpellName === spell.name;
               return (
                 <button
                   key={spell.name}
                   type="button"
-                  onClick={() => onSelectSpell(spell.name)}
-                  className="group bg-surface-container-high/60 backdrop-blur-md border-b-2 border-tertiary/20 flex flex-col items-center text-center transition-all hover:bg-surface-container-highest/80 hover:border-tertiary/50 overflow-hidden"
+                  onClick={() => onSelectSpell(isSelected ? null : spell.name)}
+                  className={`group bg-surface-container-high/60 backdrop-blur-md border-b-2 flex flex-col items-center text-center transition-all hover:bg-surface-container-highest/80 hover:border-tertiary/50 overflow-hidden ${isSelected ? 'border-tertiary ring-1 ring-tertiary/50 scale-105' : 'border-tertiary/20'}`}
                 >
                   {imageUrl ? (
                     <div className="w-full aspect-square relative">
@@ -620,7 +526,6 @@ function SpellsGrid({
               );
             })}
           </div>
-        )
       ) : (
         <div className="space-y-3">
           {treeEntries.map(([treeId, tree]) => {
@@ -789,6 +694,12 @@ export default function CharacterPanel({
       };
     });
   }, [character.spells?.known, character.spells?.usageCounts, character.spells?.icons, character.spells?.schools, character.spells?.details, t]);
+  const selectedSpell = selectedSpellName ? knownSpells.find((s) => s.name === selectedSpellName) || null : null;
+  const selectedSpellImageUrl = selectedSpell && gameData.spellImages?.[selectedSpell.name]
+    ? apiClient.resolveMediaUrl(gameData.spellImages[selectedSpell.name])
+    : null;
+  const selectedSpellHasEnoughMana = selectedSpell ? (character.mana?.current || 0) >= selectedSpell.manaCost : false;
+
   const incompleteCustomSpellNames = useMemo(
     () => knownSpells
       .filter((spell) => spell.isCustom && (!spell.school || !spell.level || !spell.description))
@@ -954,9 +865,6 @@ export default function CharacterPanel({
       selectedSpellName={selectedSpellName}
       onSelectSpell={setSelectedSpellName}
       spellImages={gameData.spellImages}
-      currentMana={character.mana?.current || 0}
-      onRegenerateImage={canRegenerateSpellImage ? handleRegenerateSpellImage : null}
-      regeneratingSpellName={regeneratingSpellName}
       viewMode={spellViewMode}
       onViewModeChange={setSpellViewMode}
       t={t}
@@ -1185,6 +1093,96 @@ export default function CharacterPanel({
 
           <SkillsGrid character={character} t={t} />
 
+          {selectedSpell && (
+            <div
+              className="relative overflow-hidden rounded-sm border border-tertiary/20 bg-surface-container-low animate-fade-in"
+              style={selectedSpellImageUrl ? { backgroundImage: `url(${selectedSpellImageUrl})`, backgroundSize: 'cover', backgroundPosition: 'center' } : undefined}
+            >
+              {selectedSpellImageUrl && (
+                <>
+                  <div className="absolute inset-0 bg-gradient-to-t from-surface-dim via-surface-dim/85 to-surface-dim/35" />
+                  <div className="absolute inset-0 backdrop-blur-[1px]" />
+                </>
+              )}
+              <div className="relative p-6">
+                <div className="flex items-center justify-between mb-3">
+                  <h3 className="text-tertiary font-headline flex items-center gap-2">
+                    <span className="material-symbols-outlined text-sm">auto_awesome</span>
+                    {t('magic.spellDetails', { defaultValue: 'Szczegóły zaklęcia' })}
+                  </h3>
+                  <button
+                    onClick={() => setSelectedSpellName(null)}
+                    aria-label={t('common.close')}
+                    className="text-on-surface-variant hover:text-tertiary transition-colors"
+                  >
+                    <span className="material-symbols-outlined text-base">close</span>
+                  </button>
+                </div>
+
+                <div className="mb-3">
+                  <p className="text-[10px] font-label uppercase tracking-[0.18em] text-tertiary/80 mb-1">
+                    {selectedSpell.isCustom
+                      ? selectedSpell.treeName
+                      : `${selectedSpell.treeName} · ${t('magic.level', { level: selectedSpell.level, defaultValue: `Poziom ${selectedSpell.level}` })}`}
+                  </p>
+                  <h4 className="font-headline text-2xl text-tertiary leading-tight">
+                    {selectedSpell.name}
+                  </h4>
+                </div>
+
+                {!selectedSpellImageUrl && (
+                  <div className="flex items-center justify-center py-6">
+                    <span className="material-symbols-outlined text-6xl text-tertiary/30">{selectedSpell.icon}</span>
+                  </div>
+                )}
+
+                <div className="grid grid-cols-2 gap-2 mb-3">
+                  <div className="rounded-sm bg-surface-container-high/60 border border-outline-variant/15 px-3 py-2">
+                    <div className="text-[9px] font-label uppercase tracking-widest text-on-surface-variant/70">
+                      {t('magic.manaCost', 'Koszt many')}
+                    </div>
+                    <div className={`font-headline text-lg ${selectedSpellHasEnoughMana ? 'text-tertiary' : 'text-error-light'}`}>
+                      {selectedSpell.manaCost}
+                    </div>
+                  </div>
+                  <div className="rounded-sm bg-surface-container-high/60 border border-outline-variant/15 px-3 py-2">
+                    <div className="text-[9px] font-label uppercase tracking-widest text-on-surface-variant/70">
+                      {t('magic.usesLabel', 'Użycia')}
+                    </div>
+                    <div className="font-headline text-lg text-primary">{selectedSpell.uses}</div>
+                  </div>
+                </div>
+
+                <div className="rounded-sm bg-surface-container-high/40 border border-outline-variant/10 p-3">
+                  <p className="text-on-surface-variant text-sm leading-relaxed">
+                    {selectedSpell.description || t('magic.customSpellDescription', { defaultValue: 'Zaklęcie z fabuły lub wymyślone — nie należy do standardowego drzewka w grze.' })}
+                  </p>
+                  {!selectedSpellHasEnoughMana && (
+                    <p className="text-error-light/80 text-xs mt-3">
+                      {t('magic.notEnoughMana', { cost: selectedSpell.manaCost, current: character.mana?.current || 0 })}
+                    </p>
+                  )}
+                </div>
+
+                {canRegenerateSpellImage && (
+                  <button
+                    type="button"
+                    onClick={() => handleRegenerateSpellImage(selectedSpell.name)}
+                    disabled={regeneratingSpellName === selectedSpell.name}
+                    className="flex items-center gap-1.5 text-xs font-label text-on-surface-variant/80 hover:text-tertiary transition-colors disabled:opacity-50 mt-3"
+                  >
+                    <span className={`material-symbols-outlined text-sm ${regeneratingSpellName === selectedSpell.name ? 'animate-spin' : ''}`}>
+                      {regeneratingSpellName === selectedSpell.name ? 'progress_activity' : 'refresh'}
+                    </span>
+                    {regeneratingSpellName === selectedSpell.name
+                      ? t('magic.regeneratingImage', { defaultValue: 'Generowanie...' })
+                      : t('magic.regenerateImage', { defaultValue: 'Regeneruj obraz' })}
+                  </button>
+                )}
+              </div>
+            </div>
+          )}
+
           {selectedItem && (
             <div className="bg-surface-container-low p-6 border border-outline-variant/10 rounded-sm relative">
               <div className="flex items-center justify-between mb-2">
@@ -1219,8 +1217,6 @@ export default function CharacterPanel({
         </div>
 
         <div className="lg:col-span-4 space-y-6 animate-fade-in">
-          {spellViewMode !== 'trees' && spellPanel}
-
           <Inventory
             items={inventoryItems}
             money={character.money}
@@ -1233,6 +1229,8 @@ export default function CharacterPanel({
             onMoveToInventory={dispatch && !isMultiplayer ? handleMoveMaterialToInventory : undefined}
             moveDisabled={moveMaterialDisabled}
           />
+
+          {spellViewMode !== 'trees' && spellPanel}
         </div>
 
       </div>

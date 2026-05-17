@@ -1,4 +1,4 @@
-import { SKILLS, DIFFICULTY_THRESHOLDS, MOMENTUM_RANGE, CREATIVITY_BONUS_MAX } from '../../data/rpgSystem.js';
+import { SKILLS, DIFFICULTY_THRESHOLDS, MOMENTUM_RANGE, CREATIVITY_BONUS_MAX, getAdjustedThresholds } from '../../data/rpgSystem.js';
 import { rollD50, rollPercentage } from '../gameState.js';
 import { rollLuckCheck } from '../../../shared/domain/luck.js';
 
@@ -108,6 +108,7 @@ export function resolveSkillCheck({
   creativityBonus = 0,
   actionContext = null,
   difficultyOverride = null,
+  campaignTier = null,
 }) {
   const context = actionContext || inferActionContext(actionText);
   if (!context) return null;
@@ -158,7 +159,8 @@ export function resolveSkillCheck({
 
   // --- Determine threshold ---
   const difficultyKey = difficultyOverride || context.difficulty || 'medium';
-  const threshold = DIFFICULTY_THRESHOLDS[difficultyKey] || DIFFICULTY_THRESHOLDS.medium;
+  const thresholds = getAdjustedThresholds(campaignTier);
+  const threshold = thresholds[difficultyKey] || thresholds.medium;
 
   // --- Determine success ---
   const margin = total - threshold;

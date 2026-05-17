@@ -8,6 +8,24 @@
 export const DIFFICULTY_TIERS = ['low', 'medium', 'high', 'deadly'];
 
 /**
+ * Dice-roll threshold bonus for a campaign difficulty tier.
+ * Each step above 'low' adds +10 to every skill-check threshold.
+ */
+export function tierThresholdBonus(tier) {
+  const idx = DIFFICULTY_TIERS.indexOf(tier);
+  return idx > 0 ? idx * 10 : 0;
+}
+
+/**
+ * XP multiplier for a campaign difficulty tier.
+ * low=×1, medium=×2, high=×4, deadly=×8 (doubles each step).
+ */
+export function tierXpMultiplier(tier) {
+  const idx = DIFFICULTY_TIERS.indexOf(tier);
+  return idx > 0 ? Math.pow(2, idx) : 1;
+}
+
+/**
  * Return the tiers a character of `level` is allowed to choose.
  * Level rules match the user's spec:
  *   1-5   → ['low']

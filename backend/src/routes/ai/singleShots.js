@@ -323,11 +323,12 @@ export async function singleShotRoutes(fastify) {
       provider = 'openai',
       model,
       modelTier = 'standard',
+      campaignDifficultyTier = null,
     } = request.body || {};
     const userApiKeys = await loadUserApiKeys(prisma, request.user?.id);
     try {
       return await resolveCombatTurn({
-        combatSnapshot, playerAction, diceRoll, language, provider, model, modelTier, userApiKeys,
+        combatSnapshot, playerAction, diceRoll, language, provider, model, modelTier, userApiKeys, campaignDifficultyTier,
       });
     } catch (err) {
       const status = err.statusCode || 502;

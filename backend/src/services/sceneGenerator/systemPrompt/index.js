@@ -21,10 +21,11 @@ import {
   responseFormatBlock,
   worldSettingBlock,
   buildSkillTableBlock,
+  multiplayerRulesBlock,
 } from './staticRules.js';
 import { buildConditionalRules } from './conditionalRules.js';
 import { buildDmSettingsBlock } from './dmSettingsBlock.js';
-import { buildCharacterBlock } from './characterBlock.js';
+import { buildCharacterBlock, buildMultiplayerCharacterBlock } from './characterBlock.js';
 import {
   buildWorldStateBlock,
   buildKeyNpcsBlock,
@@ -71,6 +72,9 @@ export function buildLeanSystemPrompt(coreState, recentScenes, language = 'pl', 
   magicExposure = null,
   playerAction = '',
   provider = 'openai',
+  isMultiplayer = false,
+  players = [],
+  characters = [],
 } = {}) {
   const cs = coreState;
   const intent = intentResult._intent || 'freeform';
@@ -105,6 +109,10 @@ export function buildLeanSystemPrompt(coreState, recentScenes, language = 'pl', 
     responseFormatBlock(language, { provider }),
   ];
 
+  if (isMultiplayer) {
+    staticSections.push(multiplayerRulesBlock(language));
+  }
+
   // Living World static-content blocks. Item attribution + dungeon-flow hints
   // stay; the location-policy slot (newLocations / currentLocation) moved
   // ENTIRELY into conditionalRules — it now fires only when the player is
@@ -130,9 +138,13 @@ export function buildLeanSystemPrompt(coreState, recentScenes, language = 'pl', 
     dynamicSections.push(`Conditional rules:\n${conditionalRules.join('\n')}`);
   }
 
-  dynamicSections.push(buildSkillTableBlock(character, sceneCount));
-
-  dynamicSections.push(buildCharacterBlock(character));
+  if (isMultiplayer && characters.length > 0) {
+    dynamicSections.push(buildSkillTableBlock({}, sceneCount));
+    dynamicSections.push(buildMultiplayerCharacterBlock(characters, players));
+  } else {
+    dynamicSections.push(buildSkillTableBlock(character, sceneCount));
+    dynamicSections.push(buildCharacterBlock(character));
+  }
 
   const worldState = buildWorldStateBlock(world, { sceneCount, expectedScenes });
   if (worldState) dynamicSections.push(worldState);

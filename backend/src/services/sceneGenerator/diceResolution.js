@@ -22,10 +22,11 @@ const DIFFICULTY_SKILL_XP = {
  * Called after scene generation, before returning result to frontend.
  * diceRolls: resolved dice rolls array (nano + model), used for roll-based XP.
  */
-export function calculateFreeformSkillXP(stateChanges, hasExternalDiceRoll, diceRolls) {
+export function calculateFreeformSkillXP(stateChanges, hasExternalDiceRoll, diceRolls, xpMultiplier = 1) {
   if (!stateChanges) return;
   const skillsUsed = stateChanges.skillsUsed;
   const difficulty = stateChanges.actionDifficulty;
+  const mul = xpMultiplier > 1 ? xpMultiplier : 1;
 
   if (Array.isArray(diceRolls) && diceRolls.length > 0) {
     stateChanges.skillProgress = {};
@@ -33,20 +34,20 @@ export function calculateFreeformSkillXP(stateChanges, hasExternalDiceRoll, dice
     for (const roll of diceRolls) {
       if (!roll?.skill) continue;
       const entry = DIFFICULTY_SKILL_XP[roll.difficulty] || DIFFICULTY_SKILL_XP.medium;
-      stateChanges.skillProgress[roll.skill] = roll.success ? entry.success : entry.failure;
+      stateChanges.skillProgress[roll.skill] = (roll.success ? entry.success : entry.failure) * mul;
       rolledSkills.add(roll.skill);
     }
     if (Array.isArray(skillsUsed)) {
       for (const skill of skillsUsed.slice(0, 3)) {
         if (typeof skill === 'string' && skill.trim() && !rolledSkills.has(skill.trim())) {
           const entry = DIFFICULTY_SKILL_XP[difficulty] || DIFFICULTY_SKILL_XP.medium;
-          stateChanges.skillProgress[skill.trim()] = entry.success;
+          stateChanges.skillProgress[skill.trim()] = entry.success * mul;
         }
       }
     }
   } else if (Array.isArray(skillsUsed) && skillsUsed.length > 0 && !hasExternalDiceRoll) {
     const entry = DIFFICULTY_SKILL_XP[difficulty] || DIFFICULTY_SKILL_XP.medium;
-    const xp = entry.success;
+    const xp = entry.success * mul;
     stateChanges.skillProgress = {};
     for (const skill of skillsUsed.slice(0, 3)) {
       if (typeof skill === 'string' && skill.trim()) {
@@ -121,7 +122,7 @@ export function isCreativityEligible(playerAction, { isCustomAction, fromAutoPla
  * validated by caller) — baked into every roll so AI's success/fail decision
  * and the backend's re-computation use the same formula.
  */
-export function resolveModelDiceRolls(sceneResult, character, preRolls, creativityBonus = 0) {
+export function resolveModelDiceRolls(sceneResult, character, preRolls, creativityBonus = 0, thresholdBonus = 0) {
   // Schema reorder: diceRolls is TOP-LEVEL. Fall back to legacy stateChanges.diceRolls
   // for any in-flight responses where the model still nests it (best-effort).
   const modelRolls = Array.isArray(sceneResult.diceRolls) && sceneResult.diceRolls.length > 0
@@ -139,7 +140,7 @@ export function resolveModelDiceRolls(sceneResult, character, preRolls, creativi
 
     const roll = resolveBackendDiceRollWithPreRoll(
       character, skill, difficulty || 'medium',
-      preRoll.d50, preRoll.luckySuccess, clampedCreativity, rollModifiers,
+      preRoll.d50, preRoll.luckySuccess, clampedCreativity, rollModifiers, thresholdBonus,
     );
     if (!roll) continue;
 

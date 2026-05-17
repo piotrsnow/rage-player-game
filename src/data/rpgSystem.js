@@ -137,6 +137,22 @@ export const DIFFICULTY_THRESHOLDS = {
   extreme: 80,
 };
 
+import { tierThresholdBonus } from '../../shared/domain/difficultyTier.js';
+
+/**
+ * Return a DIFFICULTY_THRESHOLDS-shaped object with every value raised by
+ * the campaign-tier bonus (low=+0, medium=+10, high=+20, deadly=+30).
+ */
+export function getAdjustedThresholds(campaignTier) {
+  const bonus = tierThresholdBonus(campaignTier);
+  if (bonus === 0) return DIFFICULTY_THRESHOLDS;
+  const out = {};
+  for (const key of Object.keys(DIFFICULTY_THRESHOLDS)) {
+    out[key] = DIFFICULTY_THRESHOLDS[key] + bonus;
+  }
+  return out;
+}
+
 export const DIFFICULTY_LABELS = {
   easy: 'Latwy',
   medium: 'Sredni',
@@ -429,7 +445,9 @@ export function formatSystemRulesForPrompt() {
 
 TEST MECHANIKA:
 - Rzut d50 + cecha + umiejetnosc + momentum (max ±10) + bonus za kreatywnosc (max +20) + Szczescie
-- Progi trudnosci: Latwy=20, Sredni=35, Trudny=50, Bardzo trudny=65, Ekstremalny=80
+- Progi trudnosci (bazowe): Latwy=20, Sredni=35, Trudny=50, Bardzo trudny=65, Ekstremalny=80
+- Progi rosna o +10 za kazdy poziom trudnosci kampanii (medium +10, high +20, deadly +30)
+- XP za umiejetnosci i walke mnozone przez poziom trudnosci kampanii (low x1, medium x2, high x4, deadly x8)
 - AI moze lekko modyfikowac prog w zaleznosci od sytuacji
 - Margines = wynik - prog (dodatni = sukces, ujemny = porazka)
 - Szczescie: (1) wartosc dodawana do kazdego rzutu, (2) przed kazdym rzutem X% szans na gwarantowany sukces (X = poziom Szczescia)

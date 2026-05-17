@@ -58,7 +58,8 @@ The nano intent classifier misses ~20% of freeform actions that actually need a 
 - Backend resolves the full roll via `resolveModelDiceRolls()` with reconciliation:
   - If model outcome matches backend calculation → use the real pre-roll.
   - If model disagrees → nudge the d50 to a margin near 0 (barely pass/fail) to keep the narrative consistent with mechanical truth.
-- Difficulty thresholds: `easy=20, medium=35, hard=50, veryHard=65, extreme=80`.
+- Difficulty thresholds (base): `easy=20, medium=35, hard=50, veryHard=65, extreme=80`. Each campaign difficulty tier above `low` adds +10 to all thresholds (`medium` +10, `high` +20, `deadly` +30). See `tierThresholdBonus()` in `shared/domain/difficultyTier.js`.
+- XP multiplier per campaign difficulty tier: `low` ×1, `medium` ×2, `high` ×4, `deadly` ×8. Applies to skill XP from dice rolls, combat skill XP, and combat character XP. See `tierXpMultiplier()` in `shared/domain/difficultyTier.js`.
 
 ### Files
 

@@ -32,7 +32,8 @@ export default function CraftingPanel({ character, dispatch, disabled }) {
     if (!recipe.canCraft || disabled) return;
 
     const preState = getGameState();
-    const result = resolveCrafting(character, recipe, 0);
+    const campaignTier = preState.campaign?.difficultyTier || null;
+    const result = resolveCrafting(character, recipe, 0, campaignTier);
     setLastResult(result);
 
     if (result.stateChanges) {

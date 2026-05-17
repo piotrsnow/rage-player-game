@@ -71,7 +71,7 @@ export default function EquipmentTab({
     <>
       <div className="flex flex-col lg:flex-row gap-6 animate-fade-in">
         {/* Item grid */}
-        <div className="flex-1 min-w-0">
+        <div className="w-full lg:w-[340px] shrink-0 min-w-0">
           <div className="flex justify-between items-center mb-4">
             <h3 className="text-tertiary font-headline text-xl">
               {t('inventory.equipmentTab', { defaultValue: 'Ekwipunek' })}
@@ -96,7 +96,7 @@ export default function EquipmentTab({
               <p className="text-sm font-label">{t('inventory.empty', { defaultValue: 'Brak przedmiotów' })}</p>
             </div>
           ) : (
-            <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+            <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">
               {sortedItems.map((item) => {
                 const rarityKey = item.rarity || item.availability || 'common';
                 const rarity = rarityColors[rarityKey] || rarityColors.common;
@@ -152,7 +152,7 @@ export default function EquipmentTab({
         </div>
 
         {/* Detail panel */}
-        <div className="w-full lg:w-[380px] shrink-0">
+        <div className="flex-1 min-w-0">
           {selectedItem ? (
             <div className="sticky top-0 bg-surface-container-low p-5 border border-outline-variant/10 rounded-sm shadow-xl animate-in fade-in slide-in-from-right-3 duration-150">
               <div className="flex items-center justify-between mb-3">

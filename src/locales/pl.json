@@ -991,7 +991,7 @@
     }
   },
   "inventory": {
-    "title": "Zbrojownia i Artefakty",
+    "title": "Wyposażenie i hajs",
     "backpackTitle": "Plecak",
     "slots": "{{current}}/{{max}} Miejsc",
     "sortByDate": "Sortuj od najnowszych",

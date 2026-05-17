@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { ATTRIBUTE_KEYS, ATTRIBUTE_DESCRIPTIONS, DIFFICULTY_THRESHOLDS, cumulativeCharXpThreshold } from '../../data/rpgSystem';
+import { ATTRIBUTE_KEYS, ATTRIBUTE_DESCRIPTIONS, DIFFICULTY_THRESHOLDS, getAdjustedThresholds, cumulativeCharXpThreshold } from '../../data/rpgSystem';
+import { useGameStore } from '../../stores/gameStore';
 
 const ATTR_ICONS = {
   sila: 'fitness_center',
@@ -43,7 +44,7 @@ function StatDetailPanel({ attrKey, value, t }) {
               {' + umiejętność vs próg trudności'}
             </p>
             <div className="flex flex-wrap gap-2 mt-2">
-              {Object.entries(DIFFICULTY_THRESHOLDS).map(([key, val]) => (
+              {Object.entries(DT).map(([key, val]) => (
                 <span key={key} className="text-[10px] px-2 py-0.5 rounded-sm bg-surface-container-highest/80 text-on-surface-variant border border-outline-variant/10">
                   {DIFFICULTY_LABELS[key] || key}: <span className="text-tertiary font-headline">{val}</span>
                 </span>
@@ -65,6 +66,8 @@ function StatDetailPanel({ attrKey, value, t }) {
 export default function StatsGrid({ attributes, characterLevel, characterXp, attributePoints, backstory }) {
   const { t } = useTranslation();
   const [selectedStat, setSelectedStat] = useState(null);
+  const campaignTier = useGameStore((s) => s.state.campaign?.difficultyTier || null);
+  const DT = getAdjustedThresholds(campaignTier);
 
   if (!attributes) return null;
 

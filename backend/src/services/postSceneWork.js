@@ -286,7 +286,7 @@ export async function handlePostSceneWork({
     const snapName = updatedCampaign?.currentLocationName ?? null;
     const snapshot = {
       name: snapName,
-      kind: updatedCampaign?.currentLocationKind ?? (snapName ? 'wandering' : null),
+      kind: updatedCampaign?.currentLocationKind ?? (snapName ? 'settled' : null),
       id: updatedCampaign?.currentLocationId ?? null,
       sceneIndex: scene.sceneIndex,
     };

@@ -70,7 +70,7 @@ export default function GameplayHeader({
     const snap = scene.stateChanges?._locationSnapshot;
     if (snap) return snap;
     const raw = scene.stateChanges?.currentLocation;
-    return raw ? { name: raw, kind: 'wandering', id: null } : null;
+    return raw ? { name: raw, kind: 'settled', id: null } : null;
   };
   const currentLocSnapshot =
     deriveLocSnapshot(viewedScene || currentScene)

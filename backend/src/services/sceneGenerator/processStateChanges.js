@@ -5,4 +5,5 @@ export {
   processStateChanges,
   generateSceneEmbedding,
   shouldPromoteToGlobal,
+  resolveCurrentLocationTarget,
 } from './processStateChanges/index.js';

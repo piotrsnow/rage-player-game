@@ -7,6 +7,7 @@ import { resolveKnownSpellDisplay } from '../../../services/magicEngine';
 import Tooltip from '../../ui/Tooltip';
 import { typeIcons } from '../../character/inventory/constants';
 import { apiClient } from '../../../services/apiClient';
+import { useGameStore } from '../../../stores/gameStore';
 
 const SPELL_TREE_COLORS = {
   ogien: {
@@ -460,6 +461,7 @@ export default function ActionModal({
   targetCell,
   combat,
 }) {
+  const campaignTier = useGameStore((s) => s.state.campaign?.difficultyTier || null);
   const [selectedManoeuvre, setSelectedManoeuvre] = useState(null);
   const [customDescription, setCustomDescription] = useState('');
   const [regenerating, setRegenerating] = useState(false);
@@ -683,8 +685,9 @@ export default function ActionModal({
       customDescription,
       spellName: selectedSpell,
       pushTarget: selectedShoveCell,
+      campaignTier,
     });
-  }, [combat, myCombatant?.id, selectedManoeuvre, target?.id, customDescription, selectedSpell, selectedShoveCell]);
+  }, [combat, myCombatant?.id, selectedManoeuvre, target?.id, customDescription, selectedSpell, selectedShoveCell, campaignTier]);
 
   const modalWidth = selectedPreview ? 520 : 360;
 

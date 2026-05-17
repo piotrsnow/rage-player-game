@@ -785,6 +785,7 @@ export const aiService = {
       provider,
       modelTier,
       diceRoll: options?.diceRoll ?? null,
+      campaignDifficultyTier: options?.campaignDifficultyTier ?? null,
     };
     const logId = aiCallLog.start({
       type: 'combat-turn-resolve',

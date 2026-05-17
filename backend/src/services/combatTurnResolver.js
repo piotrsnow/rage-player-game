@@ -4,6 +4,7 @@ import {
   DIFFICULTY_THRESHOLDS,
   resolveBackendDiceRollWithPreRoll,
 } from './diceResolver.js';
+import { tierThresholdBonus } from '../../../shared/domain/difficultyTier.js';
 
 function formatCombatant(c) {
   if (c.isDefeated) return `- ${c.name} [${c.type}] — DEFEATED`;
@@ -53,7 +54,7 @@ function normalizeAiDiceSelection(parsed) {
   };
 }
 
-function resolveCombatTurnDice({ combatSnapshot, parsed, diceRoll }) {
+function resolveCombatTurnDice({ combatSnapshot, parsed, diceRoll, thresholdBonus = 0 }) {
   const player = extractPlayerSnapshot(combatSnapshot);
   const rolledValue = clampD50(diceRoll);
   if (!player?.attributes || !player?.skills || !rolledValue) return null;
@@ -66,6 +67,8 @@ function resolveCombatTurnDice({ combatSnapshot, parsed, diceRoll }) {
     rolledValue,
     false,
     0,
+    [],
+    thresholdBonus,
   );
   if (!resolved) return null;
 
@@ -183,7 +186,9 @@ export async function resolveCombatTurn({
   model = null,
   modelTier = 'standard',
   userApiKeys = null,
+  campaignDifficultyTier = null,
 }) {
+  const thresholdBonus = tierThresholdBonus(campaignDifficultyTier);
   const prompts = buildCombatTurnPrompts({ combatSnapshot, playerAction, language, diceRoll });
   const { text, usage } = await callAIJson({
     provider,
@@ -201,7 +206,7 @@ export async function resolveCombatTurn({
 
   const parsed = parseJsonOrNull(text);
   if (parsed && typeof parsed === 'object') {
-    const diceResult = resolveCombatTurnDice({ combatSnapshot, parsed, diceRoll });
+    const diceResult = resolveCombatTurnDice({ combatSnapshot, parsed, diceRoll, thresholdBonus });
     return {
       result: {
         narration: typeof parsed.narration === 'string' ? parsed.narration : '',

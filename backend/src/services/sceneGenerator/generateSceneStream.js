@@ -32,6 +32,7 @@ import {
 import { fillEnemiesFromBestiary } from './enemyFill.js';
 import { injectCombatFallback } from './combatFallback.js';
 import { repairSceneDialogue } from './dialogueRepairPipeline.js';
+import { resolveCurrentLocationTarget } from './processStateChanges.js';
 import { checkWorldConsistency, applyConsistencyPatches } from '../../../../shared/domain/worldConsistency.js';
 import { getScaleForTier } from '../difficultyScalingConfig.js';
 import { handleDungeonEntry } from '../livingWorld/dungeonEntry.js';
@@ -399,6 +400,7 @@ export async function generateSceneStream(campaignId, playerAction, options = {}
       pendingProvidence,
       entityTags,
       recentQuickBeats,
+      thresholdBonus: tierScale.thresholdBonus || 0,
     });
 
     // One-shot incident-system payloads — clear them as soon as the prompt
@@ -491,6 +493,7 @@ export async function generateSceneStream(campaignId, playerAction, options = {}
       characterForRoll,
       resolvedMechanics?.diceRoll ? preRolls.slice(1) : preRolls,
       effectiveCreativity,
+      tierScale.thresholdBonus || 0,
     );
 
     // 6a2. Apply force-roll modifier to any model-produced rolls too. The nano
@@ -529,7 +532,7 @@ export async function generateSceneStream(campaignId, playerAction, options = {}
 
     // 6c. Calculate deterministic skill XP from freeform actions
     const hasAnyDiceRoll = !!resolvedMechanics?.diceRoll || (sceneResult.diceRolls?.length > 0);
-    calculateFreeformSkillXP(sceneResult.stateChanges, hasAnyDiceRoll, sceneResult.diceRolls);
+    calculateFreeformSkillXP(sceneResult.stateChanges, hasAnyDiceRoll, sceneResult.diceRolls, tierScale.xpMultiplier || 1);
 
     // 5d. Dialogue repair — normalize, repair speakers, dedup, introduce
     // unknown NPC speakers into stateChanges. Runs before scene save so
@@ -672,7 +675,7 @@ export async function generateSceneStream(campaignId, playerAction, options = {}
             (sceneResult.stateChanges.skillProgress[skill] || 0) + (xp || 0);
         }
       }
-      const bonusXp = computeCombatCharXp(combatResult);
+      const bonusXp = computeCombatCharXp(combatResult, tierScale.xpMultiplier || 1);
       if (bonusXp > 0) {
         sceneResult.stateChanges.xp = (sceneResult.stateChanges.xp || 0) + bonusXp;
       }
@@ -733,6 +736,44 @@ export async function generateSceneStream(campaignId, playerAction, options = {}
         sceneResult.stateChanges.moneyChange.gold += m.gold || 0;
         sceneResult.stateChanges.moneyChange.silver += m.silver || 0;
         sceneResult.stateChanges.moneyChange.copper += m.copper || 0;
+      }
+    }
+
+    // 7h. Inline location resolve — resolve AI-emitted currentLocation to
+    // kind+id BEFORE SSE complete so FE gets a composite ref in the same
+    // response. Also always inject the active ref (even if unchanged) so
+    // FE's applyCurrentLocation can set world.currentLocationRef.
+    {
+      const aiLocName = typeof sceneResult.stateChanges?.currentLocation === 'string'
+        && sceneResult.stateChanges.currentLocation.trim()
+        ? sceneResult.stateChanges.currentLocation.trim()
+        : null;
+
+      if (aiLocName) {
+        const resolved = await resolveCurrentLocationTarget(campaignId, aiLocName);
+        if (resolved) {
+          activeCurrentRef = resolved;
+          sceneResult.stateChanges.currentLocationRef = `${resolved.kind}:${resolved.id}`;
+          try {
+            await prisma.campaign.update({
+              where: { id: campaignId },
+              data: {
+                currentLocationName: resolved.name,
+                currentLocationKind: resolved.kind,
+                currentLocationId: resolved.id,
+              },
+            });
+          } catch (err) {
+            log.warn({ err: err?.message, campaignId }, 'Inline location resolve DB update failed (non-fatal)');
+          }
+        }
+      }
+
+      if (activeCurrentRef?.kind && activeCurrentRef?.id) {
+        if (!sceneResult.stateChanges) sceneResult.stateChanges = {};
+        if (!sceneResult.stateChanges.currentLocationRef) {
+          sceneResult.stateChanges.currentLocationRef = `${activeCurrentRef.kind}:${activeCurrentRef.id}`;
+        }
       }
     }
 

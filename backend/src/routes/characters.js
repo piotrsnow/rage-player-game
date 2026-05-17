@@ -12,6 +12,7 @@ import { SCENE_CLIENT_SELECT, normalizeSceneAssetUrls } from '../services/campai
 import { resolveBadgeImageProviderForUser } from '../services/badgeImageGen.js';
 import { generateBadge, regenerateBadgeImage } from '../services/badgeGenerator.js';
 import { ensureCharacterSprite } from '../services/characterSpriteService.js';
+import { generateItemAttackModes, generateSpellCombatStats } from '../services/itemAttackModesGenerator.js';
 
 function cumulativeCharXpThreshold(targetLevel) {
   if (targetLevel <= 1) return 0;
@@ -822,6 +823,95 @@ Return JSON with exactly three fields, all written in ${isPolish ? 'Polish' : 'E
     } catch (err) {
       return reply.code(502).send({ error: err.message });
     }
+  });
+
+  // ── Item attack modes backfill ───────────────────────────────────────
+  fastify.post('/:id/items/:itemKey/attack-modes', {
+    schema: {
+      params: {
+        type: 'object',
+        required: ['id', 'itemKey'],
+        properties: {
+          id: { type: 'string', format: 'uuid' },
+          itemKey: { type: 'string', minLength: 1, maxLength: 200 },
+        },
+      },
+    },
+    config: { rateLimit: { max: 10, timeWindow: '1 minute' } },
+  }, async (request, reply) => {
+    const character = await prisma.character.findFirst({
+      where: { id: request.params.id, userId: request.user.id },
+      select: { id: true },
+    });
+    if (!character) return reply.code(404).send({ error: 'Character not found' });
+
+    const itemRow = await prisma.characterInventoryItem.findUnique({
+      where: { characterId_itemKey: { characterId: character.id, itemKey: request.params.itemKey } },
+    });
+    if (!itemRow) return reply.code(404).send({ error: 'Item not found' });
+
+    const props = (typeof itemRow.props === 'object' && itemRow.props) || {};
+
+    if (props.attackModes !== undefined) {
+      return { attackModes: props.attackModes };
+    }
+
+    let userApiKeys = null;
+    try { userApiKeys = await loadUserApiKeys(prisma, request.user.id); } catch {}
+
+    const attackModes = await generateItemAttackModes(
+      { ...itemRow, props },
+      { userApiKeys, userId: request.user.id },
+    );
+
+    const updatedProps = { ...props, attackModes: attackModes ?? null };
+    await prisma.characterInventoryItem.updateMany({
+      where: { characterId: character.id, itemKey: request.params.itemKey },
+      data: { props: updatedProps },
+    });
+
+    return { attackModes: attackModes ?? null };
+  });
+
+  // ── Spell combat stats backfill ──────────────────────────────────────
+  fastify.post('/:id/spells/:spellName/combat-stats', {
+    schema: {
+      params: {
+        type: 'object',
+        required: ['id', 'spellName'],
+        properties: {
+          id: { type: 'string', format: 'uuid' },
+          spellName: { type: 'string', minLength: 1, maxLength: 200 },
+        },
+      },
+    },
+    config: { rateLimit: { max: 10, timeWindow: '1 minute' } },
+  }, async (request, reply) => {
+    const character = await prisma.character.findFirst({
+      where: { id: request.params.id, userId: request.user.id },
+      select: { id: true },
+    });
+    if (!character) return reply.code(404).send({ error: 'Character not found' });
+
+    const spellName = decodeURIComponent(request.params.spellName);
+    const row = await prisma.customSpell.findUnique({ where: { name: spellName } });
+    if (!row) return reply.code(404).send({ error: 'Custom spell not found' });
+
+    if (row.combatStats) return { combatStats: row.combatStats };
+
+    let userApiKeys = null;
+    try { userApiKeys = await loadUserApiKeys(prisma, request.user.id); } catch {}
+
+    const combatStats = await generateSpellCombatStats(row, { userApiKeys, userId: request.user.id });
+
+    if (combatStats) {
+      await prisma.customSpell.update({
+        where: { id: row.id },
+        data: { combatStats },
+      });
+    }
+
+    return { combatStats: combatStats ?? null };
   });
 
   // ── Sprite sheet generation ────────────────────────────────────────

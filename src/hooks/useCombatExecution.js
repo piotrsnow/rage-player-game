@@ -59,6 +59,7 @@ export function buildManoeuvreExecutor({
   scheduleTokenAnim,
   flushRoundEffectEvents,
   setActionAnim,
+  campaignTier,
 }) {
   function finalizeResult(updatedCombat, result) {
     dispatchCombatChatMessage(result);
@@ -96,7 +97,7 @@ export function buildManoeuvreExecutor({
 
     if (isCharge) {
       const { combat: updatedCombat, result } = resolveManoeuvre(
-        combat, actorId, manoeuvreKey, targetId, { customDescription: customDesc, ...extraOpts },
+        combat, actorId, manoeuvreKey, targetId, { customDescription: customDesc, campaignTier, ...extraOpts },
       );
 
       const slideState = {
@@ -122,7 +123,7 @@ export function buildManoeuvreExecutor({
 
     if (isRanged && targetId) {
       const { combat: updatedCombat, result } = resolveManoeuvre(
-        combat, actorId, manoeuvreKey, targetId, { customDescription: customDesc, ...extraOpts },
+        combat, actorId, manoeuvreKey, targetId, { customDescription: customDesc, campaignTier, ...extraOpts },
       );
       const hit = result?.outcome === 'hit';
       const isSpell = manoeuvreKey === 'castSpell';
@@ -143,7 +144,7 @@ export function buildManoeuvreExecutor({
     setActionAnim(null);
 
     const { combat: updatedCombat, result } = resolveManoeuvre(
-      combat, actorId, manoeuvreKey, targetId, { customDescription: customDesc, ...extraOpts },
+      combat, actorId, manoeuvreKey, targetId, { customDescription: customDesc, campaignTier, ...extraOpts },
     );
 
     const { anims } = diffPositionAnims(updatedCombat.combatants, positionsBefore);
@@ -165,6 +166,7 @@ export function useCombatExecution({
   dispatchCombatChatMessage, addResultToLog,
   persistCustomAttack, triggerActionAnim, triggerProjectileAnim,
   scheduleTokenAnim, flushRoundEffectEvents, setActionAnim,
+  campaignTier,
 }) {
   const handleExecuteManoeuvre = useCallback(async (manoeuvreKey, targetId, customDesc, extraOpts = {}) => {
     if (!isMyTurn || actionAnim || projectileAnim) return;
@@ -175,6 +177,7 @@ export function useCombatExecution({
       dispatchCombatChatMessage, addResultToLog,
       persistCustomAttack, triggerActionAnim, triggerProjectileAnim,
       scheduleTokenAnim, flushRoundEffectEvents, setActionAnim,
+      campaignTier,
     });
     return await executor.executeManoeuvre(manoeuvreKey, targetId, customDesc, extraOpts);
   }, [
@@ -184,6 +187,7 @@ export function useCombatExecution({
     dispatchCombatChatMessage, addResultToLog,
     persistCustomAttack, triggerActionAnim, triggerProjectileAnim,
     scheduleTokenAnim, flushRoundEffectEvents, setActionAnim,
+    campaignTier,
   ]);
 
   return { handleExecuteManoeuvre };

@@ -35,6 +35,24 @@ export const inventoryHandlers = {
     }
   },
 
+  UPDATE_ITEM_ATTACK_MODES: (draft, action) => {
+    const { itemId, attackModes } = action.payload || {};
+    if (!itemId || !draft.character?.inventory?.length) return;
+    const item = draft.character.inventory.find((i) => i?.id === itemId);
+    if (item) {
+      item.attackModes = attackModes;
+    }
+  },
+
+  UPDATE_CUSTOM_SPELL_COMBAT_STATS: (draft, action) => {
+    const { spellName, combatStats } = action.payload || {};
+    if (!spellName || !Array.isArray(draft.character?.customSpells)) return;
+    const spell = draft.character.customSpells.find((s) => s?.name === spellName);
+    if (spell) {
+      spell.combatStats = combatStats;
+    }
+  },
+
   USE_MANA_CRYSTAL: (draft, action) => {
     const { itemId, choice } = action.payload || {};
     const char = draft.character;

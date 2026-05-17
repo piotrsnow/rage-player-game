@@ -13,6 +13,7 @@ export function useCombatHostResolve({
   isHost,
   onHostResolve,
   addResultToLog,
+  campaignTier,
 }) {
   const mp = useMultiplayer();
   const pending = mp.state.pendingCombatManoeuvre;
@@ -25,7 +26,7 @@ export function useCombatHostResolve({
       fromPlayerId,
       pending.manoeuvre,
       pending.targetId,
-      { customDescription: pending.customDescription ?? '', ...(pending.extraOpts || {}) },
+      { customDescription: pending.customDescription ?? '', campaignTier, ...(pending.extraOpts || {}) },
     );
     addResultToLog(result);
     const finalCombat = advanceTurn(updatedCombat);

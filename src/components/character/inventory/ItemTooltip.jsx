@@ -2,6 +2,7 @@ import { useTranslation } from 'react-i18next';
 import { apiClient } from '../../../services/apiClient';
 import { gameData } from '../../../services/gameDataService';
 import AttackModesDisplay from '../../shared/AttackModesDisplay';
+import { useItemAttackModes } from '../../../hooks/useItemAttackModes';
 import { rarityColors, typeIcons, rarityLabels, rarityBadgeColors } from './constants';
 
 function formatPrice(price, t) {
@@ -29,6 +30,11 @@ export default function ItemTooltip({ item }) {
   const price = resolved?.price || item.price || null;
   const properties = resolved?.properties || item.properties || [];
   const priceText = formatPrice(price, t);
+
+  const { attackModes, loading: attackModesLoading } = useItemAttackModes(
+    combatSource ? null : item,
+    combat ? { attackModes: combat } : null,
+  );
 
   const textColor = rarityColor.split(' ').find((c) => c.startsWith('text-')) || 'text-on-surface';
 
@@ -128,6 +134,19 @@ export default function ItemTooltip({ item }) {
               {t('inventory.dodgePenalty', 'Kara do uniku')}: <span className="text-error">{combat.dodgePenalty}</span>
             </div>
           )}
+        </div>
+      )}
+
+      {!combatSource && attackModesLoading && (
+        <div className="mt-2 pt-2 border-t border-outline-variant/15 flex items-center gap-2 text-xs text-on-surface-variant/50">
+          <span className="material-symbols-outlined text-sm animate-spin">progress_activity</span>
+          <span className="font-label">{t('inventory.loadingCombat', 'Ładowanie statystyk...')}</span>
+        </div>
+      )}
+
+      {!combatSource && !resolved?.attackModes && attackModes && (
+        <div className="mt-2 pt-2 border-t border-outline-variant/15">
+          <AttackModesDisplay attackModes={attackModes} compact />
         </div>
       )}
 

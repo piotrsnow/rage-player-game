@@ -300,3 +300,17 @@ export function worldSettingBlock(campaign) {
   const worldDesc = campaign.worldDescription || 'A dark fantasy world.';
   return `World: ${worldDesc}${campaign.hook ? `\nHook: ${campaign.hook}` : ''}`;
 }
+
+export function multiplayerRulesBlock(language) {
+  return `## MULTIPLAYER INSTRUCTIONS
+1. This is a MULTIPLAYER session. Multiple players act simultaneously each round.
+2. Resolve ALL submitted actions together and describe what happens to each character individually.
+3. All players see the same scene narrative.
+4. Generate stateChanges.perCharacter keyed by character name, each containing {wounds, xp, newItems, removeItems, moneyChange, needsChanges} deltas.
+5. Maintain fairness — give each player meaningful consequences for their actions.
+6. suggestedActions should be generic enough for any player.
+7. Each player who needs a skill check gets their own entry in the diceRolls array with a "character" field.
+8. stateChanges.currentLocation when the party moves to a new location.
+9. perCharacter newItems: each MUST be {id, name, type, description, rarity}. removeItems: array of item id strings.
+10. ITEM VALIDATION: Characters can ONLY use items in THEIR inventory. If a player references an item they don't have, the action fails narratively.`;
+}

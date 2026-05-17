@@ -490,12 +490,15 @@ export default function CombatPanel({
     addResultToLog: (r) => addResultToLog(r),
   });
 
+  const campaignTier = gameState?.campaign?.difficultyTier || null;
+
   useCombatHostResolve({
     combat,
     isMultiplayer,
     isHost,
     onHostResolve,
     addResultToLog,
+    campaignTier,
   });
 
   const persistCustomAttack = useCallback((description) => {
@@ -520,6 +523,7 @@ export default function CombatPanel({
     persistCustomAttack, triggerActionAnim, triggerProjectileAnim,
     scheduleTokenAnim, flushRoundEffectEvents,
     setActionAnim,
+    campaignTier,
   });
 
   const handleExecuteManoeuvre = useCallback((manoeuvreKey, targetId, customDesc, extraOpts = {}) => {
@@ -766,7 +770,7 @@ export default function CombatPanel({
         provider,
         language,
         'standard',
-        { diceRoll: aiRoll },
+        { diceRoll: aiRoll, campaignDifficultyTier: campaignTier },
       );
 
       const updatedCombatants = combat.combatants.map((c) => {

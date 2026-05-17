@@ -39,6 +39,7 @@ export async function resolveMechanics({ state, playerAction, settings, isFirstS
         worldNpcs: state.world?.npcs || [],
         resolveDisposition: resolveActionDisposition,
         actionContext,
+        campaignTier: state.campaign?.difficultyTier || null,
       });
     }
   }

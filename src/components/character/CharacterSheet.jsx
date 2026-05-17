@@ -20,6 +20,7 @@ import AdvancementPanel from './AdvancementPanel';
 import CharacterPanel from './CharacterPanel';
 import CharacterLibrary from './CharacterLibrary';
 import EquipmentTab from './EquipmentTab';
+import SpellsTab from './SpellsTab';
 import { getActiveTitle, getTopTitles } from '../../data/achievements';
 import { getGenderLabel } from '../../utils/characterUtils';
 import { filterNpcsHere } from '../../utils/npcLocation';
@@ -227,6 +228,19 @@ export default function CharacterSheet({ onClose }) {
                 {t('inventory.equipmentTab', { defaultValue: 'Ekwipunek' })}
               </span>
             </button>
+            <button
+              onClick={() => setActiveTab('spells')}
+              className={`px-4 py-2 text-xs font-label uppercase tracking-widest transition-all border-b-2 ${
+                activeTab === 'spells'
+                  ? 'border-primary text-primary'
+                  : 'border-transparent text-on-surface-variant hover:text-tertiary hover:border-outline-variant/30'
+              }`}
+            >
+              <span className="flex items-center gap-1.5">
+                <span className="material-symbols-outlined text-sm">auto_awesome</span>
+                {t('magic.spells', { defaultValue: 'Zaklęcia' })}
+              </span>
+            </button>
           </div>
         )}
 
@@ -256,6 +270,16 @@ export default function CharacterSheet({ onClose }) {
                 settings={settings}
                 onItemAction={onItemAction}
                 npcsInScene={npcsInScene}
+              />
+            </div>
+          ) : activeTab === 'spells' ? (
+            <div className="px-4 md:px-10 py-8">
+              <SpellsTab
+                character={displayCharacter}
+                dispatch={dispatch}
+                autoSave={autoSave}
+                isMultiplayer={isMultiplayer}
+                settings={settings}
               />
             </div>
           ) : (

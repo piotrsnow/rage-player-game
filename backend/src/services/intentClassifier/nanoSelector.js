@@ -158,7 +158,7 @@ async function callNanoOpenAI(userPrompt, signal) {
   const content = data.choices?.[0]?.message?.content;
   if (!content) throw new Error('Empty nano model response');
 
-  const parsed = JSON.parse(content);
+  const parsed = safeParseLlmJson(content);
   return normalizeSelection(parsed);
 }
 
@@ -198,11 +198,26 @@ async function callNanoAnthropic(userPrompt, signal) {
   const jsonMatch = content.match(/\{[\s\S]*\}/);
   if (!jsonMatch) throw new Error('No JSON found in Anthropic nano response');
 
-  const parsed = JSON.parse(jsonMatch[0]);
+  const parsed = safeParseLlmJson(jsonMatch[0]);
   return normalizeSelection(parsed);
 }
 
 const VALID_DIFFICULTIES = ['easy', 'medium', 'hard', 'veryHard', 'extreme'];
+
+/**
+ * JSON.parse with a fallback repair pass for common LLM quirks:
+ * trailing commas, missing commas between adjacent values.
+ */
+function safeParseLlmJson(raw) {
+  try {
+    return JSON.parse(raw);
+  } catch {
+    let s = raw;
+    s = s.replace(/,(\s*[}\]])/g, '$1');
+    s = s.replace(/(["}\]])(\s+)(["{\[])/g, '$1,$2$3');
+    return JSON.parse(s);
+  }
+}
 
 function normalizeSelection(raw) {
   if (raw._reasoning) {

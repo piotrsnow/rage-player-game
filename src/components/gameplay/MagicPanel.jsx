@@ -10,6 +10,7 @@ import {
 } from '../../services/magicEngine';
 import { SPELL_TREES, formatSpellDamageLabel, computeSpellDamage, computeSpellHeal } from '../../data/rpgMagic';
 import { DAMAGE_TYPES } from '../../../shared/domain/damageTypes.js';
+import { useSpellCombatStats } from '../../hooks/useSpellCombatStats';
 
 function SectionToggle({ label, icon, open, onToggle, badge, children, desc }) {
   return (
@@ -37,6 +38,97 @@ function SectionToggle({ label, icon, open, onToggle, badge, children, desc }) {
       )}
     </div>
   );
+}
+
+function CustomSpellButton({ name, character, isSelected, onSelect, mana, usageCounts, t }) {
+  const meta = resolveKnownSpellDisplay(name, character);
+  const hasEnoughMana = mana.current >= meta.manaCost;
+  const uses = usageCounts?.[name] || 0;
+  const { combatStats, loading } = useSpellCombatStats(name, { ...meta, combatStats: meta.combatStats ?? character?.customSpells?.find((s) => s?.name === name)?.combatStats });
+
+  const cs = combatStats;
+  const modes = cs?.attackModes;
+  const primaryMode = modes?.ranged || modes?.melee || modes?.aoe;
+  const supportMode = cs?.supportModes?.melee || cs?.supportModes?.ranged || cs?.supportModes?.aoe;
+  const dmgType = primaryMode?.damageComponents?.[0]?.type
+    || supportMode?.healComponents?.[0]?.type;
+  const typeDef = dmgType ? DAMAGE_TYPES[dmgType] : null;
+
+  let damageLabel = null;
+  if (cs) {
+    const int = character?.attributes?.inteligencja || 0;
+    if (cs.type === 'offensive' && primaryMode?.damageComponents?.length) {
+      const c = primaryMode.damageComponents[0];
+      const scale = c.intScale ? _fmtScale(c.intScale) : '';
+      const flat = (c.flat || 0) > 0 ? (scale ? ` + ${c.flat}` : `${c.flat}`) : '';
+      const evaluated = c.intScale ? Math.max(1, Math.floor(int * c.intScale) + (c.flat || 0)) : (c.flat || 0);
+      damageLabel = { text: `${scale}${flat} obrz.`, preview: evaluated > 0 ? ` (${evaluated})` : '' };
+    } else if (cs.type === 'heal' && supportMode?.healComponents?.length) {
+      const c = supportMode.healComponents[0];
+      const scale = c.intScale ? _fmtScale(c.intScale) : '';
+      const flat = (c.flat || 0) > 0 ? (scale ? ` + ${c.flat}` : `${c.flat}`) : '';
+      const evaluated = c.intScale ? Math.max(1, Math.floor(int * c.intScale) + (c.flat || 0)) : (c.flat || 0);
+      damageLabel = { text: `Leczy ${scale}${flat} HP`, preview: evaluated > 0 ? ` (${evaluated})` : '' };
+    }
+  }
+
+  return (
+    <button
+      key={name}
+      type="button"
+      onClick={() => onSelect(name)}
+      className={`w-full text-left rounded-sm px-2 py-1 border transition-all ${
+        isSelected
+          ? 'border-tertiary/40 bg-tertiary/10'
+          : 'border-transparent hover:border-outline-variant/20'
+      } ${hasEnoughMana ? '' : 'opacity-45'}`}
+    >
+      <div className="flex items-center justify-between gap-2 min-w-0">
+        <span className={`flex items-center gap-1.5 min-w-0 text-[10px] font-bold ${hasEnoughMana ? 'text-on-surface' : 'text-on-surface-variant'}`}>
+          <span className="material-symbols-outlined text-xs text-tertiary shrink-0">{meta.icon}</span>
+          <span className="truncate">{name}</span>
+        </span>
+        <span className="text-[9px] text-on-surface-variant tabular-nums shrink-0">
+          {meta.manaCost} many · {uses} {t('magic.usesShort', 'uż.')}
+        </span>
+      </div>
+      {meta.description && (
+        <div className="text-[9px] text-on-surface-variant/90 leading-tight line-clamp-2">{meta.description}</div>
+      )}
+      {loading && (
+        <div className="flex items-center gap-1 text-[8px] text-on-surface-variant/50 mt-0.5">
+          <span className="material-symbols-outlined text-[10px] animate-spin">progress_activity</span>
+          <span>{t('magic.generatingStats', { defaultValue: 'Generuję statystyki...' })}</span>
+        </div>
+      )}
+      {!loading && damageLabel && (
+        <div className="flex items-center gap-1 text-[8px] text-tertiary/80 leading-tight mt-0.5 font-label tabular-nums">
+          {typeDef && (
+            <span className={`material-symbols-outlined text-[10px] ${typeDef.color}`}>{typeDef.icon}</span>
+          )}
+          {cs?.type === 'heal' && !typeDef && (
+            <span className="material-symbols-outlined text-[10px] text-emerald-400">healing</span>
+          )}
+          <span>{damageLabel.text}</span>
+          {damageLabel.preview && <span className="text-on-surface-variant/60">{damageLabel.preview}</span>}
+        </div>
+      )}
+      {!loading && !damageLabel && !cs && (
+        <div className="text-[9px] text-on-surface-variant/80 leading-tight">
+          {t('magic.customSpellShortHint', { defaultValue: 'Poza standardowym drzewkiem — uproszczony koszt many.' })}
+        </div>
+      )}
+    </button>
+  );
+}
+
+function _fmtScale(intScale) {
+  if (intScale === 1) return 'INT';
+  if (intScale === 0.5) return 'INT/2';
+  if (intScale === 0.25) return 'INT/4';
+  if (intScale === 0.33) return 'INT/3';
+  if (intScale === 0.75) return '3/4 INT';
+  return `${intScale}×INT`;
 }
 
 export default function MagicPanel({ character, combat, onCastSpell }) {
@@ -268,37 +360,18 @@ export default function MagicPanel({ character, combat, onCastSpell }) {
                     {t('magic.customSpellsSection', 'Fabularne / niestandardowe')}
                   </div>
                   <div className="space-y-1 pl-1 border-l border-amber-500/20">
-                    {customKnownSpellNames.map((name) => {
-                      const meta = resolveKnownSpellDisplay(name, character);
-                      const isSelected = selectedSpell === name;
-                      const hasEnoughMana = mana.current >= meta.manaCost;
-                      const uses = spells.usageCounts?.[name] || 0;
-                      return (
-                        <button
-                          key={name}
-                          type="button"
-                          onClick={() => setSelectedSpell(name)}
-                          className={`w-full text-left rounded-sm px-2 py-1 border transition-all ${
-                            isSelected
-                              ? 'border-tertiary/40 bg-tertiary/10'
-                              : 'border-transparent hover:border-outline-variant/20'
-                          } ${hasEnoughMana ? '' : 'opacity-45'}`}
-                        >
-                          <div className="flex items-center justify-between gap-2 min-w-0">
-                            <span className={`flex items-center gap-1.5 min-w-0 text-[10px] font-bold ${hasEnoughMana ? 'text-on-surface' : 'text-on-surface-variant'}`}>
-                              <span className="material-symbols-outlined text-xs text-tertiary shrink-0">{meta.icon}</span>
-                              <span className="truncate">{name}</span>
-                            </span>
-                            <span className="text-[9px] text-on-surface-variant tabular-nums shrink-0">
-                              {meta.manaCost} many · {uses} {t('magic.usesShort', 'uż.')}
-                            </span>
-                          </div>
-                          <div className="text-[9px] text-on-surface-variant/80 leading-tight">
-                            {t('magic.customSpellShortHint', { defaultValue: 'Poza standardowym drzewkiem — uproszczony koszt many.' })}
-                          </div>
-                        </button>
-                      );
-                    })}
+                    {customKnownSpellNames.map((name) => (
+                      <CustomSpellButton
+                        key={name}
+                        name={name}
+                        character={character}
+                        isSelected={selectedSpell === name}
+                        onSelect={setSelectedSpell}
+                        mana={mana}
+                        usageCounts={spells.usageCounts}
+                        t={t}
+                      />
+                    ))}
                   </div>
                 </div>
               )}

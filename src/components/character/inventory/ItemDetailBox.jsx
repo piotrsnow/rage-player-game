@@ -4,6 +4,7 @@ import { apiClient } from '../../../services/apiClient';
 import { gameData } from '../../../services/gameDataService';
 import { isManaCrystal } from '../../../data/rpgMagic';
 import AttackModesDisplay from '../../shared/AttackModesDisplay';
+import { useItemAttackModes } from '../../../hooks/useItemAttackModes';
 import InventoryImage from './InventoryImage';
 import { rarityColors, typeIcons, SLOT_CONFIG, rarityLabels, rarityBadgeColors } from './constants';
 
@@ -165,6 +166,11 @@ export default function ItemDetailBox({
   const compareCombat = (compareResolved?.combatSource === combatSource) ? compareResolved.combat : null;
   const isCrystal = isManaCrystal(item);
 
+  const { attackModes, loading: attackModesLoading } = useItemAttackModes(
+    combatSource ? null : item,
+    combat ? { attackModes: combat } : null,
+  );
+
   return (
     <div className={`mt-3 bg-surface-container border ${rarityColor} rounded-sm p-4 animate-in fade-in slide-in-from-top-2 duration-150`}>
       {resolvedImageUrl && (
@@ -304,6 +310,19 @@ export default function ItemDetailBox({
       {!combatSource && resolved?.attackModes && (
         <div className="border-t border-outline-variant/15 pt-3 mt-3">
           <AttackModesDisplay attackModes={resolved.attackModes} />
+        </div>
+      )}
+
+      {!combatSource && attackModesLoading && (
+        <div className="border-t border-outline-variant/15 pt-3 mt-3 flex items-center gap-2 text-xs text-on-surface-variant/50">
+          <span className="material-symbols-outlined text-sm animate-spin">progress_activity</span>
+          <span className="font-label">{t('inventory.loadingCombat', 'Ładowanie statystyk...')}</span>
+        </div>
+      )}
+
+      {!combatSource && !resolved?.attackModes && attackModes && (
+        <div className="border-t border-outline-variant/15 pt-3 mt-3">
+          <AttackModesDisplay attackModes={attackModes} />
         </div>
       )}
 

@@ -4,7 +4,8 @@
  */
 
 import { resolveSkillCheck } from './mechanics/skillCheck.js';
-import { DIFFICULTY_THRESHOLDS, getSkillLevel } from '../data/rpgSystem.js';
+import { DIFFICULTY_THRESHOLDS, getSkillLevel, getAdjustedThresholds } from '../data/rpgSystem.js';
+import { tierXpMultiplier } from '../../shared/domain/difficultyTier.js';
 import { prefixedId } from '../../shared/domain/ids.js';
 
 // ── Outcome Tiers ──
@@ -66,7 +67,8 @@ export function getAvailableRecipes(materialBag, skills, allRecipes) {
  * @param {number} [currentMomentum=0]
  * @returns {object} { success, tier, roll details, resultItem?, materialsConsumed[], stateChanges }
  */
-export function resolveCrafting(character, recipe, currentMomentum = 0) {
+export function resolveCrafting(character, recipe, currentMomentum = 0, campaignTier = null) {
+  const xpMul = tierXpMultiplier(campaignTier);
   const skillCheck = resolveSkillCheck({
     character,
     actionText: `craft ${recipe.name}`,
@@ -77,6 +79,7 @@ export function resolveCrafting(character, recipe, currentMomentum = 0) {
       difficulty: recipe.difficulty || 'medium',
     },
     difficultyOverride: recipe.difficulty || 'medium',
+    campaignTier,
   });
 
   if (!skillCheck) {
@@ -86,7 +89,7 @@ export function resolveCrafting(character, recipe, currentMomentum = 0) {
       skillCheck: null,
       resultItem: null,
       materialsConsumed: recipe.requiredMaterials,
-      stateChanges: buildStateChanges(recipe, CRAFTING_TIERS.CRITICAL_FAILURE, null),
+      stateChanges: buildStateChanges(recipe, CRAFTING_TIERS.CRITICAL_FAILURE, null, xpMul),
     };
   }
 
@@ -100,7 +103,7 @@ export function resolveCrafting(character, recipe, currentMomentum = 0) {
     skillCheck,
     resultItem,
     materialsConsumed,
-    stateChanges: buildStateChanges(recipe, tier, resultItem),
+    stateChanges: buildStateChanges(recipe, tier, resultItem, xpMul),
   };
 }
 
@@ -153,7 +156,7 @@ function determineMaterialsConsumed(recipe, tier) {
   }
 }
 
-function buildStateChanges(recipe, tier, resultItem) {
+function buildStateChanges(recipe, tier, resultItem, xpMul = 1) {
   const changes = {};
 
   // Remove consumed materials from inventory
@@ -173,7 +176,7 @@ function buildStateChanges(recipe, tier, resultItem) {
       tier === CRAFTING_TIERS.PARTIAL_FAILURE ? 1 : 0;
   const diffMultiplier = { easy: 0.5, medium: 1, hard: 1.5, veryHard: 2, extreme: 3 };
   changes.skillProgress = {
-    Rzemioslo: Math.round(baseXp * (diffMultiplier[diffKey] || 1)),
+    Rzemioslo: Math.round(baseXp * (diffMultiplier[diffKey] || 1) * xpMul),
   };
 
   return changes;
@@ -190,4 +193,4 @@ function countInventoryItems(inventory) {
 }
 
 
-export { DIFFICULTY_THRESHOLDS };
+export { DIFFICULTY_THRESHOLDS, getAdjustedThresholds };

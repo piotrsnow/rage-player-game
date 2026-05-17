@@ -221,7 +221,7 @@ export function calculateItemSellPrice(item, handelLevel = 0, equipmentCatalog =
  * Resolve a haggle attempt using d50 skill check.
  * Returns mechanical result — AI flavor text is generated separately.
  */
-export function resolveHaggle(character, currentMomentum = 0, difficulty = 'medium', worldNpcs = [], resolveDisposition = null) {
+export function resolveHaggle(character, currentMomentum = 0, difficulty = 'medium', worldNpcs = [], resolveDisposition = null, campaignTier = null) {
   const result = resolveSkillCheck({
     character,
     actionText: 'haggle negotiate price',
@@ -234,6 +234,7 @@ export function resolveHaggle(character, currentMomentum = 0, difficulty = 'medi
       difficulty,
     },
     difficultyOverride: difficulty,
+    campaignTier,
   });
 
   if (!result) return { success: false, margin: 0, discountPercent: 0 };

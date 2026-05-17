@@ -114,3 +114,13 @@ export function buildCharacterBlock(character) {
 
   return lines.join('\n');
 }
+
+export function buildMultiplayerCharacterBlock(characters, players = []) {
+  if (!Array.isArray(characters) || characters.length === 0) return 'No characters defined yet.';
+  const playerMap = new Map(players.map(p => [p.name, p]));
+  return characters.map(c => {
+    const player = playerMap.get(c.name);
+    const hostTag = player?.isHost ? ' [HOST]' : '';
+    return `${buildCharacterBlock(c)}${hostTag}`;
+  }).join('\n---\n');
+}

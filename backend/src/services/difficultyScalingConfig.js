@@ -1,10 +1,10 @@
 import { prisma } from '../lib/prisma.js';
 
 const DEFAULT_TIER_SCALE = {
-  low:    { attrMul: 1.0, woundsMul: 1.0, skillBonus: 0, armourBonus: 0 },
-  medium: { attrMul: 1.2, woundsMul: 1.25, skillBonus: 1, armourBonus: 1 },
-  high:   { attrMul: 1.4, woundsMul: 1.5, skillBonus: 2, armourBonus: 1 },
-  deadly: { attrMul: 1.7, woundsMul: 1.8, skillBonus: 4, armourBonus: 2 },
+  low:    { attrMul: 1.0, woundsMul: 1.0, skillBonus: 0, armourBonus: 0, thresholdBonus: 0, xpMultiplier: 1 },
+  medium: { attrMul: 1.2, woundsMul: 1.25, skillBonus: 1, armourBonus: 1, thresholdBonus: 10, xpMultiplier: 2 },
+  high:   { attrMul: 1.4, woundsMul: 1.5, skillBonus: 2, armourBonus: 1, thresholdBonus: 20, xpMultiplier: 4 },
+  deadly: { attrMul: 1.7, woundsMul: 1.8, skillBonus: 4, armourBonus: 2, thresholdBonus: 30, xpMultiplier: 8 },
 };
 
 let cached = null;

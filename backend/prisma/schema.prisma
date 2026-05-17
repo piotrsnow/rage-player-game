@@ -1874,6 +1874,7 @@ model CustomSpell {
   description String?
   icon        String?
   manaCost    Int      @default(2)
+  combatStats Json?
   createdById String?  @db.Uuid
   createdBy   User?    @relation(fields: [createdById], references: [id])
   createdAt   DateTime @default(now()) @db.Timestamptz

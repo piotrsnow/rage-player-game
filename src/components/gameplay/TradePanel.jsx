@@ -115,6 +115,8 @@ export default function TradePanel({ trade, character, world, dispatch, onHaggle
       0, // momentum — could pass from game state
       'medium',
       world?.npcs || [],
+      null,
+      getGameState().campaign?.difficultyTier || null,
     );
 
     const attempts = (trade?.haggleAttempts || 0) + 1;
