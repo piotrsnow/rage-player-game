@@ -98,11 +98,11 @@ export function isValidDiscoveryPromotion(from, to) {
   return toIdx >= fromIdx;
 }
 
-// ── Composite location ref (Faza 0) ──────────────────────────────────
-// Polymorphic ref używany wszędzie zamiast string-name lokacji:
-//   - state: world.currentLocationRef, npc.locationRef, quest.locationRef
-//   - AI schemas (po resolve przez aiResolver.js)
-//   - WorldEvent.locationKind/locationId
+// ── Location ref ─────────────────────────────────────────────────────
+// With the unified Location table, `kind` is vestigial — all location IDs
+// point to the same table. These helpers are kept for backward compat with
+// the FE store (world.currentLocationRef: { kind, id }) and AI schemas.
+// `kind` is always 'world' in new code; both values resolve identically.
 
 export const LOCATION_KINDS = ['world', 'campaign'];
 
@@ -113,24 +113,28 @@ export const LocationRefSchema = z.object({
   id: z.string().uuid(),
 });
 
-/** Helper: porównanie composite refs (null-safe). */
+/** Compare two location refs (null-safe). Kind is ignored — ID equality suffices. */
 export function refsEqual(a, b) {
   if (!a || !b) return a === b;
-  return a.kind === b.kind && a.id === b.id;
+  return a.id === b.id;
 }
 
-/** Helper: serializacja "kind:id" (np. do AI prompt context). */
+/** Serialize ref. Returns just the UUID (kind is vestigial). */
 export function refToString(ref) {
   if (!ref) return null;
-  return `${ref.kind}:${ref.id}`;
+  return ref.id;
 }
 
-/** Helper: parsowanie "kind:id" → ref. Zwraca null przy błędzie. */
+/** Parse a ref string. Accepts both "kind:uuid" (legacy) and bare "uuid". */
 export function parseRef(str) {
   if (typeof str !== 'string') return null;
+  // Legacy format: "world:uuid" or "campaign:uuid"
   const m = str.match(/^(world|campaign):([0-9a-f-]{36})$/i);
-  if (!m) return null;
-  return { kind: m[1], id: m[2] };
+  if (m) return { kind: m[1], id: m[2] };
+  // New format: bare UUID
+  const uuidMatch = str.match(/^([0-9a-f-]{36})$/i);
+  if (uuidMatch) return { kind: 'world', id: uuidMatch[1] };
+  return null;
 }
 
 // ── Modification log entry ───────────────────────────────────────────
@@ -217,7 +221,7 @@ export const GraphUpdateSchema = z.object({
 // npcsEncountered, modificationsLog, dungeonState, liberatedAt.
 export const LocationNodeSchema = z.object({
   id: z.string().uuid(),
-  kind: LocationKindSchema,
+  kind: LocationKindSchema.optional().default('world'),
   name: z.string(),
   canonicalName: z.string().optional(),
   displayName: z.string().nullable().optional(),
