@@ -8,7 +8,7 @@ import ItemDetailBox from './inventory/ItemDetailBox';
 import CrystalUseModal from './inventory/CrystalUseModal';
 import UseItemModal from './inventory/UseItemModal';
 import EnchantItemModal from './inventory/EnchantItemModal';
-import { getEquippableSlots, getEquippedSlot } from './inventory/constants';
+import { getEquippableSlots, getEquippedSlot, INVENTORY_MAX_SLOTS } from './inventory/constants';
 import StatusBar from '../ui/StatusBar';
 import ActiveEffectsRow from '../ui/ActiveEffectsRow';
 import PortraitGenerator from './PortraitGenerator';
@@ -793,8 +793,7 @@ export default function CharacterPanel({
   };
   const handleMoveMaterialToInventory = (mat) => {
     if (!dispatch || isMultiplayer) return;
-    const MAX_SLOTS = 40;
-    if (inventoryItems.length >= MAX_SLOTS) return;
+    if (inventoryItems.length >= INVENTORY_MAX_SLOTS) return;
     const item = {
       name: mat.name,
       type: 'misc',
@@ -811,7 +810,7 @@ export default function CharacterPanel({
     });
     if (autoSave) autoSave();
   };
-  const moveMaterialDisabled = !dispatch || isMultiplayer || inventoryItems.length >= 40;
+  const moveMaterialDisabled = !dispatch || isMultiplayer || inventoryItems.length >= INVENTORY_MAX_SLOTS;
   const handleUseManaCrystal = (itemId, choice) => {
     dispatch({ type: 'USE_MANA_CRYSTAL', payload: { itemId, choice } });
     if (autoSave) autoSave();

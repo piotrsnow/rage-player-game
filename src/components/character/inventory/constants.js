@@ -1,5 +1,8 @@
 import { gameData } from '../../../services/gameDataService';
 
+/** Backpack grid capacity (4×20 per page × 5 pages). */
+export const INVENTORY_MAX_SLOTS = 96;
+
 export const rarityColors = {
   common: 'border-outline-variant/20 text-on-surface-variant',
   uncommon: 'border-primary/20 text-primary-dim',

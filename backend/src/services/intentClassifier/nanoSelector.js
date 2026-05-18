@@ -13,6 +13,7 @@ import { resolveModelForTask } from '../serverConfig.js';
 import { applyOpenAiTemperature } from '../openaiModelParams.js';
 import { NANO_SYSTEM_PROMPT } from './nanoPrompt.js';
 import { wrapPlayerInput, sanitizeForPrompt } from '../../../../shared/domain/playerInputSanitizer.js';
+import { toUuid } from '../hashService.js';
 
 const log = childLogger({ module: 'intentClassifier' });
 
@@ -229,7 +230,7 @@ function normalizeSelection(raw) {
           .map((n) => {
             if (typeof n === 'string') return { name: n, id: null };
             if (n && typeof n === 'object' && typeof n.name === 'string') {
-              return { name: n.name, id: typeof n.id === 'string' ? n.id : null };
+              return { name: n.name, id: toUuid(n.id) || null };
             }
             return null;
           })

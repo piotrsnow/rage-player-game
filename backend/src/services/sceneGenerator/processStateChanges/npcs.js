@@ -17,6 +17,7 @@ import {
   appendCampaignNpcLocationMovement,
   NPC_LOCATION_MOVE_SOURCE_SCENE,
 } from '../../livingWorld/campaignNpcLocationMovement.js';
+import { toUuid } from '../../hashService.js';
 
 const log = childLogger({ module: 'sceneGenerator' });
 
@@ -122,9 +123,10 @@ export async function processNpcChanges(campaignId, npcs, { livingWorldEnabled =
       // Primary: lookup by campaignNpcId (UUID) if AI emitted one.
       // Fallback: slug-based lookup (legacy name-based identity).
       let existing = null;
-      if (npcChange.campaignNpcId) {
+      const campaignNpcUuid = toUuid(npcChange.campaignNpcId);
+      if (campaignNpcUuid) {
         existing = await prisma.npc.findUnique({
-          where: { id: npcChange.campaignNpcId },
+          where: { id: campaignNpcUuid },
         });
         if (existing && existing.campaignId !== campaignId) existing = null;
       }

@@ -11,5 +11,5 @@ export async function generateSceneEmbedding(scene) {
   const embedding = await embedText(embeddingText);
   if (!embedding) return;
 
-  writeEmbedding('CampaignScene', scene.id, embedding, embeddingText);
+  await writeEmbedding('CampaignScene', scene.id, embedding, embeddingText);
 }

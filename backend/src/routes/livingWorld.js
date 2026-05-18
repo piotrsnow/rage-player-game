@@ -579,10 +579,66 @@ export async function livingWorldRoutes(fastify) {
         nodeIcon: node.nodeIcon || null,
         nodeImageUrl: node.nodeImageUrl || null,
       });
+      seenNodeIds.add(node.id);
     }
 
+    // Surface locations linked to this campaign by relations OUTSIDE ownership:
+    // DiscoveredLocation entries and Campaign.currentLocationId. Without this,
+    // locations >N hops from the focus disappear from the player map even though
+    // the campaign clearly has a relationship with them.
+    const discoveredRows = await prisma.discoveredLocation.findMany({
+      where: { campaignId: request.params.id },
+      select: { locationId: true },
+    });
+    const linkedIds = new Set();
+    for (const d of discoveredRows) {
+      if (!seenNodeIds.has(d.locationId)) linkedIds.add(d.locationId);
+    }
+    if (resolvedFocusId && !seenNodeIds.has(resolvedFocusId)) linkedIds.add(resolvedFocusId);
+
+    if (linkedIds.size > 0) {
+      const linkedRows = await prisma.location.findMany({
+        where: { id: { in: [...linkedIds] } },
+        select: {
+          id: true, campaignId: true, displayName: true, canonicalName: true,
+          locationType: true, scale: true, tags: true, atmosphere: true,
+          description: true, biome: true, region: true, visitCount: true,
+          dangerLevel: true, regionX: true, regionY: true,
+          nodeShape: true, nodeIcon: true, nodeImageUrl: true,
+        },
+      });
+      for (const node of linkedRows) {
+        nodeList.push({
+          id: node.id,
+          kind: node.campaignId ? 'campaign' : 'world',
+          name: node.canonicalName || node.displayName,
+          type: node.locationType || 'generic',
+          scale: node.scale ?? 5,
+          tags: node.tags || [],
+          atmosphere: node.atmosphere || null,
+          description: node.description || null,
+          biome: node.biome || null,
+          region: node.region || null,
+          visitCount: node.visitCount ?? 0,
+          dangerLevel: node.dangerLevel || 'safe',
+          regionX: node.regionX ?? 0,
+          regionY: node.regionY ?? 0,
+          nodeShape: node.nodeShape || null,
+          nodeIcon: node.nodeIcon || null,
+          nodeImageUrl: node.nodeImageUrl || null,
+        });
+        seenNodeIds.add(node.id);
+      }
+    }
+
+    // Edges are serialized with both `fromId/toId` (legacy alias consumed by
+    // GraphCanvas / MapTab / HierarchyTree / graphLayout) and the new
+    // `fromLocationId/toLocationId` shape. The frontend still reads the alias
+    // — without it, no connection lines are drawn on the map.
     const edgeList = edges.map((e) => ({
       id: e.id,
+      fromId: e.fromLocationId,
+      toId: e.toLocationId,
       fromLocationId: e.fromLocationId,
       toLocationId: e.toLocationId,
       edgeType: e.edgeType,
@@ -593,6 +649,39 @@ export async function livingWorldRoutes(fastify) {
       discoveryState: e.discoveryState,
       createdBy: e.createdBy,
     }));
+
+    // Connect newly-surfaced orphan/linked nodes to the rest of the graph where
+    // edges exist in DB but weren't reached by the focused subgraph traversal.
+    const seenEdgeIds = new Set(edgeList.map((e) => e.id));
+    const displayedIds = [...seenNodeIds];
+    if (displayedIds.length > 0) {
+      const extraEdges = await prisma.locationEdge.findMany({
+        where: {
+          isActive: true,
+          fromLocationId: { in: displayedIds },
+          toLocationId: { in: displayedIds },
+          OR: [{ campaignId: null }, { campaignId: request.params.id }],
+        },
+      });
+      for (const e of extraEdges) {
+        if (seenEdgeIds.has(e.id)) continue;
+        seenEdgeIds.add(e.id);
+        edgeList.push({
+          id: e.id,
+          fromId: e.fromLocationId,
+          toId: e.toLocationId,
+          fromLocationId: e.fromLocationId,
+          toLocationId: e.toLocationId,
+          edgeType: e.edgeType,
+          category: e.category,
+          bidirectional: e.bidirectional,
+          weight: e.weight,
+          metadata: e.metadata,
+          discoveryState: e.discoveryState,
+          createdBy: e.createdBy,
+        });
+      }
+    }
 
     // Faction overlay — extract from social edges (controlled_by, patrolled_by, contested_between)
     const FACTION_EDGE_TYPES = new Set(['controlled_by', 'patrolled_by', 'contested_between']);

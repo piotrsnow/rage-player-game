@@ -60,7 +60,7 @@ export function selectKeyNpcsForMemory(ambientNpcs, ambientNpcsWithGoals) {
     if (!nEnriched || !goalEntry) continue;
     if (nEnriched.keyNpc === false) continue;
     const canonicalNpcId = nEnriched.canonicalNpcId || null;
-    const campaignNpcId = nEnriched.id || null;
+    const campaignNpcId = nEnriched.campaignNpcId || nEnriched.id || null;
     if (!canonicalNpcId && !campaignNpcId) continue;
     out.push({ canonicalNpcId, campaignNpcId, npcName: goalEntry.name });
   }
