@@ -135,7 +135,7 @@ export async function applyAndPushCorrections(campaignId, sceneId, corrections) 
   if (correctedLocation) {
     try {
       const ref = await resolveLocationByName(correctedLocation, { campaignId });
-      if (ref?.row?.id) {
+      if (ref?.location?.id) {
         await prisma.campaign.update({
           where: { id: campaignId },
           data: {

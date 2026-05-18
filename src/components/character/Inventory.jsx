@@ -8,7 +8,7 @@ import PocketFilter from './inventory/PocketFilter';
 import ItemTooltip from './inventory/ItemTooltip';
 import Tooltip from '../ui/Tooltip';
 import Button from '../ui/Button';
-import { rarityColors, rarityGlows, typeIcons, SLOT_CONFIG, getEquippedSlot, getEquippableSlots } from './inventory/constants';
+import { rarityColors, rarityGlows, typeIcons, SLOT_CONFIG, getEquippedSlot, getEquippableSlots, INVENTORY_MAX_SLOTS } from './inventory/constants';
 
 const ITEMS_PER_PAGE = 20;
 
@@ -40,7 +40,7 @@ export default function Inventory({
   const [page, setPage] = useState(1);
   const [sortByDate, setSortByDate] = useState(false);
   const [activePocket, setActivePocket] = useState(null);
-  const maxSlots = 96;
+  const maxSlots = INVENTORY_MAX_SLOTS;
   const purse = money || { gold: 0, silver: 0, copper: 0 };
   const totalMaterials = materialBag.reduce((sum, m) => sum + (m.quantity || 1), 0);
 

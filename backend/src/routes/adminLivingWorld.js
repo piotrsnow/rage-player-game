@@ -898,8 +898,12 @@ export async function adminLivingWorldRoutes(fastify) {
       nodeList.push(serialized);
     }
 
+    // Edges serialized with both `fromId/toId` (legacy alias consumed by
+    // GraphCanvas / HierarchyTree / graphLayout) and `fromLocationId/toLocationId`.
     const edgeList = dedupedEdges.map((e) => ({
       id: e.id,
+      fromId: e.fromLocationId,
+      toId: e.toLocationId,
       fromLocationId: e.fromLocationId,
       toLocationId: e.toLocationId,
       edgeType: e.edgeType,

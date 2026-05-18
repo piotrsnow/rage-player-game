@@ -63,10 +63,10 @@ export async function buildLivingWorldContext(campaignId, currentLocation, { tra
   const contentLanguage = normalizeLanguage(campaign.user?.contentLanguage);
 
   const resolved = await resolveLocationByName(currentLocation, { campaignId });
-  if (!resolved) return null;
-  const location = resolved.row;
+  if (!resolved?.location) return null;
+  const location = resolved.location;
   if (!location.canonicalName) {
-    location.canonicalName = location.name;
+    location.canonicalName = location.displayName || currentLocation;
   }
 
   const characterIds = await getCampaignCharacterIds(campaignId);

@@ -44,7 +44,7 @@ export async function buildTravelBlock({
 
   const fromX = startLocation.regionX ?? 0;
   const fromY = startLocation.regionY ?? 0;
-  const fromName = startLocation.canonicalName || startLocation.name || '';
+  const fromName = startLocation.displayName || startLocation.canonicalName || '';
 
   let toX = null;
   let toY = null;
@@ -56,7 +56,8 @@ export async function buildTravelBlock({
 
   if (targetName) {
     const targetRef = await resolveLocationByName(targetName, { campaignId }).catch(() => null);
-    if (!targetRef?.row?.id) {
+    const targetLoc = targetRef?.location;
+    if (!targetLoc?.id) {
       return {
         kind: 'travel',
         fromName,
@@ -66,16 +67,16 @@ export async function buildTravelBlock({
         unresolved: true,
       };
     }
-    if (targetRef.row.id === startLocation.id) return null;
-    toX = targetRef.row.regionX;
-    toY = targetRef.row.regionY;
-    resolvedTargetName = targetRef.row.canonicalName || targetRef.row.name || targetName;
-    resolvedTargetRef = { id: targetRef.row.id };
+    if (targetLoc.id === startLocation.id) return null;
+    toX = targetLoc.regionX;
+    toY = targetLoc.regionY;
+    resolvedTargetName = targetLoc.displayName || targetLoc.canonicalName || targetName;
+    resolvedTargetRef = { id: targetLoc.id };
     const fog = await loadCampaignFog({ userId, campaignId }).catch(() => ({
       visited: new Set(),
       heardAbout: new Set(),
     }));
-    targetInFog = fog.visited.has(targetRef.row.id) || fog.heardAbout.has(targetRef.row.id);
+    targetInFog = fog.visited.has(targetLoc.id) || fog.heardAbout.has(targetLoc.id);
   } else {
     const { azimuth, distanceKm } = directionalMove;
     const t = applyMovementVector(fromX, fromY, azimuth, distanceKm);
@@ -121,10 +122,10 @@ export async function buildTravelBlock({
   let routeFamiliarity = null;
   if (targetName && startLocation.id) {
     const targetRef2 = await resolveLocationByName(resolvedTargetName || targetName, { campaignId }).catch(() => null);
-    if (targetRef2?.row?.id) {
+    if (targetRef2?.location?.id) {
       routeFamiliarity = await lookupEdgeFamiliarity(
         startLocation.id,
-        targetRef2.row.id,
+        targetRef2.location.id,
         { campaignId },
       ).catch(() => null);
     }

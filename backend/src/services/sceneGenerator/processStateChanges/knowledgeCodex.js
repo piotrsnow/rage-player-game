@@ -42,7 +42,7 @@ export async function processKnowledgeUpdates(campaignId, ku) {
       });
       const embText = buildKnowledgeEmbeddingText(created);
       const emb = await embedText(embText);
-      if (emb) writeEmbedding('CampaignKnowledge', created.id, emb, embText);
+      if (emb) await writeEmbedding('CampaignKnowledge', created.id, emb, embText);
     } catch (err) {
       log.error({ err, campaignId, entryType: entry.entryType }, 'Failed to save knowledge entry');
     }
@@ -71,7 +71,7 @@ export async function processCodexUpdates(campaignId, codexUpdates) {
         });
         const embText = buildCodexEmbeddingText(updated);
         const emb = await embedText(embText);
-        if (emb) writeEmbedding('CampaignCodex', updated.id, emb, embText);
+        if (emb) await writeEmbedding('CampaignCodex', updated.id, emb, embText);
       } else {
         try {
           const created = await prisma.campaignCodex.create({
@@ -87,7 +87,7 @@ export async function processCodexUpdates(campaignId, codexUpdates) {
           });
           const embText = buildCodexEmbeddingText(created);
           const emb = await embedText(embText);
-          if (emb) writeEmbedding('CampaignCodex', created.id, emb, embText);
+          if (emb) await writeEmbedding('CampaignCodex', created.id, emb, embText);
         } catch (createErr) {
           if (createErr.code !== 'P2002') throw createErr;
         }

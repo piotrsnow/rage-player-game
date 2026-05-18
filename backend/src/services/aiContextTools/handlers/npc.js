@@ -4,14 +4,16 @@ import { searchNPCs } from '../../vectorSearchService.js';
 import { embedText } from '../../embeddingService.js';
 import { searchBestiary } from '../../../data/equipment/index.js';
 import { childLogger } from '../../../lib/logger.js';
+import { toUuid } from '../../hashService.js';
 
 const log = childLogger({ module: 'aiContextTools' });
 
 export async function handleGetNPC(campaignId, npcName, { currentRef, campaignNpcId } = {}) {
   // 1. ID-based lookup (instant, exact — preferred when nano/heuristics supply UUID)
-  if (campaignNpcId) {
+  const npcUuid = toUuid(campaignNpcId);
+  if (npcUuid) {
     const byId = await prisma.npc.findUnique({
-      where: { id: campaignNpcId },
+      where: { id: npcUuid },
       include: { relationships: true },
     });
     if (byId && byId.campaignId === campaignId) {
@@ -68,7 +70,7 @@ export function formatNPC(npc, { currentRef } = {}) {
     npc.gender !== 'unknown' ? `Gender: ${npc.gender}` : null,
     npc.role ? `Role: ${npc.role}` : null,
     npc.personality ? `Personality: ${npc.personality}` : null,
-    `Attitude: ${npc.attitude}`,
+    `Attitude: ${npc.attitude ?? npc.alignment}`,
     `Disposition: ${npc.disposition}`,
     `Alive: ${npc.alive}`,
     npc.lastLocation ? `Last seen: ${npc.lastLocation}` : null,
