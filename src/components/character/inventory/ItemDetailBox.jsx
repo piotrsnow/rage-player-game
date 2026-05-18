@@ -117,6 +117,18 @@ function ShieldStats({ combat, compareCombat, t }) {
   );
 }
 
+const LINEAGE_BADGE_TONE = {
+  common: 'border-outline-variant/20 text-on-surface-variant bg-on-surface-variant/5',
+  uncommon: 'border-primary/20 text-primary-dim bg-primary/5',
+  rare: 'border-primary/40 text-primary bg-primary/10',
+  epic: 'border-tertiary/30 text-tertiary-dim bg-tertiary/10',
+  legendary: 'border-tertiary/50 text-tertiary bg-tertiary/15',
+};
+
+function lineageToneClass(rarity) {
+  return LINEAGE_BADGE_TONE[(rarity || 'common').toLowerCase()] || LINEAGE_BADGE_TONE.common;
+}
+
 export default function ItemDetailBox({
   item,
   items = [],
@@ -127,6 +139,8 @@ export default function ItemDetailBox({
   onUnequipItem,
   onUseManaCrystal,
   onUseItem,
+  onEnchantItem,
+  onDiscardItem,
   onRegenerateImage,
   isRegenerating = false,
   largeImage = false,
@@ -134,7 +148,29 @@ export default function ItemDetailBox({
   const { t } = useTranslation();
   const [promptExpanded, setPromptExpanded] = useState(false);
   const [promptCopied, setPromptCopied] = useState(false);
+  const [confirmingDiscard, setConfirmingDiscard] = useState(false);
+  const [discarding, setDiscarding] = useState(false);
   const copyResetRef = useRef(null);
+
+  const handleDiscardClick = useCallback(async () => {
+    if (!onDiscardItem) return;
+    if (!confirmingDiscard) {
+      setConfirmingDiscard(true);
+      return;
+    }
+    setDiscarding(true);
+    try {
+      await onDiscardItem(item.id);
+    } finally {
+      setDiscarding(false);
+      setConfirmingDiscard(false);
+    }
+  }, [onDiscardItem, confirmingDiscard, item.id]);
+
+  const cancelDiscardConfirm = useCallback(() => {
+    if (discarding) return;
+    setConfirmingDiscard(false);
+  }, [discarding]);
 
   const handleCopyPrompt = useCallback(async () => {
     if (!item.fullImagePrompt) return;
@@ -425,6 +461,30 @@ export default function ItemDetailBox({
         </div>
       )}
 
+      {Array.isArray(item.composedFrom) && item.composedFrom.length > 0 && (
+        <div className="border-t border-outline-variant/10 pt-2 mt-3">
+          <p className="text-[10px] font-label uppercase tracking-widest text-on-surface-variant/60 mb-1.5">
+            {t('inventory.composedFromLabel', 'Składa się z')}
+          </p>
+          <div className="flex flex-wrap gap-1.5">
+            {item.composedFrom.map((src, idx) => (
+              <span
+                key={`${src.itemKey || src.name || 'src'}_${idx}`}
+                className={`inline-flex items-center gap-1 text-[11px] px-2 py-0.5 rounded-sm border ${lineageToneClass(src.rarity)}`}
+              >
+                {src.kind === 'enchant_source' && (
+                  <span className="material-symbols-outlined text-[12px]">auto_fix_high</span>
+                )}
+                <span>{src.name || t('inventory.unknownItem', 'nieznane')}</span>
+                {src.spell && (
+                  <span className="opacity-60">+ {src.spell}</span>
+                )}
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
+
       <div className="border-t border-outline-variant/10 pt-3 mt-3">
         <div className="flex gap-2 flex-wrap">
           {isCrystal ? (
@@ -462,6 +522,58 @@ export default function ItemDetailBox({
               <span className="material-symbols-outlined text-sm">back_hand</span>
               {t('inventory.use', 'Użyj')}
             </button>
+          )}
+          {onEnchantItem && !isCrystal && !item.props?.questItem && (
+            <button
+              onClick={() => onEnchantItem(item.id)}
+              className="flex items-center gap-1.5 px-3 py-1.5 text-[11px] font-bold uppercase tracking-wider bg-primary/10 text-primary border border-primary/20 rounded-sm hover:bg-primary/20 transition-colors"
+            >
+              <span className="material-symbols-outlined text-sm">auto_fix_high</span>
+              {t('inventory.enchant', 'Zaczaruj')}
+            </button>
+          )}
+          {onDiscardItem && !isCrystal && (
+            item.props?.questItem ? (
+              <button
+                disabled
+                title={t('inventory.cannotDiscardQuest', 'Nie możesz wyrzucić przedmiotu fabularnego')}
+                className="flex items-center gap-1.5 px-3 py-1.5 text-[11px] font-bold uppercase tracking-wider bg-surface-container/40 text-on-surface-variant/40 border border-outline-variant/15 rounded-sm cursor-not-allowed"
+              >
+                <span className="material-symbols-outlined text-sm">delete</span>
+                {t('inventory.discard', 'Wyrzuć')}
+              </button>
+            ) : confirmingDiscard ? (
+              <div className="flex items-center gap-1.5 ml-auto">
+                <span className="text-[10px] font-label uppercase tracking-wider text-on-surface-variant/80">
+                  {t('inventory.discardConfirmQuestion', 'Na pewno?')}
+                </span>
+                <button
+                  onClick={handleDiscardClick}
+                  disabled={discarding}
+                  className="flex items-center gap-1 px-2.5 py-1.5 text-[11px] font-bold uppercase tracking-wider bg-error/15 text-error border border-error/30 rounded-sm hover:bg-error/25 transition-colors disabled:opacity-50 disabled:cursor-wait"
+                >
+                  <span className={`material-symbols-outlined text-sm ${discarding ? 'animate-spin' : ''}`}>
+                    {discarding ? 'progress_activity' : 'check'}
+                  </span>
+                  {t('inventory.discardConfirm', 'Tak')}
+                </button>
+                <button
+                  onClick={cancelDiscardConfirm}
+                  disabled={discarding}
+                  className="flex items-center gap-1 px-2.5 py-1.5 text-[11px] font-bold uppercase tracking-wider bg-surface-container/40 text-on-surface-variant border border-outline-variant/20 rounded-sm hover:bg-surface-container/60 transition-colors disabled:opacity-50"
+                >
+                  {t('common.cancel', 'Anuluj')}
+                </button>
+              </div>
+            ) : (
+              <button
+                onClick={handleDiscardClick}
+                className="ml-auto flex items-center gap-1.5 px-3 py-1.5 text-[11px] font-bold uppercase tracking-wider bg-error/10 text-error border border-error/20 rounded-sm hover:bg-error/20 transition-colors"
+              >
+                <span className="material-symbols-outlined text-sm">delete</span>
+                {t('inventory.discard', 'Wyrzuć')}
+              </button>
+            )
           )}
         </div>
       </div>

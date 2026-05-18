@@ -829,6 +829,66 @@ Return JSON with exactly three fields, all written in ${isPolish ? 'Polish' : 'E
     }
   });
 
+  // ── Discard inventory item (soft-hide) ───────────────────────────────
+  // Soft-hide rather than delete so the row can still back lineage chips on
+  // any combine/enchant result that referenced it. The FE snapshot won't see
+  // hidden rows (CHARACTER_INCLUDE filters them out), so re-saving the
+  // snapshot won't accidentally resurrect a discarded item.
+  fastify.post('/:id/items/:itemKey/discard', {
+    schema: {
+      params: {
+        type: 'object',
+        required: ['id', 'itemKey'],
+        properties: {
+          id: { type: 'string', format: 'uuid' },
+          itemKey: { type: 'string', minLength: 1, maxLength: 200 },
+        },
+      },
+    },
+    config: { rateLimit: { max: 30, timeWindow: '1 minute' } },
+  }, async (request, reply) => {
+    const character = await prisma.character.findFirst({
+      where: { id: request.params.id, userId: request.user.id },
+      select: {
+        id: true,
+        equippedMainHand: true,
+        equippedOffHand: true,
+        equippedArmour: true,
+      },
+    });
+    if (!character) return reply.code(404).send({ error: 'Character not found' });
+
+    const itemRow = await prisma.characterInventoryItem.findUnique({
+      where: { characterId_itemKey: { characterId: character.id, itemKey: request.params.itemKey } },
+    });
+    if (!itemRow || itemRow.hidden) {
+      return reply.code(404).send({ error: 'Item not found' });
+    }
+
+    const props = (typeof itemRow.props === 'object' && itemRow.props) || {};
+    if (props.questItem === true) {
+      return reply.code(403).send({ error: 'Cannot discard quest item', code: 'CANNOT_DISCARD_QUEST_ITEM' });
+    }
+
+    const equipUpdate = {};
+    if (character.equippedMainHand === itemRow.itemKey) equipUpdate.equippedMainHand = null;
+    if (character.equippedOffHand === itemRow.itemKey) equipUpdate.equippedOffHand = null;
+    if (character.equippedArmour === itemRow.itemKey) equipUpdate.equippedArmour = null;
+
+    await prisma.$transaction(async (tx) => {
+      await tx.characterInventoryItem.update({
+        where: { characterId_itemKey: { characterId: character.id, itemKey: itemRow.itemKey } },
+        data: { hidden: true, hiddenReason: 'discarded', hiddenAt: new Date() },
+      });
+      if (Object.keys(equipUpdate).length > 0) {
+        await tx.character.update({ where: { id: character.id }, data: equipUpdate });
+      }
+    });
+
+    const snapshot = await loadCharacterSnapshot({ id: character.id, userId: request.user.id });
+    return { ok: true, character: snapshot };
+  });
+
   // ── Item attack modes backfill ───────────────────────────────────────
   fastify.post('/:id/items/:itemKey/attack-modes', {
     schema: {

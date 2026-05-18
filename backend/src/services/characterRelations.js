@@ -34,7 +34,9 @@ function cumulativeCharXpThresholdLocal(level) {
 
 const CHARACTER_INCLUDE = {
   characterSkills: true,
-  inventoryItems: { orderBy: { addedAt: 'asc' } },
+  // Hidden rows survive snapshot saves and back lineage chips on result items;
+  // they must NOT appear in the FE-facing snapshot.
+  inventoryItems: { where: { hidden: false }, orderBy: { addedAt: 'asc' } },
   materials: true,
 };
 
@@ -109,6 +111,10 @@ export function reconstructCharacterSnapshot(row) {
       props,
       imageUrl: item.imageUrl ? toCanonicalStoragePath(item.imageUrl) : undefined,
       addedAt: item.addedAt,
+      // Lineage chips render from this — null/undefined safe on the FE side.
+      ...(Array.isArray(item.composedFrom) && item.composedFrom.length > 0
+        ? { composedFrom: item.composedFrom }
+        : {}),
     };
   });
 
@@ -235,7 +241,7 @@ function stackInventoryRows(items) {
     usedKeys.add(itemKey);
     const knownColumns = new Set([
       'id', 'name', 'displayName', 'baseType', 'quantity',
-      'props', 'imageUrl', 'addedAt',
+      'props', 'imageUrl', 'addedAt', 'composedFrom',
     ]);
     const inlineProps = {};
     for (const [k, v] of Object.entries(item)) {
@@ -243,6 +249,9 @@ function stackInventoryRows(items) {
     }
     const props = { ...(item.props || {}), ...inlineProps };
     const normalizedImageUrl = item.imageUrl ? toCanonicalStoragePath(item.imageUrl) : null;
+    const composedFrom = Array.isArray(item.composedFrom) && item.composedFrom.length > 0
+      ? item.composedFrom
+      : null;
     rows.push({
       itemKey,
       displayName,
@@ -250,6 +259,7 @@ function stackInventoryRows(items) {
       quantity: item.quantity || 1,
       props,
       imageUrl: normalizedImageUrl,
+      composedFrom,
     });
   }
   return rows;
@@ -353,11 +363,28 @@ export async function persistCharacterSnapshot(characterId, snapshot, client = p
         data: skillRows.map((r) => ({ ...r, characterId })),
       });
     }
-    await tx.characterInventoryItem.deleteMany({ where: { characterId } });
+    // Only wipe visible rows — hidden rows (combine sources, enchant originals,
+    // discarded items) carry lineage and must survive snapshot saves.
+    await tx.characterInventoryItem.deleteMany({ where: { characterId, hidden: false } });
     if (inventoryRows.length > 0) {
-      await tx.characterInventoryItem.createMany({
-        data: inventoryRows.map((r) => ({ ...r, characterId })),
+      // Stale FE snapshots may still carry an item that the BE has since
+      // hidden (e.g. user discarded item X, but a save tx queued before the
+      // RECONCILE_CHARACTER_FROM_BACKEND landed). Without this guard the
+      // createMany would PK-collide on (characterId, itemKey) with the
+      // hidden row. Drop the stale entry rather than failing the whole tx.
+      const hiddenKeyRows = await tx.characterInventoryItem.findMany({
+        where: { characterId, hidden: true },
+        select: { itemKey: true },
       });
+      const hiddenKeys = new Set(hiddenKeyRows.map((r) => r.itemKey));
+      const fresh = hiddenKeys.size > 0
+        ? inventoryRows.filter((r) => !hiddenKeys.has(r.itemKey))
+        : inventoryRows;
+      if (fresh.length > 0) {
+        await tx.characterInventoryItem.createMany({
+          data: fresh.map((r) => ({ ...r, characterId })),
+        });
+      }
     }
     await tx.characterMaterial.deleteMany({ where: { characterId } });
     if (materialRows.length > 0) {

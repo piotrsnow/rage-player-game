@@ -1,11 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { apiClient } from '../../services/apiClient';
 import { useAI } from '../../hooks/useAI';
+import { useInventoryActions } from '../../hooks/useInventoryActions';
 import StatsGrid from './StatsGrid';
 import Inventory from './Inventory';
 import ItemDetailBox from './inventory/ItemDetailBox';
 import CrystalUseModal from './inventory/CrystalUseModal';
 import UseItemModal from './inventory/UseItemModal';
+import EnchantItemModal from './inventory/EnchantItemModal';
 import { getEquippableSlots, getEquippedSlot } from './inventory/constants';
 import StatusBar from '../ui/StatusBar';
 import ActiveEffectsRow from '../ui/ActiveEffectsRow';
@@ -676,6 +678,7 @@ export default function CharacterPanel({
   const [spellViewMode, setSpellViewMode] = useState('list');
   const [crystalItemId, setCrystalItemId] = useState(null);
   const [useItemModalItem, setUseItemModalItem] = useState(null);
+  const [enchantModalItem, setEnchantModalItem] = useState(null);
   const [regeneratingItemId, setRegeneratingItemId] = useState(null);
   const selectedItem = inventoryItems.find((i) => i.id === selectedItemId) || null;
   const knownSpells = useMemo(() => {
@@ -812,6 +815,15 @@ export default function CharacterPanel({
     dispatch({ type: 'USE_MANA_CRYSTAL', payload: { itemId, choice } });
     if (autoSave) autoSave();
   };
+  const { discardItem } = useInventoryActions(character, dispatch);
+  const handleDiscardItem = useCallback(async (itemId) => {
+    try {
+      await discardItem(itemId);
+      setSelectedItemId((current) => (current === itemId ? null : current));
+    } catch (err) {
+      console.error('Failed to discard item:', err);
+    }
+  }, [discardItem]);
   const handleRegenerateItemImage = async (itemId) => {
     const target = inventoryItems.find((i) => i.id === itemId);
     if (!target || regeneratingItemId) return;
@@ -1221,6 +1233,10 @@ export default function CharacterPanel({
                 onUnequipItem={handleUnequipItem}
                 onUseManaCrystal={(itemId) => setCrystalItemId(itemId)}
                 onUseItem={onItemAction ? (itemId) => setUseItemModalItem(inventoryItems.find((i) => i.id === itemId) || null) : undefined}
+                onEnchantItem={(!isMultiplayer && campaign?.backendId && (character?.spells?.known?.length || 0) > 0)
+                  ? (itemId) => setEnchantModalItem(inventoryItems.find((i) => i.id === itemId) || null)
+                  : undefined}
+                onDiscardItem={!isMultiplayer ? handleDiscardItem : undefined}
                 onRegenerateImage={canRegenerateItemImage ? handleRegenerateItemImage : null}
                 isRegenerating={regeneratingItemId === selectedItem.id}
               />
@@ -1284,12 +1300,29 @@ export default function CharacterPanel({
           character={character}
           npcs={npcsInScene || []}
           items={inventoryItems.filter((i) => i.id !== useItemModalItem.id)}
+          campaignId={isMultiplayer ? null : (campaign?.backendId || null)}
+          dispatch={dispatch}
           onClose={() => setUseItemModalItem(null)}
           onSubmit={(actionText) => {
             setUseItemModalItem(null);
             setSelectedItemId(null);
             if (onItemAction) onItemAction(actionText);
           }}
+        />
+      )}
+
+      {enchantModalItem && (
+        <EnchantItemModal
+          item={enchantModalItem}
+          character={character}
+          campaignId={isMultiplayer ? null : (campaign?.backendId || null)}
+          dispatch={dispatch}
+          onClose={() => setEnchantModalItem(null)}
+          onSubmit={onItemAction ? (actionText) => {
+            setEnchantModalItem(null);
+            setSelectedItemId(null);
+            onItemAction(actionText);
+          } : null}
         />
       )}
 

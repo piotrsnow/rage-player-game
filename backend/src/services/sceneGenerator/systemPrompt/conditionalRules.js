@@ -8,7 +8,6 @@
 
 import { BESTIARY_RACES } from '../../../data/equipment/index.js';
 import {
-  itemCombinationBlock,
   questGraphExtendedRules,
   questMutationsExtendedRules,
   dungeonExtendedRules,
@@ -28,8 +27,6 @@ const MAGICAL_LOC_RE = /jaskini|dungeon|ruin|wież|tower|crypt|temple|świątyni
 const SUBLOCATION_HOST_TYPES = new Set([
   'capital', 'city', 'town', 'village', 'hamlet', 'interior', 'dungeon',
 ]);
-
-const ITEM_COMBINATION_RE = /\[ŁĄCZENIE PRZEDMIOTÓW|łącz[ęe]|kombinuj|owijam.{1,20}wokół|wsadzam.{1,20}w\s|składam.{1,20}połów|wbijam.{1,20}w\s/i;
 
 export function buildConditionalRules({ intent, coreState, scenePhase = null, livingWorldEnabled = false, questGraphEnabled = false, magicExposure = null, playerAction = '' }) {
   const rules = [];
@@ -232,10 +229,6 @@ export function buildConditionalRules({ intent, coreState, scenePhase = null, li
       `\nChoose whichever fits the narrative. Narrate organically — a sudden insight, dormant power awakening, a surge of energy. ` +
       `Do NOT grant both in the same scene. This is a rare event — weave it into the story naturally.`,
     );
-  }
-
-  if (playerAction && ITEM_COMBINATION_RE.test(playerAction)) {
-    rules.push(itemCombinationBlock());
   }
 
   // ── Extended stateChanges rules (moved from static prefix) ──

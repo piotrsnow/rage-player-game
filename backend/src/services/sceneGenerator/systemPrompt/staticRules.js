@@ -157,32 +157,6 @@ export function actionRulesBlock() {
 - Item/money acquisition: if dialogueSegments say character gains anything, stateChanges MUST match. No exceptions.`;
 }
 
-export function itemCombinationBlock() {
-  // STRONG RULES: gracz może łączyć przedmioty z ekwipunku przez UI
-  // (UseItemModal → wybór "Przedmiot" jako cel) lub naturalnie w narracji.
-  // Trigger UI: tag `[ŁĄCZENIE PRZEDMIOTÓW: A + B]` w user input.
-  // Trigger narracyjny: gracz opisuje łączenie ("owijam szmatkę wokół kija
-  // i polewam olejem", "wbijam runę w miecz", "składam dwie połowy mapy").
-  return `ITEM COMBINATION RULES — STRONG:
-When the player tries to combine inventory items — either via UI tag \`[ŁĄCZENIE PRZEDMIOTÓW: A + B]\` OR via narrative ("łączę X z Y", "wsadzam runę w miecz", "owijam kij szmatą i polewam olejem") — you MUST handle it as a real mechanical change, not just flavor.
-
-PLAUSIBILITY CHECK first:
-- SENSIBLE (physical/lore logic holds): kij + szmata + olej = pochodnia; lina + hak = kotwiczka; sztylet + flakon trucizny = zatruty sztylet; dwie połowy mapy = kompletna mapa; broń + odłamek runy = broń runiczna; pusta butelka + woda ze studni = butelka wody.
-- NOT SENSIBLE (no physical/lore basis): chleb + miecz; mikstura + buty; dwa niezwiązane artefakty bez wspólnej narracji. Narrate failure, ZERO state changes, items stay in inventory.
-
-WHEN SENSIBLE — stateChanges MUST contain BOTH:
-1. \`removeItemsByName\`: one entry per consumed component, e.g. \`[{"name":"Lina", "quantity":1}, {"name":"Hak żelazny", "quantity":1}]\`. Quantity = how many copies were actually used (usually 1 each). Use full item name as it appears in Inventory.
-2. \`newItems\`: one entry — the resulting combined item with full \`{name, type, rarity, description, longDescription?}\` (and \`baseType\` if it maps onto a known equipment base). Description should mention it's a combination ("Pochodnia zwinięta z kija owiniętego naoliwioną szmatą"). longDescription: optional 2-4 sentences on how/why the combination works.
-
-HARD RULES (no exceptions):
-- NEVER emit \`newItems\` for combination without matching \`removeItems\` (by UUID) or \`removeItemsByName\` for the components — orphaned new items break inventory consistency.
-- NEVER emit removals for items the character does NOT have in Inventory. Check the Inventory line before combining.
-- Prefer \`removeItems\` with item UUIDs from [id: ...] tags. Use \`removeItemsByName\` as fallback when IDs aren't visible.
-- If a component is stackable and player has multiple, decrement only what was used (quantity:1, not the whole stack).
-- If combining is a partial success (e.g. broken result), still consume both components but emit a degraded \`newItems\` entry.
-- The narration in dialogueSegments MUST describe the combining process and the resulting item — keep prose and stateChanges in sync.`;
-}
-
 export function playerInputPolicyBlock() {
   // Prevents the player from railroading the scene by writing declarative fiction
   // in their action text ("znajduję starego Włóczęgę który daje mi mapę…"). The

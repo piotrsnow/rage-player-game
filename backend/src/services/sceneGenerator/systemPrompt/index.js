@@ -93,8 +93,8 @@ export function buildLeanSystemPrompt(coreState, recentScenes, language = 'pl', 
   // ═══════════════════════════════════════════════════════════════
   // ORDER: critical behavioral rules first (strongest recall at prompt start),
   // mechanics in the middle, output format last (strongest recall at prompt end).
-  // itemCombinationBlock is now conditional — injected only when playerAction
-  // matches combination patterns (see conditionalRules.js).
+  // Item combination is no longer LLM-driven — see backend/src/routes/ai/combineItems.js
+  // for the single-shot endpoint (UseItemModal triggers it directly).
   const staticSections = [
     playerInputPolicyBlock(),
     executionOrderBlock(),

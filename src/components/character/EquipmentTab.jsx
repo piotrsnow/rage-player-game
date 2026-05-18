@@ -2,12 +2,14 @@ import { useCallback, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { apiClient } from '../../services/apiClient';
 import { useAI } from '../../hooks/useAI';
+import { useInventoryActions } from '../../hooks/useInventoryActions';
 import { isManaCrystal } from '../../data/rpgMagic';
 import { getEquippableSlots, getEquippedSlot, rarityColors, rarityGlows, typeIcons, SLOT_CONFIG } from './inventory/constants';
 import InventoryImage from './inventory/InventoryImage';
 import ItemDetailBox from './inventory/ItemDetailBox';
 import CrystalUseModal from './inventory/CrystalUseModal';
 import UseItemModal from './inventory/UseItemModal';
+import EnchantItemModal from './inventory/EnchantItemModal';
 
 export default function EquipmentTab({
   character,
@@ -17,6 +19,7 @@ export default function EquipmentTab({
   settings,
   onItemAction,
   npcsInScene,
+  campaignId = null,
 }) {
   const { t } = useTranslation();
   const items = character.inventory || [];
@@ -24,8 +27,12 @@ export default function EquipmentTab({
   const [selectedItemId, setSelectedItemId] = useState(null);
   const [crystalItemId, setCrystalItemId] = useState(null);
   const [useItemModalItem, setUseItemModalItem] = useState(null);
+  const [enchantModalItem, setEnchantModalItem] = useState(null);
   const [regeneratingItemId, setRegeneratingItemId] = useState(null);
   const [sortByDate, setSortByDate] = useState(false);
+
+  const knowsAnySpell = Array.isArray(character?.spells?.known) && character.spells.known.length > 0;
+  const canEnchant = !isMultiplayer && Boolean(campaignId) && knowsAnySpell;
 
   const { generateItemImageForInventoryItem } = useAI();
   const canRegenerateItemImage = !isMultiplayer && settings.itemImagesEnabled !== false;
@@ -66,6 +73,16 @@ export default function EquipmentTab({
     dispatch({ type: 'USE_MANA_CRYSTAL', payload: { itemId, choice } });
     if (autoSave) autoSave();
   };
+
+  const { discardItem } = useInventoryActions(character, dispatch);
+  const handleDiscardItem = useCallback(async (itemId) => {
+    try {
+      await discardItem(itemId);
+      setSelectedItemId((current) => (current === itemId ? null : current));
+    } catch (err) {
+      console.error('Failed to discard item:', err);
+    }
+  }, [discardItem]);
 
   return (
     <>
@@ -178,6 +195,8 @@ export default function EquipmentTab({
                 onUnequipItem={handleUnequipItem}
                 onUseManaCrystal={(itemId) => setCrystalItemId(itemId)}
                 onUseItem={onItemAction ? (itemId) => setUseItemModalItem(items.find((i) => i.id === itemId) || null) : undefined}
+                onEnchantItem={canEnchant ? (itemId) => setEnchantModalItem(items.find((i) => i.id === itemId) || null) : undefined}
+                onDiscardItem={!isMultiplayer ? handleDiscardItem : undefined}
                 onRegenerateImage={canRegenerateItemImage ? handleRegenerateItemImage : null}
                 isRegenerating={regeneratingItemId === selectedItem.id}
                 largeImage
@@ -212,12 +231,29 @@ export default function EquipmentTab({
           character={character}
           npcs={npcsInScene || []}
           items={items.filter((i) => i.id !== useItemModalItem.id)}
+          campaignId={isMultiplayer ? null : campaignId}
+          dispatch={dispatch}
           onClose={() => setUseItemModalItem(null)}
           onSubmit={(actionText) => {
             setUseItemModalItem(null);
             setSelectedItemId(null);
             if (onItemAction) onItemAction(actionText);
           }}
+        />
+      )}
+
+      {enchantModalItem && (
+        <EnchantItemModal
+          item={enchantModalItem}
+          character={character}
+          campaignId={campaignId}
+          dispatch={dispatch}
+          onClose={() => setEnchantModalItem(null)}
+          onSubmit={onItemAction ? (actionText) => {
+            setEnchantModalItem(null);
+            setSelectedItemId(null);
+            onItemAction(actionText);
+          } : null}
         />
       )}
     </>

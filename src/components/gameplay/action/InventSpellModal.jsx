@@ -4,21 +4,8 @@ import { useModalA11y } from '../../../hooks/useModalA11y';
 import { apiClient } from '../../../services/apiClient';
 import { gameData } from '../../../services/gameDataService';
 import { NarrableText } from '../../ui/NarrableText';
+import RollModifierDie, { randomD50, applyRollModifier } from '../../ui/RollModifierDie';
 import DiceRoller from '../../../effects/DiceRoller';
-
-function randomD50() {
-  return Math.floor(Math.random() * 50) + 1;
-}
-
-/** Raw d50 + modifier, clamped to 1..50 */
-function applyRollModifier(raw, modifier) {
-  return Math.min(50, Math.max(1, raw + modifier));
-}
-
-function formatModifier(m) {
-  if (m === 0) return '0';
-  return m > 0 ? `+${m}` : String(m);
-}
 
 function resolvePowerTier(powerRoll) {
   if (powerRoll <= 15) return 'cantrip';
@@ -169,17 +156,6 @@ export default function InventSpellModal({ campaignId, character = null, dispatc
     onClose();
   }, [result, onAction, onClose]);
 
-  const diceTooltip = t('gameplay.inventSpellDiceTooltip', { modifier: formatModifier(rollModifier) });
-
-  const handleDiceClick = useCallback(() => {
-    setRollModifier((m) => m - 10);
-  }, []);
-
-  const handleDiceContextMenu = useCallback((e) => {
-    e.preventDefault();
-    setRollModifier((m) => m + 10);
-  }, []);
-
   const headerTitle = titleByOutcome(result?.outcome, t);
 
   return (
@@ -222,20 +198,11 @@ export default function InventSpellModal({ campaignId, character = null, dispatc
               <div className="flex items-center justify-between gap-3">
                 <div className="flex items-center gap-2 min-w-0">
                   <span className="text-[10px] text-on-surface-variant/40">Shift+Enter — wyślij</span>
-                  <button
-                    type="button"
-                    title={diceTooltip}
-                    aria-label={diceTooltip}
-                    onClick={handleDiceClick}
-                    onContextMenu={handleDiceContextMenu}
+                  <RollModifierDie
+                    value={rollModifier}
+                    onChange={setRollModifier}
                     disabled={isSubmitting}
-                    className="shrink-0 flex items-center gap-1.5 h-10 px-2.5 rounded-sm border border-outline-variant/25 bg-surface-container-high/50 hover:bg-surface-container-high hover:border-primary/30 text-on-surface-variant hover:text-primary transition-colors disabled:opacity-40 disabled:cursor-not-allowed select-none"
-                  >
-                    <span className="material-symbols-outlined text-xl">casino</span>
-                    <span className={`text-xs font-mono font-label tabular-nums ${rollModifier === 0 ? 'opacity-50' : ''}`}>
-                      {formatModifier(rollModifier)}
-                    </span>
-                  </button>
+                  />
                   <span className="text-[10px] text-on-surface-variant/60 truncate">{intent.length}/500</span>
                 </div>
                 <button

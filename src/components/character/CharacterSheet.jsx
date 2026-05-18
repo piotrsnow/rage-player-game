@@ -270,6 +270,7 @@ export default function CharacterSheet({ onClose }) {
                 settings={settings}
                 onItemAction={onItemAction}
                 npcsInScene={npcsInScene}
+                campaignId={campaign?.backendId || campaign?.id || null}
               />
             </div>
           ) : activeTab === 'spells' ? (

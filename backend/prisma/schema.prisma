@@ -251,18 +251,27 @@ model CharacterSkillGain {
 }
 
 model CharacterInventoryItem {
-  characterId String    @db.Uuid
-  itemKey     String
-  displayName String
-  baseType    String?
-  quantity    Int       @default(1)
-  props       Json      @default("{}")
-  imageUrl    String?
-  addedAt     DateTime  @default(now()) @db.Timestamptz
-  character   Character @relation(fields: [characterId], references: [id], onDelete: Cascade)
+  characterId  String    @db.Uuid
+  itemKey      String
+  displayName  String
+  baseType     String?
+  quantity     Int       @default(1)
+  props        Json      @default("{}")
+  imageUrl     String?
+  addedAt      DateTime  @default(now()) @db.Timestamptz
+  // Soft-hide so discard / combine sources / enchant originals don't get wiped
+  // by snapshot replace-strategy and survive as ancestors of result items.
+  hidden       Boolean   @default(false)
+  hiddenReason String?
+  hiddenAt     DateTime? @db.Timestamptz
+  // Lineage for combine/enchant results — array of
+  // { itemKey, name, rarity, kind: 'combine_source'|'enchant_source', spell? }.
+  composedFrom Json?
+  character    Character @relation(fields: [characterId], references: [id], onDelete: Cascade)
 
   @@id([characterId, itemKey])
   @@index([characterId, addedAt])
+  @@index([characterId, hidden])
 }
 
 model CharacterMaterial {
