@@ -93,7 +93,7 @@ export async function appendDeferred({
 export async function listDeferred({ campaignId, worldNpcId }) {
   if (!campaignId || !worldNpcId) return [];
   return prisma.worldEvent.findMany({
-    where: { campaignId, worldNpcId, visibility: 'deferred' },
+    where: { campaignId, npcId: worldNpcId, visibility: 'deferred' },
     orderBy: { gameTime: 'asc' },
   });
 }
@@ -104,7 +104,7 @@ export async function listDeferred({ campaignId, worldNpcId }) {
 export async function countDeferred({ campaignId, worldNpcId }) {
   if (!campaignId || !worldNpcId) return 0;
   return prisma.worldEvent.count({
-    where: { campaignId, worldNpcId, visibility: 'deferred' },
+    where: { campaignId, npcId: worldNpcId, visibility: 'deferred' },
   });
 }
 
@@ -189,7 +189,7 @@ export async function flushDeferred({ campaignId, worldNpcId, lockedSnapshot, us
 export async function dropDeferred({ campaignId, worldNpcId }) {
   if (!campaignId || !worldNpcId) return 0;
   const result = await prisma.worldEvent.deleteMany({
-    where: { campaignId, worldNpcId, visibility: 'deferred' },
+    where: { campaignId, npcId: worldNpcId, visibility: 'deferred' },
   });
   return result.count;
 }

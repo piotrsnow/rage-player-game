@@ -431,16 +431,16 @@ export async function crudCampaignRoutes(app) {
           // AI's quest-giver (matched by name). If we called getOrCloneCampaignNpc
           // here it would create a SECOND row with a slug suffix, leaving the
           // quest pointing at the unlinked ephemeral one. Relink the existing
-          // shadow instead — same npcId slug, just sets worldNpcId+isAgent.
+          // shadow instead — same npcId slug, just sets canonicalNpcId+isAgent.
           const existing = await prisma.npc.findFirst({
             where: { campaignId: campaign.id, name: { equals: canonical.name, mode: 'insensitive' } },
-            select: { id: true, worldNpcId: true },
+            select: { id: true, canonicalNpcId: true },
           });
           if (existing) {
-            if (!existing.worldNpcId) {
+            if (!existing.canonicalNpcId) {
               await prisma.npc.update({
                 where: { id: existing.id },
-                data: { worldNpcId: canonical.id, isAgent: true },
+                data: { canonicalNpcId: canonical.id, isAgent: true },
               });
             }
           } else {

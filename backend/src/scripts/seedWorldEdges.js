@@ -62,25 +62,25 @@ function buildEdgeDefinitions(locationByName) {
 
   // ── Adjacent_to: capital sublocations ───────────────────────────────
   edges.push({
-    fromName: 'Świątynia Nieznanego Boga', toName: 'Wielki Targ w Yeralden',
+    fromName: 'Tempel Nieznanego Boga', toName: 'Grossmarkt w Yeralden',
     edgeType: 'adjacent_to', category: 'spatial',
     bidirectional: true,
   });
   edges.push({
-    fromName: 'Wielki Targ w Yeralden', toName: 'Karczma Pod Złotym Słońcem',
+    fromName: 'Grossmarkt w Yeralden', toName: 'Czarda Pod Złotym Słońcem',
     edgeType: 'adjacent_to', category: 'spatial',
     bidirectional: true,
   });
 
   // ── Audible_from: tavern ↔ market noise ─────────────────────────────
   edges.push({
-    fromName: 'Karczma Pod Złotym Słońcem', toName: 'Wielki Targ w Yeralden',
+    fromName: 'Czarda Pod Złotym Słońcem', toName: 'Grossmarkt w Yeralden',
     edgeType: 'audible_from', category: 'perception',
     bidirectional: false,
     metadata: { loudness: 'moderate', detail: 'muzyka i gwar z karczmy' },
   });
   edges.push({
-    fromName: 'Wielki Targ w Yeralden', toName: 'Karczma Pod Złotym Słońcem',
+    fromName: 'Grossmarkt w Yeralden', toName: 'Czarda Pod Złotym Słońcem',
     edgeType: 'audible_from', category: 'perception',
     bidirectional: false,
     metadata: { loudness: 'moderate', detail: 'zgiełk handlarzy' },
@@ -88,19 +88,19 @@ function buildEdgeDefinitions(locationByName) {
 
   // ── Door_to: each sublocation ↔ capital ─────────────────────────────
   edges.push({
-    fromName: 'Świątynia Nieznanego Boga', toName: 'Yeralden',
+    fromName: 'Tempel Nieznanego Boga', toName: 'Yeralden',
     edgeType: 'door_to', category: 'movement',
     bidirectional: true,
     metadata: { description: 'Kamienne wrota świątyni' },
   });
   edges.push({
-    fromName: 'Karczma Pod Złotym Słońcem', toName: 'Yeralden',
+    fromName: 'Czarda Pod Złotym Słońcem', toName: 'Yeralden',
     edgeType: 'door_to', category: 'movement',
     bidirectional: true,
     metadata: { description: 'Główne drzwi karczmy' },
   });
   edges.push({
-    fromName: 'Wielki Targ w Yeralden', toName: 'Yeralden',
+    fromName: 'Grossmarkt w Yeralden', toName: 'Yeralden',
     edgeType: 'door_to', category: 'movement',
     bidirectional: true,
     metadata: { description: 'Brama targowa' },

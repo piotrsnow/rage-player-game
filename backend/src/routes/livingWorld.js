@@ -34,7 +34,6 @@ import {
   normalizeDirectionDeg,
 } from '../../../shared/domain/locationGraphLayout.js';
 import { EDGE_TYPES, safeValidateTacticalGrid } from '../../../shared/domain/locationGraph.js';
-import { slugifyLocationName } from '../services/locationRefs.js';
 import { findSimilarNodeImage } from '../services/locationGraph/imageMatcher.js';
 import { generatePixelSprite, scaleToSpriteSize } from '../services/pixelLabClient.js';
 import { buildPixelSpriteDescription } from '../services/pixelLabSpritePrompt.js';
@@ -554,7 +553,7 @@ export async function livingWorldRoutes(fastify) {
     const orphanCampaignLocs = await prisma.location.findMany({
       where: { campaignId: request.params.id, id: { notIn: [...seenNodeIds] } },
       select: {
-        id: true, name: true, locationType: true, scale: true, tags: true,
+        id: true, displayName: true, locationType: true, scale: true, tags: true,
         atmosphere: true, description: true, biome: true, region: true,
         visitCount: true, dangerLevel: true, regionX: true, regionY: true,
         nodeShape: true, nodeIcon: true, nodeImageUrl: true,
@@ -564,7 +563,7 @@ export async function livingWorldRoutes(fastify) {
       nodeList.push({
         id: node.id,
         kind: 'campaign',
-        name: node.name,
+        name: node.displayName,
         type: node.locationType || 'generic',
         scale: node.scale ?? 5,
         tags: node.tags || [],
@@ -707,7 +706,7 @@ export async function livingWorldRoutes(fastify) {
       where: { id: npcId, campaignId },
       select: {
         id: true, name: true, npcId: true,
-        gender: true, role: true, personality: true, attitude: true,
+        gender: true, role: true, personality: true, alignment: true,
         appearance: true, category: true, alive: true, level: true,
         race: true, creatureKind: true, portraitUrl: true, spriteUrl: true,
         stats: true, disposition: true,
@@ -755,11 +754,11 @@ export async function livingWorldRoutes(fastify) {
     const movementLocRows = movementLocationIds.size > 0
       ? await prisma.location.findMany({
           where: { id: { in: [...movementLocationIds] } },
-          select: { id: true, canonicalName: true, displayName: true, name: true },
+          select: { id: true, canonicalName: true, displayName: true },
         })
       : [];
     const nameById = new Map();
-    for (const loc of movementLocRows) nameById.set(loc.id, loc.displayName || loc.canonicalName || loc.name);
+    for (const loc of movementLocRows) nameById.set(loc.id, loc.displayName || loc.canonicalName);
 
     const movementsOut = movements.map((m) => ({
       ...m,
@@ -770,6 +769,7 @@ export async function livingWorldRoutes(fastify) {
 
     const npc = {
       ...npcRow,
+      attitude: npcRow.alignment,
       lastInteractionAt: npcRow.lastInteractionAt ? npcRow.lastInteractionAt.toISOString() : null,
     };
 
@@ -896,8 +896,7 @@ export async function livingWorldRoutes(fastify) {
       node = await prisma.location.create({
         data: {
           campaignId: request.params.id,
-          name: b.name,
-          canonicalSlug: slugifyLocationName(b.name),
+          displayName: b.name,
           description: b.description || '',
           locationType: b.type || 'generic',
           tags: b.tags || [],
@@ -976,7 +975,7 @@ export async function livingWorldRoutes(fastify) {
       }
     }
 
-    return reply.code(201).send({ node: { id: node.id, kind: 'campaign', name: node.name, nodeImageUrl: matchedImageUrl } });
+    return reply.code(201).send({ node: { id: node.id, kind: 'campaign', name: node.displayName, nodeImageUrl: matchedImageUrl } });
   });
 
   // PUT /campaigns/:id/location-graph/nodes/:nodeId
@@ -1025,7 +1024,7 @@ export async function livingWorldRoutes(fastify) {
     });
     if (campaignLoc) {
       const data = {};
-      if (b.name !== undefined) { data.name = b.name; data.canonicalSlug = slugifyLocationName(b.name); }
+      if (b.name !== undefined) { data.displayName = b.name; }
       if (b.description !== undefined) data.description = b.description;
       if (b.tags !== undefined) data.tags = b.tags;
       if (b.atmosphere !== undefined) data.atmosphere = b.atmosphere;
@@ -1120,7 +1119,7 @@ export async function livingWorldRoutes(fastify) {
 
     const rows = await prisma.location.findMany({
       where: { campaignId: request.params.id, nodeImageUrl: { not: null } },
-      select: { id: true, name: true, nodeImageUrl: true },
+      select: { id: true, displayName: true, nodeImageUrl: true },
       orderBy: { updatedAt: 'desc' },
     });
 
@@ -1135,7 +1134,7 @@ export async function livingWorldRoutes(fastify) {
     `;
 
     const seen = new Set(rows.map((r) => r.nodeImageUrl));
-    const images = rows.map((r) => ({ url: r.nodeImageUrl, name: r.name }));
+    const images = rows.map((r) => ({ url: r.nodeImageUrl, name: r.displayName }));
     for (const w of worldRows) {
       if (!seen.has(w.nodeImageUrl)) {
         images.push({ url: w.nodeImageUrl, name: w.name });
@@ -1176,12 +1175,14 @@ export async function livingWorldRoutes(fastify) {
     let loc = await prisma.location.findFirst({
       where: { id: request.params.nodeId, campaignId: request.params.id },
       select: {
-        id: true, name: true, description: true, locationType: true,
+        id: true, displayName: true, description: true, locationType: true,
         scale: true, tags: true, atmosphere: true, biome: true, dangerLevel: true,
       },
     });
     let isWorldNode = false;
-    if (!loc) {
+    if (loc) {
+      loc.name = loc.displayName;
+    } else {
       loc = await prisma.location.findFirst({
         where: { id: request.params.nodeId },
         select: {
@@ -1419,8 +1420,8 @@ export async function livingWorldRoutes(fastify) {
     });
     await appendCampaignNpcLocationMovement(prisma, {
       campaignNpcId: before.id,
-      fromLocationId: before.currentLocationId,
-      toLocationId,
+      fromId: before.currentLocationId,
+      toId: toLocationId,
       source: NPC_LOCATION_MOVE_SOURCE_GRAPH,
       sceneIndex: null,
     });
@@ -1458,16 +1459,16 @@ export async function livingWorldRoutes(fastify) {
       prisma.location.findMany({
         where: {
           campaignId: request.params.id,
-          name: { contains: q, mode: 'insensitive' },
+          displayName: { contains: q, mode: 'insensitive' },
         },
-        select: { id: true, name: true, locationType: true, scale: true },
+        select: { id: true, displayName: true, locationType: true, scale: true },
         take: 20,
       }),
     ]);
 
     const results = [
       ...worldLocs.map((l) => ({ id: l.id, kind: 'world', name: l.displayName || l.canonicalName, type: l.locationType })),
-      ...campaignLocs.map((l) => ({ id: l.id, kind: 'campaign', name: l.name, type: l.locationType })),
+      ...campaignLocs.map((l) => ({ id: l.id, kind: 'campaign', name: l.displayName, type: l.locationType })),
     ];
     return reply.send({ results: results.slice(0, 30) });
   });

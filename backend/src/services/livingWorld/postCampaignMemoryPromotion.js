@@ -69,10 +69,10 @@ export async function promoteExperienceLogsToCanonical(campaignId, { dryRun = fa
   let shadows = [];
   try {
     shadows = await prisma.npc.findMany({
-      where: { campaignId, worldNpcId: { not: null } },
+      where: { campaignId, canonicalNpcId: { not: null } },
       select: {
         id: true,
-        worldNpcId: true,
+        canonicalNpcId: true,
         experiences: {
           orderBy: { addedAt: 'asc' },
           select: { content: true, importance: true, addedAt: true },
@@ -91,21 +91,21 @@ export async function promoteExperienceLogsToCanonical(campaignId, { dryRun = fa
   for (const shadow of shadows) {
     const entries = buildPromotableEntries(shadow.experiences, campaignId, { importanceFilter });
     if (entries.length === 0) {
-      skipped.push({ worldNpcId: shadow.worldNpcId, reason: 'no_promotable_entries' });
+      skipped.push({ worldNpcId: shadow.canonicalNpcId, reason: 'no_promotable_entries' });
       continue;
     }
     if (dryRun) {
-      promoted.push({ worldNpcId: shadow.worldNpcId, entryCount: entries.length, dryRun: true });
+      promoted.push({ worldNpcId: shadow.canonicalNpcId, entryCount: entries.length, dryRun: true });
       continue;
     }
 
     try {
       const canonical = await prisma.npc.findUnique({
-        where: { id: shadow.worldNpcId },
+        where: { id: shadow.canonicalNpcId },
         select: { id: true },
       });
       if (!canonical) {
-        skipped.push({ worldNpcId: shadow.worldNpcId, reason: 'world_npc_not_found' });
+        skipped.push({ worldNpcId: shadow.canonicalNpcId, reason: 'world_npc_not_found' });
         continue;
       }
 
@@ -138,9 +138,9 @@ export async function promoteExperienceLogsToCanonical(campaignId, { dryRun = fa
       }
       promoted.push({ worldNpcId: canonical.id, entryCount: entries.length });
     } catch (err) {
-      log.warn({ err: err?.message, worldNpcId: shadow.worldNpcId, campaignId },
+      log.warn({ err: err?.message, worldNpcId: shadow.canonicalNpcId, campaignId },
         'promoteExperienceLogsToCanonical: write failed');
-      skipped.push({ worldNpcId: shadow.worldNpcId, reason: 'write_failed', error: err?.message });
+      skipped.push({ worldNpcId: shadow.canonicalNpcId, reason: 'write_failed', error: err?.message });
     }
   }
 

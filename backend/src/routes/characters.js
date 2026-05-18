@@ -12,7 +12,11 @@ import { SCENE_CLIENT_SELECT, normalizeSceneAssetUrls } from '../services/campai
 import { resolveBadgeImageProviderForUser } from '../services/badgeImageGen.js';
 import { generateBadge, regenerateBadgeImage } from '../services/badgeGenerator.js';
 import { ensureCharacterSprite } from '../services/characterSpriteService.js';
-import { generateItemAttackModes, generateSpellCombatStats } from '../services/itemAttackModesGenerator.js';
+import {
+  generateItemAttackModes,
+  generateSpellCombatStats,
+  inferDeterministicItemAttackModes,
+} from '../services/itemAttackModesGenerator.js';
 
 function cumulativeCharXpThreshold(targetLevel) {
   if (targetLevel <= 1) return 0;
@@ -836,9 +840,15 @@ Return JSON with exactly three fields, all written in ${isPolish ? 'Polish' : 'E
           itemKey: { type: 'string', minLength: 1, maxLength: 200 },
         },
       },
+      body: {
+        type: 'object',
+        properties: { force: { type: 'boolean', default: false } },
+        additionalProperties: false,
+      },
     },
     config: { rateLimit: { max: 10, timeWindow: '1 minute' } },
   }, async (request, reply) => {
+    const force = request.body?.force === true;
     const character = await prisma.character.findFirst({
       where: { id: request.params.id, userId: request.user.id },
       select: { id: true },
@@ -852,25 +862,40 @@ Return JSON with exactly three fields, all written in ${isPolish ? 'Polish' : 'E
 
     const props = (typeof itemRow.props === 'object' && itemRow.props) || {};
 
-    if (props.attackModes !== undefined) {
-      return { attackModes: props.attackModes };
+    if (!force) {
+      const deterministic = inferDeterministicItemAttackModes({ ...itemRow, props });
+      if (deterministic.resolved) {
+        const attackModes = deterministic.attackModes ?? null;
+        const cached = props.attackModes ?? null;
+        if (JSON.stringify(cached) !== JSON.stringify(attackModes)) {
+          await prisma.characterInventoryItem.updateMany({
+            where: { characterId: character.id, itemKey: request.params.itemKey },
+            data: { props: { ...props, attackModes } },
+          });
+        }
+        return { attackModes, explanation: props.attackModesExplanation || null };
+      }
     }
 
     let userApiKeys = null;
     try { userApiKeys = await loadUserApiKeys(prisma, request.user.id); } catch {}
 
-    const attackModes = await generateItemAttackModes(
+    const { attackModes, explanation } = await generateItemAttackModes(
       { ...itemRow, props },
-      { userApiKeys, userId: request.user.id },
+      { userApiKeys, userId: request.user.id, force },
     );
 
-    const updatedProps = { ...props, attackModes: attackModes ?? null };
+    const updatedProps = {
+      ...props,
+      attackModes: attackModes ?? null,
+      attackModesExplanation: explanation || null,
+    };
     await prisma.characterInventoryItem.updateMany({
       where: { characterId: character.id, itemKey: request.params.itemKey },
       data: { props: updatedProps },
     });
 
-    return { attackModes: attackModes ?? null };
+    return { attackModes: attackModes ?? null, explanation: explanation || null };
   });
 
   // ── Spell combat stats backfill ──────────────────────────────────────
@@ -884,9 +909,15 @@ Return JSON with exactly three fields, all written in ${isPolish ? 'Polish' : 'E
           spellName: { type: 'string', minLength: 1, maxLength: 200 },
         },
       },
+      body: {
+        type: 'object',
+        properties: { force: { type: 'boolean', default: false } },
+        additionalProperties: false,
+      },
     },
     config: { rateLimit: { max: 10, timeWindow: '1 minute' } },
   }, async (request, reply) => {
+    const force = request.body?.force === true;
     const character = await prisma.character.findFirst({
       where: { id: request.params.id, userId: request.user.id },
       select: { id: true },
@@ -897,21 +928,29 @@ Return JSON with exactly three fields, all written in ${isPolish ? 'Polish' : 'E
     const row = await prisma.customSpell.findUnique({ where: { name: spellName } });
     if (!row) return reply.code(404).send({ error: 'Custom spell not found' });
 
-    if (row.combatStats) return { combatStats: row.combatStats };
+    if (!force && row.combatStats) {
+      return {
+        combatStats: row.combatStats,
+        explanation: row.combatStats?.explanation || null,
+      };
+    }
 
     let userApiKeys = null;
     try { userApiKeys = await loadUserApiKeys(prisma, request.user.id); } catch {}
 
-    const combatStats = await generateSpellCombatStats(row, { userApiKeys, userId: request.user.id });
+    const { combatStats, explanation } = await generateSpellCombatStats(
+      row, { userApiKeys, userId: request.user.id },
+    );
 
     if (combatStats) {
+      const withExplanation = { ...combatStats, explanation: explanation || null };
       await prisma.customSpell.update({
         where: { id: row.id },
-        data: { combatStats },
+        data: { combatStats: withExplanation },
       });
     }
 
-    return { combatStats: combatStats ?? null };
+    return { combatStats: combatStats ?? null, explanation: explanation || null };
   });
 
   // ── Sprite sheet generation ────────────────────────────────────────

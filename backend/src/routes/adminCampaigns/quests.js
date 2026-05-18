@@ -251,7 +251,7 @@ export async function adminQuestRoutes(fastify) {
       () => prisma.$transaction([
         prisma.campaignQuestPrerequisite.deleteMany({ where: { questId } }),
         prisma.campaignQuestPrerequisite.createMany({
-          data: prerequisiteIds.map((prereqId) => ({ questId, prerequisiteId: prereqId })),
+          data: prerequisiteIds.map((prereqId) => ({ questId, prereqId })),
           skipDuplicates: true,
         }),
       ]),

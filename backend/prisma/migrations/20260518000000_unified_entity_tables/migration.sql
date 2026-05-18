@@ -263,9 +263,9 @@ SELECT
   "region", "parentLocationId", "locationType", "slotType", "slotKind",
   "maxKeyNpcs", "maxSubLocations", "regionX", "regionY", "positionConfidence",
   "subGridX", "subGridY", "knownByDefault", "dangerLevel",
-  "globallyActive", "softDeletedAt", "originCampaignId",
+  true, NULL, NULL,
   "aliases", "roomMetadata", "tags", "atmosphere", "narrativeRoles", "scale",
-  "nodeShape", "nodeIcon", "nodeImageUrl",
+  "nodeShape", "nodeIcon", NULL,
   "tacticalGrid", "biome", "anchorType", "visitCount", "npcsEncountered",
   "modificationsLog", "dungeonState", "liberatedAt",
   "embeddingText", "embedding", "createdAt", "updatedAt"
@@ -296,7 +296,7 @@ SELECT
   "subGridX", "subGridY", false, "dangerLevel",
   true, NULL, "campaignId",
   "aliases", "roomMetadata", "tags", "atmosphere", "narrativeRoles", "scale",
-  "nodeShape", "nodeIcon", "nodeImageUrl",
+  "nodeShape", "nodeIcon", NULL,
   "tacticalGrid", "biome", "anchorType", "visitCount", "npcsEncountered",
   "modificationsLog", "dungeonState", "liberatedAt",
   "embeddingText", "embedding", "createdAt", "updatedAt"
@@ -340,7 +340,7 @@ SELECT
   "race", "creatureKind", "level", "stats",
   NULL, "spriteUrl", "chargenAppearance", "spriteSheetUrl",
   "appearance", "dialect",
-  "globallyActive", "softDeletedAt", "originCampaignId",
+  true, NULL, NULL,
   "embeddingText", "embedding", "createdAt", "updatedAt"
 FROM "WorldNPC";
 
@@ -407,7 +407,7 @@ FROM "WorldNpcDialogTurn";
 
 -- 2j. Copy WorldNpcAttribution → NpcAttribution
 INSERT INTO "NpcAttribution" ("id", "npcId", "actorCharacterId", "actorCampaignId", "actionType", "justified", "justificationRaw", "sceneIndex", "createdAt")
-SELECT "id", "worldNpcId", "actorCharacterId", "actorCampaignId", "actionType", "justified", "justificationRaw", "sceneIndex", "createdAt"
+SELECT "id", "worldNpcId", "actorCharacterId", "actorCampaignId", "actionType", "justified", "judgeReason", NULL, "createdAt"
 FROM "WorldNpcAttribution";
 
 -- 2k. Copy WorldNpcKnownLocation → NpcKnownLocation
@@ -433,10 +433,14 @@ FROM "CampaignDiscoveredLocation";
 -- 3a. Campaign.currentLocationId — already uses UUIDs from WorldLocation/CampaignLocation,
 -- both of which are now in Location with same IDs. Just drop currentLocationKind column later.
 
--- 3b. CampaignQuest.locationId — was stored alongside locationKind.
--- The UUID is already valid (points to old WorldLocation or CampaignLocation ID, now in Location).
--- Rename the column pair: drop locationKind, keep locationId.
+-- 3b. CampaignQuest.locationId — was TEXT, convert to UUID.
+-- Null out any non-UUID values first, then cast.
 ALTER TABLE "CampaignQuest" DROP COLUMN IF EXISTS "locationKind";
+ALTER TABLE "CampaignQuest" DROP CONSTRAINT IF EXISTS "CampaignQuest_locationKind_check";
+UPDATE "CampaignQuest" SET "locationId" = NULL
+  WHERE "locationId" IS NOT NULL
+  AND "locationId" !~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$';
+ALTER TABLE "CampaignQuest" ALTER COLUMN "locationId" TYPE UUID USING "locationId"::uuid;
 
 -- 3c. CharacterClearedDungeon — drop dungeonKind, rename dungeonId
 ALTER TABLE "CharacterClearedDungeon" DROP CONSTRAINT IF EXISTS "CharacterClearedDungeon_pkey";
@@ -473,17 +477,13 @@ ALTER TABLE "CampaignEdge" ADD CONSTRAINT "CampaignEdge_campaignId_fromLocationI
 -- 3f. Campaign — drop currentLocationKind
 ALTER TABLE "Campaign" DROP COLUMN IF EXISTS "currentLocationKind";
 
--- 3g. WorldEvent — drop locationKind, keep locationId (already UUID)
--- Also drop the legacy worldLocationId and worldNpcId (superseded by unified FKs)
+-- 3g. WorldEvent — drop locationKind, merge legacy columns into unified names
 ALTER TABLE "WorldEvent" DROP COLUMN IF EXISTS "locationKind";
-ALTER TABLE "WorldEvent" RENAME COLUMN "worldLocationId" TO "locationId_legacy";
-ALTER TABLE "WorldEvent" RENAME COLUMN "worldNpcId" TO "npcId_legacy";
--- Keep locationId as-is (it was already the polymorphic one, pointing to same UUIDs)
--- Merge: if locationId is null but locationId_legacy is set, use that
-UPDATE "WorldEvent" SET "locationId" = "locationId_legacy" WHERE "locationId" IS NULL AND "locationId_legacy" IS NOT NULL;
-UPDATE "WorldEvent" SET "npcId" = "npcId_legacy" WHERE "npcId" IS NULL AND "npcId_legacy" IS NOT NULL;
-ALTER TABLE "WorldEvent" DROP COLUMN "locationId_legacy";
-ALTER TABLE "WorldEvent" DROP COLUMN "npcId_legacy";
+-- locationId already exists (added in location_graph_consolidation); merge worldLocationId into it
+UPDATE "WorldEvent" SET "locationId" = "worldLocationId" WHERE "locationId" IS NULL AND "worldLocationId" IS NOT NULL;
+ALTER TABLE "WorldEvent" DROP COLUMN IF EXISTS "worldLocationId";
+-- npcId does NOT exist yet — just rename worldNpcId
+ALTER TABLE "WorldEvent" RENAME COLUMN "worldNpcId" TO "npcId";
 
 -- 3h. NPCPromotionCandidate — rename campaignNpcId → npcId
 ALTER TABLE "NPCPromotionCandidate" RENAME COLUMN "campaignNpcId" TO "npcId";
@@ -495,19 +495,31 @@ ALTER TABLE "LocationPromotionCandidate" DROP CONSTRAINT IF EXISTS "LocationProm
 ALTER TABLE "LocationPromotionCandidate" ADD CONSTRAINT "LocationPromotionCandidate_campaignId_sourceLocationId_key"
   UNIQUE ("campaignId", "sourceLocationId");
 
--- 3j. LocationSpriteJobItem — drop nodeKind, rename nodeId → locationId
-ALTER TABLE "LocationSpriteJobItem" DROP CONSTRAINT IF EXISTS "LocationSpriteJobItem_jobId_nodeKind_nodeId_key";
-ALTER TABLE "LocationSpriteJobItem" DROP COLUMN IF EXISTS "nodeKind";
-ALTER TABLE "LocationSpriteJobItem" RENAME COLUMN "nodeId" TO "locationId";
-ALTER TABLE "LocationSpriteJobItem" ADD CONSTRAINT "LocationSpriteJobItem_jobId_locationId_key"
-  UNIQUE ("jobId", "locationId");
+-- 3j. LocationSpriteJobItem — conditionally drop nodeKind, rename nodeId → locationId
+-- Table may not exist if never created via migration (was db-push only).
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'LocationSpriteJobItem') THEN
+    ALTER TABLE "LocationSpriteJobItem" DROP CONSTRAINT IF EXISTS "LocationSpriteJobItem_jobId_nodeKind_nodeId_key";
+    IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'LocationSpriteJobItem' AND column_name = 'nodeKind') THEN
+      ALTER TABLE "LocationSpriteJobItem" DROP COLUMN "nodeKind";
+    END IF;
+    IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'LocationSpriteJobItem' AND column_name = 'nodeId')
+       AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'LocationSpriteJobItem' AND column_name = 'locationId') THEN
+      ALTER TABLE "LocationSpriteJobItem" RENAME COLUMN "nodeId" TO "locationId";
+    END IF;
+    ALTER TABLE "LocationSpriteJobItem" DROP CONSTRAINT IF EXISTS "LocationSpriteJobItem_jobId_locationId_key";
+    ALTER TABLE "LocationSpriteJobItem" ADD CONSTRAINT "LocationSpriteJobItem_jobId_locationId_key"
+      UNIQUE ("jobId", "locationId");
+  END IF;
+END $$;
 
 -- ═══════════════════════════════════════════════════════════════════════
 -- PHASE 4: Add constraints and indexes to new tables
 -- ═══════════════════════════════════════════════════════════════════════
 
 -- Location indexes and constraints
-CREATE UNIQUE INDEX "Location_canonicalName_key" ON "Location"("canonicalName") WHERE "canonicalName" IS NOT NULL;
+CREATE UNIQUE INDEX "Location_canonicalName_key" ON "Location"("canonicalName") WHERE "canonicalName" IS NOT NULL AND "campaignId" IS NULL;
 CREATE INDEX "Location_campaignId_idx" ON "Location"("campaignId");
 CREATE INDEX "Location_region_idx" ON "Location"("region");
 CREATE INDEX "Location_parentLocationId_idx" ON "Location"("parentLocationId");
@@ -606,19 +618,28 @@ ALTER TABLE "DiscoveredLocation" ADD CONSTRAINT "DiscoveredLocation_campaignId_f
 ALTER TABLE "DiscoveredLocation" ADD CONSTRAINT "DiscoveredLocation_locationId_fkey"
   FOREIGN KEY ("locationId") REFERENCES "Location"("id") ON DELETE CASCADE;
 
+-- Clean orphans before FK
+UPDATE "Campaign" SET "currentLocationId" = NULL WHERE "currentLocationId" IS NOT NULL AND "currentLocationId" NOT IN (SELECT "id" FROM "Location");
 -- Campaign.currentLocationId FK to Location
 ALTER TABLE "Campaign" ADD CONSTRAINT "Campaign_currentLocationId_fkey"
   FOREIGN KEY ("currentLocationId") REFERENCES "Location"("id") ON DELETE SET NULL;
 
+-- Clean orphans before FK
+UPDATE "CampaignQuest" SET "locationId" = NULL WHERE "locationId" IS NOT NULL AND "locationId" NOT IN (SELECT "id" FROM "Location");
 -- CampaignQuest.locationId FK to Location
 ALTER TABLE "CampaignQuest" ADD CONSTRAINT "CampaignQuest_locationId_fkey"
   FOREIGN KEY ("locationId") REFERENCES "Location"("id") ON DELETE SET NULL;
 
+-- Clean orphans before FK
+DELETE FROM "CharacterClearedDungeon" WHERE "dungeonId" NOT IN (SELECT "id" FROM "Location");
 -- CharacterClearedDungeon.dungeonId FK to Location
 ALTER TABLE "CharacterClearedDungeon" ADD CONSTRAINT "CharacterClearedDungeon_dungeonId_fkey"
   FOREIGN KEY ("dungeonId") REFERENCES "Location"("id") ON DELETE CASCADE;
 CREATE INDEX "CharacterClearedDungeon_dungeonId_idx" ON "CharacterClearedDungeon"("dungeonId");
 
+-- Clean up orphaned LocationEdge rows before adding FK constraints
+DELETE FROM "LocationEdge" WHERE "fromLocationId" NOT IN (SELECT "id" FROM "Location");
+DELETE FROM "LocationEdge" WHERE "toLocationId" NOT IN (SELECT "id" FROM "Location");
 -- LocationEdge new FK constraints
 ALTER TABLE "LocationEdge" ADD CONSTRAINT "LocationEdge_fromLocationId_fkey"
   FOREIGN KEY ("fromLocationId") REFERENCES "Location"("id") ON DELETE CASCADE;
@@ -630,6 +651,9 @@ DROP INDEX IF EXISTS "LocationEdge_toKind_toId_idx";
 CREATE INDEX "LocationEdge_fromLocationId_idx" ON "LocationEdge"("fromLocationId");
 CREATE INDEX "LocationEdge_toLocationId_idx" ON "LocationEdge"("toLocationId");
 
+-- Clean orphans before FK
+DELETE FROM "CampaignEdge" WHERE "fromLocationId" NOT IN (SELECT "id" FROM "Location");
+DELETE FROM "CampaignEdge" WHERE "toLocationId" NOT IN (SELECT "id" FROM "Location");
 -- CampaignEdge new FK constraints
 ALTER TABLE "CampaignEdge" ADD CONSTRAINT "CampaignEdge_fromLocationId_fkey"
   FOREIGN KEY ("fromLocationId") REFERENCES "Location"("id") ON DELETE CASCADE;
@@ -640,10 +664,14 @@ DROP INDEX IF EXISTS "CampaignEdge_toKind_toId_idx";
 CREATE INDEX "CampaignEdge_fromLocationId_idx" ON "CampaignEdge"("fromLocationId");
 CREATE INDEX "CampaignEdge_toLocationId_idx" ON "CampaignEdge"("toLocationId");
 
+-- Clean orphans before FK
+DELETE FROM "NPCPromotionCandidate" WHERE "npcId" NOT IN (SELECT "id" FROM "Npc");
 -- NPCPromotionCandidate.npcId FK
 ALTER TABLE "NPCPromotionCandidate" ADD CONSTRAINT "NPCPromotionCandidate_npcId_fkey"
   FOREIGN KEY ("npcId") REFERENCES "Npc"("id") ON DELETE CASCADE;
 
+-- Clean orphans before FK
+DELETE FROM "LocationPromotionCandidate" WHERE "sourceLocationId" NOT IN (SELECT "id" FROM "Location");
 -- LocationPromotionCandidate.sourceLocationId FK
 ALTER TABLE "LocationPromotionCandidate" ADD CONSTRAINT "LocationPromotionCandidate_sourceLocationId_fkey"
   FOREIGN KEY ("sourceLocationId") REFERENCES "Location"("id") ON DELETE CASCADE;
@@ -651,6 +679,8 @@ ALTER TABLE "LocationPromotionCandidate" ADD CONSTRAINT "LocationPromotionCandid
 -- Road FKs point to unified Location (IDs preserved)
 ALTER TABLE "Road" DROP CONSTRAINT IF EXISTS "Road_fromLocationId_fkey";
 ALTER TABLE "Road" DROP CONSTRAINT IF EXISTS "Road_toLocationId_fkey";
+DELETE FROM "Road" WHERE "fromLocationId" NOT IN (SELECT "id" FROM "Location");
+DELETE FROM "Road" WHERE "toLocationId" NOT IN (SELECT "id" FROM "Location");
 ALTER TABLE "Road" ADD CONSTRAINT "Road_fromLocationId_fkey"
   FOREIGN KEY ("fromLocationId") REFERENCES "Location"("id") ON DELETE CASCADE;
 ALTER TABLE "Road" ADD CONSTRAINT "Road_toLocationId_fkey"
@@ -658,6 +688,7 @@ ALTER TABLE "Road" ADD CONSTRAINT "Road_toLocationId_fkey"
 
 -- UserDiscoveredLocation FK to Location
 ALTER TABLE "UserDiscoveredLocation" DROP CONSTRAINT IF EXISTS "UserDiscoveredLocation_locationId_fkey";
+DELETE FROM "UserDiscoveredLocation" WHERE "locationId" NOT IN (SELECT "id" FROM "Location");
 ALTER TABLE "UserDiscoveredLocation" ADD CONSTRAINT "UserDiscoveredLocation_locationId_fkey"
   FOREIGN KEY ("locationId") REFERENCES "Location"("id") ON DELETE CASCADE;
 
@@ -693,3 +724,16 @@ SELECT setval('"NpcLocationMovement_id_seq"', COALESCE((SELECT MAX("id") FROM "N
 SELECT setval('"NpcDialogTurn_id_seq"', COALESCE((SELECT MAX("id") FROM "NpcDialogTurn"), 0) + 1);
 SELECT setval('"NpcAttribution_id_seq"', COALESCE((SELECT MAX("id") FROM "NpcAttribution"), 0) + 1);
 SELECT setval('"LocationKnowledge_id_seq"', COALESCE((SELECT MAX("id") FROM "LocationKnowledge"), 0) + 1);
+
+-- ═══════════════════════════════════════════════════════════════════════
+-- PHASE 7: Backfill missing columns on existing tables
+-- ═══════════════════════════════════════════════════════════════════════
+
+-- CustomSpell.combatStats was added to the Prisma schema but never migrated.
+ALTER TABLE "CustomSpell" ADD COLUMN IF NOT EXISTS "combatStats" JSONB;
+
+-- Entity registry lifecycle columns for CustomSpell
+ALTER TABLE "CustomSpell" ADD COLUMN IF NOT EXISTS "globallyActive" BOOLEAN NOT NULL DEFAULT true;
+ALTER TABLE "CustomSpell" ADD COLUMN IF NOT EXISTS "softDeletedAt" TIMESTAMPTZ;
+ALTER TABLE "CustomSpell" ADD COLUMN IF NOT EXISTS "originCampaignId" UUID;
+CREATE INDEX IF NOT EXISTS "CustomSpell_globallyActive_softDeletedAt_idx" ON "CustomSpell"("globallyActive", "softDeletedAt");

@@ -132,11 +132,11 @@ export async function collectCampaignShadowDiff(campaignId) {
   if (!campaignId) throw new Error('collectCampaignShadowDiff: campaignId is required');
 
   const clones = await prisma.npc.findMany({
-    where: { campaignId, worldNpcId: { not: null } },
+    where: { campaignId, canonicalNpcId: { not: null } },
     select: {
       id: true,
       name: true,
-      worldNpcId: true,
+      canonicalNpcId: true,
       alive: true,
       currentLocationId: true,
       role: true,
@@ -152,7 +152,7 @@ export async function collectCampaignShadowDiff(campaignId) {
     };
   }
 
-  const worldIds = clones.map((c) => c.worldNpcId);
+  const worldIds = clones.map((c) => c.canonicalNpcId);
   const canonicals = await prisma.npc.findMany({
     where: { id: { in: worldIds } },
     select: {
@@ -169,9 +169,9 @@ export async function collectCampaignShadowDiff(campaignId) {
   const npcDiffs = [];
   const fieldCounts = {};
   for (const clone of clones) {
-    const canonical = byId.get(clone.worldNpcId);
+    const canonical = byId.get(clone.canonicalNpcId);
     if (!canonical) {
-      log.warn({ campaignId, campaignNpcId: clone.id, worldNpcId: clone.worldNpcId },
+      log.warn({ campaignId, campaignNpcId: clone.id, worldNpcId: clone.canonicalNpcId },
         'Shadow points at missing WorldNPC — skipped');
       continue;
     }
@@ -179,7 +179,7 @@ export async function collectCampaignShadowDiff(campaignId) {
     if (changes.length === 0) continue;
     for (const c of changes) fieldCounts[c.field] = (fieldCounts[c.field] || 0) + 1;
     npcDiffs.push({
-      worldNpcId: clone.worldNpcId,
+      worldNpcId: clone.canonicalNpcId,
       campaignNpcId: clone.id,
       name: clone.name,
       changes,

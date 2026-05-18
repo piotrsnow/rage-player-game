@@ -58,17 +58,17 @@ export async function reconcileCloneWithGlobal(campaignNpcId, { emitRevealEvent 
   try {
     const clone = await prisma.npc.findUnique({
       where: { id: campaignNpcId },
-      select: { id: true, campaignId: true, name: true, alive: true, worldNpcId: true },
+      select: { id: true, campaignId: true, name: true, alive: true, canonicalNpcId: true },
     });
-    if (!clone || !clone.worldNpcId) return { verdict: 'none', reason: 'no_global_link' };
+    if (!clone || !clone.canonicalNpcId) return { verdict: 'none', reason: 'no_global_link' };
 
     const global = await prisma.npc.findUnique({
-      where: { id: clone.worldNpcId },
+      where: { id: clone.canonicalNpcId },
       select: { id: true, alive: true, currentLocationId: true },
     });
     if (!global) {
       // Dangling worldNpcId — detach to avoid future lookups
-      await prisma.npc.update({ where: { id: clone.id }, data: { worldNpcId: null } });
+      await prisma.npc.update({ where: { id: clone.id }, data: { canonicalNpcId: null } });
       return { verdict: 'detach_clone', reason: 'global_not_found' };
     }
 
@@ -103,7 +103,7 @@ export async function reconcileCloneBatch({ campaignId, emitRevealEvent = null }
   if (!campaignId) return { processed: 0, revealed: 0 };
   try {
     const clones = await prisma.npc.findMany({
-      where: { campaignId, worldNpcId: { not: null }, alive: true },
+      where: { campaignId, canonicalNpcId: { not: null }, alive: true },
       select: { id: true },
     });
     let revealed = 0;

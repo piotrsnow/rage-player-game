@@ -92,7 +92,7 @@ export async function mutateQuest({ campaignId, questRow, mutation, reason, scen
             : 'utknęło w martwym punkcie';
           await prisma.npcExperience.create({
             data: {
-              campaignNpcId: giverNpc.id,
+              npcId: giverNpc.id,
               content: `Zadanie "${questRow.name}" ${verb}. Powód: ${reason || 'nieznany'}.`,
               importance: 'major',
               sceneIndex: sceneIndex ?? undefined,

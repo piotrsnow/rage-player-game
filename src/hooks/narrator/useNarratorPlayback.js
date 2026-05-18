@@ -47,7 +47,9 @@ export function useNarratorPlayback({ settings, updateSettings, perVoiceVolumes,
     if (!audio) return;
     const natural = naturalPlaybackRateRef.current || 1;
     const boost = narrationFastForwardRateRef.current || 1;
-    audio.playbackRate = clampRate(natural * boost, 0.5, MAX_FAST_FORWARD_PLAYBACK_RATE);
+    const rate = clampRate(natural * boost, 0.5, MAX_FAST_FORWARD_PLAYBACK_RATE);
+    audio.defaultPlaybackRate = rate;
+    audio.playbackRate = rate;
   }, []);
 
   useEffect(() => {

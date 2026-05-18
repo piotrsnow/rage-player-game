@@ -7,11 +7,11 @@
 
 import { prisma } from '../../lib/prisma.js';
 import { childLogger } from '../../lib/logger.js';
-import { indexEntity } from './ragService.js';
+import { index as indexEntity } from './ragService.js';
 
 const log = childLogger({ module: 'postCampaignPromotion' });
 
-function slugifyNpcId(raw) {
+export function slugifyNpcId(raw) {
   return String(raw || '').toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '').slice(0, 60);
 }
 
@@ -78,7 +78,7 @@ export async function promoteCampaignNpcToWorld(npcId, { reviewedBy = null } = {
     // RAG index
     try {
       const text = [npc.name, npc.role, npc.personality].filter(Boolean).join(' — ');
-      await indexEntity({ entityType: 'npc', entityId: promoted.id, text });
+      await indexEntity('npc', promoted.id, text);
     } catch (ragErr) {
       log.warn({ err: ragErr?.message, npcId: promoted.id }, 'RAG index after NPC promote failed');
     }

@@ -13,6 +13,8 @@
  * are placed first; output format last.
  */
 
+import { activeStyle } from '../../../data/namingStyles/index.js';
+
 export function executionOrderBlock() {
   return `## EXECUTION ORDER — follow step-by-step for EVERY scene:
 1. READ player input → determine creativityBonus (0 if not custom action).
@@ -98,7 +100,7 @@ Emit stateChanges reflecting ALL of the above. Empty fields are OK only when the
   * BACKGROUND QUESTS: side / personal / faction quests appear under "--- Background Quests ---" in the Active Quests block. Emit questUpdates for them on resolution exactly like main — but do NOT divert the scene's narrative onto them; they progress only when the player's action or dialog organically resolves an objective.
 - Quest completion: add to completedQuests as soon as the quest's completionCondition is narratively satisfied in this scene (turn-in NPC if the quest has one, otherwise objective fulfillment is sufficient). Always use the id= shown for the quest.
 - rewards: anonymous loot — [{type, rarity?, category?, quantity?, context?}]. type: 'material'|'weapon'|'armour'|'shield'|'gear'|'medical'|'money'|'potion'|'misc'|'consumable'. rarity: 'common'|'uncommon'|'rare'. context: 'loot'|'found'|'gift' (NO 'quest_reward'). Do NOT specify item names — engine resolves.
-- newItems: ANY NAMED item gained — {id, name, type, description}. id auto-assigned. type: 'weapon'|'armor'|'shield'|'accessory'|'consumable'|'material'|'misc'. CONSISTENCY: narrative describes gaining a named item → newItems MUST match.
+- newItems: ANY NAMED item gained — {id, name, type, description, longDescription?}. id auto-assigned. type: 'weapon'|'armor'|'shield'|'accessory'|'consumable'|'material'|'misc'. description: short (1 sentence). longDescription: optional 2-4 sentences — history, origin, or interesting details about the item (who crafted it, what legend surrounds it, what makes it special). Include longDescription for unique/named/quest items; skip for mundane supplies. CONSISTENCY: narrative describes gaining a named item → newItems MUST match.
 - removeItems: array of item UUIDs from Inventory [id] tags.
 - moneyChange: {gold,silver,copper} NEGATIVE deltas for purchases only. Income/loot → rewards type:'money'.
 - npcs: {action:"introduce"|"update", campaignNpcId?, name, gender, role, personality, appearance, dialect, attitude, location, dispositionChange, relationships:[{npcId?,npcName,type}], race?, creatureKind?, level?, statsOverride?}. ALWAYS include \`campaignNpcId\` from [id: ...] tag when updating. gender: "male"|"female" only. dispositionChange: lucky/great +3-5, success +1-2, failure -1-2, hard fail -3-5.
@@ -170,7 +172,7 @@ PLAUSIBILITY CHECK first:
 
 WHEN SENSIBLE — stateChanges MUST contain BOTH:
 1. \`removeItemsByName\`: one entry per consumed component, e.g. \`[{"name":"Lina", "quantity":1}, {"name":"Hak żelazny", "quantity":1}]\`. Quantity = how many copies were actually used (usually 1 each). Use full item name as it appears in Inventory.
-2. \`newItems\`: one entry — the resulting combined item with full \`{name, type, rarity, description}\` (and \`baseType\` if it maps onto a known equipment base). Description should mention it's a combination ("Pochodnia zwinięta z kija owiniętego naoliwioną szmatą").
+2. \`newItems\`: one entry — the resulting combined item with full \`{name, type, rarity, description, longDescription?}\` (and \`baseType\` if it maps onto a known equipment base). Description should mention it's a combination ("Pochodnia zwinięta z kija owiniętego naoliwioną szmatą"). longDescription: optional 2-4 sentences on how/why the combination works.
 
 HARD RULES (no exceptions):
 - NEVER emit \`newItems\` for combination without matching \`removeItems\` (by UUID) or \`removeItemsByName\` for the components — orphaned new items break inventory consistency.
@@ -299,6 +301,10 @@ Remove when narratively cured or expired: [{action:"remove", name:"Frozen"}]. Do
 export function worldSettingBlock(campaign) {
   const worldDesc = campaign.worldDescription || 'A dark fantasy world.';
   return `World: ${worldDesc}${campaign.hook ? `\nHook: ${campaign.hook}` : ''}`;
+}
+
+export function namingConventionBlock() {
+  return activeStyle.promptBlock || '';
 }
 
 export function multiplayerRulesBlock(language) {

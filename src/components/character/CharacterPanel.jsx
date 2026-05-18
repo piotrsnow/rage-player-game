@@ -18,6 +18,7 @@ import { SPELL_TREES } from '../../data/rpgMagic';
 import { resolveKnownSpellDisplay } from '../../services/magicEngine';
 import { useGameStore } from '../../stores/gameStore';
 import { gameData } from '../../services/gameDataService';
+import SpellCombatStatsSection from './SpellCombatStatsSection';
 import SkillGainHistory from './SkillGainHistory';
 import FavoriteScenesList from './FavoriteScenesList';
 import BadgesSection from './BadgesSection';
@@ -621,6 +622,11 @@ function SpellsGrid({
                               <p className="text-sm text-on-surface-variant/75 leading-snug mt-1.5">
                                 {spell.description}
                               </p>
+                              {spell.longDescription && (
+                                <p className="text-xs text-on-surface-variant/60 leading-snug mt-1 italic">
+                                  {spell.longDescription}
+                                </p>
+                              )}
                             </div>
                           </div>
                         );
@@ -691,9 +697,11 @@ export default function CharacterPanel({
         description: base.isCustom
           ? (base.description || catalogEntry?.description || '')
           : base.description,
+        longDescription: base.longDescription || catalogEntry?.longDescription || null,
+        combatStats: base.combatStats || catalogEntry?.combatStats || null,
       };
     });
-  }, [character.spells?.known, character.spells?.usageCounts, character.spells?.icons, character.spells?.schools, character.spells?.details, t]);
+  }, [character.spells?.known, character.spells?.usageCounts, character.spells?.icons, character.spells?.schools, character.spells?.details, character.customSpells, t]);
   const selectedSpell = selectedSpellName ? knownSpells.find((s) => s.name === selectedSpellName) || null : null;
   const selectedSpellImageUrl = selectedSpell && gameData.spellImages?.[selectedSpell.name]
     ? apiClient.resolveMediaUrl(gameData.spellImages[selectedSpell.name])
@@ -1091,7 +1099,9 @@ export default function CharacterPanel({
             backstory={character.backstory}
           />
 
-          <SkillsGrid character={character} t={t} />
+          {!selectedItem && !selectedSpell && (
+            <SkillsGrid character={character} t={t} />
+          )}
 
           {selectedSpell && (
             <div
@@ -1163,6 +1173,8 @@ export default function CharacterPanel({
                     </p>
                   )}
                 </div>
+
+                <SpellCombatStatsSection spell={selectedSpell} character={character} />
 
                 {canRegenerateSpellImage && (
                   <button

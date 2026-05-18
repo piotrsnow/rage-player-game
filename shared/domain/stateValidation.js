@@ -126,12 +126,17 @@ export function normalizeItemEntry(rawItem, index = 0) {
   const quantity = Number(rawItem.quantity);
   const hasQuantity = Number.isFinite(quantity) && quantity > 0;
 
+  const longDesc = typeof rawItem.longDescription === 'string'
+    ? rawItem.longDescription.trim().slice(0, 1000) || undefined
+    : undefined;
+
   return {
     ...rawItem,
     id: itemIdCandidate || createItemId(),
     name,
     type: normalizeItemType(rawItem.type),
     rarity: normalizeItemRarity(rawItem.rarity),
+    ...(longDesc ? { longDescription: longDesc } : {}),
     ...(hasQuantity ? { quantity: Math.max(1, Math.floor(quantity)) } : {}),
     _idx: index,
   };

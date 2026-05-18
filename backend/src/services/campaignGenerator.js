@@ -7,6 +7,7 @@ import { pickStartSpawn, loadRoadNeighborsForSettlement } from './livingWorld/st
 import { rememberStartSpawn, attachInitialLocations } from './livingWorld/startSpawnCache.js';
 import { rollObjectiveTypes } from '../../../shared/domain/questObjectiveTypes.js';
 import { applyOpenAiTemperature } from './openaiModelParams.js';
+import { activeStyle } from '../data/namingStyles/index.js';
 
 export async function generateCampaignStream(settings, { provider = 'openai', model = null, language = 'en', userApiKeys = null, userId = null } = {}, onEvent) {
   const resolvedProvider = provider === 'anthropic' ? 'anthropic' : 'openai';
@@ -391,7 +392,7 @@ ${knownLocs.length ? knownLocs.map((l) => `  · ${l.canonicalName}${l.locationTy
 ${characterNameLine}
 ${speciesLine}
 - Player's story idea: "${settings.storyPrompt}"
-${langInstruction}${existingCharNote}${humorousToneGuidance}${starterBindBlock}${neighborhoodBlock}${npcKnowledgeBlock}
+${langInstruction}${existingCharNote}${humorousToneGuidance}${starterBindBlock}${neighborhoodBlock}${npcKnowledgeBlock}${activeStyle.promptBlock ? `\n\n${activeStyle.promptBlock}` : ''}
 
 Generate the campaign foundation. The game uses the RPGon custom RPG system with 6 attributes (scale 1-25): Sila (Strength), Inteligencja (Intelligence), Charyzma (Charisma), Zrecznosc (Dexterity), Wytrzymalosc (Endurance), Szczescie (Luck). Plus Mana as a magic resource.
 
@@ -402,7 +403,7 @@ Respond with ONLY valid JSON:
   "hook": "1-2 paragraphs presenting the story hook that draws the player into the adventure",
   "characterSuggestion": {
     "backstory": "2-3 sentences of character backstory tied to the campaign world (only if player didn't provide one)",
-    "inventory": [{"id": "item_1", "name": "Lantern", "type": "gear", "description": "A brass miner's lantern with soot on the shutter.", "rarity": "common"}]
+    "inventory": [{"id": "item_1", "name": "Lantern", "type": "gear", "description": "A brass miner's lantern with soot on the shutter.", "longDescription": "This dented brass lantern was forged in the Yeralden mine district decades ago. Soot stains on the shutter tell of countless shifts in the deep tunnels beneath the mountains.", "rarity": "common"}]
   },
   "firstScene": {
     "dialogueSegments": [
@@ -433,15 +434,15 @@ Respond with ONLY valid JSON:
     "reward": {
       "xp": 200,
       "money": {"gold": 5, "silver": 10, "copper": 0},
-      "items": [{"id": "reward_1", "name": "${language === 'pl' ? 'Nazwa nagrody' : 'Reward item name'}", "type": "weapon|armor|trinket|consumable", "description": "${language === 'pl' ? 'Opis nagrody' : 'Reward item description'}", "rarity": "uncommon"}]
+      "items": [{"id": "reward_1", "name": "${language === 'pl' ? 'Nazwa nagrody' : 'Reward item name'}", "type": "weapon|armor|trinket|consumable", "description": "${language === 'pl' ? 'Krótki opis nagrody' : 'Short reward description'}", "longDescription": "${language === 'pl' ? '2-4 zdania historii lub legendy tego przedmiotu' : '2-4 sentences of history or legend of this item'}", "rarity": "uncommon"}]
     },
     "objectives": [
 ${preRolledTypes.map((type, i) => `      {"id": "obj_${i + 1}", "objectiveType": "${type}", "description": "${language === 'pl' ? 'opis celu pasujący do typu' : 'description matching the type'}"}`).join(',\n')}
     ],
     "questItems": [
-      {"id": "qitem_1", "name": "${language === 'pl' ? 'Nazwa przedmiotu 1' : 'Item 1 name'}", "type": "key_item|document|artifact|tool|ingredient", "description": "${language === 'pl' ? 'Co to jest i dlaczego jest ważne' : 'What it is and why it matters'}", "relatedObjectiveId": "obj_3", "location": "${language === 'pl' ? 'Gdzie go znaleźć lub kto go posiada' : 'Where to find it or who has it'}"},
-      {"id": "qitem_2", "name": "${language === 'pl' ? 'Nazwa przedmiotu 2' : 'Item 2 name'}", "type": "key_item|document|artifact|tool|ingredient", "description": "${language === 'pl' ? 'Co to jest i dlaczego jest ważne' : 'What it is and why it matters'}", "relatedObjectiveId": "obj_6", "location": "${language === 'pl' ? 'Gdzie go znaleźć lub kto go posiada' : 'Where to find it or who has it'}"},
-      {"id": "qitem_3", "name": "${language === 'pl' ? 'Nazwa przedmiotu 3' : 'Item 3 name'}", "type": "key_item|document|artifact|tool|ingredient", "description": "${language === 'pl' ? 'Co to jest i dlaczego jest ważne' : 'What it is and why it matters'}", "relatedObjectiveId": "obj_8", "location": "${language === 'pl' ? 'Gdzie go znaleźć lub kto go posiada' : 'Where to find it or who has it'}"}
+      {"id": "qitem_1", "name": "${language === 'pl' ? 'Nazwa przedmiotu 1' : 'Item 1 name'}", "type": "key_item|document|artifact|tool|ingredient", "description": "${language === 'pl' ? 'Co to jest i dlaczego jest ważne' : 'What it is and why it matters'}", "longDescription": "${language === 'pl' ? '2-4 zdania historii, pochodzenia lub legendy tego przedmiotu' : '2-4 sentences of history, origin, or legend of this item'}", "relatedObjectiveId": "obj_3", "location": "${language === 'pl' ? 'Gdzie go znaleźć lub kto go posiada' : 'Where to find it or who has it'}"},
+      {"id": "qitem_2", "name": "${language === 'pl' ? 'Nazwa przedmiotu 2' : 'Item 2 name'}", "type": "key_item|document|artifact|tool|ingredient", "description": "${language === 'pl' ? 'Co to jest i dlaczego jest ważne' : 'What it is and why it matters'}", "longDescription": "${language === 'pl' ? '2-4 zdania historii, pochodzenia lub legendy tego przedmiotu' : '2-4 sentences of history, origin, or legend of this item'}", "relatedObjectiveId": "obj_6", "location": "${language === 'pl' ? 'Gdzie go znaleźć lub kto go posiada' : 'Where to find it or who has it'}"},
+      {"id": "qitem_3", "name": "${language === 'pl' ? 'Nazwa przedmiotu 3' : 'Item 3 name'}", "type": "key_item|document|artifact|tool|ingredient", "description": "${language === 'pl' ? 'Co to jest i dlaczego jest ważne' : 'What it is and why it matters'}", "longDescription": "${language === 'pl' ? '2-4 zdania historii, pochodzenia lub legendy tego przedmiotu' : '2-4 sentences of history, origin, or legend of this item'}", "relatedObjectiveId": "obj_8", "location": "${language === 'pl' ? 'Gdzie go znaleźć lub kto go posiada' : 'Where to find it or who has it'}"}
     ]
   },
   "initialNPCs": [
@@ -483,7 +484,7 @@ IMPORTANT for initialQuest and initialNPCs:
 - Each NPC's relatedObjectiveIds must list the objective IDs they are involved in.
 - questItems must contain ${lp.questItems} items that are central to the quest. Each item must have a relatedObjectiveId linking it to the objective where it's obtained or used.
 - questItems represent things to find/acquire during the quest — they are NOT in the player's inventory at the start.
-- reward.items should include at least one meaningful reward item (weapon, armor, trinket, or special item).
+- reward.items should include at least one meaningful reward item (weapon, armor, trinket, or special item). Each reward item should have a \`longDescription\` with 2-4 sentences of lore/history.
 - initialWorldFacts should include ${lp.worldFacts} facts that establish the world context relevant to the quest.
 - The quest giver NPC (questGiverId) MUST be one of the NPCs in initialNPCs.
 

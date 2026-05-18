@@ -33,7 +33,7 @@ function buildUserPrompt({ sceneTranscript, playerAction, prevLocationName, emit
 
   const npcList = campaignNpcs
     .slice(0, 10)
-    .map((n) => `${n.name}: attitude=${n.attitude}, alive=${n.alive}, disposition=${n.disposition}`)
+    .map((n) => `${n.name}: attitude=${n.alignment}, alive=${n.alive}, disposition=${n.disposition}`)
     .join('\n');
 
   const emittedNpcStr = (emittedNpcs || [])
@@ -176,7 +176,7 @@ export async function applyAndPushCorrections(campaignId, sceneId, corrections) 
 
       const data = {};
       if (c.field === 'attitude' && typeof c.correctedValue === 'string') {
-        data.attitude = c.correctedValue;
+        data.alignment = c.correctedValue;
       } else if (c.field === 'alive' && typeof c.correctedValue === 'boolean') {
         data.alive = c.correctedValue;
       } else if (c.field === 'disposition' && typeof c.correctedValue === 'number') {

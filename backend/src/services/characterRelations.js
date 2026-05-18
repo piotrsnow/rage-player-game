@@ -303,7 +303,7 @@ export async function hydrateCustomSpells(snapshot, client = prisma) {
   }
   const rows = await client.customSpell.findMany({
     where: { id: { in: ids } },
-    select: { id: true, name: true, school: true, description: true, manaCost: true, icon: true, combatStats: true },
+    select: { id: true, name: true, school: true, description: true, longDescription: true, manaCost: true, icon: true, combatStats: true },
   });
   const byId = new Map(rows.map((r) => [r.id, r]));
   snapshot.customSpells = ids.map((id) => byId.get(id)).filter(Boolean);

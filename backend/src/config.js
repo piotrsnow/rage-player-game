@@ -112,6 +112,8 @@ export const config = {
 
   // Graph extraction model — used for the post-scene location graph extraction
   // call. Defaults to the nano tier. Override for quality experiments.
+  namingStyle: process.env.NAMING_STYLE || 'central_european',
+
   graphExtractionModel: process.env.GRAPH_EXTRACTION_MODEL || '',
 
   // Model tiering — premium for scene/campaign generation, standard for

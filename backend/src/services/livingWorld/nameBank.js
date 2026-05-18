@@ -1,4 +1,4 @@
-// Living World — Polish-themed settlement name bank.
+// Living World — settlement name bank backed by the active naming style.
 //
 // Per-type pools for deterministic-flavor names used by worldSeeder when
 // seeding per-campaign hamlets/villages/towns/cities. Capital is NOT here —
@@ -12,41 +12,9 @@
 // that canonicalName is closer than the new slot's spacing tolerance),
 // `pickSettlementName` falls through to the next candidate.
 
-const HAMLETS = [
-  'Dębowy Zakątek', 'Borowa Osada', 'Kłosowe Pole', 'Wilcza Polana', 'Sosnowa Chata',
-  'Mglisty Młyn', 'Kamienny Bród', 'Leśny Chutor', 'Jesionowa Kępa', 'Rzeczna Wólka',
-  'Torfowa Osada', 'Bobrowe Rozlewisko', 'Szumna Dolinka', 'Jodłowy Przysiółek', 'Wrzosowa Łąka',
-  'Głogowa Chata', 'Bagienny Rzut', 'Koźla Zagroda', 'Sowie Wzgórze', 'Zimny Strumień',
-  'Liściasty Chłodnik', 'Miodowa Osada', 'Krzemowy Gródek', 'Lipowe Ustronie', 'Czarny Młyn',
-  'Jagodny Wąwóz', 'Smolna Kępa', 'Grabowa Polana', 'Ciemna Chutor', 'Mchowa Osada',
-];
+import { activeStyle } from '../../data/namingStyles/index.js';
 
-const VILLAGES = [
-  'Lisowice', 'Modrzejów', 'Kamienna Wola', 'Strzegów', 'Jodłowy Brzeg',
-  'Konopna', 'Biskupice', 'Radoszyn', 'Mierzęcin', 'Kępno Małe',
-  'Wiślica', 'Czarnolas', 'Żabieniec', 'Jelenia Wola', 'Dobrowola',
-  'Borzęcin', 'Krzywa Góra', 'Sieradowice', 'Zagórze', 'Brzegowa',
-  'Przerośl', 'Kwiatków', 'Orzechowa', 'Sosnówka', 'Lipnica Dolna',
-  'Rybno', 'Turowice', 'Wilczyce', 'Białogóra', 'Studzianki',
-];
-
-const TOWNS = [
-  'Kamienica', 'Miodogród', 'Złoty Potok', 'Wrońsk', 'Srebrnogród',
-  'Twarda Grobla', 'Grabowiec', 'Dębogóra', 'Kruszwica', 'Brzostówka',
-  'Ostrołęka', 'Sandomir', 'Przemyśl Stary', 'Świętopółk', 'Wolbrom',
-  'Dobrogrodek', 'Piekary', 'Sławków', 'Wieliszew', 'Bielany',
-  'Zatorów', 'Pyrzyce Górne', 'Kolbierz', 'Czorsztyn', 'Rawa Niska',
-  'Książ Dolny', 'Radomil', 'Tarnowiec', 'Morągów', 'Olkuszyn',
-];
-
-const CITIES = [
-  'Radogoszcz', 'Białobrzeg', 'Srebrna Przystań', 'Gniezdno', 'Wawelgród',
-  'Złotoryja', 'Piastowice', 'Krzyżogród', 'Miedziana Wieża', 'Jarosławek',
-  'Wielkopole', 'Starogard', 'Lubusz', 'Piotrogród', 'Kamienna Wieża',
-  'Orlogród', 'Święcicz', 'Chrobrogród', 'Bielogród', 'Czerwień',
-];
-
-const POOLS = { hamlet: HAMLETS, village: VILLAGES, town: TOWNS, city: CITIES };
+const POOLS = activeStyle.nameBanks;
 
 /**
  * Pick a name for the given settlement type that is not already in `usedSet`.

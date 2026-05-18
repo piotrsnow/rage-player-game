@@ -129,6 +129,8 @@ export default function InventSpellModal({ campaignId, character = null, dispatc
             learnSpell: spellName,
             ...(spellIcon ? { learnSpellIcon: spellIcon } : {}),
             ...(data.spell?.school ? { learnSpellSchool: data.spell.school } : {}),
+            ...(data.spell?.description ? { learnSpellDescription: data.spell.description } : {}),
+            ...(data.spell?.longDescription ? { learnSpellLongDescription: data.spell.longDescription } : {}),
           },
         });
         dispatch({
@@ -424,6 +426,14 @@ export default function InventSpellModal({ campaignId, character = null, dispatc
                     {t('gameplay.inventSpellMana')}: <span className="text-on-surface/90">{result.spell.manaCost}</span>
                   </div>
                   <p className="text-xs text-on-surface/85 leading-relaxed">{result.spell.description}</p>
+                  {result.spell.longDescription && (
+                    <div className="mt-2 pt-2 border-t border-primary/10">
+                      <p className="text-[10px] font-label uppercase tracking-widest text-on-surface-variant/60 mb-1">
+                        {t('gameplay.inventSpellLore', 'Historia powstania')}
+                      </p>
+                      <p className="text-xs text-on-surface/75 leading-relaxed italic">{result.spell.longDescription}</p>
+                    </div>
+                  )}
                 </div>
               )}
 

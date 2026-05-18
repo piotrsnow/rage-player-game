@@ -15,7 +15,6 @@ import {
   PACING_SPEED_MULTIPLIERS,
   CHARS_PER_SECOND_ESTIMATE,
   MAX_NATURAL_PLAYBACK_RATE,
-  MAX_FAST_FORWARD_PLAYBACK_RATE,
   DEFAULT_SEGMENT_PREFETCH_WINDOW,
   STREAMING_POLL_MS,
   clampRate,
@@ -176,7 +175,7 @@ export function useNarratorQueue({
       const pacingMul = PACING_SPEED_MULTIPLIERS[scenePacing] || 1.0;
       const natural = clampRate(baseRate * pacingMul, 0.5, MAX_NATURAL_PLAYBACK_RATE);
       naturalPlaybackRateRef.current = natural;
-      audio.playbackRate = clampRate(natural * (narrationFastForwardRateRef.current || 1), 0.5, MAX_FAST_FORWARD_PLAYBACK_RATE);
+      applyPlaybackRate(audio);
       if (audioRef.current && !audioRef.current.ended) {
         audioRef.current.pause();
       }
@@ -203,7 +202,7 @@ export function useNarratorQueue({
       remainingTextCharsRef.current = Math.max(0, remainingTextCharsRef.current - chunk.length);
     }
     return Math.max(0, wordOffset - initialWordOffset);
-  }, [startHighlightLoop, stopHighlightLoop, dispatch, fetchTts, fetchTtsWithRecovery, viewerMode, markSegmentLoading, unmarkSegmentLoading, setPlaybackState, setCurrentChunk, audioRef, objectUrlsRef, naturalPlaybackRateRef, narrationFastForwardRateRef, remainingTextCharsRef, skipSegmentRef, settings.dialogueVolume]);
+  }, [startHighlightLoop, stopHighlightLoop, dispatch, fetchTts, fetchTtsWithRecovery, viewerMode, markSegmentLoading, unmarkSegmentLoading, setPlaybackState, setCurrentChunk, applyPlaybackRate, audioRef, objectUrlsRef, naturalPlaybackRateRef, remainingTextCharsRef, skipSegmentRef, settings.dialogueVolume]);
 
   const processQueue = useCallback(async () => {
     const myGeneration = generationRef.current;
@@ -402,7 +401,7 @@ export function useNarratorQueue({
             const pacingMul = PACING_SPEED_MULTIPLIERS[scenePacing] || 1.0;
             const natural = clampRate(baseRate * pacingMul, 0.5, MAX_NATURAL_PLAYBACK_RATE);
             naturalPlaybackRateRef.current = natural;
-            audio.playbackRate = clampRate(natural * (narrationFastForwardRateRef.current || 1), 0.5, MAX_FAST_FORWARD_PLAYBACK_RATE);
+            applyPlaybackRate(audio);
             if (audioRef.current && !audioRef.current.ended) {
               audioRef.current.pause();
             }
@@ -469,7 +468,7 @@ export function useNarratorQueue({
       queueRef.current.shift();
       processQueue();
     }
-  }, [settings, voicePools, state.characterVoiceMap, state.character, state.party, state.campaign, state.narratorVoiceId, viewerMode, dispatch, fullCleanup, playChunkPipeline, fetchTtsWithRecovery, fetchTts, hasApiKey, reportNarratorError, markSegmentLoading, unmarkSegmentLoading, resolveDefaultVoiceId, createLocalVoiceResolver, activeTtsProvider, coordinatorSessionRef, setPlaybackState, setHighlightInfo, setCurrentChunk, setNarrationSecondsRemaining, startHighlightLoop, stopHighlightLoop, audioRef, objectUrlsRef, naturalPlaybackRateRef, narrationFastForwardRateRef, remainingTextCharsRef, skipSegmentRef, setCurrentMessageId, setCurrentSegmentIndex]);
+  }, [settings, voicePools, state.characterVoiceMap, state.character, state.party, state.campaign, state.narratorVoiceId, viewerMode, dispatch, fullCleanup, playChunkPipeline, fetchTtsWithRecovery, fetchTts, hasApiKey, reportNarratorError, markSegmentLoading, unmarkSegmentLoading, resolveDefaultVoiceId, createLocalVoiceResolver, activeTtsProvider, coordinatorSessionRef, setPlaybackState, setHighlightInfo, setCurrentChunk, setNarrationSecondsRemaining, startHighlightLoop, stopHighlightLoop, applyPlaybackRate, audioRef, objectUrlsRef, naturalPlaybackRateRef, remainingTextCharsRef, skipSegmentRef, setCurrentMessageId, setCurrentSegmentIndex]);
 
   const processStreamingQueue = useCallback(async () => {
     const s = streamingRef.current;
@@ -567,7 +566,7 @@ export function useNarratorQueue({
         const pacingMul = PACING_SPEED_MULTIPLIERS[s.scenePacing] || 1.0;
         const natural = clampRate(baseRate * pacingMul, 0.5, MAX_NATURAL_PLAYBACK_RATE);
         naturalPlaybackRateRef.current = natural;
-        audio.playbackRate = clampRate(natural * (narrationFastForwardRateRef.current || 1), 0.5, MAX_FAST_FORWARD_PLAYBACK_RATE);
+        applyPlaybackRate(audio);
         if (audioRef.current && !audioRef.current.ended) {
           audioRef.current.pause();
         }
@@ -619,7 +618,7 @@ export function useNarratorQueue({
       setHighlightInfo(null);
       setCurrentChunk(null);
     }
-  }, [settings, voicePools, state.characterVoiceMap, state.character, state.party, state.campaign, state.narratorVoiceId, viewerMode, dispatch, fullCleanup, startHighlightLoop, stopHighlightLoop, fetchTts, fetchTtsWithRecovery, hasApiKey, reportNarratorError, markSegmentLoading, unmarkSegmentLoading, resolveDefaultVoiceId, createLocalVoiceResolver, activeTtsProvider, coordinatorSessionRef, setPlaybackState, setHighlightInfo, setCurrentChunk, setNarrationSecondsRemaining, audioRef, objectUrlsRef, naturalPlaybackRateRef, narrationFastForwardRateRef, remainingTextCharsRef, setCurrentMessageId, setCurrentSegmentIndex]);
+  }, [settings, voicePools, state.characterVoiceMap, state.character, state.party, state.campaign, state.narratorVoiceId, viewerMode, dispatch, fullCleanup, startHighlightLoop, stopHighlightLoop, applyPlaybackRate, fetchTts, fetchTtsWithRecovery, hasApiKey, reportNarratorError, markSegmentLoading, unmarkSegmentLoading, resolveDefaultVoiceId, createLocalVoiceResolver, activeTtsProvider, coordinatorSessionRef, setPlaybackState, setHighlightInfo, setCurrentChunk, setNarrationSecondsRemaining, audioRef, objectUrlsRef, naturalPlaybackRateRef, remainingTextCharsRef, setCurrentMessageId, setCurrentSegmentIndex]);
 
   processStreamingQueueRef.current = processStreamingQueue;
 

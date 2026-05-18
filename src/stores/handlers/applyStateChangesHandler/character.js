@@ -123,12 +123,13 @@ function applySpellBook(draft, changes) {
       if (!draft.character.spells.schools) draft.character.spells.schools = {};
       draft.character.spells.schools[changes.learnSpell] = changes.learnSpellSchool;
     }
-    if (changes.learnSpellDescription || changes.learnSpellLevel || changes.learnSpellManaCost) {
+    if (changes.learnSpellDescription || changes.learnSpellLongDescription || changes.learnSpellLevel || changes.learnSpellManaCost) {
       if (!draft.character.spells.details) draft.character.spells.details = {};
       const prev = draft.character.spells.details[changes.learnSpell] || {};
       draft.character.spells.details[changes.learnSpell] = {
         ...prev,
         ...(changes.learnSpellDescription ? { description: changes.learnSpellDescription } : {}),
+        ...(changes.learnSpellLongDescription ? { longDescription: changes.learnSpellLongDescription } : {}),
         ...(changes.learnSpellLevel ? { level: changes.learnSpellLevel } : {}),
         ...(changes.learnSpellManaCost ? { manaCost: changes.learnSpellManaCost } : {}),
       };

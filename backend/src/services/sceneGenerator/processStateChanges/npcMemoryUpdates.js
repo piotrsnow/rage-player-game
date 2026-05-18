@@ -252,7 +252,7 @@ export async function processNpcMemoryUpdates(campaignId, rawUpdates) {
       // `addedAt` set explicitly so we can compose deterministic RAG ids.
       await prisma.npcExperience.createMany({
         data: newEntries.map((entry) => ({
-          campaignNpcId: row.id,
+          npcId: row.id,
           content: entry.content,
           importance: entry.importance || 'minor',
           addedAt: new Date(entry.addedAt),

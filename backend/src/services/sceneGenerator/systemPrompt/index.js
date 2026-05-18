@@ -22,6 +22,7 @@ import {
   worldSettingBlock,
   buildSkillTableBlock,
   multiplayerRulesBlock,
+  namingConventionBlock,
 } from './staticRules.js';
 import { buildConditionalRules } from './conditionalRules.js';
 import { buildDmSettingsBlock } from './dmSettingsBlock.js';
@@ -106,8 +107,9 @@ export function buildLeanSystemPrompt(coreState, recentScenes, language = 'pl', 
     dialogueFormatBlock(),
     suggestedActionsBlock(language),
     worldSettingBlock(campaign),
+    namingConventionBlock(),
     responseFormatBlock(language, { provider }),
-  ];
+  ].filter(Boolean);
 
   if (isMultiplayer) {
     staticSections.push(multiplayerRulesBlock(language));

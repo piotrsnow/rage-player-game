@@ -4,6 +4,7 @@ import { GraphUpdateSchema } from '../../../../shared/domain/locationGraph.js';
 import { config } from '../../config.js';
 import { childLogger } from '../../lib/logger.js';
 import { wrapPlayerInput } from '../../../../shared/domain/playerInputSanitizer.js';
+import { activeStyle } from '../../data/namingStyles/index.js';
 
 const log = childLogger({ module: 'graphExtractor' });
 
@@ -49,7 +50,8 @@ If the node has a parentName, its scale MUST be strictly lower than the parent's
   "summary": "Brief description of what changed spatially"
 }
 
-If nothing spatial changed, return: { "newNodes": [], "newEdges": [], "updatedEdges": [], "npcMoves": [], "discoveryChanges": [], "summary": "No spatial changes" }`;
+If nothing spatial changed, return: { "newNodes": [], "newEdges": [], "updatedEdges": [], "npcMoves": [], "discoveryChanges": [], "summary": "No spatial changes" }`
+  + (activeStyle.promptBlock ? `\n\n${activeStyle.promptBlock}` : '');
 
 /**
  * Call nano/standard model to extract graph updates from a scene.

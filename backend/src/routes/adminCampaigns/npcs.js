@@ -26,9 +26,9 @@ const WORLD_NPC_PARAM = {
 };
 
 const NPC_FIELDS = [
-  'name', 'gender', 'role', 'personality', 'attitude', 'disposition',
+  'name', 'gender', 'role', 'personality', 'alignment', 'disposition',
   'alive', 'lastLocation', 'currentLocationId',
-  'factionId', 'notes', 'worldNpcId', 'isAgent', 'category',
+  'factionId', 'notes', 'canonicalNpcId', 'isAgent', 'category',
   'pendingIntroHint', 'activeGoal', 'goalProgress', 'race', 'creatureKind',
   'level', 'stats', 'portraitUrl', 'spriteUrl',
 ];

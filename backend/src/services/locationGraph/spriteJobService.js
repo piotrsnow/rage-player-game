@@ -9,30 +9,22 @@ const log = childLogger({ module: 'spriteJobService' });
 
 const activeJobs = new Map();
 
-async function loadNodeRow(kind, id) {
-  if (kind === 'world') {
-    const row = await prisma.location.findUnique({
-      where: { id },
-      select: {
-        id: true, canonicalName: true, description: true, locationType: true,
-        scale: true, tags: true, atmosphere: true, biome: true, dangerLevel: true,
-      },
-    });
-    if (row) row.name = row.canonicalName;
-    return row;
-  }
-  return prisma.location.findFirst({
+async function loadLocationRow(id) {
+  const row = await prisma.location.findUnique({
     where: { id },
     select: {
-      id: true, name: true, description: true, locationType: true,
-      scale: true, tags: true, atmosphere: true, biome: true, dangerLevel: true,
+      id: true, canonicalName: true, displayName: true, description: true,
+      locationType: true, scale: true, tags: true, atmosphere: true,
+      biome: true, dangerLevel: true,
     },
   });
+  if (row) row.name = row.canonicalName || row.displayName;
+  return row;
 }
 
-export async function generateSpriteForNode(kind, nodeId) {
-  const loc = await loadNodeRow(kind, nodeId);
-  if (!loc) throw new Error(`Node ${kind}:${nodeId} not found`);
+export async function generateSpriteForNode(locationId) {
+  const loc = await loadLocationRow(locationId);
+  if (!loc) throw new Error(`Location ${locationId} not found`);
 
   const { width, height } = scaleToSpriteSize(loc.scale ?? 5);
   const description = buildPixelSpriteDescription(loc, null);
@@ -75,11 +67,7 @@ export async function generateSpriteForNode(kind, nodeId) {
   });
 
   const nodeImageUrl = storeResult.url;
-  if (kind === 'world') {
-    await prisma.location.update({ where: { id: loc.id }, data: { nodeImageUrl } });
-  } else {
-    await prisma.location.update({ where: { id: loc.id }, data: { nodeImageUrl } });
-  }
+  await prisma.location.update({ where: { id: loc.id }, data: { nodeImageUrl } });
 
   return nodeImageUrl;
 }
@@ -91,7 +79,7 @@ async function processItem(item) {
   });
 
   try {
-    const url = await generateSpriteForNode(item.nodeKind, item.nodeId);
+    const url = await generateSpriteForNode(item.locationId);
     await prisma.locationSpriteJobItem.update({
       where: { id: item.id },
       data: { status: 'done', resultingUrl: url, error: null },
@@ -99,7 +87,7 @@ async function processItem(item) {
     return true;
   } catch (err) {
     const msg = err.message?.slice(0, 500) || 'unknown error';
-    log.warn({ err, itemId: item.id, nodeKind: item.nodeKind, nodeId: item.nodeId }, 'sprite item failed');
+    log.warn({ err, itemId: item.id, locationId: item.locationId }, 'sprite item failed');
     await prisma.locationSpriteJobItem.update({
       where: { id: item.id },
       data: { status: 'failed', error: msg },
@@ -185,8 +173,7 @@ export async function startSpriteJob(nodes, { userId } = {}) {
   await prisma.locationSpriteJobItem.createMany({
     data: nodes.map((n) => ({
       jobId: job.id,
-      nodeKind: n.kind,
-      nodeId: n.id,
+      locationId: n.id,
     })),
     skipDuplicates: true,
   });
@@ -220,7 +207,7 @@ export async function getSpriteJobStatus(jobId) {
       where: { jobId, status: 'failed' },
       take: 5,
       orderBy: { updatedAt: 'desc' },
-      select: { nodeKind: true, nodeId: true, error: true },
+      select: { locationId: true, error: true },
     });
   }
 

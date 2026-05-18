@@ -22,7 +22,7 @@ export const SCENE_INDEX_CACHE_KEY = 'nikczemny_krzemuch_scene_idx';
 // Kept because `backendUrl`/`useBackend` are literally the account
 // coordinates — syncing them via /auth/settings would create a loop.
 export const LOCAL_ONLY_SETTINGS_KEYS = [
-  'backendUrl', 'useBackend', 'appZoom',
+  'backendUrl', 'useBackend', 'appZoom', 'narrationPlaybackBoost',
 ];
 
 /**

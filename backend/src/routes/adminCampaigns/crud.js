@@ -198,9 +198,9 @@ export async function adminCrudRoutes(fastify) {
       async () => prisma.$transaction(async (tx) => {
         await tx.campaignQuickBeat.deleteMany({ where: { campaignId: id } });
         await tx.campaignScene.deleteMany({ where: { campaignId: id } });
-        await tx.campaignNPC.deleteMany({ where: { campaignId: id } });
+        await tx.npc.deleteMany({ where: { campaignId: id } });
         await tx.campaignQuest.deleteMany({ where: { campaignId: id } });
-        await tx.campaignLocation.deleteMany({ where: { campaignId: id } });
+        await tx.location.deleteMany({ where: { campaignId: id } });
         await tx.campaignLocationSummary.deleteMany({ where: { campaignId: id } });
         await tx.locationEdge.deleteMany({ where: { campaignId: id } });
         await tx.campaignEdge.deleteMany({ where: { campaignId: id } });

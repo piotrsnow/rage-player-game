@@ -220,6 +220,7 @@ function SpellTreesTab({ character, dispatch, campaignId }) {
         manaCost: entry.manaCost ?? 2,
         icon: entry.icon || 'auto_awesome',
         description: entry.description || '',
+        longDescription: entry.longDescription || null,
         isCustom: true,
         _known: false,
       });

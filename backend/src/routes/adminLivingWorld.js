@@ -21,7 +21,7 @@ import { runTickBatch } from '../services/livingWorld/npcTickDispatcher.js';
 import { runPostCampaignWorldWriteback } from '../services/livingWorld/postCampaignWriteback.js';
 import { applyApprovedPendingChange } from '../services/livingWorld/postCampaignWorldChanges.js';
 import { promoteCampaignNpcToWorld } from '../services/livingWorld/postCampaignPromotion.js';
-import { promoteWorldLocationToCanonical } from '../services/livingWorld/postCampaignLocationPromotion.js';
+import { promoteCampaignLocationToCanonical } from '../services/livingWorld/postCampaignLocationPromotion.js';
 import { migrateExistingCampaignGraph, runGraphConsistencyCheck, loadCampaignGraph, loadWorldGraph, createEdge } from '../services/locationGraph/index.js';
 import { getExtractionStats } from '../services/locationGraph/graphExtractor.js';
 import { reviseGraph } from '../services/locationGraph/graphRevisionService.js';
@@ -173,12 +173,12 @@ export async function adminLivingWorldRoutes(fastify) {
     if (!npc) return reply.code(404).send({ error: 'Not found' });
     const [events, attributions, knowledgeBase, dialogHistory, knownLocations, campaignShadows] = await Promise.all([
       prisma.worldEvent.findMany({
-        where: { worldNpcId: id },
+        where: { npcId: id },
         orderBy: { createdAt: 'desc' },
         take: 50,
       }),
       prisma.npcAttribution.findMany({
-        where: { worldNpcId: id },
+        where: { npcId: id },
         orderBy: { createdAt: 'desc' },
         take: 50,
       }),
@@ -197,7 +197,7 @@ export async function adminLivingWorldRoutes(fastify) {
         include: { location: { select: { id: true, canonicalName: true } } },
       }),
       prisma.npc.findMany({
-        where: { worldNpcId: id },
+        where: { canonicalNpcId: id },
         select: {
           id: true, npcId: true, name: true, alive: true, disposition: true,
           activeGoal: true, currentLocationId: true,
@@ -302,7 +302,7 @@ export async function adminLivingWorldRoutes(fastify) {
         select: { id: true, name: true, role: true, alive: true, category: true },
       }),
       prisma.worldEvent.findMany({
-        where: { worldLocationId: id },
+        where: { locationId: id },
         orderBy: { createdAt: 'desc' },
         take: 50,
       }),
@@ -380,8 +380,8 @@ export async function adminLivingWorldRoutes(fastify) {
     const where = {};
     if (eventType) where.eventType = eventType;
     if (campaignId) where.campaignId = campaignId;
-    if (npcId) where.worldNpcId = npcId;
-    if (locationId) where.worldLocationId = locationId;
+    if (npcId) where.npcId = npcId;
+    if (locationId) where.locationId = locationId;
     if (visibility) where.visibility = visibility;
 
     const rows = await prisma.worldEvent.findMany({
@@ -1079,9 +1079,9 @@ export async function adminLivingWorldRoutes(fastify) {
     if (!config.pixellabApiKey) {
       return reply.code(503).send({ error: 'PIXELLAB_API_KEY not configured' });
     }
-    const { kind, nodeId } = request.params;
+    const { nodeId } = request.params;
     try {
-      const nodeImageUrl = await generateSpriteForNode(kind, nodeId);
+      const nodeImageUrl = await generateSpriteForNode(nodeId);
       return { ok: true, nodeImageUrl };
     } catch (err) {
       return reply.code(400).send({ error: err.message });
@@ -1585,7 +1585,7 @@ export async function adminLivingWorldRoutes(fastify) {
       }
       // F5b — promote DESTRUCTIVELY copies the source CampaignLocation into a
       // new canonical WorldLocation, relinks polymorphic refs, deletes source.
-      const promoted = await promoteWorldLocationToCanonical(candidate.sourceLocationId);
+      const promoted = await promoteCampaignLocationToCanonical(candidate.sourceLocationId);
       if (!promoted.ok) {
         return reply.code(422).send({ error: 'promote_failed', reason: promoted.reason });
       }
@@ -1986,16 +1986,16 @@ export async function adminLivingWorldRoutes(fastify) {
       : null;
 
     if (typesToQuery.includes('WorldNPC')) {
-      const where = {};
+      const where = { campaignId: null };
       if (searchFilter) where.name = searchFilter;
-      if (campaignId) where.campaignShadows = { some: { campaignId } };
+      if (campaignId) where.shadows = { some: { campaignId } };
       queries.WorldNPC = prisma.npc.findMany({
         where, take: limit, skip, orderBy: { updatedAt: 'desc' },
         select: { id: true, name: true, role: true, alive: true, category: true, currentLocationId: true, updatedAt: true, globallyActive: true, softDeletedAt: true, originCampaignId: true },
       });
     }
     if (typesToQuery.includes('WorldLocation')) {
-      const where = {};
+      const where = { campaignId: null };
       if (searchFilter) where.canonicalName = searchFilter;
       if (campaignWorldLocIds) where.id = { in: campaignWorldLocIds };
       queries.WorldLocation = prisma.location.findMany({
@@ -2016,26 +2016,26 @@ export async function adminLivingWorldRoutes(fastify) {
       });
     }
     if (typesToQuery.includes('CampaignNPC')) {
-      const where = {};
+      const where = { campaignId: { not: null } };
       if (searchFilter) where.name = searchFilter;
       if (campaignId) where.campaignId = campaignId;
       queries.CampaignNPC = prisma.npc.findMany({
         where, take: limit, skip, orderBy: { updatedAt: 'desc' },
         select: {
-          id: true, name: true, campaignId: true, alive: true, worldNpcId: true,
+          id: true, name: true, campaignId: true, alive: true, canonicalNpcId: true,
           campaign: { select: { name: true } },
           updatedAt: true,
         },
       });
     }
     if (typesToQuery.includes('CampaignLocation')) {
-      const where = {};
-      if (searchFilter) where.name = searchFilter;
+      const where = { campaignId: { not: null } };
+      if (searchFilter) where.displayName = searchFilter;
       if (campaignId) where.campaignId = campaignId;
       queries.CampaignLocation = prisma.location.findMany({
         where, take: limit, skip, orderBy: { createdAt: 'desc' },
         select: {
-          id: true, name: true, locationType: true, campaignId: true,
+          id: true, displayName: true, locationType: true, campaignId: true,
           campaign: { select: { name: true } },
           createdAt: true,
         },
@@ -2085,20 +2085,24 @@ export async function adminLivingWorldRoutes(fastify) {
     // filters (search + campaignId) so the sidebar tracks the search results.
     const countWhere = {
       WorldNPC: {
+        campaignId: null,
         ...(searchFilter ? { name: searchFilter } : {}),
-        ...(campaignId ? { campaignShadows: { some: { campaignId } } } : {}),
+        ...(campaignId ? { shadows: { some: { campaignId } } } : {}),
       },
       WorldLocation: {
+        campaignId: null,
         ...(searchFilter ? { canonicalName: searchFilter } : {}),
         ...(campaignWorldLocIds ? { id: { in: campaignWorldLocIds } } : {}),
       },
       Road: {},
       CampaignNPC: {
+        campaignId: { not: null },
         ...(searchFilter ? { name: searchFilter } : {}),
         ...(campaignId ? { campaignId } : {}),
       },
       CampaignLocation: {
-        ...(searchFilter ? { name: searchFilter } : {}),
+        campaignId: { not: null },
+        ...(searchFilter ? { displayName: searchFilter } : {}),
         ...(campaignId ? { campaignId } : {}),
       },
       CampaignEdge: campaignId ? { campaignId } : {},
@@ -2528,11 +2532,11 @@ function safeJson(s) {
 
 function prismaModelName(entityType) {
   const map = {
-    WorldNPC: 'worldNPC',
-    WorldLocation: 'worldLocation',
+    WorldNPC: 'npc',
+    WorldLocation: 'location',
     Road: 'road',
-    CampaignNPC: 'campaignNPC',
-    CampaignLocation: 'campaignLocation',
+    CampaignNPC: 'npc',
+    CampaignLocation: 'location',
     CampaignEdge: 'campaignEdge',
     CampaignQuest: 'campaignQuest',
     Character: 'character',
@@ -2549,9 +2553,9 @@ function normalizeEntity(type, row) {
     case 'Road':
       return { id: row.id, type, name: `${row.from?.canonicalName || '?'} ↔ ${row.to?.canonicalName || '?'}`, status: row.terrainType, details: `${row.distance || '?'} km`, source: 'world', campaignName: null };
     case 'CampaignNPC':
-      return { id: row.id, type, name: row.name, status: row.alive ? 'alive' : 'dead', details: row.worldNpcId ? 'linked' : 'ephemeral', source: 'campaign', campaignId: row.campaignId, campaignName: row.campaign?.name || null };
+      return { id: row.id, type, name: row.name, status: row.alive ? 'alive' : 'dead', details: row.canonicalNpcId ? 'linked' : 'ephemeral', source: 'campaign', campaignId: row.campaignId, campaignName: row.campaign?.name || null };
     case 'CampaignLocation':
-      return { id: row.id, type, name: row.name, status: row.locationType, details: '', source: 'campaign', campaignId: row.campaignId, campaignName: row.campaign?.name || null };
+      return { id: row.id, type, name: row.displayName || row.canonicalName, status: row.locationType, details: '', source: 'campaign', campaignId: row.campaignId, campaignName: row.campaign?.name || null };
     case 'CampaignEdge':
       return { id: row.id, type, name: `${row.fromLocationId} ↔ ${row.toLocationId}`, status: row.relationType, details: row.distance ? `${row.distance} km` : row.visibility, source: 'campaign', campaignId: row.campaignId, campaignName: row.campaign?.name || null };
     case 'CampaignQuest':

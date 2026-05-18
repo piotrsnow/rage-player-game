@@ -9,6 +9,9 @@ import {
 
 const log = childLogger({ module: 'campaigns' });
 
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+function isUuid(v) { return typeof v === 'string' && UUID_RE.test(v); }
+
 const MAX_RETRIES = 3;
 const RETRY_BASE_MS = 50;
 
@@ -128,7 +131,7 @@ export async function syncNPCsToNormalized(campaignId, npcs) {
           gender: npc.gender || 'unknown',
           role: npc.role || null,
           personality: npc.personality || null,
-          attitude: npc.attitude || 'neutral',
+          alignment: npc.attitude || 'neutral',
           disposition: npc.disposition ?? 0,
           alive: npc.alive ?? true,
           lastLocation: npc.lastLocation || null,
@@ -202,7 +205,7 @@ export async function syncNPCsToNormalized(campaignId, npcs) {
     const targetNpcDbIds = allTouched.map((r) => idByNpcKey.get(r.npcId ?? r._npcKey)).filter(Boolean);
     if (targetNpcDbIds.length > 0) {
       await prisma.npcRelationship.deleteMany({
-        where: { campaignNpcId: { in: targetNpcDbIds } },
+        where: { npcId: { in: targetNpcDbIds } },
       });
     }
 
@@ -214,7 +217,7 @@ export async function syncNPCsToNormalized(campaignId, npcs) {
       for (const rel of relList) {
         if (!rel || !rel.npcName) continue;
         relInserts.push({
-          campaignNpcId: dbId,
+          npcId: dbId,
           targetType: 'npc',
           targetRef: rel.npcName,
           relation: rel.type || 'unknown',
@@ -301,7 +304,7 @@ export async function syncQuestsToNormalized(campaignId, quests) {
       completionCondition: q.completionCondition || null,
       questGiverId: q.questGiverId || null,
       turnInNpcId: q.turnInNpcId || q.questGiverId || null,
-      locationId: q.locationId || null,
+      locationId: isUuid(q.locationId) ? q.locationId : null,
       reward: q.reward ?? null,
       status: q._status,
       completedAt: q.completedAt ? new Date(q.completedAt) : null,
@@ -411,7 +414,7 @@ export async function syncQuestsToNormalized(campaignId, quests) {
       for (const prereqQuestId of v.prereqIds) {
         const prereqId = idByQuestId2.get(prereqQuestId);
         if (!prereqId) continue;
-        prereqInserts.push({ questId: dependentId, prerequisiteId: prereqId });
+        prereqInserts.push({ questId: dependentId, prereqId: prereqId });
       }
     }
     if (dependentWithPrereqs.length > 0) {
@@ -455,7 +458,7 @@ export async function reconstructFromNormalized(campaignId, coreState, { current
       appearance: n.appearance,
       // dialect celowo nie hydratujemy do FE state — używany tylko w
       // backendowym prompcie dialogu, nie wystawiany graczowi
-      attitude: n.attitude,
+      attitude: n.alignment,
       disposition: n.disposition,
       alive: n.alive,
       lastLocation: n.lastLocation,
@@ -473,7 +476,7 @@ export async function reconstructFromNormalized(campaignId, coreState, { current
       // ID-y backendowe — pozwalają FE wywołać /ai/npc-missing-fields dla
       // legacy NPC bez kanonicznego appearance
       campaignNpcId: n.id,
-      worldNpcId: n.worldNpcId || null,
+      worldNpcId: n.canonicalNpcId || null,
       relationships: (n.relationships || []).map((r) => ({
         npcName: r.targetRef,
         type: r.relation,
@@ -505,7 +508,7 @@ export async function reconstructFromNormalized(campaignId, coreState, { current
     where: { campaignId },
     orderBy: { createdAt: 'asc' },
     include: {
-      prerequisites: { select: { prerequisite: { select: { questId: true } } } },
+      prerequisites: { select: { prereq: { select: { questId: true } } } },
       objectives: { orderBy: { displayOrder: 'asc' } },
     },
   });
@@ -523,7 +526,7 @@ export async function reconstructFromNormalized(campaignId, coreState, { current
         turnInNpcId: q.turnInNpcId,
         locationId: q.locationId,
         prerequisiteQuestIds: Array.isArray(q.prerequisites)
-          ? q.prerequisites.map((p) => p.prerequisite?.questId).filter(Boolean)
+          ? q.prerequisites.map((p) => p.prereq?.questId).filter(Boolean)
           : [],
         objectives: (q.objectives || []).map((o) => ({
           description: o.description,
@@ -558,7 +561,7 @@ export async function loadQuestsForReconcile(campaignId) {
     where: { campaignId },
     orderBy: { createdAt: 'asc' },
     include: {
-      prerequisites: { select: { prerequisite: { select: { questId: true } } } },
+      prerequisites: { select: { prereq: { select: { questId: true } } } },
       objectives: { orderBy: { displayOrder: 'asc' } },
     },
   });
@@ -579,7 +582,7 @@ export async function loadQuestsForReconcile(campaignId) {
       status: q.status,
       mutationLog: q.mutationLog ?? [],
       prerequisiteQuestIds: Array.isArray(q.prerequisites)
-        ? q.prerequisites.map((p) => p.prerequisite?.questId).filter(Boolean)
+        ? q.prerequisites.map((p) => p.prereq?.questId).filter(Boolean)
         : [],
       objectives: (q.objectives || []).map((o) => ({
         id: o.id != null ? String(o.id) : o.description,

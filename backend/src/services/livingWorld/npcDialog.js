@@ -62,7 +62,7 @@ export async function generate({
   // z odpowiednim CampaignNPC shadow, jeśli istnieje.
   if (!npc.dialect || !npc.appearance) {
     const shadow = await prisma.npc.findFirst({
-      where: { campaignId, worldNpcId },
+      where: { campaignId, canonicalNpcId: worldNpcId },
       select: { id: true },
     }).catch(() => null);
     npc = await ensureAppearanceAndDialect(

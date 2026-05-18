@@ -56,7 +56,7 @@ export async function gameDataRoutes(fastify) {
     const rows = await prisma.customSpell.findMany({
       where,
       orderBy: { createdAt: 'desc' },
-      select: { id: true, name: true, school: true, description: true, icon: true, manaCost: true },
+      select: { id: true, name: true, school: true, description: true, longDescription: true, icon: true, manaCost: true },
     });
     return rows;
   });

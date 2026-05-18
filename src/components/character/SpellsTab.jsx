@@ -5,6 +5,7 @@ import { useAI } from '../../hooks/useAI';
 import { SPELL_TREES } from '../../data/rpgMagic';
 import { resolveKnownSpellDisplay } from '../../services/magicEngine';
 import { gameData } from '../../services/gameDataService';
+import SpellCombatStatsSection from './SpellCombatStatsSection';
 
 const SPELL_TREE_THEMES = {
   ogien: { border: 'border-red-400/30', glow: 'shadow-[0_0_12px_rgba(248,113,113,0.15)]' },
@@ -59,9 +60,11 @@ export default function SpellsTab({
         description: base.isCustom
           ? (base.description || catalogEntry?.description || '')
           : base.description,
+        longDescription: base.longDescription || catalogEntry?.longDescription || null,
+        combatStats: base.combatStats || catalogEntry?.combatStats || null,
       };
     });
-  }, [character.spells?.known, character.spells?.usageCounts, character.spells?.icons, character.spells?.schools, character.spells?.details, t]);
+  }, [character.spells?.known, character.spells?.usageCounts, character.spells?.icons, character.spells?.schools, character.spells?.details, character.customSpells, t]);
 
   const selectedSpell = selectedSpellName ? knownSpells.find((s) => s.name === selectedSpellName) || null : null;
   const selectedSpellImageUrl = selectedSpell && gameData.spellImages?.[selectedSpell.name]
@@ -230,7 +233,7 @@ export default function SpellsTab({
               </div>
 
               <div className="mb-3">
-                <p className="text-[10px] font-label uppercase tracking-[0.18em] text-tertiary/80 mb-1">
+                <p className="text-xs font-label uppercase tracking-[0.18em] text-tertiary/80 mb-1">
                   {selectedSpell.isCustom
                     ? selectedSpell.treeName
                     : `${selectedSpell.treeName} · ${t('magic.level', { level: selectedSpell.level, defaultValue: `Poziom ${selectedSpell.level}` })}`}
@@ -248,7 +251,7 @@ export default function SpellsTab({
 
               <div className="grid grid-cols-2 gap-2 mb-3">
                 <div className="rounded-sm bg-surface-container-high/60 border border-outline-variant/15 px-3 py-2">
-                  <div className="text-[9px] font-label uppercase tracking-widest text-on-surface-variant/70">
+                  <div className="text-[11px] font-label uppercase tracking-widest text-on-surface-variant/70">
                     {t('magic.manaCost', 'Koszt many')}
                   </div>
                   <div className={`font-headline text-lg ${selectedSpellHasEnoughMana ? 'text-tertiary' : 'text-error-light'}`}>
@@ -256,7 +259,7 @@ export default function SpellsTab({
                   </div>
                 </div>
                 <div className="rounded-sm bg-surface-container-high/60 border border-outline-variant/15 px-3 py-2">
-                  <div className="text-[9px] font-label uppercase tracking-widest text-on-surface-variant/70">
+                  <div className="text-[11px] font-label uppercase tracking-widest text-on-surface-variant/70">
                     {t('magic.usesLabel', 'Użycia')}
                   </div>
                   <div className="font-headline text-lg text-primary">{selectedSpell.uses}</div>
@@ -264,22 +267,34 @@ export default function SpellsTab({
               </div>
 
               <div className="rounded-sm bg-surface-container-high/40 border border-outline-variant/10 p-3">
-                <p className="text-on-surface-variant text-sm leading-relaxed">
+                <p className="text-on-surface-variant text-[15px] leading-relaxed">
                   {selectedSpell.description || t('magic.customSpellDescription', { defaultValue: 'Zaklęcie z fabuły lub wymyślone — nie należy do standardowego drzewka w grze.' })}
                 </p>
+                {selectedSpell.longDescription && (
+                  <div className="mt-3 pt-3 border-t border-outline-variant/10">
+                    <p className="text-[11px] font-label uppercase tracking-widest text-tertiary/60 mb-1">
+                      {t('magic.spellLore', { defaultValue: 'Historia powstania' })}
+                    </p>
+                    <p className="text-on-surface-variant/80 text-sm leading-relaxed italic">
+                      {selectedSpell.longDescription}
+                    </p>
+                  </div>
+                )}
                 {!selectedSpellHasEnoughMana && (
-                  <p className="text-error-light/80 text-xs mt-3">
+                  <p className="text-error-light/80 text-sm mt-3">
                     {t('magic.notEnoughMana', { cost: selectedSpell.manaCost, current: character.mana?.current || 0 })}
                   </p>
                 )}
               </div>
+
+              <SpellCombatStatsSection spell={selectedSpell} character={character} />
 
               {canRegenerateSpellImage && (
                 <button
                   type="button"
                   onClick={() => handleRegenerateSpellImage(selectedSpell.name)}
                   disabled={regeneratingSpellName === selectedSpell.name}
-                  className="flex items-center gap-1.5 text-xs font-label text-on-surface-variant/80 hover:text-tertiary transition-colors disabled:opacity-50 mt-3"
+                  className="flex items-center gap-1.5 text-sm font-label text-on-surface-variant/80 hover:text-tertiary transition-colors disabled:opacity-50 mt-3"
                 >
                   <span className={`material-symbols-outlined text-sm ${regeneratingSpellName === selectedSpell.name ? 'animate-spin' : ''}`}>
                     {regeneratingSpellName === selectedSpell.name ? 'progress_activity' : 'refresh'}

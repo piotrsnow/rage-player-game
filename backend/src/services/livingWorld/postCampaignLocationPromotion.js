@@ -8,7 +8,7 @@
 import { prisma } from '../../lib/prisma.js';
 import { childLogger } from '../../lib/logger.js';
 import { slugifyLocationName } from '../locationRefs.js';
-import { indexEntity } from './ragService.js';
+import { index as indexEntity } from './ragService.js';
 
 const log = childLogger({ module: 'postCampaignLocationPromotion' });
 
@@ -61,7 +61,7 @@ export async function promoteCampaignLocationToCanonical(locationId) {
     try {
       const text = [loc.displayName || canonicalName, loc.locationType, loc.region, loc.description]
         .filter(Boolean).join(' — ');
-      await indexEntity({ entityType: 'location', entityId: promoted.id, text });
+      await indexEntity('location', promoted.id, text);
     } catch (ragErr) {
       log.warn({ err: ragErr?.message, locationId: promoted.id }, 'RAG index after location promote failed');
     }

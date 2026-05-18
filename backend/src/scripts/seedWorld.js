@@ -7,9 +7,9 @@
 // Seeded content:
 //   • Capital **Yeralden** at (0,0) with 3 sublocations (temple, tavern, market)
 //   • 1 NPC — Kapłan Nieznanego Boga (tutorial priest in the temple)
-//   • Village **Kamionka Stara** (SW, rolnicy) with 1 sublocation, 0 NPCs
+//   • Village **Steinveld** (SW, rolnicy) with 1 sublocation, 0 NPCs
 //   • 1 dungeon, 1 wilderness, 1 ruin — minimal exploration anchors
-//   • 1 bidirectional road (Yeralden ↔ Kamionka Stara)
+//   • 1 bidirectional road (Yeralden ↔ Steinveld)
 //   • One starter `WorldLoreSection` (slug="main")
 //
 // F5b — every location seeded here is a canonical `WorldLocation` row. AI
@@ -18,7 +18,7 @@
 //
 // Pantheon (lore, no faction tags):
 //   Nieznany Bóg — najpotężniejsze bóstwo, nikt nie zna jego imienia ani natury;
-//                  Świątynia Nieznanego Boga jest najstarszym budynkiem w Yeralden
+//                  Tempel Nieznanego Boga jest najstarszym budynkiem w Yeralden
 //   Serneth      — bóg życia (good, worshipped in villages)
 //   Yeriala      — bogini słońca (good, worshipped in cities)
 //   Ferathon     — bóg śmierci (evil, hidden cult)
@@ -42,7 +42,7 @@ import { seedCanonicalEdges } from './seedWorldEdges.js';
 const log = childLogger({ module: 'seedWorld' });
 
 // Bump this whenever seed data changes (arrays, lore, edges, NPCs, etc.).
-const SEED_VERSION = '2026-05-10a';
+const SEED_VERSION = '2026-05-18a';
 
 const REGION = 'heartland';
 const CAPITAL_NAME = 'Yeralden';
@@ -55,7 +55,7 @@ const CAPITAL_NAME = 'Yeralden';
 const SUBLOCATIONS = [
   {
     key: 'grand_temple',
-    name: 'Świątynia Nieznanego Boga',
+    name: 'Tempel Nieznanego Boga',
     slotType: 'grand_temple',
     slotKind: 'required',
     description: 'Najstarszy budynek w Yeralden — starszy niż samo królestwo. Kamienna świątynia poświęcona bóstwu, którego imienia nikt nie zna. Wewnątrz panuje cisza tak głęboka, że słychać bicie własnego serca.',
@@ -67,7 +67,7 @@ const SUBLOCATIONS = [
   },
   {
     key: 'tavern',
-    name: 'Karczma Pod Złotym Słońcem',
+    name: 'Czarda Pod Złotym Słońcem',
     slotType: 'tavern',
     slotKind: 'required',
     description: 'Najsłynniejsza karczma stolicy — punkt zborny kupców, podróżnych i szeptanych plotek.',
@@ -79,7 +79,7 @@ const SUBLOCATIONS = [
   },
   {
     key: 'market',
-    name: 'Wielki Targ w Yeralden',
+    name: 'Grossmarkt w Yeralden',
     slotType: 'market',
     slotKind: 'required',
     description: 'Rozległy plac targowy pełen straganów z towarami z całego królestwa.',
@@ -99,7 +99,7 @@ const NAMED_NPCS = [
   {
     canonicalId: 'kaplan_nieznanego',
     name: 'Kapłan Nieznanego Boga',
-    role: 'strażnik Świątyni Nieznanego Boga, przewodnik dla poszukiwaczy',
+    role: 'strażnik Tempel Nieznanego Boga, przewodnik dla poszukiwaczy',
     personality: 'Cierpliwy, enigmatyczny, mówi zagadkami, ale nigdy nie odmawia pomocy. Wydaje się wiedzieć więcej niż powinien.',
     alignment: 'neutral',
     location: 'grand_temple',
@@ -109,9 +109,9 @@ const NAMED_NPCS = [
     appearance: 'Wysoki mężczyzna nieokreślonego wieku o gładkiej, bladej twarzy bez żadnych zmarszczek, długich siwych włosach opadających na ramiona i oczach tak ciemnych, że nie widać źrenic; nosi prostą szarą szatę bez żadnych symboli ani ozdób.',
     dialect: 'Mówi spokojnie, z namysłem, każde zdanie brzmi jak cytat z księgi, której nikt nie czytał — robi pauzy, jakby nasłuchiwał odpowiedzi z ciszy świątyni.',
     baselineKnowledge: [
-      'Świątynia Nieznanego Boga stoi tu dłużej niż Yeralden — kamień fundamentu nie pasuje do żadnego znanego kamieniołomu. Nikt nie wie kto ją zbudował ani kiedy, ale każdy władca utrzymywał ją w stanie, jakby bał się konsekwencji zaniedbania.',
+      'Tempel Nieznanego Boga stoi tu dłużej niż Yeralden — kamień fundamentu nie pasuje do żadnego znanego kamieniołomu. Nikt nie wie kto go zbudował ani kiedy, ale każdy władca utrzymywał go w stanie, jakby bał się konsekwencji zaniedbania.',
       'Nieznany Bóg jest najpotężniejszym z bóstw — ale nie objawia się jak Yeriala, Serneth czy Ferathon. Kapłan uważa, że milczenie bóstwa jest celowe: kto szuka odpowiedzi, musi szukać sam.',
-      'Zna układ stolicy i wie o istnieniu okolicznych krain — Kamionki Starej, ruin i dziczy za murami. Chętnie wskaże kierunek poszukiwaczom, ale nigdy nie powie wprost co tam znajdą.',
+      'Zna układ stolicy i wie o istnieniu okolicznych krain — Steinveld, ruin i dziczy za murami. Chętnie wskaże kierunek poszukiwaczom, ale nigdy nie powie wprost co tam znajdą.',
     ],
   },
 ];
@@ -124,9 +124,9 @@ const NAMED_NPCS = [
 
 const VILLAGES = [
   {
-    key: 'kamionka_stara',
-    canonicalName: 'Kamionka Stara',
-    aliases: ['Kamionka', 'Stara Kamionka'],
+    key: 'steinveld',
+    canonicalName: 'Steinveld',
+    aliases: ['Steinveld'],
     description:
       'Rolnicza osada przy starym kamiennym moście na południowo-zachodnich traktach od Yeralden. Pola pszenicy sięgają aż do skraju traktu.',
     regionX: -2.0,
@@ -138,7 +138,7 @@ const VILLAGES = [
     sublocations: [
       {
         key: 'tavern',
-        name: 'Karczma Pod Czerwonym Ziarnem',
+        name: 'Czarda Pod Czerwonym Ziarnem',
         slotType: 'tavern',
         slotKind: 'required',
         category: 'tavern',
@@ -163,7 +163,7 @@ const VILLAGES = [
 const WILD_LOCATIONS = [
   {
     key: 'ruined_watchtower',
-    canonicalName: 'Zrujnowana Wieża Strażnicza',
+    canonicalName: 'Wachtturm',
     description: 'Nieczynna wieża graniczna, od lat zagnieżdżona przez pająki i drobne bestie. Pierwsza próba dla młodych łowców.',
     category: 'dungeon',
     locationType: 'dungeon',
@@ -178,7 +178,7 @@ const WILD_LOCATIONS = [
   },
   {
     key: 'blackwood_edge',
-    canonicalName: 'Skraj Czarnoboru',
+    canonicalName: 'Czernwald',
     description: 'Ciemny pas starodrzewia, gdzie słońce nie dochodzi w pełni nawet w południe. Miejsce zbioru ziół i zasadzek.',
     category: 'wilderness',
     locationType: 'forest',
@@ -189,7 +189,7 @@ const WILD_LOCATIONS = [
   },
   {
     key: 'old_watch_stones',
-    canonicalName: 'Stare Kamienie Strażnicze',
+    canonicalName: 'Wachsteine',
     description: 'Krąg pionowych głazów pozostawiony przez poprzedników ludzi. Runy na nich bledną, ale w pełnię księżyca lśnią własnym światłem.',
     category: 'ruins',
     locationType: 'ruin',
@@ -201,7 +201,7 @@ const WILD_LOCATIONS = [
 ];
 
 // ─────────────────────────────────────────────────────────────
-// Roads — nearest-neighbour between settlements (capital ↔ Kamionka).
+// Roads — nearest-neighbour between settlements (capital ↔ Steinveld).
 // Wild tiles are reachable via fog-visible travel montage, not roads.
 // ─────────────────────────────────────────────────────────────
 
@@ -493,10 +493,10 @@ const NPC_KNOWLEDGE_SEED = [
   {
     canonicalId: 'kaplan_nieznanego',
     locations: [
-      'Kamionka Stara',
-      'Zrujnowana Wieża Strażnicza',
-      'Skraj Czarnoboru',
-      'Stare Kamienie Strażnicze',
+      'Steinveld',
+      'Wachtturm',
+      'Czernwald',
+      'Wachsteine',
     ],
   },
 ];
@@ -704,7 +704,7 @@ export async function seedWorld() {
     // Phase 2b — NPC explicit knowledge (requires all locations to exist).
     const npcKnowledgeUpdated = await seedNpcKnowledge(locationByName);
 
-    // Roads: single bidirectional Yeralden ↔ Kamionka Stara.
+    // Roads: single bidirectional Yeralden ↔ Steinveld.
     const settlementRows = [capital, ...VILLAGES.map((v) => locationByName[v.canonicalName])].filter(Boolean);
     const roads = buildNearestNeighbourRoads(settlementRows);
     void wildRows; // wildRows still upserted above for location seeding

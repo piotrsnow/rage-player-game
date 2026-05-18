@@ -6,6 +6,7 @@ import { getCampaignCharacterIds } from '../../services/campaignSync.js';
 import { loadCharacterSnapshotById, persistCharacterSnapshot } from '../../services/characterRelations.js';
 import { applyCharacterStateChanges } from '../../services/characterMutations.js';
 import { processStateChanges } from '../../services/sceneGenerator/processStateChanges/index.js';
+import { generateSpellCombatStats } from '../../services/itemAttackModesGenerator.js';
 
 const log = childLogger({ module: 'inventSpell' });
 
@@ -123,12 +124,13 @@ async function resolveUniqueCodexKey(campaignId, spellName, description) {
   }
 }
 
-function buildSpellCard({ spellName, school, manaCost, description, effect, icon }) {
+function buildSpellCard({ spellName, school, manaCost, description, longDescription, effect, icon }) {
   return {
     name: spellName,
     school: school || 'Ogolna',
     manaCost,
     description,
+    ...(longDescription ? { longDescription } : {}),
     effect,
     ...(icon ? { icon } : {}),
   };
@@ -268,18 +270,20 @@ export async function inventSpellRoutes(fastify) {
           school: invented.school,
           manaCost,
           description: invented.description,
+          longDescription: invented.longDescription,
           effect: invented.effect,
           icon: analyzed.spellIcon,
         });
 
-        const codexKey = await resolveUniqueCodexKey(campaignId, invented.name, spellCard.effect || spellCard.description);
+        const codexContent = spellCard.longDescription || spellCard.effect || spellCard.description;
+        const codexKey = await resolveUniqueCodexKey(campaignId, invented.name, codexContent);
         codexUpdates = [{
           id: codexKey,
           name: invented.name,
           category: 'concept',
           tags: ['spell', 'custom', spellCard.school || 'Ogolna'],
           fragment: {
-            content: spellCard.effect || spellCard.description,
+            content: codexContent,
             source: analyzed.hasTeacher ? 'Nauka od nauczyciela' : 'Inwencja własna',
             aspect: 'description',
           },
@@ -339,6 +343,7 @@ export async function inventSpellRoutes(fastify) {
               name: chosenSpellName,
               school: spellCard.school || null,
               description: spellCard.description || null,
+              longDescription: spellCard.longDescription || null,
               icon: spellCard.icon || null,
               manaCost: spellCard.manaCost || 2,
               createdById: userId,
@@ -349,6 +354,19 @@ export async function inventSpellRoutes(fastify) {
             select: { id: true },
           });
           customSpellId = row.id;
+          generateSpellCombatStats(
+            { id: row.id, name: chosenSpellName, description: spellCard.description, school: spellCard.school, manaCost: spellCard.manaCost },
+            { userApiKeys, userId },
+          )
+            .then((res) => {
+              if (res?.combatStats) {
+                return prisma.customSpell.update({
+                  where: { id: row.id },
+                  data: { combatStats: { ...res.combatStats, explanation: res.explanation || null } },
+                });
+              }
+            })
+            .catch((err) => log.warn({ err: err?.message, spell: chosenSpellName }, 'spell combatStats auto-gen failed'));
         } catch (err) {
           log.warn({ err: err?.message, campaignId, spell: chosenSpellName }, 'CustomSpell upsert failed — falling back to known[]');
         }
@@ -364,6 +382,8 @@ export async function inventSpellRoutes(fastify) {
         learnSpell: chosenSpellName,
         ...(analyzed.spellIcon ? { learnSpellIcon: analyzed.spellIcon } : {}),
         ...(spellCard?.school ? { learnSpellSchool: spellCard.school } : {}),
+        ...(spellCard?.description ? { learnSpellDescription: spellCard.description } : {}),
+        ...(spellCard?.longDescription ? { learnSpellLongDescription: spellCard.longDescription } : {}),
       };
       const updatedCharacter = applyCharacterStateChanges(activeCharacter, stateChanges);
 

@@ -38,8 +38,8 @@ describe('isNpcName', () => {
 
   it('allows legitimate place names', () => {
     expect(isNpcName('Kamionki', npcNames)).toBe(false);
-    expect(isNpcName('Wielki Targ w Yeralden', npcNames)).toBe(false);
-    expect(isNpcName('Karczma Pod Skowronkiem', npcNames)).toBe(false);
+    expect(isNpcName('Grossmarkt w Yeralden', npcNames)).toBe(false);
+    expect(isNpcName('Czarda Pod Skowronkiem', npcNames)).toBe(false);
   });
 
   it('returns false for empty/null inputs', () => {

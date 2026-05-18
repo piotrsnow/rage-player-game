@@ -166,10 +166,17 @@ export default function ItemDetailBox({
   const compareCombat = (compareResolved?.combatSource === combatSource) ? compareResolved.combat : null;
   const isCrystal = isManaCrystal(item);
 
-  const { attackModes, loading: attackModesLoading } = useItemAttackModes(
+  const {
+    attackModes,
+    explanation: attackModesExplanation,
+    loading: attackModesLoading,
+    reloading: attackModesReloading,
+    reload: reloadAttackModes,
+  } = useItemAttackModes(
     combatSource ? null : item,
     combat ? { attackModes: combat } : null,
   );
+  const canReloadStats = !combatSource && !resolved?.attackModes;
 
   return (
     <div className={`mt-3 bg-surface-container border ${rarityColor} rounded-sm p-4 animate-in fade-in slide-in-from-top-2 duration-150`}>
@@ -320,9 +327,58 @@ export default function ItemDetailBox({
         </div>
       )}
 
-      {!combatSource && !resolved?.attackModes && attackModes && (
+      {canReloadStats && attackModes && (
         <div className="border-t border-outline-variant/15 pt-3 mt-3">
+          <div className="flex items-center justify-between gap-2 mb-1.5">
+            <span className="text-[11px] font-label uppercase tracking-wider text-on-surface-variant/50">
+              {t('inventory.generatedStats', 'Wygenerowane staty')}
+            </span>
+            <button
+              type="button"
+              onClick={reloadAttackModes}
+              disabled={attackModesReloading}
+              title={t('inventory.reloadStats', 'Przelicz ponownie')}
+              className="flex items-center gap-1 px-2 py-1 text-[11px] font-label text-on-surface-variant/60 hover:text-primary border border-outline-variant/15 hover:border-primary/30 rounded-sm transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              <span className={`material-symbols-outlined text-sm ${attackModesReloading ? 'animate-spin' : ''}`}>
+                {attackModesReloading ? 'progress_activity' : 'refresh'}
+              </span>
+              {t('inventory.reloadStats', 'Przelicz')}
+            </button>
+          </div>
           <AttackModesDisplay attackModes={attackModes} />
+          {attackModesExplanation && (
+            <p className="text-[11px] text-on-surface-variant/60 leading-snug mt-2 italic">
+              {attackModesExplanation}
+            </p>
+          )}
+        </div>
+      )}
+
+      {canReloadStats && !attackModes && !attackModesLoading && (
+        <div className="border-t border-outline-variant/15 pt-3 mt-3">
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-on-surface-variant/50 font-label">
+              {t('inventory.noAttackModes', 'Brak statystyk bojowych')}
+            </span>
+            <button
+              type="button"
+              onClick={reloadAttackModes}
+              disabled={attackModesReloading}
+              title={t('inventory.reloadStats', 'Przelicz ponownie')}
+              className="flex items-center gap-1 px-2 py-1 text-[11px] font-label text-on-surface-variant/60 hover:text-primary border border-outline-variant/15 hover:border-primary/30 rounded-sm transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              <span className={`material-symbols-outlined text-sm ${attackModesReloading ? 'animate-spin' : ''}`}>
+                {attackModesReloading ? 'progress_activity' : 'refresh'}
+              </span>
+              {t('inventory.reloadStats', 'Przelicz')}
+            </button>
+          </div>
+          {attackModesExplanation && (
+            <p className="text-[11px] text-on-surface-variant/60 leading-snug mt-2 italic">
+              {attackModesExplanation}
+            </p>
+          )}
         </div>
       )}
 
@@ -330,6 +386,16 @@ export default function ItemDetailBox({
         <p className="text-xs text-on-surface-variant/80 leading-relaxed border-t border-outline-variant/10 pt-2 mt-3">
           {item.description}
         </p>
+      )}
+      {item.longDescription && (
+        <div className="mt-2 pt-2 border-t border-outline-variant/10">
+          <p className="text-[9px] font-label uppercase tracking-widest text-on-surface-variant/50 mb-1">
+            {t('inventory.itemLore', 'Historia / szczegóły')}
+          </p>
+          <p className="text-xs text-on-surface-variant/70 leading-relaxed italic">
+            {item.longDescription}
+          </p>
+        </div>
       )}
 
       {properties.length > 0 && !combat && (

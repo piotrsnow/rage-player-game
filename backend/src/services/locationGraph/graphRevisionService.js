@@ -1,6 +1,7 @@
 import { callAIJson, parseJsonOrNull } from '../aiJsonCall.js';
 import { childLogger } from '../../lib/logger.js';
 import { EDGE_TYPE_NAMES, EDGE_CATEGORY_NAMES } from '../../../../shared/domain/locationGraph.js';
+import { activeStyle } from '../../data/namingStyles/index.js';
 
 const log = childLogger({ module: 'graphRevisionService' });
 
@@ -55,7 +56,8 @@ ${EDGE_CATEGORY_NAMES.join(', ')}
   "reasoning": "Brief summary of what you changed and why"
 }
 
-If nothing needs changing, return: { "nodes": [], "edges": [], "reasoning": "Graph looks consistent — no changes needed." }`;
+If nothing needs changing, return: { "nodes": [], "edges": [], "reasoning": "Graph looks consistent — no changes needed." }`
+  + (activeStyle.promptBlock ? `\n\n${activeStyle.promptBlock}` : '');
 
 function buildUserPrompt(nodes, edges) {
   const nodeLines = nodes.map((n) => {

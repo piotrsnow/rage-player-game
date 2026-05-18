@@ -136,7 +136,7 @@ export async function processNpcChanges(campaignId, npcs, { livingWorldEnabled =
 
       if (existing) {
         const contentUpdate = {};
-        if (npcChange.attitude) contentUpdate.attitude = npcChange.attitude;
+        if (npcChange.attitude) contentUpdate.alignment = npcChange.attitude;
         if (npcChange.disposition != null) contentUpdate.disposition = npcChange.disposition;
         if (npcChange.alive != null) contentUpdate.alive = npcChange.alive;
         if (npcChange.lastLocation) contentUpdate.lastLocation = npcChange.lastLocation;
@@ -311,7 +311,7 @@ export async function processNpcChanges(campaignId, npcs, { livingWorldEnabled =
                   personality: npcChange.personality || cloned.personality || null,
                   appearance: trimmedAppearance || cloned.appearance || null,
                   dialect: trimmedDialect || cloned.dialect || null,
-                  attitude: npcChange.attitude || cloned.attitude || 'neutral',
+                  alignment: npcChange.attitude || cloned.alignment || 'neutral',
                   disposition: npcChange.disposition ?? cloned.disposition ?? 0,
                   race: stats.race,
                   creatureKind: stats.creatureKind,
@@ -344,7 +344,7 @@ export async function processNpcChanges(campaignId, npcs, { livingWorldEnabled =
                 personality: npcChange.personality || null,
                 appearance: trimmedAppearance,
                 dialect: trimmedDialect,
-                attitude: npcChange.attitude || 'neutral',
+                alignment: npcChange.attitude || 'neutral',
                 disposition: npcChange.disposition ?? 0,
                 race: stats.race,
                 creatureKind: stats.creatureKind,

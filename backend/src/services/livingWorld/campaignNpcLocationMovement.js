@@ -25,9 +25,9 @@ export async function appendCampaignNpcLocationMovement(prismaClient, args) {
   if (!campaignNpcId || !toId || !source) return;
   const fid = fromId || null;
   if (fid === toId) return;
-  await prismaClient.campaignNpcLocationMovement.create({
+  await prismaClient.npcLocationMovement.create({
     data: {
-      campaignNpcId,
+      npcId: campaignNpcId,
       fromId: fid,
       toId,
       source,

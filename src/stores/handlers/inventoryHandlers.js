@@ -36,11 +36,14 @@ export const inventoryHandlers = {
   },
 
   UPDATE_ITEM_ATTACK_MODES: (draft, action) => {
-    const { itemId, attackModes } = action.payload || {};
+    const { itemId, attackModes, attackModesExplanation } = action.payload || {};
     if (!itemId || !draft.character?.inventory?.length) return;
     const item = draft.character.inventory.find((i) => i?.id === itemId);
     if (item) {
       item.attackModes = attackModes;
+      if (attackModesExplanation !== undefined) {
+        item.attackModesExplanation = attackModesExplanation;
+      }
     }
   },
 

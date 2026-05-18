@@ -44,7 +44,9 @@ function CustomSpellButton({ name, character, isSelected, onSelect, mana, usageC
   const meta = resolveKnownSpellDisplay(name, character);
   const hasEnoughMana = mana.current >= meta.manaCost;
   const uses = usageCounts?.[name] || 0;
-  const { combatStats, loading } = useSpellCombatStats(name, { ...meta, combatStats: meta.combatStats ?? character?.customSpells?.find((s) => s?.name === name)?.combatStats });
+  const {
+    combatStats, explanation, loading, reloading, reload,
+  } = useSpellCombatStats(name, { ...meta, combatStats: meta.combatStats ?? character?.customSpells?.find((s) => s?.name === name)?.combatStats });
 
   const cs = combatStats;
   const modes = cs?.attackModes;
@@ -72,12 +74,18 @@ function CustomSpellButton({ name, character, isSelected, onSelect, mana, usageC
     }
   }
 
+  const handleReload = (e) => {
+    e.stopPropagation();
+    reload();
+  };
+
   return (
-    <button
-      key={name}
-      type="button"
+    <div
+      role="button"
+      tabIndex={0}
       onClick={() => onSelect(name)}
-      className={`w-full text-left rounded-sm px-2 py-1 border transition-all ${
+      onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onSelect(name); } }}
+      className={`w-full text-left rounded-sm px-2 py-1 border transition-all cursor-pointer ${
         isSelected
           ? 'border-tertiary/40 bg-tertiary/10'
           : 'border-transparent hover:border-outline-variant/20'
@@ -88,20 +96,33 @@ function CustomSpellButton({ name, character, isSelected, onSelect, mana, usageC
           <span className="material-symbols-outlined text-xs text-tertiary shrink-0">{meta.icon}</span>
           <span className="truncate">{name}</span>
         </span>
-        <span className="text-[9px] text-on-surface-variant tabular-nums shrink-0">
-          {meta.manaCost} many · {uses} {t('magic.usesShort', 'uż.')}
-        </span>
+        <div className="flex items-center gap-1.5 shrink-0">
+          <span className="text-[9px] text-on-surface-variant tabular-nums">
+            {meta.manaCost} many · {uses} {t('magic.usesShort', 'uż.')}
+          </span>
+          <button
+            type="button"
+            onClick={handleReload}
+            disabled={reloading || loading}
+            title={t('magic.reloadSpellStats', 'Przelicz staty')}
+            className="flex items-center justify-center w-5 h-5 rounded-sm text-on-surface-variant/50 hover:text-tertiary border border-transparent hover:border-tertiary/30 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            <span className={`material-symbols-outlined text-[12px] ${reloading ? 'animate-spin' : ''}`}>
+              {reloading ? 'progress_activity' : 'refresh'}
+            </span>
+          </button>
+        </div>
       </div>
       {meta.description && (
         <div className="text-[9px] text-on-surface-variant/90 leading-tight line-clamp-2">{meta.description}</div>
       )}
-      {loading && (
+      {(loading || reloading) && (
         <div className="flex items-center gap-1 text-[8px] text-on-surface-variant/50 mt-0.5">
           <span className="material-symbols-outlined text-[10px] animate-spin">progress_activity</span>
           <span>{t('magic.generatingStats', { defaultValue: 'Generuję statystyki...' })}</span>
         </div>
       )}
-      {!loading && damageLabel && (
+      {!loading && !reloading && damageLabel && (
         <div className="flex items-center gap-1 text-[8px] text-tertiary/80 leading-tight mt-0.5 font-label tabular-nums">
           {typeDef && (
             <span className={`material-symbols-outlined text-[10px] ${typeDef.color}`}>{typeDef.icon}</span>
@@ -113,12 +134,15 @@ function CustomSpellButton({ name, character, isSelected, onSelect, mana, usageC
           {damageLabel.preview && <span className="text-on-surface-variant/60">{damageLabel.preview}</span>}
         </div>
       )}
-      {!loading && !damageLabel && !cs && (
+      {!loading && !reloading && !damageLabel && !cs && (
         <div className="text-[9px] text-on-surface-variant/80 leading-tight">
           {t('magic.customSpellShortHint', { defaultValue: 'Poza standardowym drzewkiem — uproszczony koszt many.' })}
         </div>
       )}
-    </button>
+      {!loading && !reloading && explanation && (
+        <p className="text-[8px] text-on-surface-variant/50 leading-tight mt-0.5 italic">{explanation}</p>
+      )}
+    </div>
   );
 }
 

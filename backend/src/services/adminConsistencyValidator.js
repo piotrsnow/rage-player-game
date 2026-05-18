@@ -76,7 +76,7 @@ async function loadCampaignSnapshot(campaignId) {
 
   // Cross-campaign WorldNPC sync check needs the canonical alive flag.
   const worldNpcIds = Array.from(
-    new Set(npcs.map((n) => n.worldNpcId).filter(Boolean)),
+    new Set(npcs.map((n) => n.canonicalNpcId).filter(Boolean)),
   );
   const worldNpcs = worldNpcIds.length > 0
     ? await prisma.npc.findMany({
@@ -117,9 +117,9 @@ function ruleDagPrerequisites(snap) {
     indeg.set(q.id, 0);
   }
   for (const p of snap.prerequisites) {
-    if (!adj.has(p.questId) || !adj.has(p.prerequisiteId)) continue;
+    if (!adj.has(p.questId) || !adj.has(p.prereqId)) continue;
     // Edge: prerequisite → quest (prereq must complete first).
-    adj.get(p.prerequisiteId).push(p.questId);
+    adj.get(p.prereqId).push(p.questId);
     indeg.set(p.questId, (indeg.get(p.questId) || 0) + 1);
   }
 
@@ -290,8 +290,8 @@ function ruleBidirectionalMovementEdges(snap, campaignId) {
 function ruleWorldNpcAliveSync(snap) {
   const issues = [];
   for (const n of snap.npcs) {
-    if (!n.worldNpcId) continue;
-    const w = snap.worldNpcById.get(n.worldNpcId);
+    if (!n.canonicalNpcId) continue;
+    const w = snap.worldNpcById.get(n.canonicalNpcId);
     if (!w) continue;
     if (w.alive === false && n.alive === true) {
       issues.push({

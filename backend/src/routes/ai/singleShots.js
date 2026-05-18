@@ -263,7 +263,7 @@ export async function singleShotRoutes(fastify) {
         }
       } else {
         npcRecord = await prisma.npc.findUnique({ where: { id: campaignNpcId } });
-        if (npcRecord?.worldNpcId) resolvedWorldNpcId = npcRecord.worldNpcId;
+        if (npcRecord?.canonicalNpcId) resolvedWorldNpcId = npcRecord.canonicalNpcId;
       }
       if (!npcRecord) return reply.code(404).send({ error: 'npc not found' });
 

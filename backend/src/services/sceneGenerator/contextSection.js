@@ -2,6 +2,7 @@ import { pickChatterLine } from '../../../../shared/domain/npcChatterPool.js';
 import { buildNarrativeContext } from '../locationGraph/graphContextBuilder.js';
 import { childLogger } from '../../lib/logger.js';
 import { sanitizeForPrompt } from '../../../../shared/domain/playerInputSanitizer.js';
+import { activeStyle } from '../../data/namingStyles/index.js';
 
 const log = childLogger({ module: 'contextSection' });
 
@@ -268,7 +269,7 @@ export function buildContextSection(contextBlocks) {
       if (s.budget.filled.optional.length) slLines.push(`Optional filled: ${s.budget.filled.optional.map(fmt).join(', ')}`);
       if (s.budget.filled.custom.length) slLines.push(`Custom (unique narrative): ${s.budget.filled.custom.map(fmt).join(', ')}`);
       if (s.budget.openOptional.length) slLines.push(`Open optional slots (narrative hint, not a budget): ${s.budget.openOptional.join(', ')}`);
-      slLines.push('When introducing a new sublocation: emit slotType matching an open optional slot OR use a narratively distinctive custom name (e.g. "Wieża Maga", "Chata Starej Wiedźmy"). Generic names like "dom" or "chata" will be rejected.');
+      slLines.push(`When introducing a new sublocation: emit slotType matching an open optional slot OR use a narratively distinctive custom name (e.g. ${activeStyle.sublocationExamples.good}). Generic names like ${activeStyle.sublocationExamples.bad} will be rejected.`);
       parts.push({ text: slLines.join('\n'), priority: P3, label: 'sublocations' });
     }
 

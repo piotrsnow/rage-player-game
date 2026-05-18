@@ -83,6 +83,7 @@ export function resolveKnownSpellDisplay(spellName, character = null) {
       description: found.spell.description,
       icon: overrideIcon || found.spell.icon || tree?.icon || 'auto_awesome',
       level: found.spell.level,
+      combatStats: found.spell.combatStats || null,
       isCustom: false,
     };
   }
@@ -95,8 +96,10 @@ export function resolveKnownSpellDisplay(spellName, character = null) {
       treeName: null,
       school: custom.school || null,
       description: custom.description || '',
+      longDescription: custom.longDescription || null,
       icon: overrideIcon || custom.icon || 'auto_awesome',
       level: null,
+      combatStats: custom.combatStats || null,
       isCustom: true,
       customSpellId: custom.id,
     };
@@ -109,8 +112,10 @@ export function resolveKnownSpellDisplay(spellName, character = null) {
     treeName: null,
     school: character?.spells?.schools?.[spellName] || null,
     description: details.description || '',
+    longDescription: details.longDescription || null,
     icon: overrideIcon || 'auto_awesome',
     level: details.level || null,
+    combatStats: details.combatStats || null,
     isCustom: true,
   };
 }

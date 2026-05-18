@@ -21,11 +21,11 @@ const AOE_SHAPE_LABELS = {
   radius: 'Okrąg',
 };
 
-function DamageComponentRow({ component }) {
+function DamageComponentRow({ component, compact = false }) {
   const typeDef = DAMAGE_TYPES[component.type] || DAMAGE_TYPES.fizyczne;
   return (
     <span className="inline-flex items-center gap-1">
-      <span className={`material-symbols-outlined text-xs ${typeDef.color}`}>{typeDef.icon}</span>
+      <span className={`material-symbols-outlined ${compact ? 'text-xs' : 'text-base'} ${typeDef.color}`}>{typeDef.icon}</span>
       <span className="text-on-surface-variant/80">{formatComponentLabel(component)}</span>
     </span>
   );
@@ -39,49 +39,49 @@ function ModeRow({ modeKey, mode, attrs, compact = false }) {
 
   return (
     <div className={`flex items-start gap-2 ${compact ? 'py-0.5' : 'py-1'}`}>
-      <span className={`material-symbols-outlined ${compact ? 'text-xs' : 'text-sm'} text-error/70 mt-0.5 shrink-0`}>
+      <span className={`material-symbols-outlined ${compact ? 'text-xs' : 'text-lg'} text-error/70 mt-0.5 shrink-0`}>
         {cfg.icon}
       </span>
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-1.5 flex-wrap">
-          <span className={`font-label uppercase tracking-wider text-on-surface-variant/60 ${compact ? 'text-[9px]' : 'text-[10px]'}`}>
+          <span className={`font-label uppercase tracking-wider text-on-surface-variant/60 ${compact ? 'text-[9px]' : 'text-sm'}`}>
             {t(cfg.label, cfg.fallback)}
           </span>
           <div className="flex items-center gap-1.5 flex-wrap">
             {mode.damageComponents.map((c, i) => (
-              <span key={i} className={`font-headline ${compact ? 'text-[11px]' : 'text-xs'} text-error`}>
-                <DamageComponentRow component={c} />
+              <span key={i} className={`font-headline ${compact ? 'text-[11px]' : 'text-base'} text-error`}>
+                <DamageComponentRow component={c} compact={compact} />
               </span>
             ))}
           </div>
           {evaluated && evaluated.total > 0 && (
-            <span className={`${compact ? 'text-[10px]' : 'text-[11px]'} text-error/60`}>
+            <span className={`${compact ? 'text-[10px]' : 'text-sm'} text-error/60`}>
               = {evaluated.total}
             </span>
           )}
         </div>
         <div className="flex items-center gap-2 flex-wrap mt-0.5">
           {modeKey === 'ranged' && mode.range && (
-            <span className={`${compact ? 'text-[9px]' : 'text-[10px]'} text-on-surface-variant/50`}>
+            <span className={`${compact ? 'text-[9px]' : 'text-xs'} text-on-surface-variant/50`}>
               {t('attackModes.range', 'Zasięg')}: {mode.range}
             </span>
           )}
           {modeKey === 'aoe' && (
             <>
               {mode.range && (
-                <span className={`${compact ? 'text-[9px]' : 'text-[10px]'} text-on-surface-variant/50`}>
+                <span className={`${compact ? 'text-[9px]' : 'text-xs'} text-on-surface-variant/50`}>
                   {t('attackModes.range', 'Zasięg')}: {mode.range}
                 </span>
               )}
               {mode.aoeShape && (
-                <span className={`${compact ? 'text-[9px]' : 'text-[10px]'} text-on-surface-variant/50`}>
+                <span className={`${compact ? 'text-[9px]' : 'text-xs'} text-on-surface-variant/50`}>
                   {AOE_SHAPE_LABELS[mode.aoeShape] || mode.aoeShape} {mode.aoeSize}
                 </span>
               )}
             </>
           )}
           {modeQualities.length > 0 && modeQualities.map((q) => (
-            <span key={q} className={`${compact ? 'text-[8px]' : 'text-[9px]'} px-1 py-0.5 bg-error/8 border border-error/15 rounded-sm text-error/80`}>
+            <span key={q} className={`${compact ? 'text-[8px]' : 'text-[11px]'} px-1 py-0.5 bg-error/8 border border-error/15 rounded-sm text-error/80`}>
               {q}
             </span>
           ))}
@@ -116,11 +116,11 @@ export default function AttackModesDisplay({
   return (
     <div className="space-y-0.5">
       <div className="flex items-center gap-2 mb-1">
-        <span className={`font-label uppercase tracking-wider text-on-surface-variant/60 ${compact ? 'text-[9px]' : 'text-[10px]'}`}>
+        <span className={`font-label uppercase tracking-wider text-on-surface-variant/60 ${compact ? 'text-[9px]' : 'text-sm'}`}>
           {t('inventory.damage', 'Obrażenia')}
         </span>
         {twoHanded && (
-          <span className={`${compact ? 'text-[9px]' : 'text-[10px]'} font-label text-on-surface-variant/50 ml-auto uppercase tracking-wider`}>2H</span>
+          <span className={`${compact ? 'text-[9px]' : 'text-xs'} font-label text-on-surface-variant/50 ml-auto uppercase tracking-wider`}>2H</span>
         )}
       </div>
 
@@ -129,7 +129,7 @@ export default function AttackModesDisplay({
       ))}
 
       {!compact && (
-        <div className={`text-[9px] text-on-surface-variant/50 font-label leading-tight mt-1`}>
+        <div className="text-xs text-on-surface-variant/50 font-label leading-snug mt-1">
           {t('inventory.damageFormulaSuffix', '- WYT celu - Pancerz = finalne obrażenia')}
         </div>
       )}
@@ -137,7 +137,7 @@ export default function AttackModesDisplay({
       {qualities.length > 0 && (
         <div className="flex flex-wrap gap-1 pt-1">
           {qualities.map((q) => (
-            <span key={q} className={`${compact ? 'text-[9px]' : 'text-[10px]'} px-1.5 py-0.5 bg-error/10 border border-error/20 rounded-sm text-error/90`}>
+            <span key={q} className={`${compact ? 'text-[9px]' : 'text-[11px]'} px-1.5 py-0.5 bg-error/10 border border-error/20 rounded-sm text-error/90`}>
               {q}
             </span>
           ))}

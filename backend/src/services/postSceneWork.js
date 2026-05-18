@@ -212,7 +212,7 @@ export async function handlePostSceneWork({
   try {
     const auditNpcs = await prisma.npc.findMany({
       where: { campaignId, alive: true },
-      select: { name: true, attitude: true, alive: true, disposition: true },
+      select: { name: true, alignment: true, alive: true, disposition: true },
       orderBy: { updatedAt: 'desc' },
       take: 10,
     });

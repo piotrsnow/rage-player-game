@@ -66,7 +66,7 @@ async function loadCampaignGraph(campaignId) {
       orderBy: { sceneIndex: 'asc' },
     }),
     prisma.location.findMany({ where: { campaignId } }),
-    prisma.locationSummary.findMany({ where: { campaignId } }),
+    prisma.campaignLocationSummary.findMany({ where: { campaignId } }),
     prisma.locationEdge.findMany({ where: { campaignId } }),
     prisma.campaignEdge.findMany({ where: { campaignId } }),
     prisma.campaignKnowledge.findMany({ where: { campaignId } }),
@@ -93,7 +93,7 @@ async function loadCampaignGraph(campaignId) {
   // that this campaign currently points at. Captured for forensics; never
   // written back during restore.
   const worldNpcIds = Array.from(
-    new Set(npcs.map((n) => n.worldNpcId).filter(Boolean)),
+    new Set(npcs.map((n) => n.canonicalNpcId).filter(Boolean)),
   );
   const worldLocationIds = new Set();
   if (campaign.currentLocationId) {
@@ -253,26 +253,26 @@ export async function restoreSnapshot(snapshotId, { createdBy } = {}) {
     // NPCs (cascade deletes relationships/experiences) → recreate.
     // Relationships/experiences both have BigInt autoincrement ids — drop
     // the id field entirely so Postgres assigns a fresh sequence value.
-    await tx.campaignNPC.deleteMany({ where: { campaignId } });
+    await tx.npc.deleteMany({ where: { campaignId } });
     for (const n of p.npcs || []) {
       const { relationships, experiences, ...scalars } = n;
-      const npcRow = await tx.campaignNPC.create({
+      const npcRow = await tx.npc.create({
         data: dropFkAndAudit(scalars, ['createdAt', 'updatedAt']),
       });
       if (Array.isArray(relationships) && relationships.length > 0) {
-        await tx.campaignNpcRelationship.createMany({
-          data: relationships.map(({ id: _drop, campaignNpcId: _drop2, ...rest }) => ({
+        await tx.npcRelationship.createMany({
+          data: relationships.map(({ id: _drop, campaignNpcId: _drop2, npcId: _drop3, ...rest }) => ({
             ...rest,
-            campaignNpcId: npcRow.id,
+            npcId: npcRow.id,
           })),
           skipDuplicates: true,
         });
       }
       if (Array.isArray(experiences) && experiences.length > 0) {
-        await tx.campaignNpcExperience.createMany({
-          data: experiences.map(({ id: _drop, campaignNpcId: _drop2, addedAt: _drop3, ...rest }) => ({
+        await tx.npcExperience.createMany({
+          data: experiences.map(({ id: _drop, campaignNpcId: _drop2, npcId: _drop3, addedAt: _drop4, ...rest }) => ({
             ...rest,
-            campaignNpcId: npcRow.id,
+            npcId: npcRow.id,
           })),
           skipDuplicates: true,
         });
@@ -315,10 +315,10 @@ export async function restoreSnapshot(snapshotId, { createdBy } = {}) {
       });
     }
 
-    // CampaignLocation + summaries.
-    await tx.campaignLocation.deleteMany({ where: { campaignId } });
+    // Campaign-scoped Locations + summaries.
+    await tx.location.deleteMany({ where: { campaignId } });
     if (Array.isArray(p.campaignLocations) && p.campaignLocations.length > 0) {
-      await tx.campaignLocation.createMany({
+      await tx.location.createMany({
         data: p.campaignLocations.map((l) => dropFkAndAudit(l, ['createdAt', 'updatedAt'])),
         skipDuplicates: true,
       });
@@ -367,9 +367,9 @@ export async function restoreSnapshot(snapshotId, { createdBy } = {}) {
         skipDuplicates: true,
       });
     }
-    await tx.campaignDiscoveredLocation.deleteMany({ where: { campaignId } });
+    await tx.discoveredLocation.deleteMany({ where: { campaignId } });
     if (Array.isArray(p.discoveredLocations) && p.discoveredLocations.length > 0) {
-      await tx.campaignDiscoveredLocation.createMany({
+      await tx.discoveredLocation.createMany({
         data: p.discoveredLocations.map((d) => dropFkAndAudit(d, ['createdAt'])),
         skipDuplicates: true,
       });

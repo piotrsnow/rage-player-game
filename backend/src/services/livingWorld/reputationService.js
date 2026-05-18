@@ -221,7 +221,7 @@ export async function applyAttribution({
     data: {
       actorCharacterId,
       actorCampaignId,
-      worldNpcId,
+      npcId: worldNpcId,
       actionType,
       justified,
       judgeConfidence,

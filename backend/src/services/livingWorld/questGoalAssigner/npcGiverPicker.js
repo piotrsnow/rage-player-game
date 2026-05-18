@@ -46,7 +46,7 @@ export async function pickQuestGiver(campaignId, currentLocationName, { questTyp
       where: { campaignId },
       select: {
         id: true, name: true, role: true, personality: true, alive: true,
-        lastLocation: true, worldNpcId: true,
+        lastLocation: true, canonicalNpcId: true,
       },
     }),
     prisma.campaignQuest.findMany({
@@ -72,7 +72,7 @@ export async function pickQuestGiver(campaignId, currentLocationName, { questTyp
   // Base filter: alive + role-affinity. Key-NPC filter + story-critical skip
   // via worldNpc lookup (single IN-query covering every candidate at once).
   const liveNpcs = npcs.filter((n) => n.alive !== false);
-  const worldNpcIds = liveNpcs.map((n) => n.worldNpcId).filter(Boolean);
+  const worldNpcIds = liveNpcs.map((n) => n.canonicalNpcId).filter(Boolean);
   const worldMap = new Map();
   if (worldNpcIds.length > 0) {
     try {
@@ -89,7 +89,7 @@ export async function pickQuestGiver(campaignId, currentLocationName, { questTyp
   const eligible = liveNpcs.filter((n) => {
     if (!n.name) return false;
     if (!roleMatchesQuestType(n.role || n.personality, questType)) return false;
-    const wn = n.worldNpcId ? worldMap.get(n.worldNpcId) : null;
+    const wn = n.canonicalNpcId ? worldMap.get(n.canonicalNpcId) : null;
     if (wn && wn.keyNpc === false) return false;
     if (wn?.activeGoal && STORY_FLAGS.test(wn.activeGoal)) return false;
     return true;
@@ -121,7 +121,7 @@ export async function pickQuestGiver(campaignId, currentLocationName, { questTyp
 
   const isLocal = (n) => {
     if (currentLocNorm && String(n.lastLocation || '').toLowerCase().trim() === currentLocNorm) return true;
-    const wn = n.worldNpcId ? worldMap.get(n.worldNpcId) : null;
+    const wn = n.canonicalNpcId ? worldMap.get(n.canonicalNpcId) : null;
     if (wn?.currentLocationId && localLocationIds.has(wn.currentLocationId)) return true;
     return false;
   };
@@ -151,7 +151,7 @@ export async function pickQuestGiver(campaignId, currentLocationName, { questTyp
     if (roll <= 0) { picked = b.pool; break; }
   }
   const chosen = picked[Math.floor(Math.random() * picked.length)];
-  const wn = chosen.worldNpcId ? worldMap.get(chosen.worldNpcId) : null;
+  const wn = chosen.canonicalNpcId ? worldMap.get(chosen.canonicalNpcId) : null;
   let locationName = chosen.lastLocation || null;
   if (!locationName && wn?.currentLocationId) {
     locationName = await resolveLocationName(wn.currentLocationId);

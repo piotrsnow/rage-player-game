@@ -350,6 +350,9 @@ export async function runQuickBeat(campaignId, playerAction, options = {}, onEve
           ...(typeof it.description === 'string' && it.description.trim()
             ? { description: it.description.trim().slice(0, 200) }
             : {}),
+          ...(typeof it.longDescription === 'string' && it.longDescription.trim()
+            ? { longDescription: it.longDescription.trim().slice(0, 1000) }
+            : {}),
         }));
       if (newItems.length === 0) newItems = null;
     }

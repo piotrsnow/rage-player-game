@@ -956,6 +956,7 @@ function createCombatantFromCharacter(character, id, type) {
     skills: character.skills ? { ...character.skills } : {},
     mana: character.mana ? { ...character.mana } : null,
     spells: character.spells || null,
+    customSpells: character.customSpells || [],
     inventory: [...(character.inventory || [])],
     equipped: character.equipped ? { ...character.equipped } : { mainHand: null, offHand: null, armour: null },
     weapons: character.weapons || [],
@@ -1323,7 +1324,13 @@ export function resolveManoeuvre(combat, actorId, manoeuvreKey, targetId, option
 
     if (test.success) {
       const foundSpell = spellName ? findSpell(spellName) : null;
-      const spellStats = foundSpell?.spell?.combatStats || null;
+      let spellStats = foundSpell?.spell?.combatStats || null;
+      if (!spellStats && spellName && Array.isArray(actor.customSpells)) {
+        const customMatch = actor.customSpells.find(
+          (s) => s?.name?.toLowerCase() === spellName.toLowerCase(),
+        );
+        spellStats = customMatch?.combatStats || null;
+      }
       const spellType = spellStats?.type || 'offensive';
 
       // Apply spell status effect (shared across all spell types)

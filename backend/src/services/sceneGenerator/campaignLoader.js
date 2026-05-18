@@ -38,7 +38,7 @@ export async function loadCampaignState(campaignId) {
       where: { campaignId },
       orderBy: { createdAt: 'asc' },
       include: {
-        prerequisites: { select: { prerequisiteId: true } },
+        prerequisites: { select: { prereqId: true } },
         objectives: { orderBy: { displayOrder: 'asc' } },
       },
     }),
@@ -105,7 +105,7 @@ export async function loadCampaignState(campaignId) {
     coreState.world.npcs = dbNpcs.map((n) => ({
       id: n.id,
       name: n.name, gender: n.gender, role: n.role,
-      personality: n.personality, attitude: n.attitude, disposition: n.disposition,
+      personality: n.personality, attitude: n.alignment, disposition: n.disposition,
       alive: n.alive, lastLocation: n.lastLocation,
       locationRef: n.currentLocationId
         ? { id: n.currentLocationId }
@@ -137,7 +137,7 @@ export async function loadCampaignState(campaignId) {
         completionCondition: q.completionCondition, questGiverId: q.questGiverId,
         turnInNpcId: q.turnInNpcId, locationId: q.locationId,
         prerequisiteQuestIds: Array.isArray(q.prerequisites)
-          ? q.prerequisites.map((p) => p.prerequisiteId)
+          ? q.prerequisites.map((p) => p.prereqId)
           : [],
         objectives: (q.objectives || []).map((o) => ({
           description: o.description,

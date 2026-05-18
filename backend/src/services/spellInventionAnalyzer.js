@@ -47,9 +47,10 @@ function sanitizeInventedSpell(spell, fallbackManaCost = 2) {
   const school = String(spell.school || '').trim() || 'Ogolna';
   const manaCost = clampInt(spell.manaCost, 1, 5) || fallbackManaCost;
   const description = String(spell.description || '').trim() || 'Nowe zaklęcie odkryte podczas eksperymentu magicznego.';
+  const longDescription = String(spell.longDescription || '').trim() || null;
   const effect = String(spell.effect || '').trim() || description;
   const spellIcon = normalizeSpellMaterialIcon(spell.spellIcon);
-  return { name, school, manaCost, description, effect, spellIcon };
+  return { name, school, manaCost, description, longDescription, effect, spellIcon };
 }
 
 function defaultFailVerdict(sum, dc) {
@@ -115,6 +116,8 @@ Ważne zasady:
   - "fail_circumstances" gdy problem to głównie warunki fabularne,
   - "fail_roll" gdy warunki są OK, ale zawiódł rzut.
 
+- inventedSpell.longDescription: 2-4 zdania po polsku — mistyczna, zadziwiająca lub mroczna historia powstania tego czaru (kto go stworzył, w jakich okolicznościach, jaka legenda się z nim wiąże). NIE powtarzaj opisu efektu — to ma być osobna „lore" historia.
+
 Pisz "verdict" po polsku (2-4 zdania) i "narrativeComment" po polsku (1-2 zdania, in-character).
 Zwróć WYŁĄCZNIE poprawny JSON bez dodatkowego tekstu.
 
@@ -133,7 +136,8 @@ Dozwolony kształt:
     "name": "string",
     "school": "string",
     "manaCost": 1-5,
-    "description": "string",
+    "description": "string (krótki opis efektu, 1-2 zdania)",
+    "longDescription": "string (2-4 zdania historii/legendy powstania czaru)",
     "effect": "string",
     "spellIcon": "string (dokładna nazwa z listy ikon)"
   },

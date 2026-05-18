@@ -1626,8 +1626,9 @@ model CustomSpell {
   id          String   @id @default(uuid(7)) @db.Uuid
   name        String   @unique
   school      String?
-  description String?
-  icon        String?
+  description     String?
+  longDescription String?
+  icon            String?
   manaCost    Int      @default(2)
   combatStats Json?
   createdById String?  @db.Uuid

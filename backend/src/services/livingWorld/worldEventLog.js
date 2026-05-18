@@ -32,8 +32,8 @@ export async function appendEvent({
   try {
     return await prisma.worldEvent.create({
       data: {
-        worldNpcId,
-        worldLocationId,
+        npcId: worldNpcId,
+        locationId: worldLocationId,
         campaignId,
         userId,
         eventType,
@@ -59,7 +59,7 @@ export async function appendEvent({
 export async function forLocation({ locationId, campaignId, sinceTimestamp = null, limit = 20 }) {
   if (!locationId) return [];
   const where = {
-    worldLocationId: locationId,
+    locationId: locationId,
     OR: [
       { visibility: 'campaign', campaignId: campaignId || undefined },
       { visibility: 'private', campaignId: campaignId || undefined },
@@ -92,7 +92,7 @@ export async function forLocation({ locationId, campaignId, sinceTimestamp = nul
  */
 export async function forNpc({ worldNpcId, campaignId = null, sinceTimestamp = null, limit = 50 }) {
   if (!worldNpcId) return [];
-  const where = { worldNpcId };
+  const where = { npcId: worldNpcId };
   if (campaignId) {
     where.OR = [
       { visibility: 'campaign', campaignId },
@@ -183,7 +183,7 @@ export async function forLocationOpportunities({ campaignId, worldLocationId = n
       campaignId,
       eventType: 'quest_opportunity',
     };
-    if (worldLocationId) where.worldLocationId = worldLocationId;
+    if (worldLocationId) where.locationId = worldLocationId;
     if (sinceTimestamp) where.gameTime = { gte: sinceTimestamp };
 
     const events = await prisma.worldEvent.findMany({
@@ -201,7 +201,7 @@ export async function forLocationOpportunities({ campaignId, worldLocationId = n
       }
       results.push({
         hookId: ev.id,
-        worldNpcId: ev.worldNpcId,
+        worldNpcId: ev.npcId,
         gameTime: ev.gameTime,
         payload,
       });

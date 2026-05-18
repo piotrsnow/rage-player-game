@@ -8,7 +8,7 @@ const log = childLogger({ module: 'graphContextBuilder' });
 
 /**
  * Walk `parentLocationId` upward from a Location to build a readable
- * hierarchy chain (e.g. "Karczma Pod Złotym Dzbanem (tavern) → Kamionka Stara (village)").
+ * hierarchy chain (e.g. "Czarda Pod Złotym Dzbanem (tavern) → Steinveld (village)").
  * Stops after 5 hops to prevent accidental cycles.
  */
 async function buildParentChain(locationId) {

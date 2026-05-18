@@ -23,7 +23,7 @@ const EMPTY_BACKEND_KEYS = {
   pixellab: { configured: false },
 };
 
-const LOCAL_ONLY_KEYS = ['backendUrl', 'useBackend', 'appZoom'];
+const LOCAL_ONLY_KEYS = ['backendUrl', 'useBackend', 'appZoom', 'narrationPlaybackBoost'];
 
 function inferWeight(filename) {
   const lower = filename.toLowerCase();
@@ -235,8 +235,9 @@ export function SettingsProvider({ children }) {
       backendUrl: settings.backendUrl,
       useBackend: settings.useBackend,
       appZoom: settings.appZoom,
+      narrationPlaybackBoost: settings.narrationPlaybackBoost,
     });
-  }, [settings.backendUrl, settings.useBackend, settings.appZoom]);
+  }, [settings.backendUrl, settings.useBackend, settings.appZoom, settings.narrationPlaybackBoost]);
 
   useEffect(() => {
     if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
