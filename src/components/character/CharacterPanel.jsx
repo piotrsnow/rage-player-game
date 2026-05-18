@@ -723,6 +723,7 @@ export default function CharacterPanel({
   const canRegenerateItemImage = !isMultiplayer && settings.itemImagesEnabled !== false;
   const canRegenerateSpellImage = !isMultiplayer && settings.itemImagesEnabled !== false;
   const [regeneratingSpellName, setRegeneratingSpellName] = useState(null);
+  const [regeneratingLore, setRegeneratingLore] = useState(false);
   const [classifyingSpellSchools, setClassifyingSpellSchools] = useState(false);
   const [generatingSprite, setGeneratingSprite] = useState(false);
   const [spriteAnimation, setSpriteAnimation] = useState('idle_down');
@@ -815,6 +816,11 @@ export default function CharacterPanel({
     dispatch({ type: 'USE_MANA_CRYSTAL', payload: { itemId, choice } });
     if (autoSave) autoSave();
   };
+  const handleItemLoreChange = useCallback((itemId, longDescription) => {
+    dispatch({ type: 'UPDATE_ITEM_LONG_DESCRIPTION', payload: { itemId, longDescription } });
+    if (autoSave) autoSave();
+  }, [dispatch, autoSave]);
+
   const { discardItem } = useInventoryActions(character, dispatch);
   const handleDiscardItem = useCallback(async (itemId) => {
     try {
@@ -841,6 +847,27 @@ export default function CharacterPanel({
       await generateSpellImageForSpell(spellName, { forceNew: true });
     } finally {
       setRegeneratingSpellName(null);
+    }
+  };
+  const handleRegenerateLore = async (spell) => {
+    if (!spell?.name || regeneratingLore || !dispatch) return;
+    setRegeneratingLore(true);
+    try {
+      const result = await apiClient.post('/ai/generate-long-description', {
+        entityType: 'spell',
+        name: spell.name,
+        description: spell.description || '',
+        school: spell.school || '',
+      });
+      if (result?.longDescription) {
+        dispatch({
+          type: 'APPLY_STATE_CHANGES',
+          payload: { learnSpell: spell.name, learnSpellLongDescription: result.longDescription },
+        });
+        if (autoSave) autoSave();
+      }
+    } catch { /* best-effort */ } finally {
+      setRegeneratingLore(false);
     }
   };
 
@@ -1180,6 +1207,47 @@ export default function CharacterPanel({
                   <p className="text-on-surface-variant text-sm leading-relaxed">
                     {selectedSpell.description || t('magic.customSpellDescription', { defaultValue: 'Zaklęcie z fabuły lub wymyślone — nie należy do standardowego drzewka w grze.' })}
                   </p>
+                  {selectedSpell.longDescription ? (
+                    <div className="mt-3 pt-3 border-t border-outline-variant/10">
+                      <div className="flex items-center justify-between mb-1">
+                        <p className="text-[9px] font-label uppercase tracking-widest text-tertiary/60">
+                          {t('magic.spellLore', { defaultValue: 'Historia powstania' })}
+                        </p>
+                        {selectedSpell.isCustom && !isMultiplayer && (
+                          <button
+                            type="button"
+                            onClick={() => handleRegenerateLore(selectedSpell)}
+                            disabled={regeneratingLore}
+                            className="flex items-center gap-1 text-[10px] font-label text-on-surface-variant/50 hover:text-tertiary transition-colors disabled:opacity-50"
+                          >
+                            <span className={`material-symbols-outlined text-xs ${regeneratingLore ? 'animate-spin' : ''}`}>
+                              {regeneratingLore ? 'progress_activity' : 'refresh'}
+                            </span>
+                            {t('magic.regenerateLore', { defaultValue: 'Regeneruj' })}
+                          </button>
+                        )}
+                      </div>
+                      <p className="text-on-surface-variant/80 text-xs leading-relaxed italic">
+                        {selectedSpell.longDescription}
+                      </p>
+                    </div>
+                  ) : selectedSpell.isCustom && !isMultiplayer ? (
+                    <div className="mt-3 pt-3 border-t border-outline-variant/10">
+                      <button
+                        type="button"
+                        onClick={() => handleRegenerateLore(selectedSpell)}
+                        disabled={regeneratingLore}
+                        className="flex items-center gap-1.5 text-xs font-label text-on-surface-variant/60 hover:text-tertiary transition-colors disabled:opacity-50"
+                      >
+                        <span className={`material-symbols-outlined text-sm ${regeneratingLore ? 'animate-spin' : ''}`}>
+                          {regeneratingLore ? 'progress_activity' : 'auto_stories'}
+                        </span>
+                        {regeneratingLore
+                          ? t('magic.generatingLore', { defaultValue: 'Generowanie historii...' })
+                          : t('magic.generateLore', { defaultValue: 'Wygeneruj historię powstania' })}
+                      </button>
+                    </div>
+                  ) : null}
                   {!selectedSpellHasEnoughMana && (
                     <p className="text-error-light/80 text-xs mt-3">
                       {t('magic.notEnoughMana', { cost: selectedSpell.manaCost, current: character.mana?.current || 0 })}
@@ -1238,6 +1306,7 @@ export default function CharacterPanel({
                   : undefined}
                 onDiscardItem={!isMultiplayer ? handleDiscardItem : undefined}
                 onRegenerateImage={canRegenerateItemImage ? handleRegenerateItemImage : null}
+                onLoreChange={!isMultiplayer ? handleItemLoreChange : undefined}
                 isRegenerating={regeneratingItemId === selectedItem.id}
               />
             </div>

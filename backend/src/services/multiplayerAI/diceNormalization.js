@@ -81,10 +81,10 @@ export function recalcDiceRoll(dr) {
   const effectiveTarget = baseTarget + cappedBonus + difficultyModifier;
   dr.target = effectiveTarget;
 
-  const isCriticalSuccess = roll === 1;
-  const isCriticalFailure = roll === 50;
-  dr.success = isCriticalSuccess || (!isCriticalFailure && roll <= effectiveTarget);
+  const isCriticalSuccess = roll === 50;
+  const isCriticalFailure = roll === 1;
+  dr.success = isCriticalSuccess || (!isCriticalFailure && roll >= effectiveTarget);
   dr.criticalSuccess = isCriticalSuccess;
   dr.criticalFailure = isCriticalFailure;
-  dr.margin = roll <= effectiveTarget ? effectiveTarget - roll : -(roll - effectiveTarget);
+  dr.margin = roll - effectiveTarget;
 }

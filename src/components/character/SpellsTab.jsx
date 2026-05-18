@@ -35,6 +35,7 @@ export default function SpellsTab({
   const { t } = useTranslation();
   const [selectedSpellName, setSelectedSpellName] = useState(null);
   const [regeneratingSpellName, setRegeneratingSpellName] = useState(null);
+  const [regeneratingLore, setRegeneratingLore] = useState(false);
   const [classifyingSpellSchools, setClassifyingSpellSchools] = useState(false);
   const spellSchoolClassifyAttemptedRef = useRef(new Set());
 
@@ -135,6 +136,31 @@ export default function SpellsTab({
     }
   }, [regeneratingSpellName, generateSpellImageForSpell]);
 
+  const handleRegenerateLore = useCallback(async (spell) => {
+    if (!spell?.name || regeneratingLore || !dispatch) return;
+    setRegeneratingLore(true);
+    try {
+      const result = await apiClient.post('/ai/generate-long-description', {
+        entityType: 'spell',
+        name: spell.name,
+        description: spell.description || '',
+        school: spell.school || '',
+      });
+      if (result?.longDescription) {
+        dispatch({
+          type: 'APPLY_STATE_CHANGES',
+          payload: {
+            learnSpell: spell.name,
+            learnSpellLongDescription: result.longDescription,
+          },
+        });
+        if (autoSave) autoSave();
+      }
+    } catch { /* best-effort */ } finally {
+      setRegeneratingLore(false);
+    }
+  }, [regeneratingLore, dispatch, autoSave]);
+
   return (
     <div className="flex flex-col lg:flex-row gap-6 animate-fade-in">
       {/* Spell grid */}
@@ -146,63 +172,62 @@ export default function SpellsTab({
           </h3>
         </div>
 
-        {knownSpells.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-16 text-on-surface-variant/60">
-            <span className="material-symbols-outlined text-5xl mb-3">auto_awesome</span>
-            <p className="text-sm font-label">{t('magic.noSpells', { defaultValue: 'Brak zaklęć' })}</p>
-          </div>
-        ) : (
-          <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">
-            {knownSpells.map((spell) => {
-              const imageUrl = gameData.spellImages?.[spell.name];
-              const resolvedImageUrl = imageUrl ? apiClient.resolveMediaUrl(imageUrl) : null;
-              const isSelected = selectedSpellName === spell.name;
-              const schoolId = normalizeCustomSpellSchool(spell.school || spell.treeId);
-              const theme = SPELL_TREE_THEMES[schoolId] || {};
+        <div className="grid grid-cols-3 gap-2">
+          {knownSpells.map((spell) => {
+            const imageUrl = gameData.spellImages?.[spell.name];
+            const resolvedImageUrl = imageUrl ? apiClient.resolveMediaUrl(imageUrl) : null;
+            const isSelected = selectedSpellName === spell.name;
+            const schoolId = normalizeCustomSpellSchool(spell.school || spell.treeId);
+            const theme = SPELL_TREE_THEMES[schoolId] || {};
 
-              return (
+            return (
+              <div
+                key={spell.name}
+                className={`relative aspect-square bg-surface-container-highest border cursor-pointer group transition-all hover:scale-[1.03] ${
+                  isSelected
+                    ? 'ring-2 ring-tertiary scale-[1.03] shadow-[0_0_20px_rgba(255,239,213,0.2)]'
+                    : `border-tertiary/20 ${theme.glow || ''}`
+                }`}
+                onClick={() => setSelectedSpellName(isSelected ? null : spell.name)}
+              >
+                {resolvedImageUrl ? (
+                  <img
+                    src={resolvedImageUrl}
+                    alt={spell.name}
+                    className="w-full h-full object-cover group-hover:scale-105 transition-transform"
+                    onError={(e) => { e.target.style.display = 'none'; if (e.target.nextSibling) e.target.nextSibling.style.display = 'flex'; }}
+                  />
+                ) : null}
                 <div
-                  key={spell.name}
-                  className={`relative aspect-square bg-surface-container-highest border cursor-pointer group transition-all hover:scale-[1.03] ${
-                    isSelected
-                      ? 'ring-2 ring-tertiary scale-[1.03] shadow-[0_0_20px_rgba(255,239,213,0.2)]'
-                      : `border-tertiary/20 ${theme.glow || ''}`
-                  }`}
-                  onClick={() => setSelectedSpellName(isSelected ? null : spell.name)}
+                  className={`${resolvedImageUrl ? 'hidden' : 'flex'} absolute inset-0 items-center justify-center`}
                 >
-                  {resolvedImageUrl ? (
-                    <img
-                      src={resolvedImageUrl}
-                      alt={spell.name}
-                      className="w-full h-full object-cover group-hover:scale-105 transition-transform"
-                      onError={(e) => { e.target.style.display = 'none'; if (e.target.nextSibling) e.target.nextSibling.style.display = 'flex'; }}
-                    />
-                  ) : null}
-                  <div
-                    className={`${resolvedImageUrl ? 'hidden' : 'flex'} absolute inset-0 items-center justify-center`}
-                  >
-                    <span className="material-symbols-outlined text-tertiary/40 text-4xl">
-                      {spell.icon || 'auto_awesome'}
-                    </span>
-                  </div>
-
-                  {spell.uses > 0 && (
-                    <div className="absolute top-1 right-1 min-w-[1.25rem] h-5 px-1 bg-tertiary/80 rounded-full flex items-center justify-center">
-                      <span className="text-[10px] font-bold text-surface-dim">{spell.uses}</span>
-                    </div>
-                  )}
-
-                  <div className="absolute inset-x-0 bottom-0 px-1.5 pt-5 pb-1 bg-gradient-to-t from-black/90 via-black/50 to-transparent pointer-events-none">
-                    <span className="block text-[10px] font-label leading-tight truncate text-on-surface">
-                      {spell.name}
-                    </span>
-                    <span className="text-[8px] text-tertiary/70">{spell.manaCost} many</span>
-                  </div>
+                  <span className="material-symbols-outlined text-tertiary/40 text-4xl">
+                    {spell.icon || 'auto_awesome'}
+                  </span>
                 </div>
-              );
-            })}
-          </div>
-        )}
+
+                {spell.uses > 0 && (
+                  <div className="absolute top-1 right-1 min-w-[1.25rem] h-5 px-1 bg-tertiary/80 rounded-full flex items-center justify-center">
+                    <span className="text-[10px] font-bold text-surface-dim">{spell.uses}</span>
+                  </div>
+                )}
+
+                <div className="absolute inset-x-0 bottom-0 px-1.5 pt-5 pb-1 bg-gradient-to-t from-black/90 via-black/50 to-transparent pointer-events-none">
+                  <span className="block text-[10px] font-label leading-tight truncate text-on-surface">
+                    {spell.name}
+                  </span>
+                  <span className="text-[8px] text-tertiary/70">{spell.manaCost} many</span>
+                </div>
+              </div>
+            );
+          })}
+          {Array.from({ length: Math.max(0, 21 - knownSpells.length) }).map((_, i) => (
+            <div
+              key={`empty-${i}`}
+              className="aspect-square bg-surface-dim/50 border border-outline-variant/10 border-dashed rounded-sm"
+            />
+          ))}
+        </div>
       </div>
 
       {/* Detail panel */}
@@ -271,16 +296,47 @@ export default function SpellsTab({
                 <p className="text-on-surface-variant text-[15px] leading-relaxed">
                   {selectedSpell.description || t('magic.customSpellDescription', { defaultValue: 'Zaklęcie z fabuły lub wymyślone — nie należy do standardowego drzewka w grze.' })}
                 </p>
-                {selectedSpell.longDescription && (
+                {selectedSpell.longDescription ? (
                   <div className="mt-3 pt-3 border-t border-outline-variant/10">
-                    <p className="text-[11px] font-label uppercase tracking-widest text-tertiary/60 mb-1">
-                      {t('magic.spellLore', { defaultValue: 'Historia powstania' })}
-                    </p>
+                    <div className="flex items-center justify-between mb-1">
+                      <p className="text-[11px] font-label uppercase tracking-widest text-tertiary/60">
+                        {t('magic.spellLore', { defaultValue: 'Historia powstania' })}
+                      </p>
+                      {selectedSpell.isCustom && !isMultiplayer && (
+                        <button
+                          type="button"
+                          onClick={() => handleRegenerateLore(selectedSpell)}
+                          disabled={regeneratingLore}
+                          className="flex items-center gap-1 text-[10px] font-label text-on-surface-variant/50 hover:text-tertiary transition-colors disabled:opacity-50"
+                        >
+                          <span className={`material-symbols-outlined text-xs ${regeneratingLore ? 'animate-spin' : ''}`}>
+                            {regeneratingLore ? 'progress_activity' : 'refresh'}
+                          </span>
+                          {t('magic.regenerateLore', { defaultValue: 'Regeneruj' })}
+                        </button>
+                      )}
+                    </div>
                     <p className="text-on-surface-variant/80 text-sm leading-relaxed italic">
                       {selectedSpell.longDescription}
                     </p>
                   </div>
-                )}
+                ) : selectedSpell.isCustom && !isMultiplayer ? (
+                  <div className="mt-3 pt-3 border-t border-outline-variant/10">
+                    <button
+                      type="button"
+                      onClick={() => handleRegenerateLore(selectedSpell)}
+                      disabled={regeneratingLore}
+                      className="flex items-center gap-1.5 text-xs font-label text-on-surface-variant/60 hover:text-tertiary transition-colors disabled:opacity-50"
+                    >
+                      <span className={`material-symbols-outlined text-sm ${regeneratingLore ? 'animate-spin' : ''}`}>
+                        {regeneratingLore ? 'progress_activity' : 'auto_stories'}
+                      </span>
+                      {regeneratingLore
+                        ? t('magic.generatingLore', { defaultValue: 'Generowanie historii...' })
+                        : t('magic.generateLore', { defaultValue: 'Wygeneruj historię powstania' })}
+                    </button>
+                  </div>
+                ) : null}
                 {!selectedSpellHasEnoughMana && (
                   <p className="text-error-light/80 text-sm mt-3">
                     {t('magic.notEnoughMana', { cost: selectedSpell.manaCost, current: character.mana?.current || 0 })}

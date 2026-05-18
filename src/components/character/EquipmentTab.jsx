@@ -7,6 +7,7 @@ import { isManaCrystal } from '../../data/rpgMagic';
 import { getEquippableSlots, getEquippedSlot, rarityColors, rarityGlows, typeIcons, SLOT_CONFIG } from './inventory/constants';
 import InventoryImage from './inventory/InventoryImage';
 import ItemDetailBox from './inventory/ItemDetailBox';
+import PocketFilter from './inventory/PocketFilter';
 import CrystalUseModal from './inventory/CrystalUseModal';
 import UseItemModal from './inventory/UseItemModal';
 import EnchantItemModal from './inventory/EnchantItemModal';
@@ -30,6 +31,9 @@ export default function EquipmentTab({
   const [enchantModalItem, setEnchantModalItem] = useState(null);
   const [regeneratingItemId, setRegeneratingItemId] = useState(null);
   const [sortByDate, setSortByDate] = useState(false);
+  const [activePocket, setActivePocket] = useState(null);
+  const [page, setPage] = useState(0);
+  const PAGE_SIZE = 16;
 
   const knowsAnySpell = Array.isArray(character?.spells?.known) && character.spells.known.length > 0;
   const canEnchant = !isMultiplayer && Boolean(campaignId) && knowsAnySpell;
@@ -40,13 +44,21 @@ export default function EquipmentTab({
   const selectedItem = items.find((i) => i.id === selectedItemId) || null;
 
   const sortedItems = useMemo(() => {
-    if (!sortByDate) return items;
-    return [...items].sort((a, b) => {
-      const da = a.addedAt ? new Date(a.addedAt).getTime() : 0;
-      const db = b.addedAt ? new Date(b.addedAt).getTime() : 0;
-      return db - da;
-    });
-  }, [items, sortByDate]);
+    let result = items;
+    if (activePocket) result = result.filter((i) => i.pocket === activePocket);
+    if (sortByDate) {
+      result = [...result].sort((a, b) => {
+        const da = a.addedAt ? new Date(a.addedAt).getTime() : 0;
+        const db = b.addedAt ? new Date(b.addedAt).getTime() : 0;
+        return db - da;
+      });
+    }
+    return result;
+  }, [items, sortByDate, activePocket]);
+
+  const totalPages = Math.max(1, Math.ceil(sortedItems.length / PAGE_SIZE));
+  const safePage = Math.min(page, totalPages - 1);
+  const pagedItems = sortedItems.slice(safePage * PAGE_SIZE, (safePage + 1) * PAGE_SIZE);
 
   const handleEquipItem = (itemId, slot) => {
     dispatch({ type: 'EQUIP_ITEM', payload: { itemId, slot } });
@@ -74,6 +86,16 @@ export default function EquipmentTab({
     if (autoSave) autoSave();
   };
 
+  const handleItemLoreChange = useCallback((itemId, longDescription) => {
+    dispatch({ type: 'UPDATE_ITEM_LONG_DESCRIPTION', payload: { itemId, longDescription } });
+    if (autoSave) autoSave();
+  }, [dispatch, autoSave]);
+
+  const handleSetPocket = useCallback((itemId, pocket) => {
+    dispatch({ type: 'SET_ITEM_POCKET', payload: { itemId, pocket } });
+    if (autoSave) autoSave();
+  }, [dispatch, autoSave]);
+
   const { discardItem } = useInventoryActions(character, dispatch);
   const handleDiscardItem = useCallback(async (itemId) => {
     try {
@@ -86,16 +108,60 @@ export default function EquipmentTab({
 
   return (
     <>
-      <div className="flex flex-col lg:flex-row gap-6 animate-fade-in">
-        {/* Item grid */}
-        <div className="w-full lg:w-[340px] shrink-0 min-w-0">
+      <div className="flex flex-col gap-6 animate-fade-in">
+        {/* Detail panel — full width, top */}
+        {selectedItem ? (
+          <div className="bg-surface-container-low p-5 border border-outline-variant/10 rounded-sm shadow-xl animate-in fade-in slide-in-from-top-3 duration-150">
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="text-tertiary font-headline flex items-center gap-2">
+                <span className="material-symbols-outlined text-sm">inventory_2</span>
+                {t('inventory.itemDetails', { defaultValue: 'Szczegóły przedmiotu' })}
+              </h3>
+              <button
+                onClick={() => setSelectedItemId(null)}
+                aria-label={t('common.close')}
+                className="text-on-surface-variant hover:text-primary transition-colors"
+              >
+                <span className="material-symbols-outlined text-base">close</span>
+              </button>
+            </div>
+            <ItemDetailBox
+              item={selectedItem}
+              items={items}
+              equipped={equipped}
+              equippedSlot={getEquippedSlot(selectedItem, equipped)}
+              equippableSlots={getEquippableSlots(selectedItem)}
+              onEquipItem={handleEquipItem}
+              onUnequipItem={handleUnequipItem}
+              onUseManaCrystal={(itemId) => setCrystalItemId(itemId)}
+              onUseItem={onItemAction ? (itemId) => setUseItemModalItem(items.find((i) => i.id === itemId) || null) : undefined}
+              onEnchantItem={canEnchant ? (itemId) => setEnchantModalItem(items.find((i) => i.id === itemId) || null) : undefined}
+              onDiscardItem={!isMultiplayer ? handleDiscardItem : undefined}
+              onRegenerateImage={canRegenerateItemImage ? handleRegenerateItemImage : null}
+              onLoreChange={!isMultiplayer ? handleItemLoreChange : undefined}
+              onSetPocket={handleSetPocket}
+              isRegenerating={regeneratingItemId === selectedItem.id}
+              horizontal
+            />
+          </div>
+        ) : (
+          <div className="flex flex-col items-center justify-center py-10 text-on-surface-variant/40 border border-dashed border-outline-variant/15 rounded-sm">
+            <span className="material-symbols-outlined text-4xl mb-2">touch_app</span>
+            <p className="text-xs font-label uppercase tracking-widest">
+              {t('inventory.selectItemHint', { defaultValue: 'Wybierz przedmiot' })}
+            </p>
+          </div>
+        )}
+
+        {/* Item grid — full width, bottom */}
+        <div>
           <div className="flex justify-between items-center mb-4">
             <h3 className="text-tertiary font-headline text-xl">
               {t('inventory.equipmentTab', { defaultValue: 'Ekwipunek' })}
               <span className="ml-2 text-sm text-on-surface-variant font-label">({items.length})</span>
             </h3>
             <button
-              onClick={() => setSortByDate((v) => !v)}
+              onClick={() => { setSortByDate((v) => !v); setPage(0); }}
               className={`flex items-center gap-1 px-2 py-1 text-[9px] font-label font-bold uppercase tracking-wider rounded-sm border transition-colors ${
                 sortByDate
                   ? 'bg-primary/15 border-primary/30 text-primary'
@@ -107,14 +173,16 @@ export default function EquipmentTab({
             </button>
           </div>
 
-          {items.length === 0 ? (
-            <div className="flex flex-col items-center justify-center py-16 text-on-surface-variant/60">
-              <span className="material-symbols-outlined text-5xl mb-3">inventory_2</span>
-              <p className="text-sm font-label">{t('inventory.empty', { defaultValue: 'Brak przedmiotów' })}</p>
-            </div>
-          ) : (
-            <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">
-              {sortedItems.map((item) => {
+          <div className="mb-3">
+            <PocketFilter
+              items={items}
+              activePocket={activePocket}
+              onPocketChange={(p) => { setActivePocket(p); setPage(0); }}
+            />
+          </div>
+
+          <div className="grid grid-cols-4 sm:grid-cols-6 md:grid-cols-8 gap-2">
+              {pagedItems.map((item) => {
                 const rarityKey = item.rarity || item.availability || 'common';
                 const rarity = rarityColors[rarityKey] || rarityColors.common;
                 const glow = rarityGlows[rarityKey] || '';
@@ -164,50 +232,33 @@ export default function EquipmentTab({
                   </div>
                 );
               })}
+              {Array.from({ length: Math.max(0, PAGE_SIZE - pagedItems.length) }).map((_, i) => (
+                <div
+                  key={`empty-${i}`}
+                  className="aspect-square bg-surface-dim/50 border border-outline-variant/10 border-dashed rounded-sm"
+                />
+              ))}
             </div>
-          )}
-        </div>
 
-        {/* Detail panel */}
-        <div className="flex-1 min-w-0">
-          {selectedItem ? (
-            <div className="sticky top-0 bg-surface-container-low p-5 border border-outline-variant/10 rounded-sm shadow-xl animate-in fade-in slide-in-from-right-3 duration-150">
-              <div className="flex items-center justify-between mb-3">
-                <h3 className="text-tertiary font-headline flex items-center gap-2">
-                  <span className="material-symbols-outlined text-sm">inventory_2</span>
-                  {t('inventory.itemDetails', { defaultValue: 'Szczegóły przedmiotu' })}
-                </h3>
-                <button
-                  onClick={() => setSelectedItemId(null)}
-                  aria-label={t('common.close')}
-                  className="text-on-surface-variant hover:text-primary transition-colors"
-                >
-                  <span className="material-symbols-outlined text-base">close</span>
-                </button>
-              </div>
-              <ItemDetailBox
-                item={selectedItem}
-                items={items}
-                equipped={equipped}
-                equippedSlot={getEquippedSlot(selectedItem, equipped)}
-                equippableSlots={getEquippableSlots(selectedItem)}
-                onEquipItem={handleEquipItem}
-                onUnequipItem={handleUnequipItem}
-                onUseManaCrystal={(itemId) => setCrystalItemId(itemId)}
-                onUseItem={onItemAction ? (itemId) => setUseItemModalItem(items.find((i) => i.id === itemId) || null) : undefined}
-                onEnchantItem={canEnchant ? (itemId) => setEnchantModalItem(items.find((i) => i.id === itemId) || null) : undefined}
-                onDiscardItem={!isMultiplayer ? handleDiscardItem : undefined}
-                onRegenerateImage={canRegenerateItemImage ? handleRegenerateItemImage : null}
-                isRegenerating={regeneratingItemId === selectedItem.id}
-                largeImage
-              />
-            </div>
-          ) : (
-            <div className="sticky top-0 flex flex-col items-center justify-center py-20 text-on-surface-variant/40 border border-dashed border-outline-variant/15 rounded-sm">
-              <span className="material-symbols-outlined text-4xl mb-2">touch_app</span>
-              <p className="text-xs font-label uppercase tracking-widest">
-                {t('inventory.selectItemHint', { defaultValue: 'Wybierz przedmiot' })}
-              </p>
+          {totalPages > 1 && (
+            <div className="flex items-center justify-center gap-3 mt-3">
+              <button
+                onClick={() => setPage((p) => Math.max(0, p - 1))}
+                disabled={safePage === 0}
+                className="w-7 h-7 flex items-center justify-center rounded-sm border border-outline-variant/20 text-on-surface-variant hover:bg-primary/10 hover:text-primary disabled:opacity-30 disabled:pointer-events-none transition-colors"
+              >
+                <span className="material-symbols-outlined text-sm">chevron_left</span>
+              </button>
+              <span className="text-[10px] font-label font-bold uppercase tracking-widest text-on-surface-variant/70">
+                {safePage + 1} / {totalPages}
+              </span>
+              <button
+                onClick={() => setPage((p) => Math.min(totalPages - 1, p + 1))}
+                disabled={safePage >= totalPages - 1}
+                className="w-7 h-7 flex items-center justify-center rounded-sm border border-outline-variant/20 text-on-surface-variant hover:bg-primary/10 hover:text-primary disabled:opacity-30 disabled:pointer-events-none transition-colors"
+              >
+                <span className="material-symbols-outlined text-sm">chevron_right</span>
+              </button>
             </div>
           )}
         </div>

@@ -1,6 +1,7 @@
 import { useTranslation } from 'react-i18next';
 import { useSpellCombatStats } from '../../hooks/useSpellCombatStats';
 import AttackModesDisplay from '../shared/AttackModesDisplay.jsx';
+import SpecialPropertiesDisplay from '../shared/SpecialPropertiesDisplay.jsx';
 import { DAMAGE_TYPES, evaluateComponent } from '../../../shared/domain/damageTypes.js';
 
 const SPELL_TYPE_LABELS = {
@@ -129,6 +130,12 @@ export default function SpellCombatStatsSection({ spell, character }) {
               <span className="text-sm px-1.5 py-0.5 bg-tertiary/10 border border-tertiary/20 rounded-sm text-tertiary/90">
                 {SPELL_TYPE_LABELS[cs.type]}
               </span>
+            </div>
+          )}
+
+          {Array.isArray(cs.specialProperties) && cs.specialProperties.length > 0 && (
+            <div className="mt-2">
+              <SpecialPropertiesDisplay specialProperties={cs.specialProperties} />
             </div>
           )}
 

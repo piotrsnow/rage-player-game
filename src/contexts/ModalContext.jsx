@@ -1,4 +1,5 @@
 import { createContext, useContext, useState, useCallback, useRef } from 'react';
+import useMagnifier from '../hooks/useMagnifier';
 
 const ModalContext = (import.meta.hot?.data?.ModalContext) || createContext(null);
 if (import.meta.hot) import.meta.hot.data.ModalContext = ModalContext;
@@ -52,6 +53,8 @@ export function ModalProvider({ children }) {
   const openNpcSheet = useCallback((name) => setNpcSheetName(name || null), []);
   const closeNpcSheet = useCallback(() => setNpcSheetName(null), []);
 
+  const magnifier = useMagnifier();
+
   const playerActionHandlerRef = useRef(null);
   const setPlayerActionHandler = useCallback((fn) => {
     playerActionHandlerRef.current = fn || null;
@@ -100,6 +103,7 @@ export function ModalProvider({ children }) {
         closePrivacy,
         openNpcSheet,
         closeNpcSheet,
+        magnifier,
         playerActionHandlerRef,
         setPlayerActionHandler,
       }}

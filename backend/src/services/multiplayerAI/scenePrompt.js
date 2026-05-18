@@ -60,8 +60,8 @@ For stateChanges.mapChanges: use when a location is modified (trap set, destruct
 
 For stateChanges.npcs: use "introduce" for new NPCs and "update" for existing ones. Always include name and gender. \`gender\` MUST be "male" or "female" — NEVER "unknown", NEVER omitted. Provide personality, role, attitude toward player, and current location.
 NPC DISPOSITION TRACKING: When a dice roll involves interaction with an NPC, include a variable "dispositionChange" based on margin — NOT flat +5/-5:
-- Critical success (roll 1): +3 to +5, Strong success (margin 10+): +2 to +3, Moderate success (margin 5-9): +1 to +2, Marginal success (margin 0-4): +1
-- Marginal failure (margin -1 to -5): -1 to -2, Hard failure (margin -6 or worse): -3 to -5, Critical failure (roll 50): -5 to -8
+- Critical success (roll 50): +3 to +5, Strong success (margin 10+): +2 to +3, Moderate success (margin 5-9): +1 to +2, Marginal success (margin 0-4): +1
+- Marginal failure (margin -1 to -5): -1 to -2, Hard failure (margin -6 or worse): -3 to -5, Critical failure (roll 1): -5 to -8
 NPC RELATIONSHIP TRACKING: Include optional fields: "factionId", "relatedQuestIds", "relationships".
 NPC CHARACTER CARD: Every mortal NPC MUST have "race" set to one of "Human"|"Dwarf"|"Halfling"|"Orc" on "introduce". For story creatures (zjawy, sfinksy, demony, potwory, duchy) use "creatureKind" (free-text) INSTEAD of race — never both. Optional "level": 1-30 based on importance (commoner 1-3, notable 4-6, key NPC 7-10, boss 10+); backend derives a default from category if omitted. Optional "statsOverride" only for exceptional NPCs (arcymag, legendary master, boss), shape: {attributes?, skills?, weapons?, traits?, armourDR?, maxWounds?, mana?}. Backend generates the full stat sheet deterministically from race + role + level — do NOT emit a full sheet, only deltas via statsOverride when strictly needed.
 
@@ -137,8 +137,8 @@ Output the diceRoll fields as follows for custom actions:
 - "difficultyModifier": the separate difficulty step (one of +40, +30, +20, +10, 0, -10, -20, -30, -40)
 - "creativityBonus": the bonus (10-40)
 - "target": the EFFECTIVE value = baseTarget + difficultyModifier + creativityBonus (+ other applicable modifiers) (this is the number you compare the roll against!)
-- "success": whether roll <= target (the effective value)
-Example: baseTarget=31, difficultyModifier=-10, creativityBonus=20, target=41, roll=45 → 45 > 41 → success=false. The narrative MUST describe a failed outcome.
+- "success": whether roll >= target (the effective value)
+Example: baseTarget=31, difficultyModifier=-10, creativityBonus=20, target=41, roll=35 → 35 < 41 → success=false. The narrative MUST describe a failed outcome.
 ` : ''}${hasMomentum ? `
 MOMENTUM: Some characters have momentum from previous rolls (shown as [MOMENTUM +N] or [MOMENTUM -N] above).
 Positive momentum is a bonus — add it to the target: target = baseTarget + difficultyModifier + creativityBonus + momentumBonus.
@@ -149,7 +149,7 @@ IMPORTANT: Resolve dice checks FIRST for all characters, then write the narrativ
 
 Respond with ONLY valid JSON:
 {
-  "diceRolls": [{"character": "CharacterName", "type": "d50", "roll": 22, "target": 35, "margin": 12, "skill": "Atletyka", "success": true}],
+  "diceRolls": [{"character": "CharacterName", "type": "d50", "roll": 42, "target": 35, "margin": 7, "skill": "Atletyka", "success": true}],
   "narrative": "2-3 paragraphs resolving all actions and setting up the next decision...",
   "dialogueSegments": [
     {"type": "narration", "text": "Prose..."},
@@ -190,7 +190,7 @@ For perCharacter newItems: each item MUST be an object with {id, name, type, des
 LOOT RARITY GATING: Scenes 1-15: only "common"/"uncommon" items. Scenes 16-30: "rare" allowed. Scenes 31+: "exotic" possible but with narrative cost (thieves, faction interest, rumors). Always set the "rarity" field.
 ITEM VALIDATION: Characters can ONLY use items currently in their inventory. If a player references an item they don't have, the action MUST fail narratively. Only include items in removeItems that exist in the character's inventory.${needsPerCharDoc}
 
-For diceRolls: an array of per-character dice roll results. Each entry: {"character": "CharacterName", "type": "d50", "roll": <1-50>, "attribute": "<sila/inteligencja/charyzma/zrecznosc/wytrzymalosc/szczescie>", "attributeValue": <number — raw stat value 1-25>, "skillLevel": <number — skill level, 0 if untrained>, "baseTarget": <number — attribute + skill level only>, "difficultyModifier": <one of 40, 30, 20, 10, 0, -10, -20, -30, -40>, "target": <number — the EFFECTIVE target used for success comparison>, "margin": <number>, "skill": "<skill name>", "success": <boolean>}. For custom actions, also include: "creativityBonus": <number 10-40>. ${preRolledDice ? 'Use the pre-rolled d50 values for each character.' : ''} For social speech and persuasion use charyzma unless a more specific skill says otherwise. If no valid RPGon attribute fits, omit that character from diceRolls. For custom actions: "target" = baseTarget + difficultyModifier + creativityBonus (+ any other applicable modifiers). For normal actions: "target" = baseTarget + difficultyModifier (+ any other applicable modifiers). "difficultyModifier" must always be explicit; do not hide it only inside "target". Determine success by comparing roll to target: success = (roll <= target) OR (roll === 1, critical success). Roll 50 is always failure (critical failure). The narrative MUST match all dice outcomes. Include a roll for each character whose action warrants a test based on the configured frequency (~${testsFrequency}%). At 80%+, nearly every character rolls. Use empty array [] only when dice frequency is low and no actions warrant tests.
+For diceRolls: an array of per-character dice roll results. Each entry: {"character": "CharacterName", "type": "d50", "roll": <1-50>, "attribute": "<sila/inteligencja/charyzma/zrecznosc/wytrzymalosc/szczescie>", "attributeValue": <number — raw stat value 1-25>, "skillLevel": <number — skill level, 0 if untrained>, "baseTarget": <number — attribute + skill level only>, "difficultyModifier": <one of 40, 30, 20, 10, 0, -10, -20, -30, -40>, "target": <number — the EFFECTIVE target used for success comparison>, "margin": <number>, "skill": "<skill name>", "success": <boolean>}. For custom actions, also include: "creativityBonus": <number 10-40>. ${preRolledDice ? 'Use the pre-rolled d50 values for each character.' : ''} For social speech and persuasion use charyzma unless a more specific skill says otherwise. If no valid RPGon attribute fits, omit that character from diceRolls. For custom actions: "target" = baseTarget + difficultyModifier + creativityBonus (+ any other applicable modifiers). For normal actions: "target" = baseTarget + difficultyModifier (+ any other applicable modifiers). "difficultyModifier" must always be explicit; do not hide it only inside "target". Determine success by comparing roll to target: success = (roll >= target) OR (roll === 50, critical success). Roll 1 is always failure (critical failure). The narrative MUST match all dice outcomes. Include a roll for each character whose action warrants a test based on the configured frequency (~${testsFrequency}%). At 80%+, nearly every character rolls. Use empty array [] only when dice frequency is low and no actions warrant tests.
 
 For stateChanges.newQuests: array of new quests to add. Each quest: {"id": "quest_unique_id", "name": "Quest Name", "description": "Quest description", "completionCondition": "Main goal to finish the quest", "objectives": [{"id": "obj_1", "description": "Milestone"}]}. "objectives" are 2-5 optional milestones guiding through the story. Use empty array [] if no new quests.
 For stateChanges.completedQuests: array of quest IDs to mark as completed. Use empty array [] if none completed.
@@ -201,8 +201,8 @@ For stateChanges.activeEffects: manage traps, spells, ongoing environmental effe
 
 For stateChanges.npcs: use "introduce" for new NPCs and "update" for existing ones. Always include name and gender. \`gender\` MUST be "male" or "female" — NEVER "unknown", NEVER omitted. Provide personality, role, attitude toward player, and current location.
 NPC DISPOSITION TRACKING: When a dice roll involves interaction with an NPC, include that NPC in stateChanges.npcs with a variable "dispositionChange" based on margin — NOT a flat +5/-5:
-- Critical success (roll 1): +3 to +5, Strong success (margin 10+): +2 to +3, Moderate success (margin 5-9): +1 to +2, Marginal success (margin 0-4): +1
-- Marginal failure (margin -1 to -5): -1 to -2, Hard failure (margin -6 or worse): -3 to -5, Critical failure (roll 50): -5 to -8
+- Critical success (roll 50): +3 to +5, Strong success (margin 10+): +2 to +3, Moderate success (margin 5-9): +1 to +2, Marginal success (margin 0-4): +1
+- Marginal failure (margin -1 to -5): -1 to -2, Hard failure (margin -6 or worse): -3 to -5, Critical failure (roll 1): -5 to -8
 - Betrayal, broken promise, or threat: -8 to -10
 NPC RELATIONSHIP TRACKING: Include optional fields: "factionId", "relatedQuestIds", "relationships" ([{"npcName": "Other NPC", "type": "ally|enemy|family|employer|rival|friend|mentor|subordinate"}]).
 

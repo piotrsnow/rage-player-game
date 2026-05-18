@@ -1,15 +1,11 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { apiClient } from '../services/apiClient';
 import { useGameStore } from '../stores/gameStore';
+import { useGameAutoSave } from '../stores/gameSelectors';
 
 const inflight = new Map();
 
 const SHORT_BLADE_RE = /(^|[\s"'()[\]{}.,;:!?_-])(n[oó]ż|knife|sztylet|dagger|kordzik)(?=$|[\s"'()[\]{}.,;:!?_-])/i;
-const NON_WEAPON_RE = /(^|[\s"'()[\]{}.,;:!?_-])(plecak|backpack|torba|bag|ksi[aą][żz]ka|book|jedzenie|food|ubranie|clothing|p[oó]łbuty|buty|shoes|boots|mikstura|potion|narz[eę]dzie|tool)(?=$|[\s"'()[\]{}.,;:!?_-])/i;
-
-function hasActiveAttackMode(attackModes) {
-  return ['melee', 'ranged', 'aoe'].some((key) => attackModes?.[key] != null);
-}
 
 function componentHasDamageSource(component) {
   return !!(
@@ -29,8 +25,6 @@ function shouldRefreshSuspiciousLocalModes(item) {
   if (item?.attackModes === undefined) return false;
 
   const text = `${item.name || ''} ${item.id || ''}`.toLowerCase();
-  if (NON_WEAPON_RE.test(text) && hasActiveAttackMode(item.attackModes)) return true;
-
   const meleeComponents = item.attackModes?.melee?.damageComponents || [];
   return SHORT_BLADE_RE.test(text) && !meleeComponents.some(componentHasDamageSource);
 }
@@ -42,22 +36,26 @@ function shouldRefreshSuspiciousLocalModes(item) {
  *
  * Caches result in game state via dispatch so subsequent renders are instant.
  *
- * Returns { attackModes, explanation, loading, reloading, reload }.
+ * Returns { attackModes, explanation, specialProperties, loading, reloading, reload }.
  * `reload()` forces an LLM re-evaluation and returns the new explanation.
  */
 export function useItemAttackModes(item, resolvedCombat) {
   const [attackModes, setAttackModes] = useState(null);
   const [explanation, setExplanation] = useState(null);
+  const [specialProperties, setSpecialProperties] = useState([]);
   const [loading, setLoading] = useState(false);
   const [reloading, setReloading] = useState(false);
   const cancelledRef = useRef(false);
 
   const characterId = useGameStore((s) => s.state.character?.backendId || s.state.character?.id);
   const dispatch = useGameStore((s) => s.dispatch);
+  const autoSave = useGameAutoSave();
 
   const itemId = item?.id;
   const hasResolvedCombat = !!resolvedCombat?.attackModes;
-  const hasLocalModes = item?.attackModes !== undefined && !shouldRefreshSuspiciousLocalModes(item);
+  const hasLocalModes = item?.attackModes !== undefined
+    && item.attackModesVersion >= 2
+    && !shouldRefreshSuspiciousLocalModes(item);
   const shouldSkip = !item || !characterId || hasResolvedCombat || hasLocalModes;
 
   useEffect(() => {
@@ -66,6 +64,7 @@ export function useItemAttackModes(item, resolvedCombat) {
       if (hasLocalModes) {
         setAttackModes(item.attackModes);
         setExplanation(item.attackModesExplanation || null);
+        setSpecialProperties(item.specialProperties || []);
       }
       return;
     }
@@ -77,6 +76,7 @@ export function useItemAttackModes(item, resolvedCombat) {
         if (!cancelledRef.current) {
           setAttackModes(result?.attackModes ?? null);
           setExplanation(result?.explanation ?? null);
+          setSpecialProperties(result?.specialProperties ?? []);
           setLoading(false);
         }
       });
@@ -85,18 +85,21 @@ export function useItemAttackModes(item, resolvedCombat) {
 
     setLoading(true);
     const promise = apiClient
-      .post(`/characters/${characterId}/items/${encodeURIComponent(itemId)}/attack-modes`)
+      .post(`/characters/${characterId}/items/${encodeURIComponent(itemId)}/attack-modes`, {})
       .then((data) => {
         const modes = data?.attackModes ?? null;
         const expl = data?.explanation ?? null;
+        const sp = data?.specialProperties ?? [];
         if (!cancelledRef.current) {
           setAttackModes(modes);
           setExplanation(expl);
+          setSpecialProperties(sp);
           setLoading(false);
           dispatch({
             type: 'UPDATE_ITEM_ATTACK_MODES',
-            payload: { itemId, attackModes: modes, attackModesExplanation: expl },
+            payload: { itemId, attackModes: modes, attackModesExplanation: expl, specialProperties: sp, attackModesVersion: 2 },
           });
+          autoSave();
         }
         return data;
       })
@@ -111,7 +114,7 @@ export function useItemAttackModes(item, resolvedCombat) {
     inflight.set(key, promise);
 
     return () => { cancelledRef.current = true; };
-  }, [shouldSkip, itemId, characterId, hasLocalModes, item?.attackModes, dispatch]);
+  }, [shouldSkip, itemId, characterId, hasLocalModes, item?.attackModes, dispatch, autoSave]);
 
   const reload = useCallback(async () => {
     if (!item || !characterId || reloading) return;
@@ -123,15 +126,18 @@ export function useItemAttackModes(item, resolvedCombat) {
       );
       const modes = data?.attackModes ?? null;
       const expl = data?.explanation ?? null;
+      const sp = data?.specialProperties ?? [];
       setAttackModes(modes);
       setExplanation(expl);
+      setSpecialProperties(sp);
       dispatch({
         type: 'UPDATE_ITEM_ATTACK_MODES',
-        payload: { itemId, attackModes: modes, attackModesExplanation: expl },
+        payload: { itemId, attackModes: modes, attackModesExplanation: expl, specialProperties: sp, attackModesVersion: 2 },
       });
+      autoSave();
     } catch { /* swallow */ }
     setReloading(false);
-  }, [item, characterId, itemId, reloading, dispatch]);
+  }, [item, characterId, itemId, reloading, dispatch, autoSave]);
 
-  return { attackModes, explanation, loading, reloading, reload };
+  return { attackModes, explanation, specialProperties, loading, reloading, reload };
 }

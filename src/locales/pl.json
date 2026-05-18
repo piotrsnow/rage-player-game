@@ -257,7 +257,8 @@
     "zoomIn": "Powiększ",
     "zoomOut": "Pomniejsz",
     "appZoomTooltip": "{{percent}}%",
-    "appZoomAria": "Powiększenie interfejsu {{percent}} procent. Lewy przycisk powiększa, prawy pomniejsza."
+    "appZoomAria": "Powiększenie interfejsu {{percent}} procent. Lewy przycisk powiększa, prawy pomniejsza.",
+    "magnifier": "Lupa (Ctrl+M)"
   },
   "profile": {
     "title": "Profil Użytkownika"
@@ -673,7 +674,7 @@
     "inventSpellTitle": "Wymyśl zaklęcie",
     "inventSpellPlaceholder": "Opisz zaklęcie, które chcesz opracować — czym ma być, jak działa i w jakiej sytuacji chcesz go używać...",
     "inventSpellDiceTooltip": "Modyfikator rzutu k50: {{modifier}} (oba rzuty: powodzenie i moc). Lewy klik: −10, prawy klik: +10. Wynik po modyfikacji jest ograniczony do 1–50.",
-    "inventSpellHint": "Opisz pomysł na zaklęcie — AI ustala próg z inteligencji i okoliczności. Na tej próbie k50 musi być równy albo niższy niż próg (im niższy rzut, tym lepiej). Osobno działa szczęście: osobny los 1–100, sukces gdy wypadnie ≤ twojego szczęścia (%).",
+    "inventSpellHint": "Opisz pomysł na zaklęcie — AI ustala próg z inteligencji i okoliczności. Suma (rzut k50 + Inteligencja + modyfikatory) musi sięgnąć progu (im wyższa suma, tym lepiej). Osobno działa szczęście: osobny los 1–100, sukces gdy wypadnie ≤ twojego szczęścia (%).",
     "inventSpellSubmit": "Rozpocznij próbę",
     "inventSpellAnalyzing": "AI ocenia okoliczności...",
     "inventSpellRollingSuccess": "Trwa rzut na powodzenie...",
@@ -996,6 +997,13 @@
     "slots": "{{current}}/{{max}} Miejsc",
     "sortByDate": "Sortuj od najnowszych",
     "newest": "Najnowsze",
+    "pockets": {
+      "all": "Wszystko",
+      "newPocket": "+ Nowa kieszonka",
+      "moveTo": "Kieszonka",
+      "none": "Brak",
+      "namePlaceholder": "Nazwa..."
+    },
     "type": "Typ:",
     "rarityCommon": "Zwykły",
     "rarityUncommon": "Niepospolity",

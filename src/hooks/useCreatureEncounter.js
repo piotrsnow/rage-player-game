@@ -75,11 +75,11 @@ export function useCreatureEncounter({ generateScene } = {}) {
     const roll = rollD50();
 
     let success;
-    if (roll === 1) success = true;
-    else if (roll === 50) success = false;
-    else success = roll <= target;
+    if (roll === 50) success = true;
+    else if (roll === 1) success = false;
+    else success = roll >= target;
 
-    const margin = target - roll;
+    const margin = roll - target;
     const result = { success, roll, target, margin };
     setFleeResult(result);
 

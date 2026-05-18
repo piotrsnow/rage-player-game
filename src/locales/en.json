@@ -265,7 +265,8 @@
     "profile": "Profile",
     "audioConfig": "Audio",
     "appZoomTooltip": "{{percent}}%",
-    "appZoomAria": "Interface zoom {{percent}} percent. Left click to zoom in, right click to zoom out."
+    "appZoomAria": "Interface zoom {{percent}} percent. Left click to zoom in, right click to zoom out.",
+    "magnifier": "Magnifier (Ctrl+M)"
   },
   "profile": {
     "title": "User Profile"
@@ -680,7 +681,7 @@
     "inventSpellTitle": "Invent a Spell",
     "inventSpellPlaceholder": "Describe the spell you want to invent — what it does and when you want to use it...",
     "inventSpellDiceTooltip": "d50 roll modifier: {{modifier}} (both rolls: success and power). Left click: −10, right click: +10. Final values are clamped to 1–50.",
-    "inventSpellHint": "Describe your spell concept — AI sets a threshold from Intelligence and circumstances. For this attempt your d50 must be at or below that threshold (lower is better). Luck is separate: a 1–100 roll rescues you if it lands ≤ your Luck (%).",
+    "inventSpellHint": "Describe your spell concept — AI sets a threshold from Intelligence and circumstances. Your total (d50 roll + Intelligence + modifiers) must reach the threshold (higher total is better). Luck is separate: a 1–100 roll rescues you if it lands ≤ your Luck (%).",
     "inventSpellSubmit": "Start attempt",
     "inventSpellAnalyzing": "AI evaluates the circumstances...",
     "inventSpellRollingSuccess": "Rolling for success...",
@@ -1002,6 +1003,13 @@
     "slots": "{{current}}/{{max}} Slots",
     "sortByDate": "Sort by date found",
     "newest": "Newest",
+    "pockets": {
+      "all": "All",
+      "newPocket": "+ New pocket",
+      "moveTo": "Pocket",
+      "none": "None",
+      "namePlaceholder": "Name..."
+    },
     "type": "Type:",
     "rarityCommon": "Common",
     "rarityUncommon": "Uncommon",

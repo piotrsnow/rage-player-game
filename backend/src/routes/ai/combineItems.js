@@ -175,7 +175,7 @@ export async function combineItemsRoutes(fastify) {
       const checkCtx = buildCheckContext(activeCharacter, successRoll);
       const luckRoll = Math.floor(Math.random() * 100) + 1;
       const luckySuccess = isLuckySuccess(checkCtx.luck, luckRoll);
-      const isCritFail = successRoll === 50;
+      const isCritFail = successRoll === 1;
       const isSuccess = !isCritFail && (luckySuccess || checkCtx.sum >= checkCtx.threshold);
 
       // Equip slot scrub helper — both for crit-fail (destroy) and success

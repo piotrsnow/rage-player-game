@@ -266,7 +266,7 @@ export async function processNpcChanges(campaignId, npcs, { livingWorldEnabled =
         if (hasContentUpdate) {
           const embText = buildNPCEmbeddingText(updated);
           const emb = await embedText(embText);
-          if (emb) writeEmbedding('Npc', updated.id, emb, embText);
+          if (emb) await writeEmbedding('Npc', updated.id, emb, embText);
           affectedNpcIds.push(updated.id);
         }
       } else {
@@ -370,7 +370,7 @@ export async function processNpcChanges(campaignId, npcs, { livingWorldEnabled =
           }
           const embText = buildNPCEmbeddingText(created);
           const emb = await embedText(embText);
-          if (emb) writeEmbedding('Npc', created.id, emb, embText);
+          if (emb) await writeEmbedding('Npc', created.id, emb, embText);
           affectedNpcIds.push(created.id);
 
         } catch (createErr) {

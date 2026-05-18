@@ -136,8 +136,8 @@ function buildAiDiceLogDetails(diceResult, t) {
     threshold,
     margin,
     success: Boolean(diceResult.success),
-    criticalSuccess: roll === 1,
-    criticalFailure: roll === 50 && !Boolean(diceResult.success),
+    criticalSuccess: roll === 50,
+    criticalFailure: roll === 1 && !Boolean(diceResult.success),
     modifiers,
     ...(thresholdBreakdown ? { thresholdBreakdown } : {}),
   };

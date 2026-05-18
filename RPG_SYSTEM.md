@@ -323,6 +323,8 @@ Jest to dokument roboczy i będzie rozszerzany o kolejne ustalenia.
 | Formuła testu | `Wynik = d50 + Cecha + Poziom Umiejętności + Momentum + Kreatywność + Przychylność` |
 | Próg trudności | Stała wartość zależna od trudności testu |
 | Sukces | `Wynik ≥ Próg Trudności` |
+| Krytyczny sukces | Naturalne `50` na d50 — gwarantowany sukces niezależnie od modyfikatorów |
+| Krytyczna porażka | Naturalne `1` na d50 — gwarantowana porażka niezależnie od modyfikatorów |
 | Margines | `Wynik − Próg Trudności` (dodatni = sukces, ujemny = porażka) |
 
 ### 9.2 Progi trudności

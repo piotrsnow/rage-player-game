@@ -4,7 +4,7 @@ Custom RPG system replacing WFRP. Full specification in [RPG_SYSTEM.md](../../RP
 
 ## Core rules (summary)
 
-- **Dice:** d50 (not d100). Roll d50 vs `attribute + skill + modifiers` on a target of `<= target`. Roll 1 = crit success, roll 50 = crit failure.
+- **Dice:** d50 (not d100). Roll d50 vs `attribute + skill + modifiers` on a target of `>= target`. Roll 50 = crit success, roll 1 = crit failure.
 - **6 attributes** (1-25 scale): `sila`, `inteligencja`, `charyzma`, `zrecznosc`, `wytrzymalosc`, `szczescie`. Default floor character has everything at 1 except `szczescie` at 0.
 - **Skills:** levels 0-25, each tied to one attribute. ~31 skills after the WFRP-to-RPGon consolidation (list in `rpgSystem.js` `SKILLS`).
 - **Magic:** 9 spell trees, mana-based (no casting test). Spells learned from scrolls. Cost 1-5 mana per spell.

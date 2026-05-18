@@ -312,7 +312,7 @@ export default function Header() {
   }, [location.pathname, entryRoute]);
   const { settings, updateSettings, backendUser } = useSettings();
   const music = useGlobalMusic();
-  const { openCharacterSheet, openTasksInfo, openSettings, openKeys, openImageConfig, openAudioConfig, openProfile, openAdminUsers, openWorldLocationGraph, openGmModal, openPrivacy } = useModals();
+  const { openCharacterSheet, openTasksInfo, openSettings, openKeys, openImageConfig, openAudioConfig, openProfile, openAdminUsers, openWorldLocationGraph, openGmModal, openPrivacy, magnifier } = useModals();
   const { dictation } = useDictationContext() ?? {};
   const campaign = useGameCampaign();
   const aiLogSidebarVisible = useAiCallLogStore((s) => s.sidebarVisible);
@@ -719,6 +719,12 @@ export default function Header() {
                 label={t('nav.appZoomTooltip', { percent: appZoom })}
                 onClick={handleAppZoomClick}
                 onContextMenu={handleAppZoomContextMenu}
+              />
+              <GroupItem
+                icon="zoom_in"
+                label={t('nav.magnifier')}
+                onClick={magnifier.toggle}
+                active={magnifier.active}
               />
             </HeaderActionGroup>
             {backendUser?.isAdmin && (

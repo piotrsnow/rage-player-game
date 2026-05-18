@@ -362,7 +362,7 @@ export async function inventSpellRoutes(fastify) {
               if (res?.combatStats) {
                 return prisma.customSpell.update({
                   where: { id: row.id },
-                  data: { combatStats: { ...res.combatStats, explanation: res.explanation || null } },
+                  data: { combatStats: { ...res.combatStats, explanation: res.explanation || null, specialProperties: res.specialProperties || [] } },
                 });
               }
             })

@@ -1,15 +1,15 @@
 import { useState, useCallback, useEffect, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useModalA11y } from '../../../hooks/useModalA11y';
+import { useMinigameAudio } from '../../../hooks/useMinigameAudio';
 import { useInventoryActions } from '../../../hooks/useInventoryActions';
 import { NarrableText } from '../../ui/NarrableText';
 import RollModifierDie, { randomD50, applyRollModifier } from '../../ui/RollModifierDie';
-import DiceRoller from '../../../effects/DiceRoller';
+import DiceRoller, { MODAL_DICE_DURATION_MULT, MODAL_DICE_STAGE_CLASS } from '../../../effects/DiceRoller';
 import { typeIcons } from './constants';
 
 const PREROLL_HOLD_MS = 1800;
 const RESULT_REVEAL_DELAY_MS = 600;
-const COMBINE_DICE_DURATION_MULT = 7.7;
 const COMBINE_DICE_THEME = {
   materialColor: 0xb78cff,
   materialSpecular: 0x4a2a8a,
@@ -86,6 +86,7 @@ export default function UseItemModal({
   onClose,
 }) {
   const { t } = useTranslation();
+  const playSfx = useMinigameAudio();
   const modalRef = useModalA11y(onClose);
 
   const [target, setTarget] = useState({ type: 'none', id: null });
@@ -119,9 +120,14 @@ export default function UseItemModal({
     return () => clearTimeout(timer);
   }, [view]);
 
+  const handleDiceRollStart = useCallback(() => {
+    playSfx('diceShake');
+  }, [playSfx]);
+
   const handleDiceRollComplete = useCallback(() => {
+    playSfx('diceLand');
     setTimeout(() => setView('result'), RESULT_REVEAL_DELAY_MS);
-  }, []);
+  }, [playSfx]);
 
   const resetToForm = useCallback(() => {
     setView('form');
@@ -233,7 +239,7 @@ export default function UseItemModal({
           </button>
         </div>
 
-        <div className="overflow-y-auto custom-scrollbar p-4 space-y-4">
+        <div className={`custom-scrollbar p-4 space-y-4 ${view === 'rolling' || view === 'preroll' ? 'overflow-visible' : 'overflow-y-auto'}`}>
           {view === 'form' && (
             <>
               <div>
@@ -306,7 +312,7 @@ export default function UseItemModal({
                       disabled={isSubmitting}
                     />
                     <span className="text-[10px] text-on-surface-variant/60 truncate">
-                      {t('inventory.combineDiceHint', 'LPM −10 / PPM +10. Crit fail (50) zniszczy oba przedmioty.')}
+                      {t('inventory.combineDiceHint', 'LPM −10 / PPM +10. Crit fail (1) zniszczy oba przedmioty.')}
                     </span>
                   </div>
                 </div>
@@ -359,13 +365,14 @@ export default function UseItemModal({
                 </p>
               )}
               {view === 'rolling' && (
-                <div className="relative w-[280px] h-[200px] mx-auto">
+                <div className={MODAL_DICE_STAGE_CLASS}>
                   <DiceRoller
                     diceRoll={combineDiceRoll}
+                    onRollStart={handleDiceRollStart}
                     onComplete={handleDiceRollComplete}
                     showOverlayResult={false}
                     sizeMultiplier={2.2}
-                    durationMultiplier={COMBINE_DICE_DURATION_MULT}
+                    durationMultiplier={MODAL_DICE_DURATION_MULT}
                     variant="overlay"
                     overlayTheme={COMBINE_DICE_THEME}
                     isVisible

@@ -1,11 +1,12 @@
 import { useState, useCallback, useEffect, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useModalA11y } from '../../../hooks/useModalA11y';
+import { useMinigameAudio } from '../../../hooks/useMinigameAudio';
 import { apiClient } from '../../../services/apiClient';
 import { gameData } from '../../../services/gameDataService';
 import { NarrableText } from '../../ui/NarrableText';
 import RollModifierDie, { randomD50, applyRollModifier } from '../../ui/RollModifierDie';
-import DiceRoller from '../../../effects/DiceRoller';
+import DiceRoller, { MODAL_DICE_DURATION_MULT, MODAL_DICE_STAGE_CLASS } from '../../../effects/DiceRoller';
 
 function resolvePowerTier(powerRoll) {
   if (powerRoll <= 15) return 'cantrip';
@@ -30,8 +31,6 @@ function titleByOutcome(outcome, t) {
 
 const PREROLL_HOLD_MS = 1800;
 const RESULT_REVEAL_DELAY_MS = 600;
-/** ~7× default overlay speed so the throw reads clearly; stable `diceRoll` ref avoids effect resets mid-roll */
-const INVENT_SPELL_DICE_DURATION_MULT = 7.7;
 const INVENT_SPELL_DICE_THEME = {
   materialColor: 0x5fd12f,
   materialSpecular: 0x2f5a12,
@@ -46,6 +45,7 @@ const INVENT_SPELL_DICE_THEME = {
 
 export default function InventSpellModal({ campaignId, character = null, dispatch, onClose, onAction = null }) {
   const { t } = useTranslation();
+  const playSfx = useMinigameAudio();
   const modalRef = useModalA11y(onClose);
   const [view, setView] = useState('form'); // form | analyzing | preroll | rolling | result
   const [intent, setIntent] = useState('');
@@ -73,9 +73,14 @@ export default function InventSpellModal({ campaignId, character = null, dispatc
     return () => clearTimeout(timer);
   }, [view]);
 
+  const handleDiceRollStart = useCallback(() => {
+    playSfx('diceShake');
+  }, [playSfx]);
+
   const handleDiceRollComplete = useCallback(() => {
+    playSfx('diceLand');
     setTimeout(() => setView('result'), RESULT_REVEAL_DELAY_MS);
-  }, []);
+  }, [playSfx]);
 
   const resetToForm = useCallback(() => {
     setView('form');
@@ -175,7 +180,7 @@ export default function InventSpellModal({ campaignId, character = null, dispatc
           </button>
         </div>
 
-        <div className="flex-1 overflow-y-auto custom-scrollbar p-5 space-y-4 mr-3">
+        <div className={`flex-1 custom-scrollbar p-5 space-y-4 mr-3 ${view === 'rolling' || view === 'preroll' ? 'overflow-visible' : 'overflow-y-auto'}`}>
           {view === 'form' && (
             <>
               <p className="text-xs text-on-surface-variant/70 leading-relaxed">{t('gameplay.inventSpellHint')}</p>
@@ -293,13 +298,14 @@ export default function InventSpellModal({ campaignId, character = null, dispatc
                   </div>
                 </div>
               </div>
-              <div className="relative w-[280px] h-[200px] mx-auto">
+              <div className={MODAL_DICE_STAGE_CLASS}>
                 <DiceRoller
                   diceRoll={inventSpellDiceRoll}
+                  onRollStart={handleDiceRollStart}
                   onComplete={handleDiceRollComplete}
                   showOverlayResult={false}
                   sizeMultiplier={2.2}
-                  durationMultiplier={INVENT_SPELL_DICE_DURATION_MULT}
+                  durationMultiplier={MODAL_DICE_DURATION_MULT}
                   variant="overlay"
                   overlayTheme={INVENT_SPELL_DICE_THEME}
                   isVisible

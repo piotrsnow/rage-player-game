@@ -308,7 +308,7 @@ export async function livingWorldRoutes(fastify) {
     const campaign = await assertCampaignOwnership(request, reply, campaignId);
     if (!campaign) return;
 
-    const rows = await prisma.locationSummary.findMany({
+    const rows = await prisma.campaignLocationSummary.findMany({
       where: { campaignId },
       select: {
         locationName: true,
@@ -353,7 +353,7 @@ export async function livingWorldRoutes(fastify) {
 
     const { locationName } = request.query;
 
-    const summary = await prisma.locationSummary.findUnique({
+    const summary = await prisma.campaignLocationSummary.findUnique({
       where: { campaignId_locationName: { campaignId, locationName } },
       select: {
         locationName: true,

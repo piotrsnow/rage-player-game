@@ -22,7 +22,7 @@ import {
 } from '../../shared/domain/damageTypes.js';
 import { inferAttackModesFromLegacy } from '../../shared/domain/attackModes.js';
 
-// Crit-triggered effects — applied when a critical hit lands (roll=1)
+// Crit-triggered effects — applied when a critical hit lands (roll=50)
 const CRIT_EFFECTS = [
   {
     name: 'Głęboka rana',
@@ -1676,8 +1676,8 @@ export function resolveManoeuvre(combat, actorId, manoeuvreKey, targetId, option
       target.wounds = Math.max(0, target.wounds - totalDamage);
       if (target.wounds <= 0) target.isDefeated = true;
 
-      // Crit-triggered effect (roll=1 is critical success in d50)
-      if (test.roll === 1 && !target.isDefeated) {
+      // Crit-triggered effect (roll=50 is critical success in d50)
+      if (test.roll === 50 && !target.isDefeated) {
         const critFx = CRIT_EFFECTS[Math.floor(Math.random() * CRIT_EFFECTS.length)];
         const fx = { ...critFx, id: `crit_${shortId(6)}` };
         if (!target.activeEffects) target.activeEffects = [];

@@ -8,8 +8,8 @@ import { prisma } from '../lib/prisma.js';
 const ALLOWED = new Set([
   'CampaignScene',
   'CampaignKnowledge',
-  'CampaignNPC',
   'CampaignCodex',
+  'Npc',
   'WorldLocation',
   'WorldNPC',
   'WorldEntityEmbedding',

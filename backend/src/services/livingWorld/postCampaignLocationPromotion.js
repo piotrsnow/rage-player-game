@@ -115,7 +115,7 @@ export async function collectLocationCandidates(campaignId, { topN = 5 } = {}) {
   if (!campaignLocations.length) return [];
 
   // Score by scene count (via CampaignLocationSummary) + quest objectives
-  const summaries = await prisma.locationSummary.findMany({
+  const summaries = await prisma.campaignLocationSummary.findMany({
     where: { campaignId },
     select: { locationName: true, sceneCount: true },
   });

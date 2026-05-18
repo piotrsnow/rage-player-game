@@ -120,10 +120,9 @@ export async function assembleContext(
   }
 
   // Location Graph — lean spatial context (exits, NPCs, perception hints).
-  // Fetched when the campaign has a resolved polymorphic location ref.
-  if (selectionResult._currentRef?.kind && selectionResult._currentRef?.id) {
+  if (currentRef?.id) {
     fetches.push(
-      buildNarrativeContext(selectionResult._currentRef.id, selectionResult._currentRef.kind, campaignId, { userId })
+      buildNarrativeContext(currentRef.id, campaignId, { userId })
         .then((data) => ({ type: 'locationGraph', data }))
         .catch((err) => {
           log.warn({ err: err?.message, campaignId }, 'locationGraph context fetch failed');

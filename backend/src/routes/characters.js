@@ -53,8 +53,8 @@ async function aggregateDiceStats(prisma, campaignIds) {
     rollSum += r.roll;
     if (r.success) successes++;
     else failures++;
-    if (r.roll === 1) critSuccesses++;
-    if (r.roll === 50) critFailures++;
+    if (r.roll === 50) critSuccesses++;
+    if (r.roll === 1) critFailures++;
     const sk = r.skill || 'unknown';
     skillTotalMap[sk] = (skillTotalMap[sk] || 0) + 1;
     if (r.success) skillSuccessMap[sk] = (skillSuccessMap[sk] || 0) + 1;
@@ -930,17 +930,17 @@ Return JSON with exactly three fields, all written in ${isPolish ? 'Polish' : 'E
         if (JSON.stringify(cached) !== JSON.stringify(attackModes)) {
           await prisma.characterInventoryItem.updateMany({
             where: { characterId: character.id, itemKey: request.params.itemKey },
-            data: { props: { ...props, attackModes } },
+            data: { props: { ...props, attackModes, specialProperties: [] } },
           });
         }
-        return { attackModes, explanation: props.attackModesExplanation || null };
+        return { attackModes, explanation: props.attackModesExplanation || null, specialProperties: props.specialProperties || [] };
       }
     }
 
     let userApiKeys = null;
     try { userApiKeys = await loadUserApiKeys(prisma, request.user.id); } catch {}
 
-    const { attackModes, explanation } = await generateItemAttackModes(
+    const { attackModes, explanation, specialProperties } = await generateItemAttackModes(
       { ...itemRow, props },
       { userApiKeys, userId: request.user.id, force },
     );
@@ -949,13 +949,14 @@ Return JSON with exactly three fields, all written in ${isPolish ? 'Polish' : 'E
       ...props,
       attackModes: attackModes ?? null,
       attackModesExplanation: explanation || null,
+      specialProperties: specialProperties || [],
     };
     await prisma.characterInventoryItem.updateMany({
       where: { characterId: character.id, itemKey: request.params.itemKey },
       data: { props: updatedProps },
     });
 
-    return { attackModes: attackModes ?? null, explanation: explanation || null };
+    return { attackModes: attackModes ?? null, explanation: explanation || null, specialProperties: specialProperties || [] };
   });
 
   // ── Spell combat stats backfill ──────────────────────────────────────
@@ -994,12 +995,12 @@ Return JSON with exactly three fields, all written in ${isPolish ? 'Polish' : 'E
     let userApiKeys = null;
     try { userApiKeys = await loadUserApiKeys(prisma, request.user.id); } catch {}
 
-    const { combatStats, explanation } = await generateSpellCombatStats(
+    const { combatStats, explanation, specialProperties } = await generateSpellCombatStats(
       row, { userApiKeys, userId: request.user.id },
     );
 
     if (combatStats) {
-      const withExplanation = { ...combatStats, explanation: explanation || null };
+      const withExplanation = { ...combatStats, explanation: explanation || null, specialProperties: specialProperties || [] };
       await prisma.customSpell.update({
         where: { id: row.id },
         data: { combatStats: withExplanation },

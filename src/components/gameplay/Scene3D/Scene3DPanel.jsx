@@ -262,7 +262,7 @@ export default function Scene3DPanel({ scene, combat = null, onError }) {
           onCreated={handleCreated}
           onError={handleError}
           style={{ width: '100%', height: '100%' }}
-          gl={{ antialias: true, alpha: false }}
+          gl={{ antialias: true, alpha: false, preserveDrawingBuffer: true }}
         >
           <Scene3DContent sceneCmd={sceneCmd} onCharacterClick={handleCharacterClick} />
         </Canvas>

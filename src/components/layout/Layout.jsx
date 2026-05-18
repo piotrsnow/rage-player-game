@@ -20,6 +20,7 @@ import { useSettings } from '../../contexts/SettingsContext';
 import ErrorBoundary from '../ui/ErrorBoundary';
 import DevEventLogPanel from '../admin/DevEventLogPanel';
 import FloatingDiceOverlay from '../ui/FloatingDiceOverlay';
+import MagnifierOverlay from '../ui/MagnifierOverlay';
 import CharacterSheet from '../character/CharacterSheet';
 import DMSettingsPage from '../settings/DMSettingsPage';
 import KeysModal from '../settings/KeysModal';
@@ -33,6 +34,11 @@ import TasksInfoModal from '../gameplay/TasksInfoModal';
 
 const LocationGraphModal = lazy(() => import('../gameplay/locationGraph/LocationGraphModal'));
 const GMModal = lazy(() => import('../gameplay/gm/GMModal'));
+
+function MagnifierLayer() {
+  const { magnifier } = useModals();
+  return <MagnifierOverlay magnifier={magnifier} />;
+}
 
 function ModalLayer() {
   const {
@@ -176,6 +182,7 @@ export default function Layout() {
           </main>
           <MobileNav />
           <ModalLayer />
+          <MagnifierLayer />
           <DevEventLogPanel />
           {/* <FloatingDiceOverlay /> */}
           <div className="fixed inset-0 pointer-events-none z-[100] opacity-[0.03] mix-blend-overlay">

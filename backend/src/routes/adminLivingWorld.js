@@ -336,7 +336,7 @@ export async function adminLivingWorldRoutes(fastify) {
         orderBy: { updatedAt: 'desc' },
         take: 50,
       }),
-      prisma.locationSummary.findMany({
+      prisma.campaignLocationSummary.findMany({
         where: { locationName: location.canonicalName },
         include: { campaign: { select: { id: true, name: true } } },
         orderBy: { updatedAt: 'desc' },

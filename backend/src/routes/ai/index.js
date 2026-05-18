@@ -12,6 +12,7 @@ import { inventSpellRoutes } from './inventSpell.js';
 import { combineItemsRoutes } from './combineItems.js';
 import { enchantItemRoutes } from './enchantItem.js';
 import { classifySpellSchoolRoutes } from './classifySpellSchool.js';
+import { generateLongDescriptionRoutes } from './generateLongDescription.js';
 import { creatureEncounterStreamRoutes } from './creatureEncounterStream.js';
 import { fieldMapRoutes } from './fieldMap.js';
 import { locationBoardRoutes } from './locationBoard.js';
@@ -45,6 +46,7 @@ export async function aiRoutes(fastify) {
   await fastify.register(combineItemsRoutes);
   await fastify.register(enchantItemRoutes);
   await fastify.register(classifySpellSchoolRoutes);
+  await fastify.register(generateLongDescriptionRoutes);
   await fastify.register(creatureEncounterStreamRoutes);
   await fastify.register(fieldMapRoutes);
   await fastify.register(locationBoardRoutes);

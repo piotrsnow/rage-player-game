@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 
 const FACTS = [
-  'System RPGon używa kości d50 — rzut 1 to krytyczny sukces, a 50 to krytyczna porażka.',
+  'System RPGon używa kości d50 — rzut 50 to krytyczny sukces, a 1 to krytyczna porażka.',
   'Atrybut Szczęście działa jak procentowa szansa na automatyczny sukces dowolnego rzutu.',
   'W świecie gry obowiązuje trzystopniowy system walutowy: Złota Korona, Srebrna Korona i Miedziana Korona.',
   '1 Złota Korona = 20 Srebrnych Koron = 240 Miedzianych Koron.',

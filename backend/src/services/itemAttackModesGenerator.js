@@ -3,6 +3,7 @@ import {
   inferAttackModesFromLegacy,
   AttackModesSchema,
 } from '../../../shared/domain/attackModes.js';
+import { resolveSpecialProperties } from './specialPropertyResolver.js';
 
 const SHORT_BLADE_ATTACK_MODES = {
   melee: { damageComponents: [{ type: 'fizyczne', formula: 'str', bonus: 2 }] },
@@ -16,30 +17,10 @@ const ONE_HANDED_WEAPON_ATTACK_MODES = {
   aoe: null,
 };
 
-const NON_WEAPON_TYPES = new Set([
-  'adventuring_gear',
-  'armor',
-  'armour',
-  'book',
-  'clothing',
-  'consumable',
-  'food',
-  'gear',
-  'jewelry',
-  'material',
-  'medical',
-  'misc',
-  'potion',
-  'resource',
-  'tool',
-  'tools',
-]);
-
 const WEAPON_TYPE_HINTS = new Set(['weapon', 'weapons']);
 
 const SHORT_BLADE_RE = /(^|[\s"'()[\]{}.,;:!?_-])(n[oó]ż|knife|sztylet|dagger|kordzik)(?=$|[\s"'()[\]{}.,;:!?_-])/i;
 const ONE_HANDED_WEAPON_RE = /(^|[\s"'()[\]{}.,;:!?_-])(miecz|sword|top[oó]r|axe|maczuga|mace|pa[lł]ka|club|rapier|szabla|sabre|saber)(?=$|[\s"'()[\]{}.,;:!?_-])/i;
-const NON_WEAPON_RE = /(^|[\s"'()[\]{}.,;:!?_-])(plecak|backpack|torba|bag|ksi[aą][żz]ka|book|jedzenie|food|ubranie|clothing|p[oó]łbuty|buty|shoes|boots|mikstura|potion|narz[eę]dzie|tool)(?=$|[\s"'()[\]{}.,;:!?_-])/i;
 
 function normalizeText(value) {
   return String(value || '').trim().toLowerCase();
@@ -88,11 +69,11 @@ function clampExplanation(raw) {
 }
 
 /**
- * Cheap, deterministic guardrail for common inventory items.
+ * Cheap, deterministic guardrail for known weapon archetypes.
  *
- * Returns `{ resolved: true, attackModes }` when code can decide without LLM,
- * including non-combat items (`attackModes: null`). Returns `{ resolved: false }`
- * when the item needs cached data or the nano fallback.
+ * Returns `{ resolved: true, attackModes }` when code can decide without LLM
+ * (known weapon patterns, cached props, legacy fields).
+ * Returns `{ resolved: false }` when the item needs the nano LLM fallback.
  */
 export function inferDeterministicItemAttackModes(item) {
   const props = (typeof item?.props === 'object' && item.props) || {};
@@ -105,10 +86,6 @@ export function inferDeterministicItemAttackModes(item) {
 
   if (ONE_HANDED_WEAPON_RE.test(nameText) || WEAPON_TYPE_HINTS.has(type)) {
     return { resolved: true, attackModes: cloneAttackModes(ONE_HANDED_WEAPON_ATTACK_MODES) };
-  }
-
-  if (NON_WEAPON_TYPES.has(type) || NON_WEAPON_RE.test(nameText)) {
-    return { resolved: true, attackModes: null };
   }
 
   if (props.attackModes !== undefined) {
@@ -134,7 +111,8 @@ export function inferDeterministicItemAttackModes(item) {
  */
 
 const SYSTEM_PROMPT = `You are an RPG item stat generator for the RPGon d50 system.
-Given an item, produce its attackModes as JSON.
+Given an item, produce its attackModes and specialProperties as JSON.
+EVERY physical object can be used as a weapon — a bottle, a torch, a frying pan, a book.
 
 Schema — return exactly:
 {
@@ -143,42 +121,61 @@ Schema — return exactly:
     "ranged": { "damageComponents": [...], "range": <number in meters> } | null,
     "aoe": null
   },
+  "specialProperties": [{ "name": "<Polish, short>", "description": "<Polish, 1 sentence>", "color": "<one of: fire|frost|lightning|poison|arcane|shadow|holy|nature|blood|physical|neutral>" }, ...],
   "explanation": "<1-2 sentences in Polish explaining WHY these stats were chosen>"
 }
 
 damageComponents is an ARRAY — it can hold multiple entries for multi-typed damage.
 Example — enchanted flaming sword (physical steel + fire enchant):
   "melee": { "damageComponents": [{ "type": "fizyczne", "formula": "str", "bonus": 3 }, { "type": "ogien", "flat": 4 }] }
+Example — beer mug (glass + liquid splash):
+  "melee": { "damageComponents": [{ "type": "fizyczne", "formula": "str", "bonus": -2 }] }
+  "ranged": { "damageComponents": [{ "type": "fizyczne", "formula": "str+dex", "bonus": -3 }], "range": 5 }
 
 Damage types: "fizyczne", "ogien", "lod", "blyskawica", "magiczne", "trucizna", "psychiczne".
 Formulas: "str" (melee 1H), "str*2" (melee 2H), "dex" (ranged), "str+dex" (thrown), "fixed" (firearms), "int" (magic staves/wands).
 
-Rules:
-- Melee weapons → melee mode with formula "str" (1H) or "str*2" (2H). Set ranged to null.
+## Proper weapons
+- Melee weapons → melee mode with formula "str" (1H) or "str*2" (2H). Set ranged to null unless throwable.
 - Ranged weapons → ranged mode with formula "dex" and a range value. Set melee to a weak improvised strike: { "damageComponents": [{ "type": "fizyczne", "formula": "str", "bonus": -2 }] }.
 - Thrown weapons → ranged mode with "str+dex".
 - Firearms/crossbows → ranged mode with "fixed" formula and "fixedDamage" in the component.
 - Magic staves/wands → melee or ranged mode with formula "int".
 - Enchanted physical weapons (flaming/frost/lightning sword, poisoned dagger, runic axe, etc.) MUST have BOTH a "fizyczne" component (from steel/wood, formula "str" or "str*2") AND an elemental component ("ogien"/"lod"/"blyskawica"/"trucizna"/"magiczne", usually small "flat" 2-6 or "dice" like "1k4"). Pure-magic items (staves, wands, focus crystals) may use a single elemental/magic component.
 - Ordinary, non-enchanted weapons get a single "fizyczne" component only.
-- If the item is NOT a weapon or combat item (potions, books, tools, food, clothing, etc.), return { "attackModes": null }.
-- Keep bonus values reasonable: 0-3 for basic, 4-6 for mid-tier, 7-10 for legendary.
+- Weapon bonus values: 0-3 basic, 4-6 mid-tier, 7-10 legendary.
 - aoe is only for explosives or area-effect items; most items leave it null.
-- "explanation" MUST be in Polish, short (max 2 sentences), and justify the chosen formula/bonus/type based on the item name, type, and rarity.`;
+
+## Improvised weapons (NON-weapon items: tools, food, potions, books, clothing, gear, etc.)
+EVERY non-weapon item MUST still get attackModes — it can always be swung or thrown.
+- Melee (improvised swing): formula "str", bonus -3 to 0. Heavier items (iron tools, heavy books, chairs) get bonus -1 to 0. Light/flimsy items (cloth, paper, food) get bonus -3 to -2.
+- Ranged (thrown): most small/medium items can be thrown. Formula "str+dex", bonus -3 to -1, range 3-10m. Heavier items get shorter range (3-5m) but slightly higher bonus. Light items get longer range (6-10m) but lower bonus. Very large/unwieldy items (furniture, heavy armor) may have ranged: null.
+- Themed secondary damage: flasks/bottles with liquid add a secondary damageComponent matching their content (kwas/acid → trucizna flat 1-2, olej/oil → ogien flat 1, piwo/woda = just fizyczne, no extra). Torches/lanterns → secondary ogien flat 2-3. Alchemical items → trucizna or magiczne flat 1-3. Holy water → magiczne flat 2.
+- NEVER return { "attackModes": null } unless the item is truly intangible (a letter, a map, pure information).
+
+## Special properties (MANDATORY for all items)
+"specialProperties" is an array of 1–4 narrative-flavor traits. EVERY item MUST have at least 1.
+Examples for mundane items: "Kruchy" (fragile glass/ceramic), "Ciężki" (heavy iron/stone), "Ostry" (bladed/pointed), "Tępy" (blunt), "Łatwopalny" (flammable), "Śliski" (wet/oily), "Cuchnący" (smelly food/potion), "Solidny" (well-built tool), "Lekki" (easy to throw), "Trujący" (poisonous content).
+Examples for weapons/magic: "Płonący", "Krwawiący", "Zaczarowany", "Przeklęty", "Dwuręczny".
+Each has a short Polish name, a 1-sentence Polish description, and a "color" tag. These are flavor only — no gameplay mechanics.
+- "color": flaming/fire→fire, frost/ice→frost, electric→lightning, poison/acid→poison, magical/runic/arcane→arcane, cursed/dark/necrotic→shadow, holy/blessed/sacred→holy, vine/leaf/druidic→nature, bleeding/sanguine→blood, heavy/sharp/mundane/blunt→physical, otherwise→neutral.
+
+## Explanation
+"explanation" MUST be in Polish, short (max 2 sentences), and justify the chosen formula/bonus/type based on the item name, type, and rarity.`;
 
 export async function generateItemAttackModes(item, { userApiKeys = null, userId = null, force = false } = {}) {
   const props = item.props || {};
 
   if (!force) {
     const deterministic = inferDeterministicItemAttackModes(item);
-    if (deterministic.resolved) return { attackModes: deterministic.attackModes, explanation: null };
+    if (deterministic.resolved) return { attackModes: deterministic.attackModes, explanation: null, specialProperties: [] };
   }
 
   const name = item.displayName || item.name || '';
   const description = props.description || item.description || '';
   const type = props.type || item.type || '';
 
-  if (!name) return { attackModes: null, explanation: null };
+  if (!name) return { attackModes: null, explanation: null, specialProperties: [] };
 
   const userPrompt = `Item: ${name}\nType: ${type}\nDescription: ${description || 'No description available.'}`;
 
@@ -188,7 +185,7 @@ export async function generateItemAttackModes(item, { userApiKeys = null, userId
       taskCategory: 'itemCombatStats',
       systemPrompt: SYSTEM_PROMPT,
       userPrompt,
-      maxTokens: 400,
+      maxTokens: 500,
       temperature: 0.3,
       userApiKeys,
       userId,
@@ -197,29 +194,31 @@ export async function generateItemAttackModes(item, { userApiKeys = null, userId
     });
 
     const parsed = parseJsonOrNull(text);
-    if (!parsed) return { attackModes: null, explanation: null };
+    if (!parsed) return { attackModes: null, explanation: null, specialProperties: [] };
 
     const explanation = clampExplanation(parsed.explanation);
 
+    const specialProperties = await resolveSpecialProperties(parsed.specialProperties);
+
     const modes = parsed.attackModes;
-    if (modes === null || modes === undefined) return { attackModes: null, explanation };
-    if (typeof modes !== 'object') return { attackModes: null, explanation };
+    if (modes === null || modes === undefined) return { attackModes: null, explanation, specialProperties };
+    if (typeof modes !== 'object') return { attackModes: null, explanation, specialProperties };
 
     const result = AttackModesSchema.safeParse(modes);
-    if (!result.success) return { attackModes: null, explanation };
-    if (!hasAnyDamageSource(result.data)) return { attackModes: null, explanation };
+    if (!result.success) return { attackModes: null, explanation, specialProperties };
+    if (!hasAnyDamageSource(result.data)) return { attackModes: null, explanation, specialProperties };
 
-    return { attackModes: result.data, explanation };
+    return { attackModes: result.data, explanation, specialProperties };
   } catch (err) {
     console.error('[itemAttackModesGenerator] LLM call failed:', err.message);
-    return { attackModes: null, explanation: null };
+    return { attackModes: null, explanation: null, specialProperties: [] };
   }
 }
 
 // ── Spell combat stats generation ──────────────────────────────────────
 
 const SPELL_SYSTEM_PROMPT = `You are an RPG spell stat generator for the RPGon d50 system.
-Given a custom spell, produce its combatStats as JSON.
+Given a custom spell, produce its combatStats and specialProperties as JSON.
 
 Schema — return exactly:
 {
@@ -236,6 +235,7 @@ Schema — return exactly:
       "aoe": null
     }
   },
+  "specialProperties": [{ "name": "<Polish, short>", "description": "<Polish, 1 sentence>", "color": "<one of: fire|frost|lightning|poison|arcane|shadow|holy|nature|blood|physical|neutral>" }, ...],
   "explanation": "<1-2 sentences in Polish explaining WHY these stats were chosen>"
 }
 
@@ -248,11 +248,13 @@ Rules:
 - flat is additional flat damage/healing.
 - For ranged offensive spells also include a melee mode (weaker).
 - Keep values balanced: low-mana spells get intScale 0.25 + flat 0-1, high-mana spells get intScale 0.5-0.75 + flat 2-5.
+- "specialProperties" is an array of 0–4 narrative-flavor traits (e.g. "Obszarowy", "Kanalizowany", "Natychmiastowy", "Żywiołowy", "Przeklęty"). Each has a short Polish name, a 1-sentence Polish description, and a "color" tag. Return [] for basic spells with no special traits. These are flavor only — no gameplay mechanics.
+- "color" for each specialProperty: match to flavor — flaming/fire→fire, frost/ice→frost, electric→lightning, poison/acid→poison, magical/runic/arcane→arcane, cursed/dark/necrotic→shadow, holy/blessed/sacred→holy, vine/leaf/druidic→nature, bleeding/sanguine→blood, heavy/sharp/mundane→physical, otherwise→neutral.
 - "explanation" MUST be in Polish, short (max 2 sentences), and justify the type/intScale/range choices.`;
 
 export async function generateSpellCombatStats(spell, { userApiKeys = null, userId = null } = {}) {
   const name = spell.name || '';
-  if (!name) return { combatStats: null, explanation: null };
+  if (!name) return { combatStats: null, explanation: null, specialProperties: [] };
 
   const school = spell.school || 'nieznana';
   const description = spell.description || '';
@@ -275,17 +277,18 @@ export async function generateSpellCombatStats(spell, { userApiKeys = null, user
     });
 
     const parsed = parseJsonOrNull(text);
-    if (!parsed) return { combatStats: null, explanation: null };
+    if (!parsed) return { combatStats: null, explanation: null, specialProperties: [] };
 
     const explanation = clampExplanation(parsed.explanation);
+    const specialProperties = await resolveSpecialProperties(parsed.specialProperties);
 
     const cs = parsed.combatStats;
-    if (!cs || typeof cs !== 'object') return { combatStats: null, explanation };
-    if (!cs.type) return { combatStats: null, explanation };
+    if (!cs || typeof cs !== 'object') return { combatStats: null, explanation, specialProperties };
+    if (!cs.type) return { combatStats: null, explanation, specialProperties };
 
-    return { combatStats: cs, explanation };
+    return { combatStats: cs, explanation, specialProperties };
   } catch (err) {
     console.error('[itemAttackModesGenerator] spell combat stats LLM call failed:', err.message);
-    return { combatStats: null, explanation: null };
+    return { combatStats: null, explanation: null, specialProperties: [] };
   }
 }

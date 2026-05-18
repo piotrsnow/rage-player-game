@@ -35,14 +35,27 @@ export const inventoryHandlers = {
     }
   },
 
+  UPDATE_ITEM_LONG_DESCRIPTION: (draft, action) => {
+    const { itemId, longDescription } = action.payload || {};
+    if (!itemId || !draft.character?.inventory?.length) return;
+    const item = draft.character.inventory.find((i) => i?.id === itemId);
+    if (item) item.longDescription = longDescription;
+  },
+
   UPDATE_ITEM_ATTACK_MODES: (draft, action) => {
-    const { itemId, attackModes, attackModesExplanation } = action.payload || {};
+    const { itemId, attackModes, attackModesExplanation, specialProperties, attackModesVersion } = action.payload || {};
     if (!itemId || !draft.character?.inventory?.length) return;
     const item = draft.character.inventory.find((i) => i?.id === itemId);
     if (item) {
       item.attackModes = attackModes;
       if (attackModesExplanation !== undefined) {
         item.attackModesExplanation = attackModesExplanation;
+      }
+      if (specialProperties !== undefined) {
+        item.specialProperties = specialProperties;
+      }
+      if (attackModesVersion !== undefined) {
+        item.attackModesVersion = attackModesVersion;
       }
     }
   },
@@ -56,6 +69,13 @@ export const inventoryHandlers = {
     if (spell) {
       spell.combatStats = combatStats;
     }
+  },
+
+  SET_ITEM_POCKET: (draft, action) => {
+    const { itemId, pocket } = action.payload || {};
+    if (!itemId || !draft.character?.inventory?.length) return;
+    const item = draft.character.inventory.find((i) => i?.id === itemId);
+    if (item) item.pocket = pocket || null;
   },
 
   USE_MANA_CRYSTAL: (draft, action) => {

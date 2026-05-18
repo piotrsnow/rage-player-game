@@ -20,6 +20,7 @@ import { campaignRoutes } from './routes/campaigns.js';
 import { characterRoutes } from './routes/characters.js';
 import { mediaRoutes } from './routes/media.js';
 import { wanted3dRoutes } from './routes/wanted3d.js';
+import { specialPropertyRoutes } from './routes/specialProperties.js';
 import { openaiProxyRoutes } from './routes/proxy/openai.js';
 import { anthropicProxyRoutes } from './routes/proxy/anthropic.js';
 import { elevenlabsProxyRoutes } from './routes/proxy/elevenlabs.js';
@@ -142,6 +143,7 @@ await fastify.register(async function dataScope(app) {
   app.register(characterRoutes, { prefix: '/characters' });
   app.register(mediaRoutes, { prefix: '/media' });
   app.register(wanted3dRoutes, { prefix: '/wanted3d' });
+  app.register(specialPropertyRoutes, { prefix: '/special-properties' });
 }, { prefix: '/v1' });
 
 await fastify.register(async function proxyScope(app) {

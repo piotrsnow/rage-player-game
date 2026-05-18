@@ -2,6 +2,10 @@ import { useRef, useEffect, useState } from 'react';
 import { ensureDiceLibrary } from './diceLibraryLoader';
 
 const PRE_ROLL_REVEAL_MS = 280;
+
+/** Modal dice: lower durationMultiplier = faster physics (library divides timestep by this). */
+export const MODAL_DICE_DURATION_MULT = 1.15;
+export const MODAL_DICE_STAGE_CLASS = 'relative w-[320px] h-[260px] mx-auto overflow-visible';
 const OVERLAY_THEME = {
   materialColor: 0xd0b0ff,
   materialSpecular: 0x6a3d8a,
@@ -101,12 +105,16 @@ export default function DiceRoller({
   /** When true, click finishes the physics animation early (overlay flows). */
   skipOnClick = false,
   skipOnClickTitle,
+  /** Fired immediately before physics throw starts (after preRollRevealMs). */
+  onRollStart,
 }) {
   const containerRef = useRef(null);
   const boxRef = useRef(null);
   const rollTimeoutRef = useRef(null);
   const rolledOnceRef = useRef(false);
   const targetFaceValuesRef = useRef(null);
+  const onRollStartRef = useRef(onRollStart);
+  onRollStartRef.current = onRollStart;
   const [ready, setReady] = useState(false);
   const [showResult, setShowResult] = useState(false);
   const [showDice, setShowDice] = useState(false);
@@ -192,6 +200,7 @@ export default function DiceRoller({
     setShowResult(false);
     setShowDice(true);
     rollTimeoutRef.current = window.setTimeout(() => {
+      onRollStartRef.current?.();
       box.setDice(diceModeConfig.notation);
       box.start_throw_fast(
         () => requestedResults,

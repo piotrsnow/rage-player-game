@@ -826,8 +826,9 @@ model CampaignLocationSummary {
   summary         String
   keyNpcs         Json     @default("[]")
   unresolvedHooks Json     @default("[]")
+  sceneDigests    Json     @default("[]")
   sceneCount      Int      @default(0)
-  lastSceneIndex  Int?
+  lastVisitScene  Int      @default(0)
   createdAt       DateTime @default(now()) @db.Timestamptz
   updatedAt       DateTime @updatedAt @db.Timestamptz
 
@@ -1649,6 +1650,20 @@ model CustomSpell {
   originCampaignId String?   @db.Uuid
 
   @@index([globallyActive, softDeletedAt])
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// Special properties (narrative-only traits shared across items/spells)
+// ═══════════════════════════════════════════════════════════════════════
+
+model SpecialProperty {
+  id          String   @id @default(uuid(7)) @db.Uuid
+  slug        String   @unique
+  name        String
+  description String
+  color       String   @default("neutral")
+  createdAt   DateTime @default(now()) @db.Timestamptz
+  updatedAt   DateTime @updatedAt @db.Timestamptz
 }
 
 // ═══════════════════════════════════════════════════════════════════════

@@ -238,7 +238,7 @@ Full detail: [knowledge/concepts/scene-generation.md](knowledge/concepts/scene-g
 
 Custom d50 system (not WFRP). Full spec: [RPG_SYSTEM.md](RPG_SYSTEM.md). Code pointer: [knowledge/concepts/rpgon-mechanics.md](knowledge/concepts/rpgon-mechanics.md).
 
-- **Dice:** d50 vs `attribute + skill + modifiers`. Roll 1 = crit success, roll 50 = crit failure.
+- **Dice:** d50 vs `attribute + skill + modifiers`. Roll 50 = crit success, roll 1 = crit failure.
 - **Attributes:** 6 stats 1-25 (`sila`, `inteligencja`, `charyzma`, `zrecznosc`, `wytrzymalosc`, `szczescie`). Baseline character: all 1 except szczęście (0).
 - **Skills:** ~31 skills, each tied to one attribute, levels 0-25.
 - **Magic:** 9 spell trees, mana-based, spells from scrolls, 1-5 mana per spell.

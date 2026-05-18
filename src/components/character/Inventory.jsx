@@ -4,6 +4,7 @@ import { apiClient } from '../../services/apiClient';
 import MaterialBagPanel from './MaterialBagPanel';
 import InventoryImage from './inventory/InventoryImage';
 import EquipmentSlotsBar from './inventory/EquipmentSlotsBar';
+import PocketFilter from './inventory/PocketFilter';
 import ItemTooltip from './inventory/ItemTooltip';
 import Tooltip from '../ui/Tooltip';
 import Button from '../ui/Button';
@@ -38,7 +39,8 @@ export default function Inventory({
   const [showMaterialBag, setShowMaterialBag] = useState(false);
   const [page, setPage] = useState(1);
   const [sortByDate, setSortByDate] = useState(false);
-  const maxSlots = 60;
+  const [activePocket, setActivePocket] = useState(null);
+  const maxSlots = 96;
   const purse = money || { gold: 0, silver: 0, copper: 0 };
   const totalMaterials = materialBag.reduce((sum, m) => sum + (m.quantity || 1), 0);
 
@@ -47,13 +49,17 @@ export default function Inventory({
   };
 
   const sortedItems = useMemo(() => {
-    if (!sortByDate) return items;
-    return [...items].sort((a, b) => {
-      const da = a.addedAt ? new Date(a.addedAt).getTime() : 0;
-      const db = b.addedAt ? new Date(b.addedAt).getTime() : 0;
-      return db - da;
-    });
-  }, [items, sortByDate]);
+    let result = items;
+    if (activePocket) result = result.filter((i) => i.pocket === activePocket);
+    if (sortByDate) {
+      result = [...result].sort((a, b) => {
+        const da = a.addedAt ? new Date(a.addedAt).getTime() : 0;
+        const db = b.addedAt ? new Date(b.addedAt).getTime() : 0;
+        return db - da;
+      });
+    }
+    return result;
+  }, [items, sortByDate, activePocket]);
 
   const totalPages = Math.max(1, Math.ceil(maxSlots / ITEMS_PER_PAGE));
   const safePage = Math.min(page, totalPages);
@@ -132,6 +138,14 @@ export default function Inventory({
               {t('inventory.slots', { current: items.length, max: maxSlots })}
             </span>
           </div>
+        </div>
+
+        <div className="mb-3">
+          <PocketFilter
+            items={items}
+            activePocket={activePocket}
+            onPocketChange={(p) => { setActivePocket(p); setPage(1); }}
+          />
         </div>
 
         <div className="grid grid-cols-4 gap-2.5">
