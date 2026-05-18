@@ -139,12 +139,16 @@ Given an item, produce its attackModes as JSON.
 Schema — return exactly:
 {
   "attackModes": {
-    "melee": { "damageComponents": [{ "type": "<damage type>", "formula": "<formula>", "bonus": <int> }] } | null,
+    "melee": { "damageComponents": [{ "type": "<damage type>", "formula": "<formula>", "bonus": <int> }, ...] } | null,
     "ranged": { "damageComponents": [...], "range": <number in meters> } | null,
     "aoe": null
   },
   "explanation": "<1-2 sentences in Polish explaining WHY these stats were chosen>"
 }
+
+damageComponents is an ARRAY — it can hold multiple entries for multi-typed damage.
+Example — enchanted flaming sword (physical steel + fire enchant):
+  "melee": { "damageComponents": [{ "type": "fizyczne", "formula": "str", "bonus": 3 }, { "type": "ogien", "flat": 4 }] }
 
 Damage types: "fizyczne", "ogien", "lod", "blyskawica", "magiczne", "trucizna", "psychiczne".
 Formulas: "str" (melee 1H), "str*2" (melee 2H), "dex" (ranged), "str+dex" (thrown), "fixed" (firearms), "int" (magic staves/wands).
@@ -155,6 +159,8 @@ Rules:
 - Thrown weapons → ranged mode with "str+dex".
 - Firearms/crossbows → ranged mode with "fixed" formula and "fixedDamage" in the component.
 - Magic staves/wands → melee or ranged mode with formula "int".
+- Enchanted physical weapons (flaming/frost/lightning sword, poisoned dagger, runic axe, etc.) MUST have BOTH a "fizyczne" component (from steel/wood, formula "str" or "str*2") AND an elemental component ("ogien"/"lod"/"blyskawica"/"trucizna"/"magiczne", usually small "flat" 2-6 or "dice" like "1k4"). Pure-magic items (staves, wands, focus crystals) may use a single elemental/magic component.
+- Ordinary, non-enchanted weapons get a single "fizyczne" component only.
 - If the item is NOT a weapon or combat item (potions, books, tools, food, clothing, etc.), return { "attackModes": null }.
 - Keep bonus values reasonable: 0-3 for basic, 4-6 for mid-tier, 7-10 for legendary.
 - aoe is only for explosives or area-effect items; most items leave it null.

@@ -699,6 +699,7 @@ export default function CharacterPanel({
           : base.description,
         longDescription: base.longDescription || catalogEntry?.longDescription || null,
         combatStats: base.combatStats || catalogEntry?.combatStats || null,
+        customSpellId: base.customSpellId || catalogEntry?.id || null,
       };
     });
   }, [character.spells?.known, character.spells?.usageCounts, character.spells?.icons, character.spells?.schools, character.spells?.details, character.customSpells, t]);

@@ -234,7 +234,8 @@ export function applyCharacterStateChanges(character, changes) {
       spells.customKnown.push(changes.learnCustomSpellId);
     }
     next.spells = spells;
-  } else if (changes.learnSpell) {
+  }
+  if (changes.learnSpell) {
     const spells = { ...(next.spells || { known: [], usageCounts: {}, scrolls: [] }) };
     if (!(spells.known || []).includes(changes.learnSpell)) {
       spells.known = [...(spells.known || []), changes.learnSpell];

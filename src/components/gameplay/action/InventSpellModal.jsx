@@ -2,6 +2,7 @@ import { useState, useCallback, useEffect, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useModalA11y } from '../../../hooks/useModalA11y';
 import { apiClient } from '../../../services/apiClient';
+import { gameData } from '../../../services/gameDataService';
 import { NarrableText } from '../../ui/NarrableText';
 import DiceRoller from '../../../effects/DiceRoller';
 
@@ -127,12 +128,17 @@ export default function InventSpellModal({ campaignId, character = null, dispatc
           type: 'APPLY_STATE_CHANGES',
           payload: {
             learnSpell: spellName,
+            ...(data.customSpellId ? { learnCustomSpellId: data.customSpellId } : {}),
             ...(spellIcon ? { learnSpellIcon: spellIcon } : {}),
             ...(data.spell?.school ? { learnSpellSchool: data.spell.school } : {}),
             ...(data.spell?.description ? { learnSpellDescription: data.spell.description } : {}),
             ...(data.spell?.longDescription ? { learnSpellLongDescription: data.spell.longDescription } : {}),
           },
         });
+        // Refresh global catalog so SpellsTab's catalog fallback picks up the
+        // new spell's id + combatStats (which the BE auto-generates async)
+        // even before the next page reload.
+        gameData.refreshCustomSpells().catch(() => {});
         dispatch({
           type: 'ADD_CHAT_MESSAGE',
           payload: {

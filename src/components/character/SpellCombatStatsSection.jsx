@@ -39,18 +39,21 @@ function HealPreview({ supportModes, attrs }) {
         Leczenie
       </span>
       <div className="flex items-center gap-1.5 py-1">
-        <span className="material-symbols-outlined text-base text-emerald-400 mt-0.5 shrink-0">
+        <span className="material-symbols-outlined text-xl text-emerald-400 mt-0.5 shrink-0">
           healing
         </span>
         <div className="flex items-center gap-1.5 flex-wrap">
           {typeDef && (
-            <span className={`material-symbols-outlined text-base ${typeDef.color}`}>{typeDef.icon}</span>
+            <>
+              <span className={`material-symbols-outlined text-lg ${typeDef.color}`}>{typeDef.icon}</span>
+              <span className={`font-label uppercase tracking-wider text-xs ${typeDef.color}`}>{typeDef.label}</span>
+            </>
           )}
-          <span className="font-headline text-base text-emerald-400">
+          <span className="font-headline text-lg text-emerald-400">
             Leczy {formula} HP
           </span>
           {total > 0 && (
-            <span className="text-sm text-emerald-400/60">
+            <span className="text-base text-emerald-400/60">
               = {total}
             </span>
           )}
@@ -70,9 +73,12 @@ function HealPreview({ supportModes, attrs }) {
 export default function SpellCombatStatsSection({ spell, character }) {
   const { t } = useTranslation();
 
-  const existingStats = spell?.combatStats
-    ?? character?.customSpells?.find((s) => s?.name === spell?.name)?.combatStats
-    ?? null;
+  const hydratedSpell = character?.customSpells?.find(
+    (s) => (spell?.customSpellId && s?.id === spell.customSpellId)
+      || (s?.name && s.name === spell?.name),
+  );
+  const customSpellId = spell?.customSpellId || hydratedSpell?.id || null;
+  const existingStats = spell?.combatStats ?? hydratedSpell?.combatStats ?? null;
 
   const meta = spell?.isCustom
     ? { isCustom: true, combatStats: existingStats }
@@ -80,7 +86,7 @@ export default function SpellCombatStatsSection({ spell, character }) {
 
   const {
     combatStats, explanation, loading, reloading, reload,
-  } = useSpellCombatStats(spell?.name, meta);
+  } = useSpellCombatStats(customSpellId, meta);
 
   const cs = spell?.isCustom ? combatStats : (spell?.combatStats ?? existingStats);
 
@@ -140,7 +146,7 @@ export default function SpellCombatStatsSection({ spell, character }) {
         </p>
       )}
 
-      {spell?.isCustom && (
+      {spell?.isCustom && customSpellId && (
         <button
           type="button"
           onClick={reload}

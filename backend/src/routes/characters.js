@@ -899,20 +899,17 @@ Return JSON with exactly three fields, all written in ${isPolish ? 'Polish' : 'E
   });
 
   // ── Spell combat stats backfill ──────────────────────────────────────
-  fastify.post('/:id/spells/:spellName/combat-stats', {
+  // URL by spellId (UUID) — robust against name characters (Ś, !, spaces).
+  // FE looks up id via character.customSpells (hydrated from CustomSpell rows).
+  fastify.post('/:id/spells/:spellId/combat-stats', {
     schema: {
       params: {
         type: 'object',
-        required: ['id', 'spellName'],
+        required: ['id', 'spellId'],
         properties: {
           id: { type: 'string', format: 'uuid' },
-          spellName: { type: 'string', minLength: 1, maxLength: 200 },
+          spellId: { type: 'string', format: 'uuid' },
         },
-      },
-      body: {
-        type: 'object',
-        properties: { force: { type: 'boolean', default: false } },
-        additionalProperties: false,
       },
     },
     config: { rateLimit: { max: 10, timeWindow: '1 minute' } },
@@ -924,8 +921,7 @@ Return JSON with exactly three fields, all written in ${isPolish ? 'Polish' : 'E
     });
     if (!character) return reply.code(404).send({ error: 'Character not found' });
 
-    const spellName = decodeURIComponent(request.params.spellName);
-    const row = await prisma.customSpell.findUnique({ where: { name: spellName } });
+    const row = await prisma.customSpell.findUnique({ where: { id: request.params.spellId } });
     if (!row) return reply.code(404).send({ error: 'Custom spell not found' });
 
     if (!force && row.combatStats) {

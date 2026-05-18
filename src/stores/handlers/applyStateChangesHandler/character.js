@@ -107,7 +107,8 @@ function applySpellBook(draft, changes) {
     if (!draft.character.spells.customKnown.includes(changes.learnCustomSpellId)) {
       draft.character.spells.customKnown.push(changes.learnCustomSpellId);
     }
-  } else if (changes.learnSpell) {
+  }
+  if (changes.learnSpell) {
     ensureSpells();
     if (!draft.character.spells.known.includes(changes.learnSpell)) {
       draft.character.spells.known.push(changes.learnSpell);

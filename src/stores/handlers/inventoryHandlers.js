@@ -48,9 +48,11 @@ export const inventoryHandlers = {
   },
 
   UPDATE_CUSTOM_SPELL_COMBAT_STATS: (draft, action) => {
-    const { spellName, combatStats } = action.payload || {};
-    if (!spellName || !Array.isArray(draft.character?.customSpells)) return;
-    const spell = draft.character.customSpells.find((s) => s?.name === spellName);
+    const { customSpellId, spellName, combatStats } = action.payload || {};
+    if (!combatStats || !Array.isArray(draft.character?.customSpells)) return;
+    const spell = customSpellId
+      ? draft.character.customSpells.find((s) => s?.id === customSpellId)
+      : draft.character.customSpells.find((s) => s?.name === spellName);
     if (spell) {
       spell.combatStats = combatStats;
     }

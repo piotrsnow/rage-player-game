@@ -25,8 +25,11 @@ function DamageComponentRow({ component, compact = false }) {
   const typeDef = DAMAGE_TYPES[component.type] || DAMAGE_TYPES.fizyczne;
   return (
     <span className="inline-flex items-center gap-1">
-      <span className={`material-symbols-outlined ${compact ? 'text-xs' : 'text-base'} ${typeDef.color}`}>{typeDef.icon}</span>
-      <span className="text-on-surface-variant/80">{formatComponentLabel(component)}</span>
+      <span className={`material-symbols-outlined ${compact ? 'text-xs' : 'text-lg'} ${typeDef.color}`}>{typeDef.icon}</span>
+      {!compact && (
+        <span className={`font-label uppercase tracking-wider text-xs ${typeDef.color}`}>{typeDef.label}</span>
+      )}
+      <span className="text-on-surface-variant/90">{formatComponentLabel(component)}</span>
     </span>
   );
 }
@@ -39,27 +42,43 @@ function ModeRow({ modeKey, mode, attrs, compact = false }) {
 
   return (
     <div className={`flex items-start gap-2 ${compact ? 'py-0.5' : 'py-1'}`}>
-      <span className={`material-symbols-outlined ${compact ? 'text-xs' : 'text-lg'} text-error/70 mt-0.5 shrink-0`}>
+      <span className={`material-symbols-outlined ${compact ? 'text-xs' : 'text-xl'} text-error/70 mt-0.5 shrink-0`}>
         {cfg.icon}
       </span>
       <div className="min-w-0 flex-1">
-        <div className="flex items-center gap-1.5 flex-wrap">
-          <span className={`font-label uppercase tracking-wider text-on-surface-variant/60 ${compact ? 'text-[9px]' : 'text-sm'}`}>
-            {t(cfg.label, cfg.fallback)}
-          </span>
+        {compact ? (
           <div className="flex items-center gap-1.5 flex-wrap">
-            {mode.damageComponents.map((c, i) => (
-              <span key={i} className={`font-headline ${compact ? 'text-[11px]' : 'text-base'} text-error`}>
-                <DamageComponentRow component={c} compact={compact} />
-              </span>
-            ))}
-          </div>
-          {evaluated && evaluated.total > 0 && (
-            <span className={`${compact ? 'text-[10px]' : 'text-sm'} text-error/60`}>
-              = {evaluated.total}
+            <span className="font-label uppercase tracking-wider text-on-surface-variant/60 text-[9px]">
+              {t(cfg.label, cfg.fallback)}
             </span>
-          )}
-        </div>
+            <div className="flex items-center gap-1.5 flex-wrap">
+              {mode.damageComponents.map((c, i) => (
+                <span key={i} className="font-headline text-[11px] text-error">
+                  <DamageComponentRow component={c} compact />
+                </span>
+              ))}
+            </div>
+            {evaluated && evaluated.total > 0 && (
+              <span className="text-[10px] text-error/60">= {evaluated.total}</span>
+            )}
+          </div>
+        ) : (
+          <div className="space-y-1">
+            <span className="font-label uppercase tracking-wider text-on-surface-variant/60 text-sm">
+              {t(cfg.label, cfg.fallback)}
+            </span>
+            {mode.damageComponents.map((c, i) => (
+              <div key={i} className="flex items-center gap-1.5">
+                <span className="font-headline text-lg text-error">
+                  <DamageComponentRow component={c} />
+                </span>
+              </div>
+            ))}
+            {evaluated && evaluated.total > 0 && (
+              <span className="text-base text-error/60">= {evaluated.total}</span>
+            )}
+          </div>
+        )}
         <div className="flex items-center gap-2 flex-wrap mt-0.5">
           {modeKey === 'ranged' && mode.range && (
             <span className={`${compact ? 'text-[9px]' : 'text-xs'} text-on-surface-variant/50`}>

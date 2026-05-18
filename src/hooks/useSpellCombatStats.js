@@ -5,15 +5,21 @@ import { useGameStore } from '../stores/gameStore';
 const inflight = new Map();
 
 /**
- * Lazy-fetches combatStats for a custom spell that doesn't have them locally.
- * Skips built-in spells (isCustom=false) and spells that already have combatStats.
+ * Lazy-fetches combatStats for a custom spell that doesn't have them cached
+ * on the character (`character.customSpells[].combatStats`).
  *
- * Caches result on the character's customSpells array via dispatch.
+ * Identifies the spell by `customSpellId` (UUID) — robust against names with
+ * special characters (Ś, !, spaces). When `customSpellId` is missing (legacy
+ * spells in `known[]` but not yet linked to a `CustomSpell` row) the hook
+ * silently no-ops; the UI shows the empty state without a Przelicz button.
+ *
+ * Caches result on `character.customSpells` via dispatch so the next render
+ * skips the round-trip.
  *
  * Returns { combatStats, explanation, loading, reloading, reload }.
- * `reload()` forces an LLM re-evaluation.
+ * `reload()` forces an LLM re-evaluation (force=true).
  */
-export function useSpellCombatStats(spellName, customSpellMeta) {
+export function useSpellCombatStats(customSpellId, customSpellMeta) {
   const [combatStats, setCombatStats] = useState(customSpellMeta?.combatStats ?? null);
   const [explanation, setExplanation] = useState(customSpellMeta?.combatStats?.explanation ?? null);
   const [loading, setLoading] = useState(false);
@@ -25,7 +31,7 @@ export function useSpellCombatStats(spellName, customSpellMeta) {
 
   const isCustom = customSpellMeta?.isCustom === true;
   const hasStats = !!customSpellMeta?.combatStats;
-  const shouldSkip = !spellName || !characterId || !isCustom || hasStats;
+  const shouldSkip = !customSpellId || !characterId || !isCustom || hasStats;
 
   useEffect(() => {
     cancelledRef.current = false;
@@ -37,7 +43,7 @@ export function useSpellCombatStats(spellName, customSpellMeta) {
       return;
     }
 
-    const key = `${characterId}:spell:${spellName}`;
+    const key = `${characterId}:spell:${customSpellId}`;
     if (inflight.has(key)) {
       setLoading(true);
       inflight.get(key).then((result) => {
@@ -52,7 +58,7 @@ export function useSpellCombatStats(spellName, customSpellMeta) {
 
     setLoading(true);
     const promise = apiClient
-      .post(`/characters/${characterId}/spells/${encodeURIComponent(spellName)}/combat-stats`)
+      .post(`/characters/${characterId}/spells/${customSpellId}/combat-stats`, {})
       .then((data) => {
         const stats = data?.combatStats ?? null;
         const expl = data?.explanation ?? null;
@@ -63,7 +69,7 @@ export function useSpellCombatStats(spellName, customSpellMeta) {
           if (stats) {
             dispatch({
               type: 'UPDATE_CUSTOM_SPELL_COMBAT_STATS',
-              payload: { spellName, combatStats: stats },
+              payload: { customSpellId, combatStats: stats },
             });
           }
         }
@@ -80,14 +86,14 @@ export function useSpellCombatStats(spellName, customSpellMeta) {
     inflight.set(key, promise);
 
     return () => { cancelledRef.current = true; };
-  }, [shouldSkip, spellName, characterId, hasStats, customSpellMeta?.combatStats, dispatch]);
+  }, [shouldSkip, customSpellId, characterId, hasStats, customSpellMeta?.combatStats, dispatch]);
 
   const reload = useCallback(async () => {
-    if (!spellName || !characterId || !isCustom || reloading) return;
+    if (!customSpellId || !characterId || !isCustom || reloading) return;
     setReloading(true);
     try {
       const data = await apiClient.post(
-        `/characters/${characterId}/spells/${encodeURIComponent(spellName)}/combat-stats`,
+        `/characters/${characterId}/spells/${customSpellId}/combat-stats`,
         { force: true },
       );
       const stats = data?.combatStats ?? null;
@@ -97,12 +103,12 @@ export function useSpellCombatStats(spellName, customSpellMeta) {
       if (stats) {
         dispatch({
           type: 'UPDATE_CUSTOM_SPELL_COMBAT_STATS',
-          payload: { spellName, combatStats: stats },
+          payload: { customSpellId, combatStats: stats },
         });
       }
     } catch { /* swallow */ }
     setReloading(false);
-  }, [spellName, characterId, isCustom, reloading, dispatch]);
+  }, [customSpellId, characterId, isCustom, reloading, dispatch]);
 
   return { combatStats, explanation, loading, reloading, reload };
 }

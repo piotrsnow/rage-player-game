@@ -380,6 +380,7 @@ export async function inventSpellRoutes(fastify) {
 
       const stateChanges = {
         learnSpell: chosenSpellName,
+        ...(customSpellId ? { learnCustomSpellId: customSpellId } : {}),
         ...(analyzed.spellIcon ? { learnSpellIcon: analyzed.spellIcon } : {}),
         ...(spellCard?.school ? { learnSpellSchool: spellCard.school } : {}),
         ...(spellCard?.description ? { learnSpellDescription: spellCard.description } : {}),
